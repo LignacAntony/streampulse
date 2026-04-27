@@ -1,0 +1,143 @@
+# ============================================================
+# Environment & secrets
+# ============================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+.secrets/
+
+# ============================================================
+# OS & editors
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.iml
+.fleet/
+.zed/
+
+# ============================================================
+# Logs & temp
+# ============================================================
+*.log
+logs/
+tmp/
+.cache/
+
+# ============================================================
+# Go
+# ============================================================
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test & coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+profile.cov
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor (uncomment if you commit vendor/)
+# vendor/
+
+# Air (live reload)
+tmp/
+
+# ============================================================
+# Flutter / Dart
+# ============================================================
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/generated_plugin_registrant.dart
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# Flutter coverage
+coverage/
+test/.test_coverage.dart
+
+# Android
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+**/android/app/release/
+*.jks
+*.keystore
+
+# iOS / macOS
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/Pods/
+**/ios/.symlinks/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral/
+**/macos/Pods/
+
+# Web
+**/web/.dart_tool/
+
+# Linux / Windows desktop
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+
+# Symbols
+app.*.symbols
+app.*.map.json
+
+# ============================================================
+# Docker
+# ============================================================
+docker-compose.override.yml
+.docker/
+*.pid
+
+# ============================================================
+# Node (tooling: commitlint, etc.)
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
