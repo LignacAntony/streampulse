@@ -1,0 +1,140 @@
+networks:
+  streampulse-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  grafana_data:
+
+services:
+
+  # ──────────────────────────────────────────
+  # Base de données
+  # ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    networks:
+      - streampulse-net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # API Go
+  # ──────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    networks:
+      - streampulse-net
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      GO_ENV: ${GO_ENV}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Métriques — Prometheus
+  # ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    networks:
+      - streampulse-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Agrégation de logs — Loki
+  # ──────────────────────────────────────────
+  loki:
+    image: grafana/loki:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    # Image distroless (pas de shell ni wget) — healthcheck via service_started
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Traces distribuées — Tempo
+  # ──────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/tempo/tempo-config.yml:/etc/tempo/tempo-config.yaml:ro
+    command: -config.file=/etc/tempo/tempo-config.yaml
+    # Image distroless (pas de shell ni wget) — healthcheck via service_started
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Visualisation — Grafana
+  # ──────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    networks:
+      - streampulse-net
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
