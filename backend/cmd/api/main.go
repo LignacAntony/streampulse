@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 )
 
 func main() {
@@ -21,6 +22,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	srv := &http.Server{
+		Addr:         ":8080",
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
 	log.Println("API StreamPulse démarrée sur :8080")
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(srv.ListenAndServe())
 }
