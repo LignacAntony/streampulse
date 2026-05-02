@@ -259,3 +259,66 @@ docker compose restart grafana
 docker compose down -v
 docker compose up -d
 ```
+
+---
+
+## Pipeline CI/CD
+
+Le projet utilise GitHub Actions pour automatiser le lint, les tests, le build,
+le déploiement et les scans de sécurité.
+
+### Workflows
+
+| Workflow | Fichier | Déclenchement | Rôle |
+|---|---|---|---|
+| **CI** | `.github/workflows/ci.yml` | `push` / `pull_request` sur `develop` et `main` | Lint Go (golangci-lint), tests avec couverture, vérification de compilation |
+| **CD** | `.github/workflows/cd.yml` | `push` sur `main` uniquement + `workflow_dispatch` | Build image Docker multi-stage, push sur GHCR, déploiement SSH sur le VPS |
+| **Security** | `.github/workflows/security.yml` | `push` sur `develop` et `main` + cron lundi 06h00 UTC | Scan de vulnérabilités Trivy (SARIF → Code Scanning), analyse statique gosec |
+
+### Secrets GitHub à configurer
+
+Aller dans **Settings → Secrets and variables → Actions → New repository secret**.
+
+| Secret | Description | Exemple |
+|---|---|---|
+| `VPS_HOST` | IP publique du serveur Hetzner | `65.21.x.x` |
+| `VPS_USER` | Utilisateur SSH de déploiement | `deploy` |
+| `VPS_SSH_KEY` | Contenu de la clé privée SSH (`~/.ssh/id_ed25519`) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
+| `VPS_PORT` | Port SSH du serveur | `22` |
+| `VPS_GHCR_USER` | Username GitHub pour l'authentification GHCR côté VPS | `thierrymaignan` |
+| `GHCR_TOKEN` | Personal Access Token GitHub avec scope `read:packages` | `ghp_xxxx` |
+
+> **Note :** `JWT_SECRET` n'est pas encore requis dans les secrets GitHub —
+> l'authentification JWT sera ajoutée en US-02-02.
+
+### Vérifier qu'un déploiement s'est bien passé
+
+```bash
+# 1. Vérifier le statut du workflow dans l'UI GitHub
+#    → onglet "Actions" du dépôt, workflow "CD"
+
+# 2. Sur le VPS, vérifier que l'API répond
+curl -s -o /dev/null -w "%{http_code}" http://<VPS_HOST>:8080/health
+# Attendu : 200
+
+# 3. Vérifier que l'image fraîchement déployée est bien en cours d'exécution
+ssh deploy@<VPS_HOST> "docker compose -f /opt/streampulse/docker-compose.yml ps api"
+```
+
+### Tester le build Docker localement avant de push
+
+```bash
+# Construire l'image localement (depuis la racine du dépôt)
+docker build -t streampulse-api ./backend
+
+# Tester que l'image démarre correctement
+docker run --rm -p 8080:8080 streampulse-api
+curl http://localhost:8080/health
+```
+
+### Déclencher un redéploiement manuel (workflow_dispatch)
+
+1. Aller sur **GitHub → onglet Actions → workflow "CD"**
+2. Cliquer sur **"Run workflow"** (bouton en haut à droite de la liste des runs)
+3. Sélectionner la branche `main`
+4. Cliquer sur **"Run workflow"** pour confirmer
