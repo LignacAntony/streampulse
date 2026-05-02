@@ -3,7 +3,7 @@
 > Plateforme StreamPulse — backend Go, application Flutter, déploiement conteneurisé.
 
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
-
+[![Release](https://img.shields.io/github/v/release/thierrymaignan/streampulse)](https://github.com/thierrymaignan/streampulse/releases)
 ---
 
 ## Sommaire

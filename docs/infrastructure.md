@@ -322,3 +322,42 @@ curl http://localhost:8080/health
 2. Cliquer sur **"Run workflow"** (bouton en haut à droite de la liste des runs)
 3. Sélectionner la branche `main`
 4. Cliquer sur **"Run workflow"** pour confirmer
+
+---
+
+### Gestion des releases
+
+Le projet utilise **release-please** (Google) pour automatiser la gestion des versions et du changelog.
+
+#### Principe de fonctionnement
+
+Après chaque merge sur `main`, le job `release` du workflow CD :
+
+1. Analyse les Conventional Commits mergés depuis la dernière release
+2. Détermine le prochain numéro de version selon semver :
+   - `fix:` → **patch** (ex : 0.1.0 → 0.1.1)
+   - `feat:` → **minor** (ex : 0.1.0 → 0.2.0) — ou patch avant v1.0.0 (`bump-minor-pre-major`)
+   - `feat!:` ou `BREAKING CHANGE` → **major** (ex : 0.1.0 → 1.0.0)
+3. Ouvre (ou met à jour) une **PR de release** intitulée `chore: release vX.Y.Z` avec le `CHANGELOG.md` mis à jour
+4. Quand cette PR est mergée → crée le **tag Git** et la **GitHub Release** officielle
+
+#### CHANGELOG.md
+
+Le fichier `CHANGELOG.md` à la racine du repo est **généré et maintenu automatiquement** par release-please. **Ne jamais l'éditer manuellement** — les modifications manuelles seront écrasées lors de la prochaine release.
+
+#### Voir les releases
+
+Les releases sont visibles dans l'onglet **Releases** du dépôt GitHub :
+`https://github.com/thierrymaignan/streampulse/releases`
+
+#### Forcer une version manuellement
+
+Si le numéro de version courant dans `.release-please-manifest.json` est incorrect,
+le modifier directement :
+
+```json
+{ ".": "1.2.3" }
+```
+
+> **Attention :** ne jamais supprimer `release-please-config.json` ni `.release-please-manifest.json` —
+> ce sont les fichiers de configuration et d'état de release-please.

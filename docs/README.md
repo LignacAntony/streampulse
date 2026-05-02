@@ -25,6 +25,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [adr/001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) | ADR 001 — Choix de la stack LGTM pour l'observabilité |
 | [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) | ADR 002 — Conteneurisation avec Docker Compose |
 | [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) | ADR 003 — Pipeline CI/CD avec GitHub Actions et GHCR |
+| [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
 

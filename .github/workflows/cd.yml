@@ -65,3 +65,20 @@ jobs:
             docker compose pull api
             docker compose up -d --no-deps api
             docker image prune -f
+
+  release:
+    name: Create release
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: go
