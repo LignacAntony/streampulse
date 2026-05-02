@@ -44,5 +44,5 @@ Format utilisé : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/docume
 ## Liens utiles
 
 - Projet Linear (tickets) : https://linear.app/streampulse
-- Dépôt GitHub : https://github.com/thierrymaignan/streampulse
+- Dépôt GitHub : https://github.com/LignacAntony/streampulse
 - Guide de contribution : [CONTRIBUTING.md](../CONTRIBUTING.md)
