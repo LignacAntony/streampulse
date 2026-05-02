@@ -49,7 +49,7 @@ Suivre ces étapes dans l'ordre lors de la première installation sur une nouvel
 
 ```bash
 # 1. Cloner le dépôt
-git clone https://github.com/thierrymaignan/streampulse.git
+git clone https://github.com/LignacAntony/streampulse.git
 cd streampulse
 
 # 2. Créer le fichier .env à partir du modèle
@@ -285,7 +285,7 @@ Aller dans **Settings → Secrets and variables → Actions → New repository s
 | `VPS_USER` | Utilisateur SSH de déploiement | `deploy` |
 | `VPS_SSH_KEY` | Contenu de la clé privée SSH (`~/.ssh/id_ed25519`) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
 | `VPS_PORT` | Port SSH du serveur | `22` |
-| `VPS_GHCR_USER` | Username GitHub pour l'authentification GHCR côté VPS | `thierrymaignan` |
+| `VPS_GHCR_USER` | Username GitHub pour l'authentification GHCR côté VPS | `LignacAntony` |
 | `GHCR_TOKEN` | Personal Access Token GitHub avec scope `read:packages` | `ghp_xxxx` |
 
 > **Note :** `JWT_SECRET` n'est pas encore requis dans les secrets GitHub —
@@ -348,7 +348,7 @@ Le fichier `CHANGELOG.md` à la racine du repo est **généré et maintenu autom
 #### Voir les releases
 
 Les releases sont visibles dans l'onglet **Releases** du dépôt GitHub :
-`https://github.com/thierrymaignan/streampulse/releases`
+`https://github.com/LignacAntony/streampulse/releases`
 
 #### Forcer une version manuellement
 
