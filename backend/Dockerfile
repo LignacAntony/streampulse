@@ -3,7 +3,7 @@
 # Compile le binaire Go en statique (sans CGO) pour produire
 # un binaire autonome transférable dans une image minimale.
 # =============================================================
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
@@ -30,7 +30,11 @@ RUN apk add --no-cache ca-certificates tzdata
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-COPY --from=builder /app/api /app/api
+WORKDIR /app
+
+COPY --from=builder /app/api       /app/api
+# Les migrations sont lues depuis /app/migrations au démarrage (file://migrations)
+COPY --from=builder /build/migrations /app/migrations
 
 USER appuser
 

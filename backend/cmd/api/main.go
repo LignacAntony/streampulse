@@ -1,12 +1,31 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/thierrymaignan/streampulse/internal/infrastructure/database"
+	"github.com/thierrymaignan/streampulse/internal/infrastructure/migrator"
+	"github.com/thierrymaignan/streampulse/internal/infrastructure/seeder"
 )
 
 func main() {
+	ctx := context.Background()
+
+	// 1. Appliquer les migrations
+	migrator.Run()
+
+	// 2. Seed uniquement en développement
+	if os.Getenv("GO_ENV") == "development" {
+		conn := database.Connect(ctx)
+		defer conn.Close(ctx)
+		seeder.Run(ctx, conn)
+	}
+
+	// 3. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
