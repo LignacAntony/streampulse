@@ -22,7 +22,15 @@ func Run() {
 	if err != nil {
 		log.Fatalf("migrate init: %v", err)
 	}
-	defer m.Close()
+	defer func() {
+		srcErr, dbErr := m.Close()
+		if srcErr != nil {
+			log.Printf("migrate close source: %v", srcErr)
+		}
+		if dbErr != nil {
+			log.Printf("migrate close db: %v", dbErr)
+		}
+	}()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		log.Fatalf("migrate up: %v", err)

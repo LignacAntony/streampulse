@@ -22,7 +22,11 @@ func main() {
 	// 2. Seed uniquement en développement
 	if os.Getenv("GO_ENV") == "development" {
 		conn := database.Connect(ctx)
-		defer conn.Close(ctx)
+		defer func() {
+			if err := conn.Close(ctx); err != nil {
+				log.Printf("db close: %v", err)
+			}
+		}()
 		seeder.Run(ctx, conn)
 	}
 
