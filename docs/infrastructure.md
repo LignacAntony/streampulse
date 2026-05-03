@@ -49,7 +49,7 @@ Suivre ces étapes dans l'ordre lors de la première installation sur une nouvel
 
 ```bash
 # 1. Cloner le dépôt
-git clone https://github.com/thierrymaignan/streampulse.git
+git clone https://github.com/LignacAntony/streampulse.git
 cd streampulse
 
 # 2. Créer le fichier .env à partir du modèle
@@ -259,3 +259,105 @@ docker compose restart grafana
 docker compose down -v
 docker compose up -d
 ```
+
+---
+
+## Pipeline CI/CD
+
+Le projet utilise GitHub Actions pour automatiser le lint, les tests, le build,
+le déploiement et les scans de sécurité.
+
+### Workflows
+
+| Workflow | Fichier | Déclenchement | Rôle |
+|---|---|---|---|
+| **CI** | `.github/workflows/ci.yml` | `push` / `pull_request` sur `develop` et `main` | Lint Go (golangci-lint), tests avec couverture, vérification de compilation |
+| **CD** | `.github/workflows/cd.yml` | `push` sur `main` uniquement + `workflow_dispatch` | Build image Docker multi-stage, push sur GHCR, déploiement SSH sur le VPS |
+| **Security** | `.github/workflows/security.yml` | `push` sur `develop` et `main` + cron lundi 06h00 UTC | Scan de vulnérabilités Trivy (SARIF → Code Scanning), analyse statique gosec |
+
+### Secrets GitHub à configurer
+
+Aller dans **Settings → Secrets and variables → Actions → New repository secret**.
+
+| Secret | Description | Exemple |
+|---|---|---|
+| `VPS_HOST` | IP publique du serveur Hetzner | `65.21.x.x` |
+| `VPS_USER` | Utilisateur SSH de déploiement | `deploy` |
+| `VPS_SSH_KEY` | Contenu de la clé privée SSH (`~/.ssh/id_ed25519`) | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
+| `VPS_PORT` | Port SSH du serveur | `22` |
+| `VPS_GHCR_USER` | Username GitHub pour l'authentification GHCR côté VPS | `LignacAntony` |
+| `GHCR_TOKEN` | Personal Access Token GitHub avec scope `read:packages` | `ghp_xxxx` |
+
+> **Note :** `JWT_SECRET` n'est pas encore requis dans les secrets GitHub —
+> l'authentification JWT sera ajoutée en US-02-02.
+
+### Vérifier qu'un déploiement s'est bien passé
+
+```bash
+# 1. Vérifier le statut du workflow dans l'UI GitHub
+#    → onglet "Actions" du dépôt, workflow "CD"
+
+# 2. Sur le VPS, vérifier que l'API répond
+curl -s -o /dev/null -w "%{http_code}" http://<VPS_HOST>:8080/health
+# Attendu : 200
+
+# 3. Vérifier que l'image fraîchement déployée est bien en cours d'exécution
+ssh deploy@<VPS_HOST> "docker compose -f /opt/streampulse/docker-compose.yml ps api"
+```
+
+### Tester le build Docker localement avant de push
+
+```bash
+# Construire l'image localement (depuis la racine du dépôt)
+docker build -t streampulse-api ./backend
+
+# Tester que l'image démarre correctement
+docker run --rm -p 8080:8080 streampulse-api
+curl http://localhost:8080/health
+```
+
+### Déclencher un redéploiement manuel (workflow_dispatch)
+
+1. Aller sur **GitHub → onglet Actions → workflow "CD"**
+2. Cliquer sur **"Run workflow"** (bouton en haut à droite de la liste des runs)
+3. Sélectionner la branche `main`
+4. Cliquer sur **"Run workflow"** pour confirmer
+
+---
+
+### Gestion des releases
+
+Le projet utilise **release-please** (Google) pour automatiser la gestion des versions et du changelog.
+
+#### Principe de fonctionnement
+
+Après chaque merge sur `main`, le job `release` du workflow CD :
+
+1. Analyse les Conventional Commits mergés depuis la dernière release
+2. Détermine le prochain numéro de version selon semver :
+   - `fix:` → **patch** (ex : 0.1.0 → 0.1.1)
+   - `feat:` → **minor** (ex : 0.1.0 → 0.2.0) — ou patch avant v1.0.0 (`bump-minor-pre-major`)
+   - `feat!:` ou `BREAKING CHANGE` → **major** (ex : 0.1.0 → 1.0.0)
+3. Ouvre (ou met à jour) une **PR de release** intitulée `chore: release vX.Y.Z` avec le `CHANGELOG.md` mis à jour
+4. Quand cette PR est mergée → crée le **tag Git** et la **GitHub Release** officielle
+
+#### CHANGELOG.md
+
+Le fichier `CHANGELOG.md` à la racine du repo est **généré et maintenu automatiquement** par release-please. **Ne jamais l'éditer manuellement** — les modifications manuelles seront écrasées lors de la prochaine release.
+
+#### Voir les releases
+
+Les releases sont visibles dans l'onglet **Releases** du dépôt GitHub :
+`https://github.com/LignacAntony/streampulse/releases`
+
+#### Forcer une version manuellement
+
+Si le numéro de version courant dans `.release-please-manifest.json` est incorrect,
+le modifier directement :
+
+```json
+{ ".": "1.2.3" }
+```
+
+> **Attention :** ne jamais supprimer `release-please-config.json` ni `.release-please-manifest.json` —
+> ce sont les fichiers de configuration et d'état de release-please.

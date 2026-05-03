@@ -7,8 +7,6 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
-# Copier les fichiers de dépendances en premier pour exploiter
-# le cache Docker (layer invalidé uniquement si go.mod change)
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -19,11 +17,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /app/api \
     ./cmd/api
 
-# =============================================================
-# Stage 2 — Runner
-# Image finale minimale : uniquement le binaire + CA + timezone
-# Cible < 30 MB. Utilisateur non-root pour la sécurité.
-# =============================================================
 FROM alpine:3 AS runner
 
 RUN apk add --no-cache ca-certificates tzdata
