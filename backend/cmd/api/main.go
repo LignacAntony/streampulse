@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/thierrymaignan/streampulse/internal/infrastructure/database"
-	"github.com/thierrymaignan/streampulse/internal/infrastructure/migrator"
-	"github.com/thierrymaignan/streampulse/internal/infrastructure/seeder"
+	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
+	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
+	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
 )
 
 func main() {
