@@ -62,6 +62,7 @@ Ports internes uniquement : 5432 (PostgreSQL) · 3100 (Loki) · 3200 (Tempo)
 
 | Composant | Image | Port interne | Rôle |
 |---|---|---|---|
+| **app Flutter** (`mobile/`) | — | — | Application mobile iOS + Android (Clean Architecture + Riverpod) |
 | **api** | build local (Go 1.22) | 8080 | API REST : logique métier, streaming, authentification JWT |
 | **postgres** | `postgres:16-alpine` | 5432 | Base de données relationnelle : utilisateurs, contenus, sessions |
 | **prometheus** | `prom/prometheus:latest` | 9090 | Collecte et stockage des métriques (scrape pull) |
@@ -128,10 +129,63 @@ pointant vers le stockage objet (prévu en phase ultérieure).
 
 ### Pourquoi Flutter pour le client ?
 
-- **Cross-platform** : une codebase → iOS, Android, Web, Desktop
+- **Cross-platform** : une codebase → iOS et Android (cibles actuelles)
 - **Dart** : langage typé, AOT-compilé, performances proches du natif
 - **Hot reload** : itérations de développement rapides
 - **Material 3 / Cupertino** : UI adaptée à chaque plateforme cible
+
+---
+
+## Architecture Flutter (`mobile/`)
+
+L'application mobile suit la **Clean Architecture** adaptée mobile, découpée en trois couches par feature.
+
+### Organisation des dossiers
+
+```
+mobile/lib/
+├── main.dart              # Point d'entrée — ProviderScope + runApp
+├── app/
+│   ├── app.dart           # Widget racine MaterialApp.router
+│   └── router/            # Configuration go_router
+├── core/                  # Utilitaires transverses (pas de logique métier)
+│   ├── constants/         # ApiConstants, AppConstants
+│   ├── errors/            # Failures (domaine) et Exceptions (infra)
+│   ├── network/           # DioClient avec intercepteurs JWT
+│   ├── storage/           # SecureStorage (tokens JWT)
+│   └── theme/             # AppTheme, AppColors, AppTypography
+└── features/              # Modules fonctionnels indépendants
+    ├── auth/
+    ├── streams/
+    └── library/
+```
+
+### Structure de chaque feature (Clean Architecture)
+
+```
+features/<nom>/
+├── data/
+│   └── repositories/      # Implémentations concrètes des interfaces domain
+├── domain/
+│   ├── entities/          # Entités pures (pas de dépendance infra)
+│   ├── repositories/      # Interfaces abstraites (contrats — Principe D)
+│   └── usecases/          # Cas d'utilisation (à créer par US)
+└── presentation/
+    ├── screens/           # Widgets Flutter (UI)
+    └── providers/         # Riverpod Notifiers (state management)
+```
+
+### Packages clés
+
+| Package | Rôle |
+|---|---|
+| `flutter_riverpod` + `riverpod_annotation` | State management — providers déclaratifs avec code generation |
+| `go_router` | Navigation déclarative type-safe |
+| `just_audio` + `audio_service` | Lecture audio HLS natif + background playback |
+| `dio` | Client HTTP avec intercepteurs JWT |
+| `flutter_secure_storage` | Stockage chiffré des tokens (EncryptedSharedPreferences Android) |
+
+*Voir [ADR 005](adr/005-architecture-flutter-clean.md) pour l'analyse complète des alternatives.*
 
 ### Pourquoi la stack LGTM (Loki + Grafana + Tempo + Prometheus) ?
 

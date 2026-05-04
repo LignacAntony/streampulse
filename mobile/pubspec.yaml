@@ -1,0 +1,56 @@
+name: streampulse
+description: Plateforme audio hybride live & on-demand — StreamPulse
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # Client HTTP
+  dio: ^5.4.3+1
+
+  # Stockage sécurisé (tokens JWT)
+  flutter_secure_storage: ^9.0.0
+
+  # Lecture audio (live HLS + on-demand)
+  just_audio: ^0.9.40
+  audio_service: ^0.18.12
+
+  # WebSocket (chat live)
+  web_socket_channel: ^3.0.1
+
+  # Utilitaires
+  equatable: ^2.0.5
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+  logger: ^2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Génération de code
+  build_runner: ^2.4.9
+  riverpod_generator: ^2.4.0
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+
+  # Linting
+  flutter_lints: ^4.0.0
+  custom_lint: ^0.6.4
+  riverpod_lint: ^2.3.10
+
+flutter:
+  uses-material-design: true
