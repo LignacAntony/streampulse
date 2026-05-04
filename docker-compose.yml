@@ -33,6 +33,7 @@ services:
   # API Go
   # ──────────────────────────────────────────
   api:
+    image: ghcr.io/lignacantony/streampulse/api:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
