@@ -8,14 +8,17 @@
 
 ## Sommaire
 
-- [Stack technique](#stack-technique)
-- [Structure du repository](#structure-du-repository)
-- [Prérequis](#prérequis)
-- [Installation & lancement](#installation--lancement)
-- [Variables d'environnement](#variables-denvironnement)
-- [Workflow Git](#workflow-git)
-- [Conventions de commit](#conventions-de-commit)
-- [Contribuer](#contribuer)
+- [StreamPulse](#streampulse)
+  - [](#)
+  - [Sommaire](#sommaire)
+  - [Stack technique](#stack-technique)
+  - [Structure du repository](#structure-du-repository)
+  - [Prérequis](#prérequis)
+  - [Installation \& lancement](#installation--lancement)
+  - [Variables d'environnement](#variables-denvironnement)
+  - [Workflow Git](#workflow-git)
+  - [Conventions de commit](#conventions-de-commit)
+  - [Contribuer](#contribuer)
 
 ---
 
