@@ -14,6 +14,18 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Valeurs par défaut pour les variables non-sensibles. Centralisées en
+// constantes pour qu'elles soient à la fois passées à viper.SetDefault
+// et appliquées en post-processing si la variable est définie à "".
+const (
+	defaultGoEnv   = "development"
+	defaultAPIPort = "8080"
+	defaultDBHost  = "localhost"
+	defaultDBPort  = "5432"
+
+	minJWTSecretLen = 32
+)
+
 // Config représente la configuration complète de l'API StreamPulse.
 //
 // Toutes les valeurs proviennent de variables d'environnement —
@@ -37,10 +49,10 @@ func Load() (*Config, error) {
 	v := viper.New()
 
 	// Valeurs par défaut pour les variables non sensibles.
-	v.SetDefault("GO_ENV", "development")
-	v.SetDefault("API_PORT", "8080")
-	v.SetDefault("DB_HOST", "localhost")
-	v.SetDefault("DB_PORT", "5432")
+	v.SetDefault("GO_ENV", defaultGoEnv)
+	v.SetDefault("API_PORT", defaultAPIPort)
+	v.SetDefault("DB_HOST", defaultDBHost)
+	v.SetDefault("DB_PORT", defaultDBPort)
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -74,6 +86,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: unmarshal: %w", err)
 	}
 
+	// Une variable d'environnement définie à "" est sémantiquement équivalente
+	// à une variable absente (12-Factor) — on retombe sur le défaut.
+	// Viper ne le fait pas seul : os.Getenv retourne "" pour set vide ET pour
+	// absent, et viper privilégie cette chaîne vide sur SetDefault.
+	cfg.applyDefaultsForEmpty()
+
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -81,14 +99,22 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// MustLoad est l'équivalent de Load mais panique en cas d'erreur.
-// Pratique pour le bootstrap d'une application — fail-fast au démarrage.
-func MustLoad() *Config {
-	cfg, err := Load()
-	if err != nil {
-		panic(fmt.Errorf("config: load failed: %w", err))
+// applyDefaultsForEmpty remplace les valeurs vides par les défauts
+// pour les champs qui en ont un. Les champs requis (DB_USER, DB_NAME, etc.)
+// restent vides volontairement et seront remontés par validate().
+func (c *Config) applyDefaultsForEmpty() {
+	if c.GoEnv == "" {
+		c.GoEnv = defaultGoEnv
 	}
-	return cfg
+	if c.APIPort == "" {
+		c.APIPort = defaultAPIPort
+	}
+	if c.DBHost == "" {
+		c.DBHost = defaultDBHost
+	}
+	if c.DBPort == "" {
+		c.DBPort = defaultDBPort
+	}
 }
 
 // IsDev indique si l'application tourne en mode développement.
@@ -113,8 +139,6 @@ func (c *Config) DBDSN() string {
 		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName,
 	)
 }
-
-const minJWTSecretLen = 32
 
 // validate vérifie que les variables requises sont présentes et que
 // les valeurs critiques respectent les contraintes minimales.

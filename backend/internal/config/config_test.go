@@ -77,31 +77,54 @@ func TestLoad_ShortJWTSecret(t *testing.T) {
 }
 
 func TestLoad_DefaultsApplied(t *testing.T) {
-	vars := validVars()
-	delete(vars, "API_PORT")
-	delete(vars, "GO_ENV")
-	delete(vars, "DB_HOST")
-	delete(vars, "DB_PORT")
-	setEnv(t, vars)
-	// Ensure no leftover values from outer process leak in.
-	t.Setenv("API_PORT", "")
-	t.Setenv("GO_ENV", "")
-	t.Setenv("DB_HOST", "")
-	t.Setenv("DB_PORT", "")
+	// Variante 1 : variables optionnelles absentes — défauts viper appliqués.
+	t.Run("absent", func(t *testing.T) {
+		vars := validVars()
+		delete(vars, "API_PORT")
+		delete(vars, "GO_ENV")
+		delete(vars, "DB_HOST")
+		delete(vars, "DB_PORT")
+		setEnv(t, vars)
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() unexpected error: %v", err)
-	}
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		assertDefaults(t, cfg)
+	})
 
-	if cfg.APIPort != "8080" {
-		t.Errorf("default APIPort = %q, want %q", cfg.APIPort, "8080")
+	// Variante 2 : variables optionnelles présentes mais à "" — empty est
+	// traité comme absent (post-process), les défauts sont appliqués.
+	t.Run("empty string", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("API_PORT", "")
+		t.Setenv("GO_ENV", "")
+		t.Setenv("DB_HOST", "")
+		t.Setenv("DB_PORT", "")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		assertDefaults(t, cfg)
+	})
+}
+
+// assertDefaults vérifie qu'une config a bien reçu les valeurs par défaut
+// pour les champs optionnels (GoEnv, APIPort, DBHost, DBPort).
+func assertDefaults(t *testing.T, cfg *Config) {
+	t.Helper()
+	if cfg.APIPort != defaultAPIPort {
+		t.Errorf("default APIPort = %q, want %q", cfg.APIPort, defaultAPIPort)
 	}
-	if cfg.GoEnv != "development" {
-		t.Errorf("default GoEnv = %q, want %q", cfg.GoEnv, "development")
+	if cfg.GoEnv != defaultGoEnv {
+		t.Errorf("default GoEnv = %q, want %q", cfg.GoEnv, defaultGoEnv)
 	}
-	if cfg.DBHost != "localhost" {
-		t.Errorf("default DBHost = %q, want %q", cfg.DBHost, "localhost")
+	if cfg.DBHost != defaultDBHost {
+		t.Errorf("default DBHost = %q, want %q", cfg.DBHost, defaultDBHost)
+	}
+	if cfg.DBPort != defaultDBPort {
+		t.Errorf("default DBPort = %q, want %q", cfg.DBPort, defaultDBPort)
 	}
 }
 
