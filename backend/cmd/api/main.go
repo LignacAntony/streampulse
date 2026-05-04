@@ -5,9 +5,16 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/LignacAntony/streampulse/internal/config"
 )
 
 func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -23,13 +30,13 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         cfg.HTTPAddr(),
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
-	log.Println("API StreamPulse démarrée sur :8080")
+	log.Printf("API StreamPulse démarrée sur %s (env=%s)", cfg.HTTPAddr(), cfg.GoEnv)
 	log.Fatal(srv.ListenAndServe())
 }
