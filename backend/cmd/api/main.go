@@ -1,13 +1,46 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
+	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
+	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+func run() error {
+	ctx := context.Background()
+
+	// 1. Appliquer les migrations
+	migrator.Run()
+
+	// 2. Seed uniquement en développement
+	if os.Getenv("GO_ENV") == "development" {
+		conn := database.Connect(ctx)
+		defer func() {
+			if err := conn.Close(ctx); err != nil {
+				log.Printf("db close: %v", err)
+			}
+		}()
+
+		if err := seeder.Run(ctx, conn); err != nil {
+			return fmt.Errorf("seed: %w", err)
+		}
+	}
+
+	// 3. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -31,5 +64,9 @@ func main() {
 	}
 
 	log.Println("API StreamPulse démarrée sur :8080")
-	log.Fatal(srv.ListenAndServe())
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("serveur http: %w", err)
+	}
+
+	return nil
 }
