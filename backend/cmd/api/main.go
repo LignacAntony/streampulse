@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +15,12 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+func run() error {
 	ctx := context.Background()
 
 	// 1. Appliquer les migrations
@@ -27,7 +34,10 @@ func main() {
 				log.Printf("db close: %v", err)
 			}
 		}()
-		seeder.Run(ctx, conn)
+
+		if err := seeder.Run(ctx, conn); err != nil {
+			return fmt.Errorf("seed: %w", err)
+		}
 	}
 
 	// 3. Démarrer le serveur HTTP
@@ -54,5 +64,9 @@ func main() {
 	}
 
 	log.Println("API StreamPulse démarrée sur :8080")
-	log.Fatal(srv.ListenAndServe())
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("serveur http: %w", err)
+	}
+
+	return nil
 }
