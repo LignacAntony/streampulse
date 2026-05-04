@@ -2,6 +2,7 @@ package seeder
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/jackc/pgx/v5"
@@ -15,7 +16,7 @@ type userSeed struct {
 	role     string
 }
 
-func seedUsers(ctx context.Context, conn *pgx.Conn) {
+func seedUsers(ctx context.Context, tx pgx.Tx) error {
 	log.Println("seed users...")
 
 	users := []userSeed{
@@ -28,18 +29,20 @@ func seedUsers(ctx context.Context, conn *pgx.Conn) {
 	for _, u := range users {
 		hash, err := bcrypt.GenerateFromPassword([]byte(u.password), 12)
 		if err != nil {
-			log.Fatalf("bcrypt %s: %v", u.email, err)
+			return fmt.Errorf("bcrypt %s: %w", u.email, err)
 		}
 
-		_, err = conn.Exec(ctx, `
+		_, err = tx.Exec(ctx, `
 			INSERT INTO users (email, username, password_hash, role)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (email) DO NOTHING
 		`, u.email, u.username, string(hash), u.role)
 		if err != nil {
-			log.Fatalf("insert user %s: %v", u.email, err)
+			return fmt.Errorf("insert user %s: %w", u.email, err)
 		}
 
 		log.Printf("  ✓ user %s (%s)", u.username, u.role)
 	}
+
+	return nil
 }

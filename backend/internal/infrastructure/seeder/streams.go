@@ -2,21 +2,22 @@ package seeder
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/jackc/pgx/v5"
 )
 
-func seedStreams(ctx context.Context, conn *pgx.Conn) {
+func seedStreams(ctx context.Context, tx pgx.Tx) error {
 	log.Println("seed streams...")
 
 	var broadcasterID string
-	err := conn.QueryRow(ctx,
+	err := tx.QueryRow(ctx,
 		"SELECT id FROM users WHERE email = $1",
 		"broadcaster@streampulse.dev",
 	).Scan(&broadcasterID)
 	if err != nil {
-		log.Fatalf("récupération broadcaster: %v", err)
+		return fmt.Errorf("récupération broadcaster: %w", err)
 	}
 
 	streams := []struct {
@@ -30,14 +31,16 @@ func seedStreams(ctx context.Context, conn *pgx.Conn) {
 	}
 
 	for _, s := range streams {
-		_, err = conn.Exec(ctx, `
+		_, err = tx.Exec(ctx, `
 			INSERT INTO streams (user_id, title, category, status, is_public)
 			VALUES ($1, $2, $3, $4, true)
 			ON CONFLICT DO NOTHING
 		`, broadcasterID, s.title, s.category, s.status)
 		if err != nil {
-			log.Fatalf("insert stream %s: %v", s.title, err)
+			return fmt.Errorf("insert stream %s: %w", s.title, err)
 		}
 		log.Printf("  ✓ stream \"%s\" (%s)", s.title, s.status)
 	}
+
+	return nil
 }
