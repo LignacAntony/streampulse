@@ -1,26 +1,27 @@
+version: "2"
+
 run:
   timeout: 5m
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - unused
+  exclusions:
+    paths:
+      - vendor/
+      - ".*\\.pb\\.go$"
+      - ".*\\.gen\\.go$"
+
+formatters:
+  enable:
     - gofmt
     - goimports
-
-issues:
-  exclude-rules:
-    - path: vendor/
-      linters:
-        - all
-    - path: ".*\\.pb\\.go$"
-      linters:
-        - all
-    - path: ".*\\.gen\\.go$"
-      linters:
-        - all
+  exclusions:
+    paths:
+      - vendor/
+      - ".*\\.pb\\.go$"
+      - ".*\\.gen\\.go$"
