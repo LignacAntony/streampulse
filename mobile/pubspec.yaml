@@ -31,6 +31,9 @@ dependencies:
   # WebSocket (chat live)
   web_socket_channel: ^3.0.1
 
+  # Typographie
+  google_fonts: ^6.2.1
+
   # Utilitaires
   equatable: ^2.0.5
   freezed_annotation: ^2.4.1

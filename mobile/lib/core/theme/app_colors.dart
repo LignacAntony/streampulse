@@ -1,22 +1,37 @@
 import 'package:flutter/material.dart';
 
-// Palette inspirée du streaming audio : tons sombres, accent violet-bleu.
+// Palette exacte extraite de la charte graphique StreamPulse High-Fidelity.
 class AppColors {
   AppColors._();
 
-  static const Color primary = Color(0xFF7C3AED); // Violet profond
-  static const Color secondary = Color(0xFF3B82F6); // Bleu électrique
-  static const Color background = Color(0xFF0F0F0F); // Noir quasi-total
-  static const Color surface = Color(0xFF1A1A2E); // Surface sombre bleutée
-  static const Color error = Color(0xFFEF4444); // Rouge erreur
+  // ── Couleurs de marque ──────────────────────────────────────────────────────
+  static const Color primary = Color(0xFF6C5CE7); // Violet principal
+  static const Color secondary = Color(0xFF00CEC9); // Teal secondaire
+  static const Color tertiary = Color(0xFF00B894); // Vert-teal tertiaire
+  static const Color error = Color(0xFFFF7675); // Rouge/corail erreur
 
+  // ── Dark mode ───────────────────────────────────────────────────────────────
+  // Valeurs extraites pixel par pixel de la charte (Neutral #0D0F14)
+  static const Color darkBackground = Color(0xFF0D0F14);
+  static const Color darkSurface = Color(0xFF181A23); // Cards légèrement plus claires
+  static const Color darkSurfaceVariant = Color(0xFF1F2130); // Hover states, inputs
+  static const Color darkOutline = Color(0xFF2E3045);
+  static const Color darkOnBackground = Color(0xFFF0F0F5); // Texte principal (quasi-blanc)
+  static const Color darkOnSurface = Color(0xFFE2E3EE); // Texte sur cards
+  static const Color darkOnSurfaceMuted = Color(0xFF8B8FA8); // Texte secondaire/placeholder
+
+  // ── Light mode ──────────────────────────────────────────────────────────────
+  static const Color lightBackground = Color(0xFFF5F5F7); // Gris Apple ultra-doux
+  static const Color lightSurface = Color(0xFFFFFFFF); // Cards blanches
+  static const Color lightSurfaceVariant = Color(0xFFEEEEF2); // Hover, inputs
+  static const Color lightOutline = Color(0xFFD1D1DB);
+  static const Color lightOnBackground = Color(0xFF0D0F14); // Texte quasi-noir
+  static const Color lightOnSurface = Color(0xFF1A1B2E); // Texte sur cards
+  static const Color lightOnSurfaceMuted = Color(0xFF6B6E82); // Texte secondaire
+
+  // ── Partagés dark/light ─────────────────────────────────────────────────────
   static const Color onPrimary = Color(0xFFFFFFFF);
-  static const Color onSecondary = Color(0xFFFFFFFF);
-  static const Color onBackground = Color(0xFFF1F5F9);
-  static const Color onSurface = Color(0xFFE2E8F0);
+  static const Color onSecondary = Color(0xFF0D0F14); // Texte foncé sur teal clair
+  static const Color onTertiary = Color(0xFF0D0F14);
   static const Color onError = Color(0xFFFFFFFF);
-
-  // Nuances supplémentaires
-  static const Color surfaceVariant = Color(0xFF252540);
-  static const Color outline = Color(0xFF3F3F5F);
 }
