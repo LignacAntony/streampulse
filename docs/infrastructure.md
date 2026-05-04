@@ -26,18 +26,56 @@ les procédures opérationnelles et le troubleshooting.
 
 ## Variables d'environnement
 
+Le projet suit la méthodologie [**12-Factor App**](https://12factor.net/fr/config) : toute la
+configuration est externalisée via variables d'environnement. **Aucune valeur n'est codée en dur**
+dans le code source — un workflow CI ([`check-hardcoded.yml`](../.github/workflows/check-hardcoded.yml))
+le vérifie automatiquement à chaque PR.
+
 Toutes les variables sont définies dans `.env` (copié depuis `.env.example`).
 Aucune valeur secrète ne doit être committée dans le dépôt.
 
+### Variables consommées par les conteneurs
+
+| Variable | Service | Description | Valeur par défaut | Obligatoire |
+|---|---|---|---|---|
+| `POSTGRES_USER` | postgres | Utilisateur PostgreSQL (init du volume) | `streampulse` | Oui |
+| `POSTGRES_PASSWORD` | postgres | Mot de passe PostgreSQL (init du volume) | `changeme` | **Oui — à changer** |
+| `POSTGRES_DB` | postgres | Nom de la base de données (init du volume) | `streampulse_db` | Oui |
+| `GRAFANA_ADMIN_PASSWORD` | grafana | Mot de passe admin Grafana | `changeme` | **Oui — à changer** |
+| `API_PORT` | api / hôte | Port exposé de l'API Go sur l'hôte | `8080` | Non |
+
+### Variables consommées par l'API Go
+
+Lues par le package [`backend/internal/config`](../backend/internal/config) via Viper.
+Validation **fail-fast** au démarrage : variables requises manquantes ou `JWT_SECRET` < 32
+caractères → l'API refuse de démarrer.
+
 | Variable | Description | Valeur par défaut | Obligatoire |
 |---|---|---|---|
-| `POSTGRES_USER` | Nom de l'utilisateur PostgreSQL | `streampulse` | Oui |
-| `POSTGRES_PASSWORD` | Mot de passe PostgreSQL | `changeme` | **Oui — à changer** |
-| `POSTGRES_DB` | Nom de la base de données | `streampulse_db` | Oui |
-| `GRAFANA_ADMIN_PASSWORD` | Mot de passe admin Grafana | `changeme` | **Oui — à changer** |
-| `API_PORT` | Port exposé de l'API Go sur l'hôte | `8080` | Non |
-| `GO_ENV` | Environnement Go (`development` / `production`) | `development` | Non |
-| `JWT_SECRET` | Clé secrète pour la signature des tokens JWT | `change-this-to-a-long-random-secret` | **Oui — à changer** |
+| `GO_ENV` | Environnement (`development` / `production` / `test`) | `development` | Non |
+| `API_PORT` | Port d'écoute HTTP de l'API | `8080` | Non |
+| `JWT_SECRET` | Clé de signature des JWT — **min. 32 caractères** | — | **Oui** |
+| `DB_HOST` | Hôte PostgreSQL (`postgres` en compose, `localhost` en dev natif) | `localhost` | Non |
+| `DB_PORT` | Port PostgreSQL | `5432` | Non |
+| `DB_USER` | Utilisateur PostgreSQL | — | **Oui** |
+| `DB_PASSWORD` | Mot de passe PostgreSQL | — | **Oui** |
+| `DB_NAME` | Nom de la base PostgreSQL | — | **Oui** |
+
+> **Note :** en compose, le service `api` reçoit `DB_HOST=postgres` (nom du service Docker),
+> tandis qu'en dev natif (hors compose) `DB_HOST=localhost`. Les deux cas sont couverts par
+> le `.env.example` racine.
+
+### Génération des secrets
+
+```bash
+# JWT_SECRET (≥ 32 caractères, recommandé 64)
+openssl rand -hex 32
+
+# Mots de passe forts
+openssl rand -base64 24
+```
+
+Voir aussi : [ADR 004 — Configuration 12-Factor App via Viper](./adr/004-config-12-factor-viper.md).
 
 ---
 

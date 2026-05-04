@@ -7,6 +7,7 @@ Merci de prendre le temps de lire ce guide avant d'ouvrir une PR.
 - [Workflow de branches](#workflow-de-branches)
 - [Conventions de commit](#conventions-de-commit)
 - [Pull Requests](#pull-requests)
+- [Configuration & secrets](#configuration--secrets)
 - [Signature des commits](#signature-des-commits)
 
 ---
@@ -131,6 +132,7 @@ Refs: STR-12
 - [ ] Les commits suivent Conventional Commits.
 - [ ] Les tests passent localement.
 - [ ] Pas de fichier sensible (`.env`, clés, secrets) committé.
+- [ ] Aucune valeur de configuration codée en dur (voir [Configuration & secrets](#configuration--secrets)).
 
 ### Titre de PR
 
@@ -156,6 +158,45 @@ Utiliser le template `.github/pull_request_template.md` (créé automatiquement 
 - 1 approbation minimum requise (enforced par ruleset).
 - Pas de force-push après review (sauf rebase sur `develop` à jour).
 - Préférer le **squash & merge** pour garder un historique linéaire sur `develop`.
+
+---
+
+## Configuration & secrets
+
+Le projet suit la méthodologie [**12-Factor App**](https://12factor.net/fr/config). Toute la
+configuration est externalisée via variables d'environnement — **aucune valeur ne doit être
+codée en dur** dans le code.
+
+### Règles
+
+| À faire ✅ | À NE PAS faire ❌ |
+|---|---|
+| Ajouter une variable au [`backend/internal/config`](./backend/internal/config) | Lire `os.Getenv` directement dans la business logic |
+| Documenter la variable dans `.env.example` + `docs/infrastructure.md` | Coller un port (`":8080"`), un host (`"localhost"`) ou une URL en dur |
+| Utiliser `cfg.HTTPAddr()`, `cfg.DBDSN()`, `cfg.IsDev()` | Stocker `JWT_SECRET = "abc..."` dans un fichier source |
+| Générer les secrets via `openssl rand -hex 32` | Committer `.env` (le `.gitignore` le bloque déjà) |
+
+### Workflows CI qui appliquent ces règles
+
+- [**check-hardcoded.yml**](.github/workflows/check-hardcoded.yml) — grep ciblé sur `backend/`
+  hors tests : ports littéraux, DSN Postgres avec credentials, secrets assignés en dur.
+- **gitleaks** (même workflow) — scan global du diff pour les patterns de secrets.
+- [**security.yml**](.github/workflows/security.yml) — `gosec` détecte également les
+  credentials littéraux et les usages risqués.
+
+Si l'un de ces jobs échoue sur ta PR, **lis l'erreur** : elle pointe le fichier et la ligne.
+Déplace la valeur dans `.env.example` + le package `config`, puis lis-la via `cfg.XXX()`.
+
+### Ajouter une nouvelle variable d'environnement
+
+1. Ajouter le champ dans la struct `Config` (`backend/internal/config/config.go`) avec le tag `mapstructure`.
+2. Ajouter le `BindEnv` correspondant dans `Load()`.
+3. Définir un `SetDefault` si pertinent, ou compléter la validation `validate()` si la variable est requise.
+4. Documenter dans `.env.example` (avec un commentaire et une valeur d'exemple non-secrète).
+5. Mettre à jour la table dans [`docs/infrastructure.md`](./docs/infrastructure.md#variables-denvironnement).
+6. Si la variable est consommée par un conteneur Docker, la propager dans `docker-compose.yml`.
+
+Voir l'[ADR 004](./docs/adr/004-config-12-factor-viper.md) pour les détails de l'implémentation.
 
 ---
 
