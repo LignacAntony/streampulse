@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
+	"github.com/LignacAntony/streampulse/internal/config"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
@@ -23,11 +23,16 @@ func main() {
 func run() error {
 	ctx := context.Background()
 
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+
 	// 1. Appliquer les migrations
 	migrator.Run()
 
 	// 2. Seed uniquement en développement
-	if os.Getenv("GO_ENV") == "development" {
+	if cfg.IsDev() {
 		conn := database.Connect(ctx)
 		defer func() {
 			if err := conn.Close(ctx); err != nil {
@@ -56,14 +61,14 @@ func run() error {
 	})
 
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         cfg.HTTPAddr(),
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
-	log.Println("API StreamPulse démarrée sur :8080")
+	log.Printf("API StreamPulse démarrée sur %s (env=%s)", cfg.HTTPAddr(), cfg.GoEnv)
 	if err := srv.ListenAndServe(); err != nil {
 		return fmt.Errorf("serveur http: %w", err)
 	}
