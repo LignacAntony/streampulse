@@ -98,7 +98,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pair, err := h.authenticator.Login(r.Context(), LoginInput{Email: req.Email, Password: req.Password})
+	pair, err := h.authenticator.Login(r.Context(), LoginInput(req))
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
@@ -127,7 +127,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pair, err := h.refresher.Refresh(r.Context(), RefreshInput{RefreshToken: req.RefreshToken})
+	pair, err := h.refresher.Refresh(r.Context(), RefreshInput(req))
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
