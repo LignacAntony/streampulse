@@ -14,6 +14,8 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 4. [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) — Décision d'architecture : conteneurisation avec Docker Compose.
 5. [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) — Décision d'architecture : pipeline CI/CD avec GitHub Actions et GHCR.
 6. [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) — Décision d'architecture : Clean Architecture + Riverpod pour l'application mobile Flutter.
+7. [adr/006-authentification-jwt.md](adr/006-authentification-jwt.md) — Décision d'architecture : authentification JWT (access token + refresh token avec rotation).
+8. [adr/007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) — Décision d'architecture : accès base de données via sqlc (SQL → Go typé).
 
 ---
 
@@ -28,6 +30,8 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) | ADR 003 — Pipeline CI/CD avec GitHub Actions et GHCR |
 | [adr/004-config-12-factor-viper.md](adr/004-config-12-factor-viper.md) | ADR 004 — Configuration 12-Factor App avec Viper |
 | [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) | ADR 005 — Architecture Flutter : Clean Architecture + Riverpod |
+| [adr/006-authentification-jwt.md](adr/006-authentification-jwt.md) | ADR 006 — Authentification JWT : access token + refresh token avec rotation |
+| [adr/007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) | ADR 007 — Accès base de données : sqlc (SQL → Go typé) |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
@@ -38,7 +42,7 @@ Les ADR documentent toutes les décisions d'architecture significatives du proje
 Chaque décision est tracée avec son contexte, les alternatives considérées et les conséquences.
 
 **Convention :** toute nouvelle décision d'architecture → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `006-...`).
+avec le numéro suivant (prochain : `008-...`).
 
 Format utilisé : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) (Michael Nygard).
 
