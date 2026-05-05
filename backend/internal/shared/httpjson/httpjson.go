@@ -57,7 +57,11 @@ func Decode(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64) err
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("http: close request body: %v", err)
+		}
+	}()
 
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()

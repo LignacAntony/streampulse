@@ -47,11 +47,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.svc.Register(r.Context(), RegisterInput{
-		Email:    req.Email,
-		Username: req.Username,
-		Password: req.Password,
-	})
+	user, err := h.svc.Register(r.Context(), RegisterInput(req))
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
