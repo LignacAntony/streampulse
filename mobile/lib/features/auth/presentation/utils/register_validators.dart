@@ -1,6 +1,6 @@
 // Validateurs purs pour le formulaire d'inscription.
 //
-// Reproduisent les règles du backend (cf. STR-34/STR-35) afin que :
+// Reproduisent les règles du backend afin que :
 //   - l'utilisateur reçoive un retour immédiat sans aller-retour HTTP,
 //   - les erreurs serveur (400 / 409) restent rares, gérées séparément.
 //

@@ -7,10 +7,9 @@ import '../../../../core/errors/exceptions.dart';
 import '../providers/register_controller.dart';
 import '../utils/register_validators.dart';
 
-/// Écran d'inscription — STR-36.
-///
+/// Écran d'inscription
 /// Pose les champs email / pseudo / mot de passe avec validation locale
-/// (miroir du backend STR-34) et délègue la création du compte au
+/// et délègue la création du compte au
 /// `registerControllerProvider`.
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -176,8 +175,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           onPressed: isLoading
                               ? null
                               : () => setState(
-                                    () =>
-                                        _obscurePassword = !_obscurePassword,
+                                    () => _obscurePassword = !_obscurePassword,
                                   ),
                         ),
                       ),
