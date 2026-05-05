@@ -1,0 +1,3 @@
+# Configuration des icônes de l'application — à compléter lors de la phase UI.
+# Installer flutter_launcher_icons en dev_dependencies puis exécuter :
+#   flutter pub run flutter_launcher_icons

@@ -27,7 +27,7 @@
 | Couche | Technologie |
 | --- | --- |
 | Backend / API | **Go** |
-| Application | **Flutter** (iOS, Android, Web) |
+| Application | **Flutter** (iOS, Android) |
 | Conteneurisation | **Docker** + Docker Compose |
 | CI/CD | GitHub Actions |
 | Gestion projet | Linear ([projet StreamPulse](https://linear.app/streampulse)) |
@@ -37,13 +37,11 @@
 ```
 streampulse/
 ├── backend/         # API Go
-├── app/             # Application Flutter
-├── docker/          # Dockerfiles & compose
+├── mobile/          # Application Flutter (iOS + Android)
+├── docker/          # Configs Docker (prometheus, grafana, loki, tempo)
 ├── docs/            # Documentation technique
 └── .github/         # Workflows CI/CD & templates
 ```
-
-> Cette arborescence sera créée au fur et à mesure des prochaines tâches.
 
 ## Prérequis
 
@@ -70,7 +68,7 @@ docker compose up -d
 cd backend && go run ./cmd/api
 
 # 5. (App) Lancer l'app Flutter
-cd app && flutter run  # à venir
+cd mobile && flutter run
 ```
 
 ## Variables d'environnement
@@ -153,7 +151,7 @@ Exemples :
 
 ```
 feat(api): ajouter l'endpoint /streams
-fix(app): corriger le crash au lancement sur Android 14
+fix(mobile): corriger le crash au lancement sur Android 14
 docs(readme): documenter le workflow Git
 ```
 
