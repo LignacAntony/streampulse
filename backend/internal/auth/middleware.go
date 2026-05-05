@@ -16,20 +16,16 @@ const (
 	contextKeyRole
 )
 
-// UserIDFromContext retourne l'ID de l'utilisateur authentifié depuis le contexte.
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(contextKeyUserID).(string)
 	return v, ok
 }
 
-// RoleFromContext retourne le rôle de l'utilisateur authentifié depuis le contexte.
 func RoleFromContext(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(contextKeyRole).(string)
 	return v, ok
 }
 
-// RequireAuth valide le JWT Bearer et injecte userID + role dans le contexte.
-// Retourne 401 et n'appelle pas next si le token est absent ou invalide.
 func RequireAuth(jwtSecret string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenStr, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -50,8 +46,7 @@ func RequireAuth(jwtSecret string, next http.Handler) http.Handler {
 	})
 }
 
-// RequireRole vérifie que le rôle stocké dans le contexte atteint le niveau requis.
-// Doit être chaîné après RequireAuth.
+// RequireRole doit être chaîné après RequireAuth.
 func RequireRole(required string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		role, ok := RoleFromContext(r.Context())
@@ -67,7 +62,6 @@ func RequireRole(required string, next http.Handler) http.Handler {
 	})
 }
 
-// hasRole implémente une hiérarchie simple : admin > broadcaster > user > anonymous.
 func hasRole(userRole, required string) bool {
 	rank := map[string]int{
 		"anonymous":   0,

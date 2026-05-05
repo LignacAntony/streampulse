@@ -17,14 +17,12 @@ const (
 	refreshTokenBytes    = 32
 )
 
-// AccessTokenClaims are the JWT claims embedded in every access token.
 type AccessTokenClaims struct {
 	UserID string `json:"sub"`
 	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-// GenerateAccessToken signs a JWT with HS256 and returns the compact string.
 func GenerateAccessToken(userID, role, secret string, now time.Time) (string, error) {
 	claims := AccessTokenClaims{
 		UserID: userID,
@@ -42,8 +40,7 @@ func GenerateAccessToken(userID, role, secret string, now time.Time) (string, er
 	return signed, nil
 }
 
-// ParseAccessToken validates the token string and returns the claims.
-// Returns apperror.Unauthorized on any validation failure.
+// ParseAccessToken retourne apperror.Unauthorized sur toute erreur de validation.
 func ParseAccessToken(tokenStr, secret string) (AccessTokenClaims, error) {
 	var claims AccessTokenClaims
 	tok, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
@@ -58,8 +55,6 @@ func ParseAccessToken(tokenStr, secret string) (AccessTokenClaims, error) {
 	return claims, nil
 }
 
-// GenerateRefreshToken returns a cryptographically random opaque token string
-// and its SHA-256 hex hash for DB storage.
 func GenerateRefreshToken() (raw string, hash string, err error) {
 	b := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(b); err != nil {

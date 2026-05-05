@@ -14,13 +14,11 @@ import (
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
-// pgRepository persiste les données auth via un *pgxpool.Pool partagé.
 type pgRepository struct {
 	pool *pgxpool.Pool
 	q    *authdb.Queries
 }
 
-// NewRepository construit un Repository basé sur PostgreSQL.
 func NewRepository(pool *pgxpool.Pool) Repository {
 	return &pgRepository{pool: pool, q: authdb.New(pool)}
 }
@@ -94,8 +92,7 @@ func (r *pgRepository) GetUserByRefreshToken(ctx context.Context, tokenHash stri
 	}, nil
 }
 
-// RotateRefreshToken supprime l'ancien token et insère le nouveau de façon atomique.
-// WithTx permet d'utiliser les mêmes queries générées dans la transaction.
+// RotateRefreshToken : WithTx permet d'utiliser les mêmes queries générées dans la transaction.
 func (r *pgRepository) RotateRefreshToken(ctx context.Context, oldHash, newHash, userID string, expiresAt time.Time) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -134,14 +131,12 @@ func (r *pgRepository) RevokeRefreshToken(ctx context.Context, tokenHash string)
 	return nil
 }
 
-// uuidParam convertit un string UUID en pgtype.UUID pour les paramètres sqlc.
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	_ = u.Scan(s)
 	return u
 }
 
-// isUniqueViolation détecte la violation de contrainte UNIQUE PostgreSQL (code 23505).
 func isUniqueViolation(err error) bool {
 	var pgErr interface{ SQLState() string }
 	if errors.As(err, &pgErr) {

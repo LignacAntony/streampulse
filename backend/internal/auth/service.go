@@ -20,39 +20,34 @@ const (
 	// tronque silencieusement les mots de passe trop longs.
 	MaxPasswordLen = 72
 	// BcryptCost est le coût exigé par STR-35 (≥ 12).
-	BcryptCost = 12
-	// MinUsernameLen et MaxUsernameLen bornent le pseudonyme.
+	BcryptCost     = 12
 	MinUsernameLen = 3
 	MaxUsernameLen = 30
 )
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
-// RegisterInput est la commande métier d'inscription, déjà parsée depuis HTTP.
 type RegisterInput struct {
 	Email    string
 	Username string
 	Password string
 }
 
-// LoginInput est la commande métier de connexion.
 type LoginInput struct {
 	Email    string
 	Password string
 }
 
-// RefreshInput transporte le refresh token brut envoyé par le client.
 type RefreshInput struct {
 	RefreshToken string
 }
 
-// TokenPair regroupe l'access token et le refresh token retournés au client.
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
-// User est la représentation publique d'un compte créé.
+// User est la représentation publique d'un compte.
 // password_hash n'est jamais exposé.
 type User struct {
 	ID        string    `json:"id"`
@@ -62,15 +57,13 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// UserWithHash est une projection interne utilisée uniquement lors du login.
+// UserWithHash est une projection interne.
 // Elle n'est jamais sérialisée en JSON.
 type UserWithHash struct {
 	User
 	PasswordHash string
 }
 
-// Repository définit les opérations de persistance attendues par le service.
-// L'interface permet de mocker le stockage dans les tests unitaires.
 type Repository interface {
 	CreateUser(ctx context.Context, email, username, passwordHash string) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (UserWithHash, error)
@@ -80,18 +73,15 @@ type Repository interface {
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 }
 
-// Service orchestre la validation, le hachage bcrypt et la persistence.
 type Service struct {
 	repo      Repository
 	jwtSecret string
 }
 
-// NewService construit un service d'authentification.
 func NewService(repo Repository, jwtSecret string) *Service {
 	return &Service{repo: repo, jwtSecret: jwtSecret}
 }
 
-// Register valide les entrées, hache le mot de passe et crée l'utilisateur.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) {
 	email, err := normalizeEmail(in.Email)
 	if err != nil {
@@ -115,7 +105,6 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) 
 	return s.repo.CreateUser(ctx, email, username, string(hash))
 }
 
-// Login vérifie les identifiants et retourne une paire de tokens JWT.
 func (s *Service) Login(ctx context.Context, in LoginInput) (TokenPair, error) {
 	email, err := normalizeEmail(in.Email)
 	if err != nil {
@@ -149,7 +138,6 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (TokenPair, error) {
 	return TokenPair{AccessToken: accessToken, RefreshToken: rawRefresh}, nil
 }
 
-// Refresh valide un refresh token, le fait tourner et retourne une nouvelle paire.
 func (s *Service) Refresh(ctx context.Context, in RefreshInput) (TokenPair, error) {
 	oldHash := hashToken(in.RefreshToken)
 

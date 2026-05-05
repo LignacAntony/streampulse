@@ -15,7 +15,6 @@ const (
 	maxRefreshBodyBytes  = 1 << 20
 )
 
-// registerRequest correspond au contrat JSON de POST /api/auth/register.
 type registerRequest struct {
 	Email    string `json:"email"`
 	Username string `json:"username"`
@@ -31,36 +30,28 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// Registrar est le sous-ensemble du Service utilisé par le handler d'inscription.
-// Permet de l'isoler dans les tests via un mock léger.
 type Registrar interface {
 	Register(ctx context.Context, in RegisterInput) (User, error)
 }
 
-// Authenticator est le sous-ensemble du Service utilisé par le handler de login.
 type Authenticator interface {
 	Login(ctx context.Context, in LoginInput) (TokenPair, error)
 }
 
-// TokenRefresher est le sous-ensemble du Service utilisé par le handler de refresh.
 type TokenRefresher interface {
 	Refresh(ctx context.Context, in RefreshInput) (TokenPair, error)
 }
 
-// Handler expose les endpoints HTTP d'authentification.
-// Chaque champ est une interface étroite (ISP) : les tests ne stubbent que ce dont ils ont besoin.
 type Handler struct {
 	svc           Registrar
 	authenticator Authenticator
 	refresher     TokenRefresher
 }
 
-// NewHandler construit un handler d'authentification.
 func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher) *Handler {
 	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher}
 }
 
-// Register implémente POST /api/auth/register.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
