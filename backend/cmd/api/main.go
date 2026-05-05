@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/config"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
@@ -31,21 +32,33 @@ func run() error {
 	// 1. Appliquer les migrations
 	migrator.Run()
 
-	// 2. Seed uniquement en développement
+	// 2. Seed uniquement en développement (connexion simple, one-shot)
 	if cfg.IsDev() {
 		conn := database.Connect(ctx)
-		defer func() {
-			if err := conn.Close(ctx); err != nil {
-				log.Printf("db close: %v", err)
-			}
-		}()
-
 		if err := seeder.Run(ctx, conn); err != nil {
+			if cerr := conn.Close(ctx); cerr != nil {
+				log.Printf("db close: %v", cerr)
+			}
 			return fmt.Errorf("seed: %w", err)
+		}
+		if cerr := conn.Close(ctx); cerr != nil {
+			log.Printf("db close: %v", cerr)
 		}
 	}
 
-	// 3. Démarrer le serveur HTTP
+	// 3. Pool partagé pour les handlers HTTP
+	pool, err := database.NewPool(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("db pool: %w", err)
+	}
+	defer pool.Close()
+
+	// 4. Composition des dépendances métier
+	authRepo := auth.NewRepository(pool)
+	authSvc := auth.NewService(authRepo)
+	authHandler := auth.NewHandler(authSvc)
+
+	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +72,8 @@ func run() error {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		w.WriteHeader(http.StatusOK)
 	})
+
+	mux.HandleFunc("/api/auth/register", authHandler.Register)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
