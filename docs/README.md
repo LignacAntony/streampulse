@@ -13,6 +13,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 3. [adr/001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) — Décision d'architecture : stack d'observabilité LGTM (Loki, Grafana, Tempo, Prometheus).
 4. [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) — Décision d'architecture : conteneurisation avec Docker Compose.
 5. [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) — Décision d'architecture : pipeline CI/CD avec GitHub Actions et GHCR.
+6. [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) — Décision d'architecture : Clean Architecture + Riverpod pour l'application mobile Flutter.
 
 ---
 
@@ -25,6 +26,8 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [adr/001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) | ADR 001 — Choix de la stack LGTM pour l'observabilité |
 | [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) | ADR 002 — Conteneurisation avec Docker Compose |
 | [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) | ADR 003 — Pipeline CI/CD avec GitHub Actions et GHCR |
+| [adr/004-config-12-factor-viper.md](adr/004-config-12-factor-viper.md) | ADR 004 — Configuration 12-Factor App avec Viper |
+| [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) | ADR 005 — Architecture Flutter : Clean Architecture + Riverpod |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
@@ -35,7 +38,7 @@ Les ADR documentent toutes les décisions d'architecture significatives du proje
 Chaque décision est tracée avec son contexte, les alternatives considérées et les conséquences.
 
 **Convention :** toute nouvelle décision d'architecture → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (ex : `003-choix-orm-go.md`).
+avec le numéro suivant (prochain : `006-...`).
 
 Format utilisé : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) (Michael Nygard).
 
