@@ -12,11 +12,6 @@ import '../widgets/oauth_buttons.dart';
 import '../widgets/password_strength_indicator.dart';
 import '../widgets/terms_checkbox.dart';
 
-/// Écran d'inscription — STR-36.
-///
-/// Branding + onglets Connexion/Inscription, formulaire 4 champs
-/// (pseudo, email, mot de passe + force, confirmation), checkbox CGU,
-/// CTA `Créer mon compte`, lien vers /login et OAuth visuel.
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
 
@@ -121,7 +116,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   const SizedBox(height: 24),
                   Form(
                     key: _formKey,
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -135,6 +129,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             autofillHints: const [AutofillHints.newUsername],
                             textInputAction: TextInputAction.next,
                             autocorrect: false,
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             decoration: const InputDecoration(
                               hintText: 'votre_pseudo',
                             ),
@@ -152,6 +147,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             autofillHints: const [AutofillHints.email],
                             textInputAction: TextInputAction.next,
                             autocorrect: false,
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             decoration: const InputDecoration(
                               hintText: 'contact@exemple.com',
                             ),
@@ -168,6 +164,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             obscureText: _obscurePassword,
                             autofillHints: const [AutofillHints.newPassword],
                             textInputAction: TextInputAction.next,
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             decoration: InputDecoration(
                               hintText: '••••••••',
                               suffixIcon: _PasswordToggle(
@@ -201,6 +198,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             obscureText: _obscureConfirmPassword,
                             autofillHints: const [AutofillHints.newPassword],
                             textInputAction: TextInputAction.done,
+                            autovalidateMode: AutovalidateMode.onUserInteraction,
                             onFieldSubmitted: (_) => _submit(),
                             decoration: InputDecoration(
                               hintText: '••••••••',

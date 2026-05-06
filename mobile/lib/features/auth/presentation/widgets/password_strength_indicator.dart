@@ -2,11 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../utils/register_validators.dart';
 
-/// Indicateur visuel de la force du mot de passe : 4 barres horizontales
-/// remplies progressivement et un libellé textuel.
-///
-/// Le calcul du score est délégué à `RegisterValidators.passwordStrength`
-/// pour que la logique reste testable sans widget.
 class PasswordStrengthIndicator extends StatelessWidget {
   const PasswordStrengthIndicator({super.key, required this.password});
 
@@ -74,14 +69,14 @@ class PasswordStrengthIndicator extends StatelessWidget {
     switch (score) {
       case 0:
       case 1:
-        return const Color(0xFFEF4444); // red-500
+        return const Color(0xFFEF4444);
       case 2:
-        return const Color(0xFFF59E0B); // amber-500
+        return const Color(0xFFF59E0B);
       case 3:
-        return const Color(0xFF10B981); // emerald-500
+        return const Color(0xFF10B981);
       case 4:
       default:
-        return const Color(0xFF34D399); // emerald-400
+        return const Color(0xFF34D399);
     }
   }
 }

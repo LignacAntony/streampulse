@@ -64,6 +64,104 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080
 
 ---
 
+## Configuration locale via `.env.json`
+
+Plutôt que de retaper `--dart-define=...` à chaque lancement, le projet utilise
+le mécanisme natif `--dart-define-from-file` (Flutter 3.7+).
+
+1. Copier le template :
+   ```bash
+   cp mobile/.env.example.json mobile/.env.json
+   ```
+2. Éditer `mobile/.env.json` selon le device cible :
+   ```json
+   { "API_BASE_URL": "http://localhost:8080" }
+   ```
+3. Lancer :
+   ```bash
+   flutter run --dart-define-from-file=.env.json
+   ```
+
+### Android Studio / IntelliJ
+
+`Run` → `Edit Configurations…` → champ **Additional run args** :
+
+```
+--dart-define-from-file=.env.json
+```
+
+Cocher **Store as project file** pour partager la config (`.run/main.dart.run.xml`).
+
+`mobile/.env.json` est gitignoré (par device, par dev).
+`mobile/.env.example.json` est versionné comme référence.
+
+---
+
+## Dev sur device Android physique branché en USB (recommandé)
+
+Cette méthode bypass complètement Wi-Fi et firewall : `adb` crée un tunnel
+USB de `localhost:8080` côté téléphone vers `localhost:8080` côté Mac.
+
+### Prérequis (à faire une fois)
+
+1. Activer le **mode développeur** sur le téléphone : Settings → À propos →
+   tapper 7× sur "Numéro de build".
+2. Activer **Débogage USB** : Settings → Options développeur → Débogage USB.
+3. Brancher le téléphone en USB et **autoriser le PC** dans le popup
+   "Autoriser le débogage USB ?".
+4. Ajouter `adb` au PATH (`~/.zshrc` ou `~/.bashrc`) :
+   ```bash
+   export ANDROID_HOME="$HOME/Library/Android/sdk"
+   export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"
+   ```
+   Puis `source ~/.zshrc`. Vérifier : `adb version`.
+
+### Lancement quotidien
+
+1. Démarrer le backend :
+   ```bash
+   cd /chemin/vers/streampulse
+   docker compose up -d
+   until curl -sf http://localhost:8080/health > /dev/null; do sleep 2; done
+   ```
+
+2. Vérifier le device :
+   ```bash
+   adb devices
+   # → R5CW21WXQ3K  device   (et pas "unauthorized")
+   ```
+
+3. Ouvrir le tunnel USB :
+   ```bash
+   adb reverse tcp:8080 tcp:8080
+   adb reverse --list   # doit afficher "UsbFfs tcp:8080 tcp:8080"
+   ```
+
+4. S'assurer que `mobile/.env.json` pointe vers `localhost` :
+   ```json
+   { "API_BASE_URL": "http://localhost:8080" }
+   ```
+
+5. Run depuis Android Studio (▶️) ou CLI :
+   ```bash
+   flutter run --dart-define-from-file=.env.json
+   ```
+
+### Pièges fréquents
+
+| Symptôme | Cause | Fix |
+|---|---|---|
+| `adb: command not found` | PATH | Ajouter `$ANDROID_HOME/platform-tools` au PATH |
+| `device unauthorized` | Popup pas validé | Re-brancher le câble, accepter "Autoriser ce PC" |
+| `No route to host` | Pas de tunnel | Re-run `adb reverse tcp:8080 tcp:8080` après chaque replug |
+| `Cleartext HTTP traffic not permitted` | Android 9+ block | `usesCleartextTraffic="true"` déjà activé dans `AndroidManifest.xml` (dev only) |
+| Tunnel perdu après debranchement | Comportement normal d'`adb` | Re-run la commande `adb reverse` à chaque replug |
+
+⚠️ `usesCleartextTraffic="true"` est OK en dev mais doit être remplacé par
+un `network_security_config.xml` scopé en prod (HTTPS only).
+
+---
+
 ## Tests & analyse
 
 ```bash

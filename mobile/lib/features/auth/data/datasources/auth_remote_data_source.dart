@@ -5,9 +5,6 @@ import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../models/user_model.dart';
 
-// Couche data — responsable uniquement du transport HTTP (Principe S).
-// Convertit les codes/erreurs Dio en exceptions de domaine consommables
-// par le repository.
 class AuthRemoteDataSource {
   AuthRemoteDataSource(this._dioClient);
 

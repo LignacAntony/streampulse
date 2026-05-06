@@ -1,10 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// Case à cocher d'acceptation des CGU + politique de confidentialité.
-/// Composant contrôlé : la valeur est portée par le parent.
-///
-/// Les liens vers les pages légales seront branchés dans une US ultérieure
-/// (callbacks `onPrivacyTap` / `onTermsTap` réservés).
 class TermsCheckbox extends StatelessWidget {
   const TermsCheckbox({
     super.key,

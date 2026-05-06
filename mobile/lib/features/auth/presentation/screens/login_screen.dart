@@ -3,12 +3,6 @@ import 'package:flutter/material.dart';
 import '../widgets/auth_tabs.dart';
 import '../widgets/branded_header.dart';
 
-/// Écran de connexion — placeholder le temps de l'US dédiée (login backend +
-/// JWT côté Flutter). Affiche le branding et les onglets pour permettre à
-/// l'utilisateur de basculer vers le formulaire d'inscription.
-///
-/// Le formulaire de connexion (email + mot de passe + soumission) sera
-/// implémenté dans une US ultérieure.
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 

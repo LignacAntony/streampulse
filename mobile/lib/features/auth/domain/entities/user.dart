@@ -1,7 +1,5 @@
 import 'package:equatable/equatable.dart';
 
-// Entité pure — aucune dépendance infrastructure (Principe D + S).
-// Les rôles possibles : 'anonymous' | 'user' | 'broadcaster' | 'admin'
 class User extends Equatable {
   const User({
     required this.id,

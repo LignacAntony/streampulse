@@ -1,6 +1,5 @@
 import '../../domain/entities/user.dart';
 
-// Couche data — sérialisation JSON depuis l'API. Convertit en User pur via toEntity().
 class UserModel {
   const UserModel({
     required this.id,

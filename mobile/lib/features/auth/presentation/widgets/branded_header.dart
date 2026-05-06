@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// En-tête réutilisé par les écrans /login et /register :
-/// petit logo waveform + nom de la marque + tagline.
 class BrandedHeader extends StatelessWidget {
   const BrandedHeader({super.key});
 

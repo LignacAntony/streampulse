@@ -1,11 +1,3 @@
-// Validateurs purs pour le formulaire d'inscription.
-//
-// Reproduisent les règles du backend afin que :
-//   - l'utilisateur reçoive un retour immédiat sans aller-retour HTTP,
-//   - les erreurs serveur (400 / 409) restent rares, gérées séparément.
-//
-// Chaque validateur retourne `null` si la valeur est valide, ou une chaîne
-// d'erreur localisée à afficher dans le `TextFormField`.
 class RegisterValidators {
   RegisterValidators._();
 
@@ -14,9 +6,6 @@ class RegisterValidators {
   static const int minUsernameLength = 3;
   static const int maxUsernameLength = 30;
 
-  // Regex permissive — la validation stricte est faite côté serveur via
-  // `net/mail.ParseAddress`. On bloque seulement les évidences (espace, @
-  // manquant, point manquant).
   static final _emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
   static final _usernameRegex = RegExp(r'^[a-zA-Z0-9_]+$');
 
@@ -54,8 +43,6 @@ class RegisterValidators {
     return null;
   }
 
-  /// Valide la confirmation du mot de passe : doit être identique à
-  /// [original]. Sert au TextFormField "Confirmer le mot de passe".
   static String? confirmPassword(String? raw, String original) {
     final value = raw ?? '';
     if (value.isEmpty) return 'Confirmation requise';
@@ -63,16 +50,6 @@ class RegisterValidators {
     return null;
   }
 
-  /// Score de force du mot de passe entre 0 (vide) et 4 (très fort).
-  ///
-  /// Heuristique :
-  ///   +1 si longueur ≥ 8
-  ///   +1 si longueur ≥ 12
-  ///   +1 si contient une lettre majuscule
-  ///   +1 si contient un chiffre
-  ///   +1 si contient un caractère non alphanumérique
-  ///
-  /// Plafonné à 4 pour s'aligner sur les 4 barres de l'indicateur visuel.
   static int passwordStrength(String? raw) {
     final value = raw ?? '';
     if (value.isEmpty) return 0;

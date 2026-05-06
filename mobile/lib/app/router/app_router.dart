@@ -6,7 +6,6 @@ import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 
-// Placeholder supprimé en US-02-02 quand les vrais écrans seront implémentés.
 class _PlaceholderScreen extends StatelessWidget {
   const _PlaceholderScreen({required this.title});
 
@@ -23,10 +22,8 @@ class _PlaceholderScreen extends StatelessWidget {
   }
 }
 
-// Routes publiques accessibles sans token (auth flow).
 const _publicRoutes = {'/login', '/register'};
 
-// La logique de redirect sera complétée en US-02-02 (refresh token, rôles).
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   redirect: (context, state) async {

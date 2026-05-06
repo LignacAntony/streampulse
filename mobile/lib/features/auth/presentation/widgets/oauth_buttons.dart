@@ -1,10 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// Boutons OAuth (Google + Apple) — placeholders visuels.
-///
-/// L'intégration réelle des fournisseurs (token id, échange backend) sera
-/// faite dans des US dédiées. En attendant, taper l'un des boutons affiche
-/// une SnackBar « Bientôt disponible ».
 class OAuthButtons extends StatelessWidget {
   const OAuthButtons({super.key, this.enabled = true});
 

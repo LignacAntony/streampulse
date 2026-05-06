@@ -6,7 +6,6 @@ import '../../data/datasources/auth_remote_data_source.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../domain/repositories/auth_repository.dart';
 
-// Providers d'infrastructure — ré-utilisables par toutes les features.
 final secureStorageProvider = Provider<SecureStorage>((ref) {
   return SecureStorage();
 });
@@ -16,7 +15,6 @@ final dioClientProvider = Provider<DioClient>((ref) {
   return DioClient(storage);
 });
 
-// Providers de la feature auth.
 final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
   final dio = ref.watch(dioClientProvider);
   return AuthRemoteDataSource(dio);
