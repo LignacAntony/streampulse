@@ -100,7 +100,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final isLoading = state.isLoading;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Créer un compte')),
+      appBar: AppBar(
+        title: const Text('Créer un compte'),
+        leading: IconButton(
+          key: const Key('register_back_button'),
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Retour',
+          onPressed: isLoading ? null : () => context.go('/welcome'),
+        ),
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(

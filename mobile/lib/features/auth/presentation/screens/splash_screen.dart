@@ -25,7 +25,7 @@ class _SplashScreenState extends State<SplashScreen> {
     final token = await SecureStorage().getAccessToken();
     if (!mounted) return;
 
-    context.go(token != null ? '/home' : '/login');
+    context.go(token != null ? '/home' : '/welcome');
   }
 
   @override

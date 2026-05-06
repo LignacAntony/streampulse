@@ -33,12 +33,13 @@ class _FakeAuthRepository implements AuthRepository {
   }
 }
 
-class _LoginPlaceholder extends StatelessWidget {
-  const _LoginPlaceholder();
+class _MarkerScreen extends StatelessWidget {
+  const _MarkerScreen(this.label);
+  final String label;
 
   @override
   Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: Text('LOGIN_PLACEHOLDER')));
+      Scaffold(body: Center(child: Text(label)));
 }
 
 Widget _buildHarness(_FakeAuthRepository fake) {
@@ -51,7 +52,11 @@ Widget _buildHarness(_FakeAuthRepository fake) {
       ),
       GoRoute(
         path: '/login',
-        builder: (_, __) => const _LoginPlaceholder(),
+        builder: (_, __) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
+      ),
+      GoRoute(
+        path: '/welcome',
+        builder: (_, __) => const _MarkerScreen('WELCOME_PLACEHOLDER'),
       ),
     ],
   );
@@ -227,6 +232,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('email or username already taken'), findsOneWidget);
+    });
+
+    testWidgets('le bouton retour navigue vers /welcome', (tester) async {
+      await tester.pumpWidget(_buildHarness(_FakeAuthRepository()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('register_back_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('WELCOME_PLACEHOLDER'), findsOneWidget);
     });
   });
 }
