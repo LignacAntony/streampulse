@@ -83,6 +83,11 @@ func (f *fakeRepo) RotateRefreshToken(_ context.Context, oldHash, newHash, userI
 	return nil
 }
 
+func (f *fakeRepo) RevokeRefreshToken(_ context.Context, tokenHash string) error {
+	delete(f.refreshTokens, tokenHash)
+	return nil
+}
+
 // -- Register ----------------------------------------------------------------
 
 func TestRegister_HappyPath(t *testing.T) {
@@ -217,6 +222,34 @@ func TestRefresh_TokenReuse_Rejected(t *testing.T) {
 	// Réutiliser le même token doit échouer (rotation).
 	_, err := svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
 	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
+}
+
+// -- Logout ------------------------------------------------------------------
+
+func TestLogout_HappyPath(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
+		t.Fatal(err)
+	}
+	loginPair, err := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "hunter2hunter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: loginPair.RefreshToken}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Le refresh token doit être révoqué.
+	_, err = svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
+	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
+}
+
+func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret)
+	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: "unknown-token"}); err != nil {
+		t.Errorf("logout with unknown token should not error, got: %v", err)
+	}
 }
 
 // -- helpers -----------------------------------------------------------------

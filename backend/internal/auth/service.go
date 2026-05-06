@@ -42,6 +42,10 @@ type RefreshInput struct {
 	RefreshToken string
 }
 
+type LogoutInput struct {
+	RefreshToken string
+}
+
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -70,6 +74,7 @@ type Repository interface {
 	StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
 	GetUserByRefreshToken(ctx context.Context, tokenHash string) (User, error)
 	RotateRefreshToken(ctx context.Context, oldHash, newHash, userID string, expiresAt time.Time) error
+	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 }
 
 type Service struct {
@@ -161,6 +166,10 @@ func (s *Service) Refresh(ctx context.Context, in RefreshInput) (TokenPair, erro
 	}
 
 	return TokenPair{AccessToken: accessToken, RefreshToken: rawRefresh}, nil
+}
+
+func (s *Service) Logout(ctx context.Context, in LogoutInput) error {
+	return s.repo.RevokeRefreshToken(ctx, hashToken(in.RefreshToken))
 }
 
 func normalizeEmail(raw string) (string, error) {

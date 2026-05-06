@@ -30,6 +30,10 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+type logoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
 type Registrar interface {
 	Register(ctx context.Context, in RegisterInput) (User, error)
 }
@@ -42,14 +46,19 @@ type TokenRefresher interface {
 	Refresh(ctx context.Context, in RefreshInput) (TokenPair, error)
 }
 
+type Logouter interface {
+	Logout(ctx context.Context, in LogoutInput) error
+}
+
 type Handler struct {
 	svc           Registrar
 	authenticator Authenticator
 	refresher     TokenRefresher
+	logouter      Logouter
 }
 
-func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher) *Handler {
-	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher}
+func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher, logouter Logouter) *Handler {
+	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher, logouter: logouter}
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -127,4 +136,30 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if err := httpjson.Write(w, http.StatusOK, pair); err != nil {
 		log.Printf("auth: encode refresh response: %v", err)
 	}
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		return
+	}
+
+	var req logoutRequest
+	if err := httpjson.Decode(w, r, &req, maxRefreshBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if req.RefreshToken == "" {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("refresh_token required"))
+		return
+	}
+
+	if err := h.logouter.Logout(r.Context(), LogoutInput(req)); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

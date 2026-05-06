@@ -124,6 +124,13 @@ func (r *pgRepository) RotateRefreshToken(ctx context.Context, oldHash, newHash,
 	return nil
 }
 
+func (r *pgRepository) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
+	if _, err := r.q.DeleteRefreshToken(ctx, tokenHash); err != nil {
+		return fmt.Errorf("repo: revoke refresh token: %w", err)
+	}
+	return nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
