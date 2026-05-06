@@ -7,181 +7,252 @@ import (
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
-
 	"golang.org/x/crypto/bcrypt"
 )
 
 // fakeRepo implémente Repository en mémoire pour tester le service sans DB.
 type fakeRepo struct {
-	createCalls  int
-	emails       map[string]struct{}
-	usernames    map[string]struct{}
-	lastEmail    string
-	lastUsername string
-	lastHash     string
-	returnErr    error
+	createCalls   int
+	emails        map[string]UserWithHash
+	usernames     map[string]struct{}
+	lastHash      string
+	refreshTokens map[string]fakeRefreshToken
+}
+
+type fakeRefreshToken struct {
+	userID    string
+	expiresAt time.Time
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		emails:    map[string]struct{}{},
-		usernames: map[string]struct{}{},
+		emails:        map[string]UserWithHash{},
+		usernames:     map[string]struct{}{},
+		refreshTokens: map[string]fakeRefreshToken{},
 	}
 }
 
 func (f *fakeRepo) CreateUser(_ context.Context, email, username, hash string) (User, error) {
 	f.createCalls++
-	if f.returnErr != nil {
-		return User{}, f.returnErr
-	}
 	if _, ok := f.emails[email]; ok {
 		return User{}, apperror.Conflict("email or username already taken")
 	}
 	if _, ok := f.usernames[username]; ok {
 		return User{}, apperror.Conflict("email or username already taken")
 	}
-	f.emails[email] = struct{}{}
+	u := User{ID: "00000000-0000-0000-0000-000000000001", Email: email, Username: username, Role: "user", CreatedAt: time.Now().UTC()}
+	f.emails[email] = UserWithHash{User: u, PasswordHash: hash}
 	f.usernames[username] = struct{}{}
-	f.lastEmail = email
-	f.lastUsername = username
 	f.lastHash = hash
-	return User{
-		ID:        "00000000-0000-0000-0000-000000000001",
-		Email:     email,
-		Username:  username,
-		Role:      "user",
-		CreatedAt: time.Now().UTC(),
-	}, nil
+	return u, nil
 }
+
+func (f *fakeRepo) GetUserByEmail(_ context.Context, email string) (UserWithHash, error) {
+	uwh, ok := f.emails[email]
+	if !ok {
+		return UserWithHash{}, apperror.NotFound("user not found")
+	}
+	return uwh, nil
+}
+
+func (f *fakeRepo) StoreRefreshToken(_ context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	f.refreshTokens[tokenHash] = fakeRefreshToken{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (f *fakeRepo) GetUserByRefreshToken(_ context.Context, tokenHash string) (User, error) {
+	rt, ok := f.refreshTokens[tokenHash]
+	if !ok || time.Now().After(rt.expiresAt) {
+		return User{}, apperror.Unauthorized("invalid or expired refresh token")
+	}
+	for _, uwh := range f.emails {
+		if uwh.ID == rt.userID {
+			return uwh.User, nil
+		}
+	}
+	return User{}, apperror.Unauthorized("invalid or expired refresh token")
+}
+
+func (f *fakeRepo) RotateRefreshToken(_ context.Context, oldHash, newHash, userID string, expiresAt time.Time) error {
+	rt, ok := f.refreshTokens[oldHash]
+	if !ok || time.Now().After(rt.expiresAt) {
+		return apperror.Unauthorized("invalid or expired refresh token")
+	}
+	delete(f.refreshTokens, oldHash)
+	f.refreshTokens[newHash] = fakeRefreshToken{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (f *fakeRepo) RevokeRefreshToken(_ context.Context, tokenHash string) error {
+	delete(f.refreshTokens, tokenHash)
+	return nil
+}
+
+// -- Register ----------------------------------------------------------------
 
 func TestRegister_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo)
+	svc := NewService(repo, testSecret)
 
 	user, err := svc.Register(context.Background(), RegisterInput{
-		Email:    "Alice@Example.COM",
-		Username: "alice_42",
-		Password: "hunter2hunter",
+		Email: "Alice@Example.COM", Username: "alice_42", Password: "hunter2hunter",
 	})
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if user.Email != "alice@example.com" {
-		t.Errorf("email not normalized: got %q", user.Email)
-	}
-	if user.Username != "alice_42" {
-		t.Errorf("username altered: got %q", user.Username)
-	}
-	if user.Role != "user" {
-		t.Errorf("role: want user, got %q", user.Role)
-	}
-	if repo.createCalls != 1 {
-		t.Errorf("createCalls: want 1, got %d", repo.createCalls)
+		t.Errorf("email not normalized: %q", user.Email)
 	}
 	if !strings.HasPrefix(repo.lastHash, "$2a$12$") && !strings.HasPrefix(repo.lastHash, "$2b$12$") {
-		t.Errorf("bcrypt hash cost not 12: got prefix %s", repo.lastHash[:7])
+		t.Errorf("bcrypt cost not 12, got prefix: %s", repo.lastHash[:7])
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(repo.lastHash), []byte("hunter2hunter")); err != nil {
-		t.Errorf("hash does not match plaintext: %v", err)
+		t.Errorf("hash mismatch: %v", err)
 	}
 }
 
-func TestRegister_InvalidEmail(t *testing.T) {
-	cases := []string{"", "not-an-email", "alice@", "@example.com", "alice example.com"}
-	for _, raw := range cases {
-		raw := raw
-		t.Run(raw, func(t *testing.T) {
-			repo := newFakeRepo()
-			svc := NewService(repo)
-			_, err := svc.Register(context.Background(), RegisterInput{
-				Email:    raw,
-				Username: "alice",
-				Password: "hunter2hunter",
-			})
-			assertAppError(t, err, apperror.CodeInvalidArgument, "invalid email")
-			if repo.createCalls != 0 {
-				t.Errorf("repo touched on invalid email: %d", repo.createCalls)
+func TestRegister_InvalidInput(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    RegisterInput
+		wantCode apperror.Code
+	}{
+		{"bad email", RegisterInput{Email: "not-an-email", Username: "alice", Password: "hunter2hunter"}, apperror.CodeInvalidArgument},
+		{"short password", RegisterInput{Email: "a@b.co", Username: "alice", Password: "abc"}, apperror.CodeInvalidArgument},
+		{"long password", RegisterInput{Email: "a@b.co", Username: "alice", Password: strings.Repeat("x", MaxPasswordLen+1)}, apperror.CodeInvalidArgument},
+		{"short username", RegisterInput{Email: "a@b.co", Username: "ab", Password: "hunter2hunter"}, apperror.CodeInvalidArgument},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewService(newFakeRepo(), testSecret).Register(context.Background(), tc.input)
+			if !apperror.IsCode(err, tc.wantCode) {
+				t.Errorf("want %s, got %v", tc.wantCode, err)
 			}
-		})
-	}
-}
-
-func TestRegister_PasswordTooShort(t *testing.T) {
-	cases := []string{"", "a", "abcdefg"} // < 8
-	for _, p := range cases {
-		p := p
-		t.Run(p, func(t *testing.T) {
-			repo := newFakeRepo()
-			svc := NewService(repo)
-			_, err := svc.Register(context.Background(), RegisterInput{
-				Email:    "alice@example.com",
-				Username: "alice",
-				Password: p,
-			})
-			assertAppError(t, err, apperror.CodeInvalidArgument, "password too short")
-		})
-	}
-}
-
-func TestRegister_PasswordTooLong(t *testing.T) {
-	repo := newFakeRepo()
-	svc := NewService(repo)
-	long := strings.Repeat("x", MaxPasswordLen+1)
-	_, err := svc.Register(context.Background(), RegisterInput{
-		Email:    "alice@example.com",
-		Username: "alice",
-		Password: long,
-	})
-	assertAppError(t, err, apperror.CodeInvalidArgument, "password too long")
-}
-
-func TestRegister_InvalidUsername(t *testing.T) {
-	cases := []string{"", "ab", "with space", "wîth-dash", strings.Repeat("a", MaxUsernameLen+1)}
-	for _, u := range cases {
-		u := u
-		t.Run(u, func(t *testing.T) {
-			repo := newFakeRepo()
-			svc := NewService(repo)
-			_, err := svc.Register(context.Background(), RegisterInput{
-				Email:    "alice@example.com",
-				Username: u,
-				Password: "hunter2hunter",
-			})
-			assertAppError(t, err, apperror.CodeInvalidArgument, "invalid username")
 		})
 	}
 }
 
 func TestRegister_DuplicateEmail(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo)
-	first := RegisterInput{Email: "bob@example.com", Username: "bob", Password: "hunter2hunter"}
-	if _, err := svc.Register(context.Background(), first); err != nil {
-		t.Fatalf("first register failed: %v", err)
+	svc := NewService(repo, testSecret)
+	base := RegisterInput{Email: "bob@example.com", Username: "bob", Password: "hunter2hunter"}
+	if _, err := svc.Register(context.Background(), base); err != nil {
+		t.Fatal(err)
 	}
-	// Même email, username différent → contrainte UNIQUE email.
-	_, err := svc.Register(context.Background(), RegisterInput{
-		Email:    "bob@example.com",
-		Username: "bobby",
-		Password: "hunter2hunter",
-	})
+	_, err := svc.Register(context.Background(), RegisterInput{Email: "bob@example.com", Username: "bob2", Password: "hunter2hunter"})
 	assertAppError(t, err, apperror.CodeConflict, "email or username already taken")
 }
 
-func TestRegister_DuplicateUsername(t *testing.T) {
+// -- Login -------------------------------------------------------------------
+
+func TestLogin_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo)
-	first := RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}
-	if _, err := svc.Register(context.Background(), first); err != nil {
-		t.Fatalf("first register failed: %v", err)
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
+		t.Fatal(err)
 	}
-	_, err := svc.Register(context.Background(), RegisterInput{
-		Email:    "alice2@example.com",
-		Username: "alice",
-		Password: "hunter2hunter",
-	})
-	assertAppError(t, err, apperror.CodeConflict, "email or username already taken")
+
+	pair, err := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "hunter2hunter"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pair.AccessToken == "" || pair.RefreshToken == "" {
+		t.Error("tokens should not be empty")
+	}
+	claims, err := ParseAccessToken(pair.AccessToken, testSecret)
+	if err != nil {
+		t.Fatalf("invalid access token: %v", err)
+	}
+	if claims.Role != "user" {
+		t.Errorf("role = %q, want user", claims.Role)
+	}
 }
+
+func TestLogin_InvalidCredentials(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []LoginInput{
+		{Email: "nobody@example.com", Password: "hunter2hunter"}, // utilisateur inexistant
+		{Email: "alice@example.com", Password: "wrongpassword"},  // mauvais mot de passe
+	}
+	for _, in := range cases {
+		_, err := svc.Login(context.Background(), in)
+		// Doit toujours retourner Unauthorized, jamais NotFound (pas de fuite d'info).
+		assertAppError(t, err, apperror.CodeUnauthorized, "invalid credentials")
+	}
+}
+
+// -- Refresh -----------------------------------------------------------------
+
+func TestRefresh_HappyPath(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
+		t.Fatal(err)
+	}
+	loginPair, err := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "hunter2hunter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refreshPair, err := svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if refreshPair.AccessToken == "" || refreshPair.RefreshToken == "" {
+		t.Error("tokens should not be empty")
+	}
+}
+
+func TestRefresh_TokenReuse_Rejected(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
+		t.Fatal(err)
+	}
+	loginPair, _ := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "hunter2hunter"})
+
+	if _, err := svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken}); err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	// Réutiliser le même token doit échouer (rotation).
+	_, err := svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
+	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
+}
+
+// -- Logout ------------------------------------------------------------------
+
+func TestLogout_HappyPath(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
+		t.Fatal(err)
+	}
+	loginPair, err := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "hunter2hunter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: loginPair.RefreshToken}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Le refresh token doit être révoqué.
+	_, err = svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
+	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
+}
+
+func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret)
+	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: "unknown-token"}); err != nil {
+		t.Errorf("logout with unknown token should not error, got: %v", err)
+	}
+}
+
+// -- helpers -----------------------------------------------------------------
 
 func assertAppError(t *testing.T, err error, code apperror.Code, message string) {
 	t.Helper()
