@@ -54,10 +54,6 @@ Widget _buildHarness(_FakeAuthRepository fake) {
         path: '/login',
         builder: (_, __) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
       ),
-      GoRoute(
-        path: '/welcome',
-        builder: (_, __) => const _MarkerScreen('WELCOME_PLACEHOLDER'),
-      ),
     ],
   );
 
@@ -77,93 +73,156 @@ User _userStub() => User(
       createdAt: DateTime.utc(2026, 1, 2),
     );
 
+Future<void> _fillValid(WidgetTester tester) async {
+  await tester.enterText(
+    find.byKey(const Key('register_username_field')),
+    'alice',
+  );
+  await tester.enterText(
+    find.byKey(const Key('register_email_field')),
+    'alice@example.com',
+  );
+  await tester.enterText(
+    find.byKey(const Key('register_password_field')),
+    'hunter2hunter',
+  );
+  await tester.enterText(
+    find.byKey(const Key('register_confirm_password_field')),
+    'hunter2hunter',
+  );
+}
+
+Future<void> _acceptTerms(WidgetTester tester) async {
+  final checkbox = find.byKey(const Key('register_terms_checkbox'));
+  await tester.ensureVisible(checkbox);
+  await tester.pump();
+  await tester.tap(checkbox);
+  await tester.pump();
+}
+
+Future<void> _tapSubmit(WidgetTester tester) async {
+  final btn = find.byKey(const Key('register_submit_button'));
+  await tester.ensureVisible(btn);
+  await tester.pump();
+  await tester.tap(btn);
+}
+
 void main() {
   group('RegisterScreen', () {
-    testWidgets('rend les 3 champs et le bouton', (tester) async {
+    testWidgets('rend les 4 champs, la checkbox et le bouton', (tester) async {
       await tester.pumpWidget(_buildHarness(_FakeAuthRepository()));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('register_email_field')), findsOneWidget);
       expect(find.byKey(const Key('register_username_field')), findsOneWidget);
+      expect(find.byKey(const Key('register_email_field')), findsOneWidget);
       expect(find.byKey(const Key('register_password_field')), findsOneWidget);
+      expect(
+        find.byKey(const Key('register_confirm_password_field')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('register_terms_checkbox')), findsOneWidget);
       expect(find.byKey(const Key('register_submit_button')), findsOneWidget);
+      expect(find.text("NOM D'UTILISATEUR"), findsOneWidget);
+      expect(find.text('E-MAIL'), findsOneWidget);
+      expect(find.text('MOT DE PASSE'), findsOneWidget);
+      expect(find.text('CONFIRMER LE MOT DE PASSE'), findsOneWidget);
     });
 
-    testWidgets('soumission vide affiche les erreurs requises', (tester) async {
-      final fake = _FakeAuthRepository();
+    testWidgets('le bouton soumettre est désactivé tant que les CGU ne sont '
+        'pas acceptées', (tester) async {
+      final fake = _FakeAuthRepository(user: _userStub());
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('register_submit_button')));
+      await _fillValid(tester);
       await tester.pump();
 
-      expect(find.text('Email requis'), findsOneWidget);
-      expect(find.text('Pseudo requis'), findsOneWidget);
-      expect(find.text('Mot de passe requis'), findsOneWidget);
+      final btn = tester.widget<FilledButton>(
+        find.byKey(const Key('register_submit_button')),
+      );
+      expect(btn.onPressed, isNull);
+
+      await _tapSubmit(tester);
+      await tester.pump();
       expect(fake.calls, 0);
     });
 
-    testWidgets('email invalide bloque la soumission', (tester) async {
-      final fake = _FakeAuthRepository();
+    testWidgets('cocher les CGU active le bouton', (tester) async {
+      final fake = _FakeAuthRepository(user: _userStub());
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const Key('register_email_field')),
-        'not-an-email',
-      );
-      await tester.enterText(
-        find.byKey(const Key('register_username_field')),
-        'alice',
-      );
-      await tester.enterText(
-        find.byKey(const Key('register_password_field')),
-        'hunter2hunter',
-      );
-      await tester.tap(find.byKey(const Key('register_submit_button')));
-      await tester.pump();
+      await _fillValid(tester);
+      await _acceptTerms(tester);
 
-      expect(find.text('Email invalide'), findsOneWidget);
-      expect(fake.calls, 0);
+      final btn = tester.widget<FilledButton>(
+        find.byKey(const Key('register_submit_button')),
+      );
+      expect(btn.onPressed, isNotNull);
     });
 
-    testWidgets('mot de passe trop court bloque la soumission',
+    testWidgets('soumission vide affiche les erreurs requises (CGU cochées)',
         (tester) async {
       final fake = _FakeAuthRepository();
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const Key('register_email_field')),
-        'alice@example.com',
-      );
+      await _acceptTerms(tester);
+      await _tapSubmit(tester);
+      await tester.pump();
+
+      expect(find.text('Email requis'), findsOneWidget);
+      expect(find.text('Pseudo requis'), findsOneWidget);
+      expect(find.text('Mot de passe requis'), findsOneWidget);
+      expect(find.text('Confirmation requise'), findsOneWidget);
+      expect(fake.calls, 0);
+    });
+
+    testWidgets('confirmation différente bloque la soumission',
+        (tester) async {
+      final fake = _FakeAuthRepository(user: _userStub());
+      await tester.pumpWidget(_buildHarness(fake));
+      await tester.pumpAndSettle();
+
       await tester.enterText(
         find.byKey(const Key('register_username_field')),
         'alice',
       );
       await tester.enterText(
-        find.byKey(const Key('register_password_field')),
-        'short',
+        find.byKey(const Key('register_email_field')),
+        'alice@example.com',
       );
-      await tester.tap(find.byKey(const Key('register_submit_button')));
+      await tester.enterText(
+        find.byKey(const Key('register_password_field')),
+        'hunter2hunter',
+      );
+      await tester.enterText(
+        find.byKey(const Key('register_confirm_password_field')),
+        'something_else',
+      );
+      await _acceptTerms(tester);
+
+      await _tapSubmit(tester);
       await tester.pump();
 
-      expect(find.textContaining('Au moins'), findsWidgets);
+      expect(
+        find.text('Les mots de passe ne correspondent pas'),
+        findsOneWidget,
+      );
       expect(fake.calls, 0);
     });
 
     testWidgets('toggle visibilité mot de passe', (tester) async {
-      final fake = _FakeAuthRepository();
-      await tester.pumpWidget(_buildHarness(fake));
+      await tester.pumpWidget(_buildHarness(_FakeAuthRepository()));
       await tester.pumpAndSettle();
 
-      final passwordField = tester.widget<TextField>(
+      final initial = tester.widget<TextField>(
         find.descendant(
           of: find.byKey(const Key('register_password_field')),
           matching: find.byType(TextField),
         ),
       );
-      expect(passwordField.obscureText, isTrue);
+      expect(initial.obscureText, isTrue);
 
       await tester.tap(find.byKey(const Key('register_toggle_password')));
       await tester.pump();
@@ -177,26 +236,17 @@ void main() {
       expect(updated.obscureText, isFalse);
     });
 
-    testWidgets('soumission valide appelle le repository et navigue vers /login',
+    testWidgets(
+        'soumission valide + CGU appelle le repository et navigue vers /login',
         (tester) async {
       final fake = _FakeAuthRepository(user: _userStub());
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const Key('register_email_field')),
-        'alice@example.com',
-      );
-      await tester.enterText(
-        find.byKey(const Key('register_username_field')),
-        'alice',
-      );
-      await tester.enterText(
-        find.byKey(const Key('register_password_field')),
-        'hunter2hunter',
-      );
+      await _fillValid(tester);
+      await _acceptTerms(tester);
 
-      await tester.tap(find.byKey(const Key('register_submit_button')));
+      await _tapSubmit(tester);
       await tester.pumpAndSettle();
 
       expect(fake.calls, 1);
@@ -209,25 +259,16 @@ void main() {
     testWidgets('409 affiche un SnackBar avec le message serveur',
         (tester) async {
       final fake = _FakeAuthRepository(
-        error: const DuplicateAccountException('email or username already taken'),
+        error:
+            const DuplicateAccountException('email or username already taken'),
       );
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const Key('register_email_field')),
-        'alice@example.com',
-      );
-      await tester.enterText(
-        find.byKey(const Key('register_username_field')),
-        'alice',
-      );
-      await tester.enterText(
-        find.byKey(const Key('register_password_field')),
-        'hunter2hunter',
-      );
+      await _fillValid(tester);
+      await _acceptTerms(tester);
 
-      await tester.tap(find.byKey(const Key('register_submit_button')));
+      await _tapSubmit(tester);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 

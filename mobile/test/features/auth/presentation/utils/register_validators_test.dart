@@ -93,4 +93,65 @@ void main() {
       );
     });
   });
+
+  group('RegisterValidators.confirmPassword', () {
+    test('accepte une valeur identique', () {
+      expect(
+        RegisterValidators.confirmPassword('hunter2hunter', 'hunter2hunter'),
+        isNull,
+      );
+    });
+
+    test('rejette null et vide', () {
+      expect(
+        RegisterValidators.confirmPassword(null, 'hunter2hunter'),
+        'Confirmation requise',
+      );
+      expect(
+        RegisterValidators.confirmPassword('', 'hunter2hunter'),
+        'Confirmation requise',
+      );
+    });
+
+    test('rejette si différent du mot de passe', () {
+      expect(
+        RegisterValidators.confirmPassword('foo', 'bar'),
+        'Les mots de passe ne correspondent pas',
+      );
+    });
+  });
+
+  group('RegisterValidators.passwordStrength', () {
+    test('null ou vide → 0', () {
+      expect(RegisterValidators.passwordStrength(null), 0);
+      expect(RegisterValidators.passwordStrength(''), 0);
+    });
+
+    test('court (< 8) → 0', () {
+      expect(RegisterValidators.passwordStrength('abc'), 0);
+    });
+
+    test('lettres minuscules longueur 8 → 1 (longueur seule)', () {
+      expect(RegisterValidators.passwordStrength('abcdefgh'), 1);
+    });
+
+    test('avec chiffre → +1', () {
+      expect(RegisterValidators.passwordStrength('abcdefg1'), 2);
+    });
+
+    test('avec majuscule + chiffre → +2', () {
+      expect(RegisterValidators.passwordStrength('Abcdefg1'), 3);
+    });
+
+    test('long (≥12) + majuscule + chiffre + spécial → 4 (plafonné)', () {
+      expect(RegisterValidators.passwordStrength('Hunter2Hunter!'), 4);
+    });
+
+    test('plafond 4', () {
+      expect(
+        RegisterValidators.passwordStrength('SuperLongPasswordWith1!'),
+        4,
+      );
+    });
+  });
 }

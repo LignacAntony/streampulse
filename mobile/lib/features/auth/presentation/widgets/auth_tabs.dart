@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/constants/app_constants.dart';
-
 /// Sélecteur Connexion / Inscription présent en tête des écrans `/login` et
-/// `/register`. Permet de basculer entre les deux formulaires sans revenir
-/// à `/welcome`.
+/// `/register`. Permet de basculer entre les deux formulaires.
 ///
-/// L'onglet actif est déterminé par [active] (`AuthTab.login` ou
-/// `AuthTab.register`). Tapper l'onglet inactif déclenche `context.go()`
-/// vers la route correspondante.
+/// Visuel : container pill arrondi, deux segments de largeur égale,
+/// segment actif rempli surface variant + libellé en gras blanc, segment
+/// inactif transparent + libellé gris.
 enum AuthTab { login, register }
 
 class AuthTabs extends StatelessWidget {
   const AuthTabs({super.key, required this.active});
+
+  static const double _height = 48;
+  static const double _radius = 12;
 
   final AuthTab active;
 
@@ -22,10 +22,11 @@ class AuthTabs extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return Container(
+      height: _height,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        color: colors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(_radius),
       ),
       child: Row(
         children: [
@@ -77,16 +78,13 @@ class _Segment extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        child: SizedBox(
-          height: AppConstants.minTouchTarget,
-          child: Center(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: active ? colors.onSurface : colors.onSurfaceVariant,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                  ),
-            ),
+        child: Center(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: active ? colors.onSurface : colors.onSurfaceVariant,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                ),
           ),
         ),
       ),

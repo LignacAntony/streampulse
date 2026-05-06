@@ -53,4 +53,37 @@ class RegisterValidators {
     }
     return null;
   }
+
+  /// Valide la confirmation du mot de passe : doit être identique à
+  /// [original]. Sert au TextFormField "Confirmer le mot de passe".
+  static String? confirmPassword(String? raw, String original) {
+    final value = raw ?? '';
+    if (value.isEmpty) return 'Confirmation requise';
+    if (value != original) return 'Les mots de passe ne correspondent pas';
+    return null;
+  }
+
+  /// Score de force du mot de passe entre 0 (vide) et 4 (très fort).
+  ///
+  /// Heuristique :
+  ///   +1 si longueur ≥ 8
+  ///   +1 si longueur ≥ 12
+  ///   +1 si contient une lettre majuscule
+  ///   +1 si contient un chiffre
+  ///   +1 si contient un caractère non alphanumérique
+  ///
+  /// Plafonné à 4 pour s'aligner sur les 4 barres de l'indicateur visuel.
+  static int passwordStrength(String? raw) {
+    final value = raw ?? '';
+    if (value.isEmpty) return 0;
+
+    var score = 0;
+    if (value.length >= 8) score++;
+    if (value.length >= 12) score++;
+    if (RegExp(r'[A-Z]').hasMatch(value)) score++;
+    if (RegExp(r'\d').hasMatch(value)) score++;
+    if (RegExp(r'[^A-Za-z0-9]').hasMatch(value)) score++;
+
+    return score > 4 ? 4 : score;
+  }
 }
