@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -23,6 +24,8 @@ const (
 	BcryptCost     = 12
 	MinUsernameLen = 3
 	MaxUsernameLen = 30
+
+	PasswordResetTokenDuration = time.Hour
 )
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
@@ -44,6 +47,10 @@ type RefreshInput struct {
 
 type LogoutInput struct {
 	RefreshToken string
+}
+
+type ForgotPasswordInput struct {
+	Email string
 }
 
 type TokenPair struct {
@@ -75,6 +82,8 @@ type Repository interface {
 	GetUserByRefreshToken(ctx context.Context, tokenHash string) (User, error)
 	RotateRefreshToken(ctx context.Context, oldHash, newHash, userID string, expiresAt time.Time) error
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	StorePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
+	DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error
 }
 
 type Service struct {
@@ -170,6 +179,38 @@ func (s *Service) Refresh(ctx context.Context, in RefreshInput) (TokenPair, erro
 
 func (s *Service) Logout(ctx context.Context, in LogoutInput) error {
 	return s.repo.RevokeRefreshToken(ctx, hashToken(in.RefreshToken))
+}
+
+// ForgotPassword génère un token de réinitialisation sécurisé et le stocke en BDD.
+// Retourne toujours nil même si l'email est inconnu (évite l'énumération).
+func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) error {
+	email, err := normalizeEmail(in.Email)
+	if err != nil {
+		return nil
+	}
+
+	uwh, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil
+	}
+
+	// Supprime les tokens en attente existants avant d'en créer un nouveau.
+	_ = s.repo.DeletePendingPasswordResetsByUser(ctx, uwh.ID)
+
+	raw, hash, err := GenerateRefreshToken()
+	if err != nil {
+		return apperror.Internal("could not generate reset token", err)
+	}
+
+	expiresAt := time.Now().UTC().Add(PasswordResetTokenDuration)
+	if err := s.repo.StorePasswordResetToken(ctx, uwh.ID, hash, expiresAt); err != nil {
+		return apperror.Internal("could not store reset token", err)
+	}
+
+	// TODO STR-57 : remplacer ce log par un envoi d'email (SMTP).
+	log.Printf("[password-reset] token for %s (expires %s): %s", email, expiresAt.Format(time.RFC3339), raw)
+
+	return nil
 }
 
 func normalizeEmail(raw string) (string, error) {

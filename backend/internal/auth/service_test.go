@@ -12,11 +12,12 @@ import (
 
 // fakeRepo implémente Repository en mémoire pour tester le service sans DB.
 type fakeRepo struct {
-	createCalls   int
-	emails        map[string]UserWithHash
-	usernames     map[string]struct{}
-	lastHash      string
-	refreshTokens map[string]fakeRefreshToken
+	createCalls         int
+	emails              map[string]UserWithHash
+	usernames           map[string]struct{}
+	lastHash            string
+	refreshTokens       map[string]fakeRefreshToken
+	passwordResetTokens map[string]fakePasswordResetToken
 }
 
 type fakeRefreshToken struct {
@@ -24,11 +25,17 @@ type fakeRefreshToken struct {
 	expiresAt time.Time
 }
 
+type fakePasswordResetToken struct {
+	userID    string
+	expiresAt time.Time
+}
+
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		emails:        map[string]UserWithHash{},
-		usernames:     map[string]struct{}{},
-		refreshTokens: map[string]fakeRefreshToken{},
+		emails:              map[string]UserWithHash{},
+		usernames:           map[string]struct{}{},
+		refreshTokens:       map[string]fakeRefreshToken{},
+		passwordResetTokens: map[string]fakePasswordResetToken{},
 	}
 }
 
@@ -85,6 +92,20 @@ func (f *fakeRepo) RotateRefreshToken(_ context.Context, oldHash, newHash, userI
 
 func (f *fakeRepo) RevokeRefreshToken(_ context.Context, tokenHash string) error {
 	delete(f.refreshTokens, tokenHash)
+	return nil
+}
+
+func (f *fakeRepo) StorePasswordResetToken(_ context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	f.passwordResetTokens[tokenHash] = fakePasswordResetToken{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (f *fakeRepo) DeletePendingPasswordResetsByUser(_ context.Context, userID string) error {
+	for hash, prt := range f.passwordResetTokens {
+		if prt.userID == userID {
+			delete(f.passwordResetTokens, hash)
+		}
+	}
 	return nil
 }
 
@@ -249,6 +270,62 @@ func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
 	svc := NewService(newFakeRepo(), testSecret)
 	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: "unknown-token"}); err != nil {
 		t.Errorf("logout with unknown token should not error, got: %v", err)
+	}
+}
+
+// -- ForgotPassword ----------------------------------------------------------
+
+func TestForgotPassword_KnownEmail_StoresToken(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "alice@example.com"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.passwordResetTokens) != 1 {
+		t.Errorf("expected 1 password reset token stored, got %d", len(repo.passwordResetTokens))
+	}
+	for _, prt := range repo.passwordResetTokens {
+		if prt.expiresAt.Before(time.Now().UTC()) {
+			t.Error("token already expired")
+		}
+	}
+}
+
+func TestForgotPassword_UnknownEmail_ReturnsNil(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret)
+	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "nobody@example.com"}); err != nil {
+		t.Errorf("unknown email should not error, got: %v", err)
+	}
+}
+
+func TestForgotPassword_InvalidEmail_ReturnsNil(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret)
+	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "not-an-email"}); err != nil {
+		t.Errorf("invalid email should not error, got: %v", err)
+	}
+}
+
+func TestForgotPassword_ReplacesExistingToken(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Deux demandes successives → un seul token en BDD.
+	_ = svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "alice@example.com"})
+	_ = svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "alice@example.com"})
+
+	if len(repo.passwordResetTokens) != 1 {
+		t.Errorf("expected 1 token after double request, got %d", len(repo.passwordResetTokens))
 	}
 }
 

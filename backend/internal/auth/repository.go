@@ -131,6 +131,24 @@ func (r *pgRepository) RevokeRefreshToken(ctx context.Context, tokenHash string)
 	return nil
 }
 
+func (r *pgRepository) StorePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	if err := r.q.InsertPasswordResetToken(ctx, authdb.InsertPasswordResetTokenParams{
+		UserID:    uuidParam(userID),
+		TokenHash: tokenHash,
+		ExpiresAt: expiresAt,
+	}); err != nil {
+		return fmt.Errorf("repo: store password reset token: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepository) DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error {
+	if err := r.q.DeletePendingPasswordResetsByUser(ctx, uuidParam(userID)); err != nil {
+		return fmt.Errorf("repo: delete pending password resets: %w", err)
+	}
+	return nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
