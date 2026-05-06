@@ -83,11 +83,6 @@ func (f *fakeRepo) RotateRefreshToken(_ context.Context, oldHash, newHash, userI
 	return nil
 }
 
-func (f *fakeRepo) RevokeRefreshToken(_ context.Context, tokenHash string) error {
-	delete(f.refreshTokens, tokenHash)
-	return nil
-}
-
 // -- Register ----------------------------------------------------------------
 
 func TestRegister_HappyPath(t *testing.T) {

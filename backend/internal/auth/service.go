@@ -70,7 +70,6 @@ type Repository interface {
 	StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
 	GetUserByRefreshToken(ctx context.Context, tokenHash string) (User, error)
 	RotateRefreshToken(ctx context.Context, oldHash, newHash, userID string, expiresAt time.Time) error
-	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 }
 
 type Service struct {
