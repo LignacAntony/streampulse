@@ -1,0 +1,13 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/auth/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "authdb"
+        out: "internal/auth/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

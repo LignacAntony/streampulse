@@ -18,6 +18,7 @@ go run ./cmd/api          # Run dev server
 go test ./...             # Run all tests
 go test ./path/to/pkg/... # Run a single package's tests
 go build -o bin/api ./cmd/api
+sqlc generate              # Regénérer le code SQL → Go après modif d'une query
 
 # Mobile (Flutter) — dans mobile/
 flutter pub get           # Installer les dépendances
@@ -126,6 +127,75 @@ crée le tag Git et la GitHub Release.
 
 Linear project tracks all tickets: https://linear.app/streampulse  
 Branch names (`str-XX`) automatically link to Linear issues.
+
+## Backend Go — Architecture
+
+Stdlib `net/http` + `http.ServeMux`. Pas de framework. Composition manuelle dans `cmd/api/main.go`.
+
+### Structure d'un domaine
+
+```
+internal/<domaine>/
+├── handler.go      # HTTP handlers + interfaces ISP (Registrar, Authenticator, …)
+├── service.go      # Logique métier, types domaine (User, TokenPair, …), interface Repository
+├── repository.go   # Accès PostgreSQL via pgx/v5, SQL brut
+└── *_test.go       # Tests stdlib uniquement (pas de testify)
+```
+
+### Workflow sqlc (queries SQL → Go typé)
+
+```
+internal/<domaine>/queries/  ← tu écris le SQL ici (annotations sqlc)
+      ↓  sqlc generate
+internal/<domaine>/db/       ← NE PAS ÉDITER — code généré automatiquement
+      ↑
+repository.go l'utilise
+```
+
+Commande à relancer après chaque modification d'une query :
+```bash
+cd backend && sqlc generate
+```
+
+Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
+
+**Ne jamais éditer `internal/*/db/*.go`** — ils sont écrasés à chaque `sqlc generate`.
+
+### Patterns à respecter
+
+- **ISP** : le handler déclare des interfaces étroites (`Registrar`, `Authenticator`, `TokenRefresher`) — chacune couvre exactement ce dont le handler a besoin. `*Service` les satisfait toutes.
+- **Injection** : `NewService(repo, jwtSecret)` → `NewHandler(svc, svc, svc)` dans `main.go`.
+- **Erreurs** : `apperror.Unauthorized(msg)` / `apperror.InvalidArgument(msg)` / … → `httpjson.WriteError` mappe automatiquement vers le bon status HTTP.
+- **Tests** : stubs légers (`stubRegistrar`, `stubAuthenticator`) pour les handler tests ; `fakeRepo` en mémoire pour les service tests.
+
+### Routes auth existantes
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| POST | `/api/auth/register` | `Handler.Register` | Non |
+| POST | `/api/auth/login` | `Handler.Login` | Non |
+| POST | `/api/auth/refresh` | `Handler.Refresh` | Non |
+
+### Protéger une route avec JWT
+
+```go
+// Dans cmd/api/main.go, après avoir créé authHandler :
+mux.Handle("/api/ma-route", auth.RequireAuth(cfg.JWTSecret, monHandler))
+
+// Avec restriction de rôle (admin > broadcaster > user > anonymous) :
+mux.Handle("/api/admin", auth.RequireAuth(cfg.JWTSecret,
+    auth.RequireRole("admin", monHandler)))
+
+// Récupérer l'identité dans un handler :
+userID, _ := auth.UserIDFromContext(r.Context())
+role,   _ := auth.RoleFromContext(r.Context())
+```
+
+### JWT
+
+- **Access token** : HS256, exp. 15 min, claims `sub` (userID) + `role`.
+- **Refresh token** : aléatoire 32 octets, stocké haché (SHA-256) dans `refresh_tokens`. Rotation à chaque utilisation.
+- Secret : `JWT_SECRET` (env, min 32 chars).
 
 ## Application Mobile Flutter
 
@@ -245,7 +315,7 @@ docker compose ps   # Voir l'état de tous les services
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `006-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `008-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
