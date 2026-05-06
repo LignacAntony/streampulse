@@ -234,14 +234,17 @@ void main() {
       expect(find.text('email or username already taken'), findsOneWidget);
     });
 
-    testWidgets('le bouton retour navigue vers /welcome', (tester) async {
+    testWidgets("l'onglet Connexion navigue vers /login", (tester) async {
       await tester.pumpWidget(_buildHarness(_FakeAuthRepository()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('register_back_button')));
+      expect(find.byKey(const Key('auth_tab_register')), findsOneWidget);
+      expect(find.byKey(const Key('auth_tab_login')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('auth_tab_login')));
       await tester.pumpAndSettle();
 
-      expect(find.text('WELCOME_PLACEHOLDER'), findsOneWidget);
+      expect(find.text('LOGIN_PLACEHOLDER'), findsOneWidget);
     });
   });
 }

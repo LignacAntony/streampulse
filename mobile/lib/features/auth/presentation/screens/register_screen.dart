@@ -6,6 +6,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../providers/register_controller.dart';
 import '../utils/register_validators.dart';
+import '../widgets/auth_tabs.dart';
 
 /// Écran d'inscription
 /// Pose les champs email / pseudo / mot de passe avec validation locale
@@ -98,120 +99,140 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     final state = ref.watch(registerControllerProvider);
     final isLoading = state.isLoading;
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Créer un compte'),
-        leading: IconButton(
-          key: const Key('register_back_button'),
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Retour',
-          onPressed: isLoading ? null : () => context.go('/welcome'),
-        ),
-      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
-              child: Form(
-                key: _formKey,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Inscription',
-                      style: Theme.of(context).textTheme.headlineMedium,
-                      textAlign: TextAlign.center,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Branding (cohérent avec l'écran /welcome).
+                  SizedBox(
+                    height: AppConstants.minTouchTarget * 2,
+                    child: Icon(
+                      Icons.radio,
+                      size: AppConstants.minTouchTarget * 1.5,
+                      color: colors.primary,
                     ),
-                    const SizedBox(height: 24),
-                    TextFormField(
-                      key: const Key('register_email_field'),
-                      controller: _emailController,
-                      enabled: !isLoading,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      textInputAction: TextInputAction.next,
-                      autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        hintText: 'alice@example.com',
-                        prefixIcon: Icon(Icons.email_outlined),
-                      ),
-                      validator: RegisterValidators.email,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'StreamPulse',
+                    style: text.headlineMedium?.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      key: const Key('register_username_field'),
-                      controller: _usernameController,
-                      enabled: !isLoading,
-                      keyboardType: TextInputType.text,
-                      autofillHints: const [AutofillHints.newUsername],
-                      textInputAction: TextInputAction.next,
-                      autocorrect: false,
-                      decoration: const InputDecoration(
-                        labelText: 'Pseudo',
-                        hintText: 'alice_42',
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
-                      validator: RegisterValidators.username,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Redéfinissez votre expérience sonore.',
+                    style: text.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      key: const Key('register_password_field'),
-                      controller: _passwordController,
-                      enabled: !isLoading,
-                      obscureText: _obscurePassword,
-                      autofillHints: const [AutofillHints.newPassword],
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: InputDecoration(
-                        labelText: 'Mot de passe',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          key: const Key('register_toggle_password'),
-                          tooltip: _obscurePassword
-                              ? 'Afficher le mot de passe'
-                              : 'Masquer le mot de passe',
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Onglets Connexion / Inscription.
+                  const AuthTabs(active: AuthTab.register),
+                  const SizedBox(height: 24),
+
+                  Form(
+                    key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          key: const Key('register_email_field'),
+                          controller: _emailController,
+                          enabled: !isLoading,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            hintText: 'alice@example.com',
+                            prefixIcon: Icon(Icons.email_outlined),
                           ),
-                          onPressed: isLoading
-                              ? null
-                              : () => setState(
-                                    () => _obscurePassword = !_obscurePassword,
-                                  ),
+                          validator: RegisterValidators.email,
                         ),
-                      ),
-                      validator: RegisterValidators.password,
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          key: const Key('register_username_field'),
+                          controller: _usernameController,
+                          enabled: !isLoading,
+                          keyboardType: TextInputType.text,
+                          autofillHints: const [AutofillHints.newUsername],
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Pseudo',
+                            hintText: 'alice_42',
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                          validator: RegisterValidators.username,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          key: const Key('register_password_field'),
+                          controller: _passwordController,
+                          enabled: !isLoading,
+                          obscureText: _obscurePassword,
+                          autofillHints: const [AutofillHints.newPassword],
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _submit(),
+                          decoration: InputDecoration(
+                            labelText: 'Mot de passe',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              key: const Key('register_toggle_password'),
+                              tooltip: _obscurePassword
+                                  ? 'Afficher le mot de passe'
+                                  : 'Masquer le mot de passe',
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                              onPressed: isLoading
+                                  ? null
+                                  : () => setState(
+                                        () =>
+                                            _obscurePassword = !_obscurePassword,
+                                      ),
+                            ),
+                          ),
+                          validator: RegisterValidators.password,
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          height: AppConstants.minTouchTarget,
+                          child: FilledButton(
+                            key: const Key('register_submit_button'),
+                            onPressed: isLoading ? null : _submit,
+                            child: isLoading
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text("Créer mon compte"),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      height: AppConstants.minTouchTarget,
-                      child: FilledButton(
-                        key: const Key('register_submit_button'),
-                        onPressed: isLoading ? null : _submit,
-                        child: isLoading
-                            ? const SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text("S'inscrire"),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: isLoading ? null : () => context.go('/login'),
-                      child: const Text('Déjà un compte ? Se connecter'),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
