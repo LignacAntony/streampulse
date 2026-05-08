@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/storage/secure_storage.dart';
+import '../../features/auth/presentation/screens/login_screen.dart';
+import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 
-// Placeholder supprimé en US-02-02 quand les vrais écrans seront implémentés.
 class _PlaceholderScreen extends StatelessWidget {
   const _PlaceholderScreen({required this.title});
 
@@ -21,15 +22,18 @@ class _PlaceholderScreen extends StatelessWidget {
   }
 }
 
-// La logique de redirect sera complétée en US-02-02 (refresh token, rôles).
+const _publicRoutes = {'/login', '/register'};
+
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   redirect: (context, state) async {
     final storage = SecureStorage();
     final token = await storage.getAccessToken();
     final isOnSplash = state.matchedLocation == '/';
+    final isPublic = _publicRoutes.contains(state.matchedLocation);
 
     if (isOnSplash) return null;
+    if (isPublic) return null;
     if (token == null) return '/login';
     return null;
   },
@@ -45,8 +49,11 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/login',
-      builder: (context, state) =>
-          const _PlaceholderScreen(title: 'Connexion'),
+      builder: (context, state) => const LoginScreen(),
+    ),
+    GoRoute(
+      path: '/register',
+      builder: (context, state) => const RegisterScreen(),
     ),
   ],
 );

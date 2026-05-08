@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	// MinPasswordLen est la taille minimale exigée par STR-33.
+	// MinPasswordLen est la taille minimale.
 	MinPasswordLen = 8
 	// MaxPasswordLen évite de dépasser la limite bcrypt (72 bytes) qui
 	// tronque silencieusement les mots de passe trop longs.

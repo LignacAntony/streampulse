@@ -1,4 +1,4 @@
-# ADR 005 — Architecture en couches : handler / service / repository
+# ADR 006 — Architecture en couches : handler / service / repository
 
 ## Statut
 
