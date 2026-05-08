@@ -20,23 +20,33 @@ class LoginScreen extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 32,
                 children: [
                   const BrandedHeader(),
-                  const SizedBox(height: 32),
-                  const AuthTabs(active: AuthTab.login),
-                  const SizedBox(height: 48),
-                  Text(
-                    'Connexion',
-                    textAlign: TextAlign.center,
-                    style: text.headlineSmall,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Le formulaire de connexion sera disponible dans une prochaine version. Pour le moment, crée un compte via l'onglet Inscription.",
-                    textAlign: TextAlign.center,
-                    style: text.bodyMedium?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 48,
+                    children: [
+                      const AuthTabs(active: AuthTab.login),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 16,
+                        children: [
+                          Text(
+                            'Connexion',
+                            textAlign: TextAlign.center,
+                            style: text.headlineSmall,
+                          ),
+                          Text(
+                            "Le formulaire de connexion sera disponible dans une prochaine version. Pour le moment, crée un compte via l'onglet Inscription.",
+                            textAlign: TextAlign.center,
+                            style: text.bodyMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ],
               ),

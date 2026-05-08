@@ -1,25 +1,21 @@
 import 'package:flutter/material.dart';
 
+import 'auth_toasts.dart';
+
 class OAuthButtons extends StatelessWidget {
   const OAuthButtons({super.key, this.enabled = true});
 
   final bool enabled;
 
   void _showComingSoon(BuildContext context, String provider) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('$provider — bientôt disponible'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    showAuthInfoToast(context, '$provider — bientôt disponible');
   }
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
+      spacing: 16,
       children: [
         _ProviderButton(
           key: const Key('oauth_google_button'),
@@ -27,7 +23,6 @@ class OAuthButtons extends StatelessWidget {
           icon: const _GoogleLogo(),
           onPressed: enabled ? () => _showComingSoon(context, 'Google') : null,
         ),
-        const SizedBox(width: 16),
         _ProviderButton(
           key: const Key('oauth_apple_button'),
           tooltip: "S'inscrire avec Apple",
@@ -67,9 +62,8 @@ class _ProviderButton extends StatelessWidget {
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            width: 56,
-            height: 56,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints.tightFor(width: 56, height: 56),
             child: Center(child: icon),
           ),
         ),
@@ -86,9 +80,9 @@ class _GoogleLogo extends StatelessWidget {
     return Text(
       'G',
       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface,
-            fontWeight: FontWeight.w900,
-          ),
+        color: Theme.of(context).colorScheme.onSurface,
+        fontWeight: FontWeight.w900,
+      ),
     );
   }
 }

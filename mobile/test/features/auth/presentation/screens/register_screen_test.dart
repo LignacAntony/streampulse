@@ -7,6 +7,7 @@ import 'package:streampulse/features/auth/domain/entities/user.dart';
 import 'package:streampulse/features/auth/domain/repositories/auth_repository.dart';
 import 'package:streampulse/features/auth/presentation/providers/auth_providers.dart';
 import 'package:streampulse/features/auth/presentation/screens/register_screen.dart';
+import 'package:toastification/toastification.dart';
 
 class _FakeAuthRepository implements AuthRepository {
   _FakeAuthRepository({this.user, this.error});
@@ -46,10 +47,7 @@ Widget _buildHarness(_FakeAuthRepository fake) {
   final router = GoRouter(
     initialLocation: '/register',
     routes: [
-      GoRoute(
-        path: '/register',
-        builder: (_, __) => const RegisterScreen(),
-      ),
+      GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
       GoRoute(
         path: '/login',
         builder: (_, __) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
@@ -58,20 +56,20 @@ Widget _buildHarness(_FakeAuthRepository fake) {
   );
 
   return ProviderScope(
-    overrides: [
-      authRepositoryProvider.overrideWithValue(fake),
-    ],
-    child: MaterialApp.router(routerConfig: router),
+    overrides: [authRepositoryProvider.overrideWithValue(fake)],
+    child: ToastificationWrapper(
+      child: MaterialApp.router(routerConfig: router),
+    ),
   );
 }
 
 User _userStub() => User(
-      id: 'abc',
-      email: 'alice@example.com',
-      username: 'alice',
-      role: 'user',
-      createdAt: DateTime.utc(2026, 1, 2),
-    );
+  id: 'abc',
+  email: 'alice@example.com',
+  username: 'alice',
+  role: 'user',
+  createdAt: DateTime.utc(2026, 1, 2),
+);
 
 Future<void> _fillValid(WidgetTester tester) async {
   await tester.enterText(
@@ -161,8 +159,9 @@ void main() {
       expect(btn.onPressed, isNotNull);
     });
 
-    testWidgets('soumission vide affiche les erreurs requises (CGU cochées)',
-        (tester) async {
+    testWidgets('soumission vide affiche les erreurs requises (CGU cochées)', (
+      tester,
+    ) async {
       final fake = _FakeAuthRepository();
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
@@ -178,8 +177,7 @@ void main() {
       expect(fake.calls, 0);
     });
 
-    testWidgets('confirmation différente bloque la soumission',
-        (tester) async {
+    testWidgets('confirmation différente bloque la soumission', (tester) async {
       final fake = _FakeAuthRepository(user: _userStub());
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
@@ -237,30 +235,34 @@ void main() {
     });
 
     testWidgets(
-        'soumission valide + CGU appelle le repository et navigue vers /login',
-        (tester) async {
-      final fake = _FakeAuthRepository(user: _userStub());
-      await tester.pumpWidget(_buildHarness(fake));
-      await tester.pumpAndSettle();
+      'soumission valide + CGU appelle le repository et navigue vers /login',
+      (tester) async {
+        final fake = _FakeAuthRepository(user: _userStub());
+        await tester.pumpWidget(_buildHarness(fake));
+        await tester.pumpAndSettle();
 
-      await _fillValid(tester);
-      await _acceptTerms(tester);
+        await _fillValid(tester);
+        await _acceptTerms(tester);
 
-      await _tapSubmit(tester);
-      await tester.pumpAndSettle();
+        await _tapSubmit(tester);
+        await tester.pumpAndSettle();
 
-      expect(fake.calls, 1);
-      expect(fake.lastEmail, 'alice@example.com');
-      expect(fake.lastUsername, 'alice');
-      expect(fake.lastPassword, 'hunter2hunter');
-      expect(find.text('LOGIN_PLACEHOLDER'), findsOneWidget);
-    });
+        expect(fake.calls, 1);
+        expect(fake.lastEmail, 'alice@example.com');
+        expect(fake.lastUsername, 'alice');
+        expect(fake.lastPassword, 'hunter2hunter');
+        expect(find.text('LOGIN_PLACEHOLDER'), findsOneWidget);
 
-    testWidgets('409 affiche un SnackBar avec le message serveur',
-        (tester) async {
+        toastification.dismissAll(delayForAnimation: false);
+        await tester.pump(const Duration(milliseconds: 700));
+      },
+    );
+
+    testWidgets('409 affiche un toast avec le message serveur', (tester) async {
       final fake = _FakeAuthRepository(
-        error:
-            const DuplicateAccountException('email or username already taken'),
+        error: const DuplicateAccountException(
+          'email or username already taken',
+        ),
       );
       await tester.pumpWidget(_buildHarness(fake));
       await tester.pumpAndSettle();
@@ -270,9 +272,17 @@ void main() {
 
       await _tapSubmit(tester);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
 
-      expect(find.text('email or username already taken'), findsOneWidget);
+      expect(fake.calls, 1);
+      expect(
+        find.text('email or username already taken', skipOffstage: false),
+        findsOneWidget,
+      );
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
     });
 
     testWidgets("l'onglet Connexion navigue vers /login", (tester) async {

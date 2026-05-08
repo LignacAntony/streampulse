@@ -23,13 +23,13 @@ class TermsCheckbox extends StatelessWidget {
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
+      spacing: 4,
       children: [
         Checkbox(
           key: const Key('register_terms_checkbox'),
           value: value,
           onChanged: enabled ? (v) => onChanged(v ?? false) : null,
         ),
-        const SizedBox(width: 4),
         Expanded(
           child: Text.rich(
             TextSpan(

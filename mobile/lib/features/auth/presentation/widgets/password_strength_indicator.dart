@@ -20,6 +20,7 @@ class PasswordStrengthIndicator extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 8,
       children: [
         Row(
           children: List.generate(_segments, (i) {
@@ -38,7 +39,6 @@ class PasswordStrengthIndicator extends StatelessWidget {
             );
           }),
         ),
-        const SizedBox(height: 8),
         Text(
           'Force : ${_scoreLabel(score)}',
           style: text.bodySmall?.copyWith(

@@ -4,7 +4,7 @@ publish_to: none
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.4.0 <4.0.0'
+  sdk: ^3.11.4
   flutter: '>=3.27.0'
 
 dependencies:
@@ -17,6 +17,7 @@ dependencies:
 
   # Navigation
   go_router: ^14.2.0
+  toastification: ^3.2.0
 
   # Client HTTP
   dio: ^5.4.3+1

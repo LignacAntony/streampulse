@@ -7,10 +7,13 @@ import '../../../../core/errors/exceptions.dart';
 import '../providers/register_controller.dart';
 import '../utils/register_validators.dart';
 import '../widgets/auth_tabs.dart';
+import '../widgets/auth_text_form_field.dart';
+import '../widgets/auth_toasts.dart';
 import '../widgets/branded_header.dart';
 import '../widgets/oauth_buttons.dart';
 import '../widgets/password_strength_indicator.dart';
 import '../widgets/terms_checkbox.dart';
+import 'register_form_object.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -21,63 +24,37 @@ class RegisterScreen extends ConsumerStatefulWidget {
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
-  bool _acceptedTerms = false;
+  final _form = RegisterFormObject();
 
   @override
   void dispose() {
-    _usernameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
+    _form.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final form = _formKey.currentState;
-    if (form == null || !form.validate() || !_acceptedTerms) return;
+    if (form == null || !form.validate() || !_form.acceptedTerms) return;
 
-    await ref.read(registerControllerProvider.notifier).submit(
-          email: _emailController.text.trim(),
-          username: _usernameController.text.trim(),
-          password: _passwordController.text,
+    await ref
+        .read(registerControllerProvider.notifier)
+        .submit(
+          email: _form.email.text.trim(),
+          username: _form.username.text.trim(),
+          password: _form.password.text,
         );
   }
 
-  void _onStateChanged(
-    AsyncValue<dynamic>? previous,
-    AsyncValue<dynamic> next,
-  ) {
+  void _onStateChanged(AsyncValue<dynamic>? previous, AsyncValue<dynamic> next) {
     next.when(
       data: (user) {
         if (user == null) return;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text('Compte créé. Tu peux te connecter.'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+        showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
         context.go('/login');
       },
       loading: () {},
       error: (error, _) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(_humanReadable(error)),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
+        showAuthErrorToast(context, _humanReadable(error));
       },
     );
   }
@@ -92,10 +69,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<dynamic>>(
-      registerControllerProvider,
-      _onStateChanged,
-    );
+    ref.listen<AsyncValue<dynamic>>(registerControllerProvider, _onStateChanged);
 
     final state = ref.watch(registerControllerProvider);
     final isLoading = state.isLoading;
@@ -109,153 +83,39 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 24,
                 children: [
-                  const BrandedHeader(),
-                  const SizedBox(height: 32),
-                  const AuthTabs(active: AuthTab.register),
-                  const SizedBox(height: 24),
-                  Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _LabeledField(
-                          label: "NOM D'UTILISATEUR",
-                          child: TextFormField(
-                            key: const Key('register_username_field'),
-                            controller: _usernameController,
-                            enabled: !isLoading,
-                            keyboardType: TextInputType.text,
-                            autofillHints: const [AutofillHints.newUsername],
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            decoration: const InputDecoration(
-                              hintText: 'votre_pseudo',
-                            ),
-                            validator: RegisterValidators.username,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _LabeledField(
-                          label: 'E-MAIL',
-                          child: TextFormField(
-                            key: const Key('register_email_field'),
-                            controller: _emailController,
-                            enabled: !isLoading,
-                            keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email],
-                            textInputAction: TextInputAction.next,
-                            autocorrect: false,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            decoration: const InputDecoration(
-                              hintText: 'contact@exemple.com',
-                            ),
-                            validator: RegisterValidators.email,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _LabeledField(
-                          label: 'MOT DE PASSE',
-                          child: TextFormField(
-                            key: const Key('register_password_field'),
-                            controller: _passwordController,
-                            enabled: !isLoading,
-                            obscureText: _obscurePassword,
-                            autofillHints: const [AutofillHints.newPassword],
-                            textInputAction: TextInputAction.next,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            decoration: InputDecoration(
-                              hintText: '••••••••',
-                              suffixIcon: _PasswordToggle(
-                                buttonKey:
-                                    const Key('register_toggle_password'),
-                                obscured: _obscurePassword,
-                                onPressed: isLoading
-                                    ? null
-                                    : () => setState(() => _obscurePassword =
-                                        !_obscurePassword),
-                              ),
-                            ),
-                            validator: RegisterValidators.password,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _passwordController,
-                          builder: (context, value, _) =>
-                              PasswordStrengthIndicator(
-                            password: value.text,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _LabeledField(
-                          label: 'CONFIRMER LE MOT DE PASSE',
-                          child: TextFormField(
-                            key: const Key('register_confirm_password_field'),
-                            controller: _confirmPasswordController,
-                            enabled: !isLoading,
-                            obscureText: _obscureConfirmPassword,
-                            autofillHints: const [AutofillHints.newPassword],
-                            textInputAction: TextInputAction.done,
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            onFieldSubmitted: (_) => _submit(),
-                            decoration: InputDecoration(
-                              hintText: '••••••••',
-                              suffixIcon: _PasswordToggle(
-                                buttonKey: const Key(
-                                  'register_toggle_confirm_password',
-                                ),
-                                obscured: _obscureConfirmPassword,
-                                onPressed: isLoading
-                                    ? null
-                                    : () => setState(
-                                          () => _obscureConfirmPassword =
-                                              !_obscureConfirmPassword,
-                                        ),
-                              ),
-                            ),
-                            validator: (raw) =>
-                                RegisterValidators.confirmPassword(
-                              raw,
-                              _passwordController.text,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 32,
+                    children: [
+                      const BrandedHeader(),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 24,
+                        children: [
+                          const AuthTabs(active: AuthTab.register),
+                          Form(
+                            key: _formKey,
+                            child: _RegisterFormFields(
+                              form: _form,
+                              isLoading: isLoading,
+                              onSubmit: _submit,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        TermsCheckbox(
-                          value: _acceptedTerms,
-                          enabled: !isLoading,
-                          onChanged: (v) => setState(() => _acceptedTerms = v),
-                        ),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          height: AppConstants.minTouchTarget,
-                          child: FilledButton(
-                            key: const Key('register_submit_button'),
-                            onPressed:
-                                (!_acceptedTerms || isLoading) ? null : _submit,
-                            child: isLoading
-                                ? const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('Créer mon compte'),
-                          ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 24),
-                  _AlreadyAccountLink(
-                    onTap: isLoading ? null : () => context.go('/login'),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 16,
+                    children: [
+                      _AlreadyAccountLink(onTap: isLoading ? null : () => context.go('/login')),
+                      const _DividerWithLabel(label: "Ou s'inscrire avec"),
+                      OAuthButtons(enabled: !isLoading),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  const _DividerWithLabel(label: "Ou s'inscrire avec"),
-                  const SizedBox(height: 16),
-                  OAuthButtons(enabled: !isLoading),
                 ],
               ),
             ),
@@ -266,43 +126,145 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 }
 
-class _LabeledField extends StatelessWidget {
-  const _LabeledField({required this.label, required this.child});
+class _RegisterFormFields extends StatelessWidget {
+  const _RegisterFormFields({required this.form, required this.isLoading, required this.onSubmit});
 
-  final String label;
-  final Widget child;
+  final RegisterFormObject form;
+  final bool isLoading;
+  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8, left: 4),
-          child: Text(
-            label,
-            style: text.labelSmall?.copyWith(
-              color: colors.onSurfaceVariant,
-              letterSpacing: 1.2,
-              fontWeight: FontWeight.w600,
+    return StatefulBuilder(
+      builder: (context, setFormState) {
+        return Column(
+          spacing: 16,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AuthTextFormField(
+              config: _RegisterField.username.config(form.username),
+              enabled: !isLoading,
             ),
-          ),
-        ),
-        child,
-      ],
+            AuthTextFormField(config: _RegisterField.email.config(form.email), enabled: !isLoading),
+            AuthTextFormField(
+              config: _RegisterField.password.config(form.password),
+              enabled: !isLoading,
+              obscureText: form.obscurePassword,
+              suffixIcon: _PasswordToggle(
+                buttonKey: const Key('register_toggle_password'),
+                obscured: form.obscurePassword,
+                onPressed: isLoading
+                    ? null
+                    : () => setFormState(() => form.obscurePassword = !form.obscurePassword),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: form.password,
+              builder: (context, value, _) => PasswordStrengthIndicator(password: value.text),
+            ),
+            AuthTextFormField(
+              config: _RegisterField.confirmPassword.config(form.confirm),
+              enabled: !isLoading,
+              obscureText: form.obscureConfirmPassword,
+              onFieldSubmitted: (_) => onSubmit(),
+              suffixIcon: _PasswordToggle(
+                buttonKey: const Key('register_toggle_confirm_password'),
+                obscured: form.obscureConfirmPassword,
+                onPressed: isLoading
+                    ? null
+                    : () => setFormState(
+                        () => form.obscureConfirmPassword = !form.obscureConfirmPassword,
+                      ),
+              ),
+              validator: form.validateConfirm,
+            ),
+            const SizedBox(height: 20),
+            TermsCheckbox(
+              value: form.acceptedTerms,
+              enabled: !isLoading,
+              onChanged: (v) => setFormState(() => form.acceptedTerms = v),
+            ),
+            const SizedBox(height: 24),
+            ConstrainedBox(
+              constraints: const BoxConstraints.tightFor(height: AppConstants.minTouchTarget),
+              child: FilledButton(
+                key: const Key('register_submit_button'),
+                onPressed: (!form.acceptedTerms || isLoading) ? null : onSubmit,
+                child: isLoading
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                        child: const CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Créer mon compte'),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
+enum _RegisterField {
+  username,
+  email,
+  password,
+  confirmPassword;
+
+  AuthTextFormFieldConfig config(TextEditingController controller) {
+    return switch (this) {
+      _RegisterField.username => AuthTextFormFieldConfig(
+        label: "NOM D'UTILISATEUR",
+        fieldKey: const Key('register_username_field'),
+        controller: controller,
+        hintText: 'votre_pseudo',
+        keyboardType: TextInputType.text,
+        autofillHints: const [AutofillHints.newUsername],
+        textInputAction: TextInputAction.next,
+        autocorrect: false,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator: RegisterValidators.username,
+      ),
+      _RegisterField.email => AuthTextFormFieldConfig(
+        label: 'E-MAIL',
+        fieldKey: const Key('register_email_field'),
+        controller: controller,
+        hintText: 'contact@exemple.com',
+        keyboardType: TextInputType.emailAddress,
+        autofillHints: const [AutofillHints.email],
+        textInputAction: TextInputAction.next,
+        autocorrect: false,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator: RegisterValidators.email,
+      ),
+      _RegisterField.password => AuthTextFormFieldConfig(
+        label: 'MOT DE PASSE',
+        fieldKey: const Key('register_password_field'),
+        controller: controller,
+        hintText: '••••••••',
+        autofillHints: const [AutofillHints.newPassword],
+        textInputAction: TextInputAction.next,
+        autocorrect: false,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator: RegisterValidators.password,
+      ),
+      _RegisterField.confirmPassword => AuthTextFormFieldConfig(
+        label: 'CONFIRMER LE MOT DE PASSE',
+        fieldKey: const Key('register_confirm_password_field'),
+        controller: controller,
+        hintText: '••••••••',
+        autofillHints: const [AutofillHints.newPassword],
+        textInputAction: TextInputAction.done,
+        autocorrect: false,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+      ),
+    };
+  }
+}
+
 class _PasswordToggle extends StatelessWidget {
-  const _PasswordToggle({
-    required this.buttonKey,
-    required this.obscured,
-    required this.onPressed,
-  });
+  const _PasswordToggle({required this.buttonKey, required this.obscured, required this.onPressed});
 
   final Key buttonKey;
   final bool obscured;
@@ -312,12 +274,8 @@ class _PasswordToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       key: buttonKey,
-      tooltip: obscured
-          ? 'Afficher le mot de passe'
-          : 'Masquer le mot de passe',
-      icon: Icon(
-        obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-      ),
+      tooltip: obscured ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+      icon: Icon(obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined),
       onPressed: onPressed,
     );
   }
@@ -343,10 +301,7 @@ class _AlreadyAccountLink extends StatelessWidget {
               const TextSpan(text: 'Vous avez déjà un compte ? '),
               TextSpan(
                 text: 'Se connecter',
-                style: TextStyle(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: colors.primary, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -374,10 +329,7 @@ class _DividerWithLabel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             label,
-            style: text.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-              letterSpacing: 0.8,
-            ),
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant, letterSpacing: 0.8),
           ),
         ),
         const Expanded(child: Divider()),

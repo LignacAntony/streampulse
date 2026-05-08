@@ -10,17 +10,14 @@ class BrandedHeader extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
+      spacing: 12,
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 8,
           children: [
-            Icon(
-              Icons.graphic_eq,
-              size: 28,
-              color: colors.primary,
-            ),
-            const SizedBox(width: 8),
+            Icon(Icons.graphic_eq, size: 28, color: colors.primary),
             Text(
               'StreamPulse',
               style: text.headlineMedium?.copyWith(
@@ -30,12 +27,9 @@ class BrandedHeader extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
         Text(
           'Redéfinissez votre expérience sonore.',
-          style: text.bodyMedium?.copyWith(
-            color: colors.onSurfaceVariant,
-          ),
+          style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
       ],
