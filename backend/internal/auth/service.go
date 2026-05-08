@@ -53,6 +53,11 @@ type ForgotPasswordInput struct {
 	Email string
 }
 
+type ResetPasswordInput struct {
+	Token    string
+	Password string
+}
+
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -84,6 +89,7 @@ type Repository interface {
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 	StorePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
 	DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error
+	ResetPassword(ctx context.Context, tokenHash, passwordHash string) error
 }
 
 type Service struct {
@@ -211,6 +217,21 @@ func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) er
 	log.Printf("[password-reset] token for %s (expires %s): %s", email, expiresAt.Format(time.RFC3339), raw)
 
 	return nil
+}
+
+func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) error {
+	if err := validatePassword(in.Password); err != nil {
+		return err
+	}
+
+	tokenHash := hashToken(in.Token)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), BcryptCost)
+	if err != nil {
+		return apperror.Internal("could not hash password", err)
+	}
+
+	return s.repo.ResetPassword(ctx, tokenHash, string(hash))
 }
 
 func normalizeEmail(raw string) (string, error) {

@@ -14,6 +14,7 @@ const (
 	maxLoginBodyBytes          = 1 << 20
 	maxRefreshBodyBytes        = 1 << 20
 	maxForgotPasswordBodyBytes = 1 << 20
+	maxResetPasswordBodyBytes  = 1 << 20
 )
 
 type registerRequest struct {
@@ -39,6 +40,11 @@ type forgotPasswordRequest struct {
 	Email string `json:"email"`
 }
 
+type resetPasswordRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
 type Registrar interface {
 	Register(ctx context.Context, in RegisterInput) (User, error)
 }
@@ -59,16 +65,21 @@ type PasswordResetter interface {
 	ForgotPassword(ctx context.Context, in ForgotPasswordInput) error
 }
 
+type PasswordResetExecutor interface {
+	ResetPassword(ctx context.Context, in ResetPasswordInput) error
+}
+
 type Handler struct {
 	svc           Registrar
 	authenticator Authenticator
 	refresher     TokenRefresher
 	logouter      Logouter
 	resetter      PasswordResetter
+	executor      PasswordResetExecutor
 }
 
-func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher, logouter Logouter, resetter PasswordResetter) *Handler {
-	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher, logouter: logouter, resetter: resetter}
+func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher, logouter Logouter, resetter PasswordResetter, executor PasswordResetExecutor) *Handler {
+	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher, logouter: logouter, resetter: resetter, executor: executor}
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -196,5 +207,30 @@ func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		"message": "if this email is registered, you will receive a password reset link shortly",
 	}); err != nil {
 		log.Printf("auth: encode forgot-password response: %v", err)
+	}
+}
+
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		return
+	}
+
+	var req resetPasswordRequest
+	if err := httpjson.Decode(w, r, &req, maxResetPasswordBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := h.executor.ResetPassword(r.Context(), ResetPasswordInput(req)); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, map[string]string{
+		"message": "password updated successfully",
+	}); err != nil {
+		log.Printf("auth: encode reset-password response: %v", err)
 	}
 }

@@ -175,6 +175,9 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/register` | `Handler.Register` | Non |
 | POST | `/api/auth/login` | `Handler.Login` | Non |
 | POST | `/api/auth/refresh` | `Handler.Refresh` | Non |
+| POST | `/api/auth/logout` | `Handler.Logout` | Oui (JWT) |
+| POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
+| POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
 
 ### Protéger une route avec JWT
 

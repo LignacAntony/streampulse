@@ -28,6 +28,7 @@ type fakeRefreshToken struct {
 type fakePasswordResetToken struct {
 	userID    string
 	expiresAt time.Time
+	usedAt    *time.Time
 }
 
 func newFakeRepo() *fakeRepo {
@@ -326,6 +327,106 @@ func TestForgotPassword_ReplacesExistingToken(t *testing.T) {
 
 	if len(repo.passwordResetTokens) != 1 {
 		t.Errorf("expected 1 token after double request, got %d", len(repo.passwordResetTokens))
+	}
+}
+
+func (f *fakeRepo) ResetPassword(_ context.Context, tokenHash, passwordHash string) error {
+	prt, ok := f.passwordResetTokens[tokenHash]
+	if !ok || time.Now().After(prt.expiresAt) || prt.usedAt != nil {
+		return apperror.InvalidArgument("invalid or expired reset token")
+	}
+	for email, uwh := range f.emails {
+		if uwh.ID == prt.userID {
+			uwh.PasswordHash = passwordHash
+			f.emails[email] = uwh
+			break
+		}
+	}
+	now := time.Now().UTC()
+	prt.usedAt = &now
+	f.passwordResetTokens[tokenHash] = prt
+	return nil
+}
+
+// -- ResetPassword -----------------------------------------------------------
+
+func TestResetPassword_HappyPath(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const rawToken = "known-raw-reset-token"
+	tokenHash := hashToken(rawToken)
+	repo.passwordResetTokens[tokenHash] = fakePasswordResetToken{
+		userID:    "00000000-0000-0000-0000-000000000001",
+		expiresAt: time.Now().UTC().Add(time.Hour),
+	}
+
+	if err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: rawToken, Password: "newpassword1"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	uwh := repo.emails["alice@example.com"]
+	if err := bcrypt.CompareHashAndPassword([]byte(uwh.PasswordHash), []byte("newpassword1")); err != nil {
+		t.Errorf("password not updated: %v", err)
+	}
+	if repo.passwordResetTokens[tokenHash].usedAt == nil {
+		t.Error("token not marked as used")
+	}
+}
+
+func TestResetPassword_InvalidToken_Errors(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret)
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "unknowntoken", Password: "newpassword1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestResetPassword_ExpiredToken_Errors(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	repo.passwordResetTokens["expiredhash"] = fakePasswordResetToken{
+		userID: "00000000-0000-0000-0000-000000000001", expiresAt: past,
+	}
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "expiredhash", Password: "newpassword1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestResetPassword_UsedToken_Errors(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret)
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	repo.passwordResetTokens["usedhash"] = fakePasswordResetToken{
+		userID: "00000000-0000-0000-0000-000000000001", expiresAt: now.Add(time.Hour), usedAt: &now,
+	}
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "usedhash", Password: "newpassword1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestResetPassword_ShortPassword_Errors(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret)
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "anytoken", Password: "short"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
 	}
 }
 

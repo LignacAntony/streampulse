@@ -12,6 +12,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deletePendingPasswordResetsByUser = `-- name: DeletePendingPasswordResetsByUser :exec
+DELETE FROM password_reset_tokens
+WHERE user_id = $1::uuid
+  AND used_at IS NULL
+`
+
+func (q *Queries) DeletePendingPasswordResetsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePendingPasswordResetsByUser, userID)
+	return err
+}
+
+const getValidPasswordResetToken = `-- name: GetValidPasswordResetToken :one
+SELECT user_id::text
+FROM password_reset_tokens
+WHERE token_hash = $1
+  AND expires_at > NOW()
+  AND used_at IS NULL
+`
+
+func (q *Queries) GetValidPasswordResetToken(ctx context.Context, tokenHash string) (string, error) {
+	row := q.db.QueryRow(ctx, getValidPasswordResetToken, tokenHash)
+	var user_id string
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const insertPasswordResetToken = `-- name: InsertPasswordResetToken :exec
 INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
 VALUES ($1::uuid, $2, $3)
@@ -28,13 +54,29 @@ func (q *Queries) InsertPasswordResetToken(ctx context.Context, arg InsertPasswo
 	return err
 }
 
-const deletePendingPasswordResetsByUser = `-- name: DeletePendingPasswordResetsByUser :exec
-DELETE FROM password_reset_tokens
-WHERE user_id = $1::uuid
-  AND used_at IS NULL
+const markPasswordResetTokenUsed = `-- name: MarkPasswordResetTokenUsed :exec
+UPDATE password_reset_tokens
+SET used_at = NOW()
+WHERE token_hash = $1
 `
 
-func (q *Queries) DeletePendingPasswordResetsByUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deletePendingPasswordResetsByUser, userID)
+func (q *Queries) MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) error {
+	_, err := q.db.Exec(ctx, markPasswordResetTokenUsed, tokenHash)
+	return err
+}
+
+const updateUserPasswordHash = `-- name: UpdateUserPasswordHash :exec
+UPDATE users
+SET password_hash = $1
+WHERE id = $2::uuid
+`
+
+type UpdateUserPasswordHashParams struct {
+	PasswordHash string
+	ID           pgtype.UUID
+}
+
+func (q *Queries) UpdateUserPasswordHash(ctx context.Context, arg UpdateUserPasswordHashParams) error {
+	_, err := q.db.Exec(ctx, updateUserPasswordHash, arg.PasswordHash, arg.ID)
 	return err
 }

@@ -149,6 +149,40 @@ func (r *pgRepository) DeletePendingPasswordResetsByUser(ctx context.Context, us
 	return nil
 }
 
+func (r *pgRepository) ResetPassword(ctx context.Context, tokenHash, passwordHash string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("repo: begin reset password tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := r.q.WithTx(tx)
+
+	userID, err := qtx.GetValidPasswordResetToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperror.InvalidArgument("invalid or expired reset token")
+		}
+		return fmt.Errorf("repo: get password reset token: %w", err)
+	}
+
+	if err := qtx.UpdateUserPasswordHash(ctx, authdb.UpdateUserPasswordHashParams{
+		PasswordHash: passwordHash,
+		ID:           uuidParam(userID),
+	}); err != nil {
+		return fmt.Errorf("repo: update user password: %w", err)
+	}
+
+	if err := qtx.MarkPasswordResetTokenUsed(ctx, tokenHash); err != nil {
+		return fmt.Errorf("repo: mark reset token used: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("repo: commit reset password tx: %w", err)
+	}
+	return nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {

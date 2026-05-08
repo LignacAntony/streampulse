@@ -56,7 +56,7 @@ func run() error {
 	// 4. Composition des dépendances métier
 	authRepo := auth.NewRepository(pool)
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret)
-	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc)
+	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
@@ -78,6 +78,7 @@ func run() error {
 	mux.HandleFunc("/api/auth/refresh", authHandler.Refresh)
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
 	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
+	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
