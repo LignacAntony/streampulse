@@ -244,7 +244,7 @@ void main() {
     });
 
     testWidgets(
-      'soumission valide + CGU appelle le repository et navigue vers /login',
+      'soumission valide + CGU appelle le repository et bascule sur le formulaire de connexion',
       (tester) async {
         final fake = _FakeAuthRepository(user: _userStub());
         await tester.pumpWidget(_buildHarness(fake));
@@ -260,7 +260,8 @@ void main() {
         expect(fake.lastEmail, 'alice@example.com');
         expect(fake.lastUsername, 'alice');
         expect(fake.lastPassword, 'hunter2hunter');
-        expect(find.text('LOGIN_PLACEHOLDER'), findsOneWidget);
+        expect(find.byKey(const Key('login_email_field')), findsOneWidget);
+        expect(find.byKey(const Key('register_username_field')), findsNothing);
 
         toastification.dismissAll(delayForAnimation: false);
         await tester.pump(const Duration(milliseconds: 700));
@@ -294,7 +295,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
     });
 
-    testWidgets("l'onglet Connexion navigue vers /login", (tester) async {
+    testWidgets("l'onglet Connexion bascule sur le formulaire de connexion sans changer de page", (tester) async {
       await tester.pumpWidget(_buildHarness(_FakeAuthRepository()));
       await tester.pumpAndSettle();
 
@@ -304,7 +305,9 @@ void main() {
       await tester.tap(find.byKey(const Key('auth_tab_login')));
       await tester.pumpAndSettle();
 
-      expect(find.text('LOGIN_PLACEHOLDER'), findsOneWidget);
+      expect(find.byKey(const Key('login_email_field')), findsOneWidget);
+      expect(find.byKey(const Key('login_password_field')), findsOneWidget);
+      expect(find.byKey(const Key('register_username_field')), findsNothing);
     });
   });
 }

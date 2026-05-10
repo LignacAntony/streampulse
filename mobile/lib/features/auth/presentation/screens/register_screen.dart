@@ -9,20 +9,30 @@ import '../utils/register_validators.dart';
 import '../widgets/auth_tabs.dart';
 import '../widgets/auth_text_form_field.dart';
 import '../widgets/auth_toasts.dart';
-import '../widgets/branded_header.dart';
 import '../widgets/oauth_buttons.dart';
 import '../widgets/password_strength_indicator.dart';
 import '../widgets/terms_checkbox.dart';
+import 'auth_screen.dart';
 import 'register_form_object.dart';
 
-class RegisterScreen extends ConsumerStatefulWidget {
+class RegisterScreen extends StatelessWidget {
   const RegisterScreen({super.key});
 
   @override
-  ConsumerState<RegisterScreen> createState() => _RegisterScreenState();
+  Widget build(BuildContext context) =>
+      const AuthScreen(initialTab: AuthTab.register);
 }
 
-class _RegisterScreenState extends ConsumerState<RegisterScreen> {
+class RegisterView extends ConsumerStatefulWidget {
+  const RegisterView({super.key, this.onRegistered});
+
+  final VoidCallback? onRegistered;
+
+  @override
+  ConsumerState<RegisterView> createState() => _RegisterViewState();
+}
+
+class _RegisterViewState extends ConsumerState<RegisterView> {
   final _formKey = GlobalKey<FormState>();
   final _form = RegisterFormObject();
 
@@ -50,7 +60,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       data: (user) {
         if (user == null) return;
         showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
-        context.go('/login');
+        final cb = widget.onRegistered;
+        if (cb != null) {
+          cb();
+        } else {
+          context.go('/login');
+        }
       },
       loading: () {},
       error: (error, _) {
@@ -74,54 +89,33 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final state = ref.watch(registerControllerProvider);
     final isLoading = state.isLoading;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 24,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 32,
-                    children: [
-                      const BrandedHeader(),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 24,
-                        children: [
-                          const AuthTabs(active: AuthTab.register),
-                          Form(
-                            key: _formKey,
-                            child: _RegisterFormFields(
-                              form: _form,
-                              isLoading: isLoading,
-                              onSubmit: _submit,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 16,
-                    children: [
-                      _AlreadyAccountLink(onTap: isLoading ? null : () => context.go('/login')),
-                      const _DividerWithLabel(label: "Ou s'inscrire avec"),
-                      OAuthButtons(enabled: !isLoading),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 24,
+      children: [
+        Form(
+          key: _formKey,
+          child: _RegisterFormFields(
+            form: _form,
+            isLoading: isLoading,
+            onSubmit: _submit,
           ),
         ),
-      ),
+        _AlreadyAccountLink(
+          onTap: isLoading
+              ? null
+              : () {
+                  final cb = widget.onRegistered;
+                  if (cb != null) {
+                    cb();
+                  } else {
+                    context.go('/login');
+                  }
+                },
+        ),
+        const _DividerWithLabel(label: "Ou s'inscrire avec"),
+        OAuthButtons(enabled: !isLoading),
+      ],
     );
   }
 }

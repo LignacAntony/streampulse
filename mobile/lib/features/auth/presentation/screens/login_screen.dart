@@ -9,18 +9,26 @@ import '../utils/login_validators.dart';
 import '../widgets/auth_tabs.dart';
 import '../widgets/auth_text_form_field.dart';
 import '../widgets/auth_toasts.dart';
-import '../widgets/branded_header.dart';
 import '../widgets/oauth_buttons.dart';
+import 'auth_screen.dart';
 import 'login_form_object.dart';
 
-class LoginScreen extends ConsumerStatefulWidget {
+class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  Widget build(BuildContext context) =>
+      const AuthScreen(initialTab: AuthTab.login);
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class LoginView extends ConsumerStatefulWidget {
+  const LoginView({super.key});
+
+  @override
+  ConsumerState<LoginView> createState() => _LoginViewState();
+}
+
+class _LoginViewState extends ConsumerState<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _form = LoginFormObject();
 
@@ -71,54 +79,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final state = ref.watch(loginControllerProvider);
     final isLoading = state.isLoading;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 24,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 32,
-                    children: [
-                      const BrandedHeader(),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 24,
-                        children: [
-                          const AuthTabs(active: AuthTab.login),
-                          Form(
-                            key: _formKey,
-                            child: _LoginFormFields(
-                              form: _form,
-                              isLoading: isLoading,
-                              onSubmit: _submit,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 16,
-                    children: [
-                      const _DividerWithLabel(label: 'Ou'),
-                      OAuthButtons(enabled: !isLoading),
-                      _GuestButton(enabled: !isLoading),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 24,
+      children: [
+        Form(
+          key: _formKey,
+          child: _LoginFormFields(
+            form: _form,
+            isLoading: isLoading,
+            onSubmit: _submit,
           ),
         ),
-      ),
+        const _DividerWithLabel(label: 'Ou'),
+        OAuthButtons(enabled: !isLoading),
+        _GuestButton(enabled: !isLoading),
+      ],
     );
   }
 }
