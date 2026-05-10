@@ -12,6 +12,7 @@ class ApiConstants {
   static const String login = '/api/auth/login';
   static const String register = '/api/auth/register';
   static const String refresh = '/api/auth/refresh';
+  static const String logout = '/api/auth/logout';
 
   // Streams
   static const String streams = '/api/streams';

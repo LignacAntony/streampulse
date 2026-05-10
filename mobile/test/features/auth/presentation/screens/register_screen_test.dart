@@ -41,6 +41,9 @@ class _FakeAuthRepository implements AuthRepository {
   }) async {
     throw UnimplementedError();
   }
+
+  @override
+  Future<void> logout() async {}
 }
 
 class _MarkerScreen extends StatelessWidget {

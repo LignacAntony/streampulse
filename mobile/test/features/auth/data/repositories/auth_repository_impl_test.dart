@@ -42,6 +42,16 @@ class _FakeRemote implements AuthRemoteDataSource {
     if (error != null) throw error!;
     return tokenPair!;
   }
+
+  int logoutCalls = 0;
+  String? lastLogoutRefreshToken;
+
+  @override
+  Future<void> logout({required String refreshToken}) async {
+    logoutCalls++;
+    lastLogoutRefreshToken = refreshToken;
+    if (error != null) throw error!;
+  }
 }
 
 class _FakeSecureStorage implements SecureStorage {
@@ -170,6 +180,49 @@ void main() {
         ),
         throwsA(isA<AuthException>()),
       );
+      expect(storage.accessToken, isNull);
+      expect(storage.refreshToken, isNull);
+    });
+  });
+
+  group('AuthRepositoryImpl.logout', () {
+    test('appelle le serveur avec le refresh token et purge le stockage', () async {
+      final remote = _FakeRemote();
+      final storage = _FakeSecureStorage()
+        ..accessToken = 'access-xyz'
+        ..refreshToken = 'refresh-xyz';
+      final repo = AuthRepositoryImpl(remote, storage);
+
+      await repo.logout();
+
+      expect(remote.logoutCalls, 1);
+      expect(remote.lastLogoutRefreshToken, 'refresh-xyz');
+      expect(storage.accessToken, isNull);
+      expect(storage.refreshToken, isNull);
+    });
+
+    test('purge quand même le stockage si le serveur échoue', () async {
+      final remote = _FakeRemote(error: const NetworkException());
+      final storage = _FakeSecureStorage()
+        ..accessToken = 'access-xyz'
+        ..refreshToken = 'refresh-xyz';
+      final repo = AuthRepositoryImpl(remote, storage);
+
+      await repo.logout();
+
+      expect(remote.logoutCalls, 1);
+      expect(storage.accessToken, isNull);
+      expect(storage.refreshToken, isNull);
+    });
+
+    test('ne tente pas le serveur si aucun refresh token, mais purge', () async {
+      final remote = _FakeRemote();
+      final storage = _FakeSecureStorage()..accessToken = 'orphan-access';
+      final repo = AuthRepositoryImpl(remote, storage);
+
+      await repo.logout();
+
+      expect(remote.logoutCalls, 0);
       expect(storage.accessToken, isNull);
       expect(storage.refreshToken, isNull);
     });

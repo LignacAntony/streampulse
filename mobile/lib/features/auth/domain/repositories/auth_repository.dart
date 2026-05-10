@@ -12,4 +12,8 @@ abstract class AuthRepository {
     required String email,
     required String password,
   });
+
+  /// Révoque le refresh token côté serveur (best-effort) et purge le stockage local.
+  /// Ne lève jamais : un échec réseau ne doit pas bloquer la déconnexion locale.
+  Future<void> logout();
 }

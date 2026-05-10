@@ -34,4 +34,18 @@ class AuthRepositoryImpl implements AuthRepository {
     await _secureStorage.saveRefreshToken(model.refreshToken);
     return model.toEntity();
   }
+
+  @override
+  Future<void> logout() async {
+    final refresh = await _secureStorage.getRefreshToken();
+    if (refresh != null) {
+      try {
+        await _remote.logout(refreshToken: refresh);
+      } catch (_) {
+        // Best-effort : si le serveur est injoignable ou répond en erreur,
+        // on garantit quand même la purge locale ci-dessous.
+      }
+    }
+    await _secureStorage.clearTokens();
+  }
 }

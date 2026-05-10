@@ -36,6 +36,17 @@ class AuthRemoteDataSource {
     }
   }
 
+  Future<void> logout({required String refreshToken}) async {
+    try {
+      await _dioClient.dio.post<void>(
+        ApiConstants.logout,
+        data: {'refresh_token': refreshToken},
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
   Future<TokenPairModel> login({
     required String email,
     required String password,

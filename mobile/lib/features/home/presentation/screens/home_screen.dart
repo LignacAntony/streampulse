@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../auth/presentation/providers/login_controller.dart';
+import '../../../auth/presentation/providers/register_controller.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -44,7 +46,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _logout() async {
-    await ref.read(secureStorageProvider).clearTokens();
+    await ref.read(authRepositoryProvider).logout();
+    ref.invalidate(loginControllerProvider);
+    ref.invalidate(registerControllerProvider);
     if (!mounted) return;
     context.go('/login');
   }
