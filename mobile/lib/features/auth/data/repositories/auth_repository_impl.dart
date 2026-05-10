@@ -42,8 +42,6 @@ class AuthRepositoryImpl implements AuthRepository {
       try {
         await _remote.logout(refreshToken: refresh);
       } catch (_) {
-        // Best-effort : si le serveur est injoignable ou répond en erreur,
-        // on garantit quand même la purge locale ci-dessous.
       }
     }
     await _secureStorage.clearTokens();

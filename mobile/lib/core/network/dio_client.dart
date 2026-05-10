@@ -43,8 +43,7 @@ class DioClient {
   late final Dio _refreshDio;
   final _logger = Logger();
 
-  // Verrou pour qu'un seul refresh tourne à la fois ;
-  // les requêtes 401 concurrentes attendent le même résultat.
+
   Completer<bool>? _refreshing;
 
   Dio get dio => _dio;
@@ -65,12 +64,10 @@ class DioClient {
 
         final req = error.requestOptions;
 
-        // Pas de refresh sur les endpoints d'auth eux-mêmes (sinon boucle).
         if (_isAuthEndpoint(req.path)) {
           return handler.next(error);
         }
 
-        // Une requête déjà rejouée qui re-401 : abandon.
         if (req.extra[_retriedKey] == true) {
           await _storage.clearTokens();
           return handler.next(error);
@@ -82,7 +79,6 @@ class DioClient {
           return handler.next(error);
         }
 
-        // Rejoue la requête originale avec le nouveau token.
         try {
           final newToken = await _storage.getAccessToken();
           req.headers['Authorization'] = 'Bearer $newToken';

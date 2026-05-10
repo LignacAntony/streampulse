@@ -93,8 +93,6 @@ class AuthRemoteDataSource {
       case 400:
         return ValidationException(serverMessage ?? 'Champs invalides');
       case 401:
-        // Message hard-codé : un 401 ne doit jamais relayer le détail serveur
-        // (risque de fuite d'info technique : "bcrypt cost", "token signature", etc.).
         return const AuthException('Email ou mot de passe incorrect');
       case 409:
         return DuplicateAccountException(
