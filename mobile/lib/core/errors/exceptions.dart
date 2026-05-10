@@ -24,3 +24,23 @@ class AuthException implements Exception {
   @override
   String toString() => 'AuthException: $message';
 }
+
+class ValidationException implements Exception {
+  const ValidationException([this.message = 'Champs invalides']);
+
+  final String message;
+
+  @override
+  String toString() => 'ValidationException: $message';
+}
+
+class DuplicateAccountException implements Exception {
+  const DuplicateAccountException([
+    this.message = 'Email ou pseudo déjà utilisé',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => 'DuplicateAccountException: $message';
+}
