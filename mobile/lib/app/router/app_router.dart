@@ -1,28 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/storage/secure_storage.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/home/presentation/screens/home_screen.dart';
 
-class _PlaceholderScreen extends StatelessWidget {
-  const _PlaceholderScreen({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: Text(title, style: Theme.of(context).textTheme.headlineMedium),
-      ),
-    );
-  }
-}
-
-const _publicRoutes = {'/login', '/register'};
+const _publicRoutes = {'/login', '/register', '/home'};
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -44,8 +28,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/home',
-      builder: (context, state) =>
-          const _PlaceholderScreen(title: 'Accueil'),
+      builder: (context, state) => const HomeScreen(),
     ),
     GoRoute(
       path: '/login',

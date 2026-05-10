@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:streampulse/core/errors/exceptions.dart';
+import 'package:streampulse/features/auth/domain/entities/token_pair.dart';
 import 'package:streampulse/features/auth/domain/entities/user.dart';
 import 'package:streampulse/features/auth/domain/repositories/auth_repository.dart';
 import 'package:streampulse/features/auth/presentation/providers/auth_providers.dart';
@@ -31,6 +32,14 @@ class _FakeAuthRepository implements AuthRepository {
     lastPassword = password;
     if (error != null) throw error!;
     return user!;
+  }
+
+  @override
+  Future<TokenPair> login({
+    required String email,
+    required String password,
+  }) async {
+    throw UnimplementedError();
   }
 }
 
