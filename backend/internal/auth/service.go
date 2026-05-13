@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"log"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -92,13 +91,19 @@ type Repository interface {
 	ResetPassword(ctx context.Context, tokenHash, passwordHash string) error
 }
 
+// Mailer envoie des emails transactionnels liés à l'authentification.
+type Mailer interface {
+	SendPasswordResetEmail(ctx context.Context, to, rawToken string) error
+}
+
 type Service struct {
 	repo      Repository
 	jwtSecret string
+	mailer    Mailer
 }
 
-func NewService(repo Repository, jwtSecret string) *Service {
-	return &Service{repo: repo, jwtSecret: jwtSecret}
+func NewService(repo Repository, jwtSecret string, mailer Mailer) *Service {
+	return &Service{repo: repo, jwtSecret: jwtSecret, mailer: mailer}
 }
 
 func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -213,8 +218,9 @@ func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) er
 		return apperror.Internal("could not store reset token", err)
 	}
 
-	// TODO STR-57 : remplacer ce log par un envoi d'email (SMTP).
-	log.Printf("[password-reset] token for %s (expires %s): %s", email, expiresAt.Format(time.RFC3339), raw)
+	if err := s.mailer.SendPasswordResetEmail(ctx, uwh.Email, raw); err != nil {
+		return apperror.Internal("could not send reset email", err)
+	}
 
 	return nil
 }

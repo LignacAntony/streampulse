@@ -10,6 +10,7 @@ import (
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/config"
+	"github.com/LignacAntony/streampulse/internal/email"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
@@ -55,7 +56,8 @@ func run() error {
 
 	// 4. Composition des dépendances métier
 	authRepo := auth.NewRepository(pool)
-	authSvc := auth.NewService(authRepo, cfg.JWTSecret)
+	mailer := email.NewFromConfig(cfg)
+	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
 	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
 	// 5. Démarrer le serveur HTTP

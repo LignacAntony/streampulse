@@ -40,6 +40,16 @@ type Config struct {
 	DBUser     string `mapstructure:"DB_USER"`
 	DBPassword string `mapstructure:"DB_PASSWORD"`
 	DBName     string `mapstructure:"DB_NAME"`
+
+	// SMTP — optionnel. Si SMTPHost est vide, le LogMailer est utilisé.
+	SMTPHost     string `mapstructure:"SMTP_HOST"`
+	SMTPPort     string `mapstructure:"SMTP_PORT"`
+	SMTPUsername string `mapstructure:"SMTP_USERNAME"`
+	SMTPPassword string `mapstructure:"SMTP_PASSWORD"`
+	SMTPFrom     string `mapstructure:"SMTP_FROM"`
+
+	// AppBaseURL est utilisée pour construire les liens dans les emails.
+	AppBaseURL string `mapstructure:"APP_BASE_URL"`
 }
 
 // Load lit la configuration depuis l'environnement et la valide.
@@ -75,6 +85,8 @@ func Load() (*Config, error) {
 	for _, key := range []string{
 		"GO_ENV", "API_PORT", "JWT_SECRET",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
+		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
+		"APP_BASE_URL",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
@@ -114,6 +126,9 @@ func (c *Config) applyDefaultsForEmpty() {
 	}
 	if c.DBPort == "" {
 		c.DBPort = defaultDBPort
+	}
+	if c.SMTPPort == "" {
+		c.SMTPPort = "587"
 	}
 }
 

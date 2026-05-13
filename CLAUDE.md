@@ -319,6 +319,12 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `API_PORT` | Port exposé de l'API sur l'hôte | `8080` |
 | `GO_ENV` | Environnement Go | `development` |
 | `JWT_SECRET` | Clé de signature JWT (min. 32 chars) | `chaine-aleatoire-longue` |
+| `SMTP_HOST` | Serveur SMTP (vide = mode log dev) | `smtp.mailgun.org` |
+| `SMTP_PORT` | Port SMTP STARTTLS | `587` |
+| `SMTP_USERNAME` | Utilisateur SMTP | `postmaster@streampulse.com` |
+| `SMTP_PASSWORD` | Mot de passe SMTP | `mot-de-passe-smtp` |
+| `SMTP_FROM` | Adresse expéditeur | `noreply@streampulse.com` |
+| `APP_BASE_URL` | URL de base pour les liens d'email | `https://streampulse.com` |
 
 ## Santé des services
 

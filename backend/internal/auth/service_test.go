@@ -110,11 +110,22 @@ func (f *fakeRepo) DeletePendingPasswordResetsByUser(_ context.Context, userID s
 	return nil
 }
 
+type fakeMailer struct {
+	lastTo    string
+	lastToken string
+}
+
+func (f *fakeMailer) SendPasswordResetEmail(_ context.Context, to, rawToken string) error {
+	f.lastTo = to
+	f.lastToken = rawToken
+	return nil
+}
+
 // -- Register ----------------------------------------------------------------
 
 func TestRegister_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 
 	user, err := svc.Register(context.Background(), RegisterInput{
 		Email: "Alice@Example.COM", Username: "alice_42", Password: "hunter2hunter",
@@ -146,7 +157,7 @@ func TestRegister_InvalidInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewService(newFakeRepo(), testSecret).Register(context.Background(), tc.input)
+			_, err := NewService(newFakeRepo(), testSecret, &fakeMailer{}).Register(context.Background(), tc.input)
 			if !apperror.IsCode(err, tc.wantCode) {
 				t.Errorf("want %s, got %v", tc.wantCode, err)
 			}
@@ -156,7 +167,7 @@ func TestRegister_InvalidInput(t *testing.T) {
 
 func TestRegister_DuplicateEmail(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	base := RegisterInput{Email: "bob@example.com", Username: "bob", Password: "hunter2hunter"}
 	if _, err := svc.Register(context.Background(), base); err != nil {
 		t.Fatal(err)
@@ -169,7 +180,7 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 
 func TestLogin_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +203,7 @@ func TestLogin_HappyPath(t *testing.T) {
 
 func TestLogin_InvalidCredentials(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +223,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 
 func TestRefresh_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +243,7 @@ func TestRefresh_HappyPath(t *testing.T) {
 
 func TestRefresh_TokenReuse_Rejected(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +261,7 @@ func TestRefresh_TokenReuse_Rejected(t *testing.T) {
 
 func TestLogout_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +279,7 @@ func TestLogout_HappyPath(t *testing.T) {
 }
 
 func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
-	svc := NewService(newFakeRepo(), testSecret)
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
 	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: "unknown-token"}); err != nil {
 		t.Errorf("logout with unknown token should not error, got: %v", err)
 	}
@@ -278,7 +289,8 @@ func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
 
 func TestForgotPassword_KnownEmail_StoresToken(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	mailer := &fakeMailer{}
+	svc := NewService(repo, testSecret, mailer)
 	if _, err := svc.Register(context.Background(), RegisterInput{
 		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
 	}); err != nil {
@@ -296,17 +308,23 @@ func TestForgotPassword_KnownEmail_StoresToken(t *testing.T) {
 			t.Error("token already expired")
 		}
 	}
+	if mailer.lastTo != "alice@example.com" {
+		t.Errorf("email sent to %q, want alice@example.com", mailer.lastTo)
+	}
+	if mailer.lastToken == "" {
+		t.Error("email sent with empty token")
+	}
 }
 
 func TestForgotPassword_UnknownEmail_ReturnsNil(t *testing.T) {
-	svc := NewService(newFakeRepo(), testSecret)
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
 	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "nobody@example.com"}); err != nil {
 		t.Errorf("unknown email should not error, got: %v", err)
 	}
 }
 
 func TestForgotPassword_InvalidEmail_ReturnsNil(t *testing.T) {
-	svc := NewService(newFakeRepo(), testSecret)
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
 	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "not-an-email"}); err != nil {
 		t.Errorf("invalid email should not error, got: %v", err)
 	}
@@ -314,7 +332,7 @@ func TestForgotPassword_InvalidEmail_ReturnsNil(t *testing.T) {
 
 func TestForgotPassword_ReplacesExistingToken(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{
 		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
 	}); err != nil {
@@ -352,7 +370,7 @@ func (f *fakeRepo) ResetPassword(_ context.Context, tokenHash, passwordHash stri
 
 func TestResetPassword_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{
 		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
 	}); err != nil {
@@ -379,7 +397,7 @@ func TestResetPassword_HappyPath(t *testing.T) {
 }
 
 func TestResetPassword_InvalidToken_Errors(t *testing.T) {
-	svc := NewService(newFakeRepo(), testSecret)
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
 	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "unknowntoken", Password: "newpassword1"})
 	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
 		t.Errorf("want invalid_argument, got %v", err)
@@ -388,7 +406,7 @@ func TestResetPassword_InvalidToken_Errors(t *testing.T) {
 
 func TestResetPassword_ExpiredToken_Errors(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{
 		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
 	}); err != nil {
@@ -406,7 +424,7 @@ func TestResetPassword_ExpiredToken_Errors(t *testing.T) {
 
 func TestResetPassword_UsedToken_Errors(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{
 		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
 	}); err != nil {
@@ -423,7 +441,7 @@ func TestResetPassword_UsedToken_Errors(t *testing.T) {
 }
 
 func TestResetPassword_ShortPassword_Errors(t *testing.T) {
-	svc := NewService(newFakeRepo(), testSecret)
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
 	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "anytoken", Password: "short"})
 	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
 		t.Errorf("want invalid_argument, got %v", err)
