@@ -10,6 +10,7 @@ class App extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
     return ToastificationWrapper(
       child: MaterialApp.router(
         title: 'StreamPulse',
@@ -17,7 +18,7 @@ class App extends ConsumerWidget {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.dark,
-        routerConfig: appRouter,
+        routerConfig: router,
       ),
     );
   }

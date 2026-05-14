@@ -6,12 +6,22 @@ import '../../../../core/theme/app_colors.dart';
 enum AuthTab { login, register }
 
 class AuthTabs extends StatelessWidget {
-  const AuthTabs({super.key, required this.active});
+  const AuthTabs({super.key, required this.active, this.onChanged});
 
   static const double _height = 48;
   static const double _radius = 12;
 
   final AuthTab active;
+  final ValueChanged<AuthTab>? onChanged;
+
+  void _select(BuildContext context, AuthTab tab) {
+    final cb = onChanged;
+    if (cb != null) {
+      cb(tab);
+    } else {
+      context.go(tab == AuthTab.login ? '/login' : '/register');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +42,7 @@ class AuthTabs extends StatelessWidget {
               active: active == AuthTab.login,
               onTap: active == AuthTab.login
                   ? null
-                  : () => context.go('/login'),
+                  : () => _select(context, AuthTab.login),
             ),
           ),
           Expanded(
@@ -42,7 +52,7 @@ class AuthTabs extends StatelessWidget {
               active: active == AuthTab.register,
               onTap: active == AuthTab.register
                   ? null
-                  : () => context.go('/register'),
+                  : () => _select(context, AuthTab.register),
             ),
           ),
         ],

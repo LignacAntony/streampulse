@@ -235,6 +235,39 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 - **Simulateur iOS / device physique** : utiliser l'IP locale du Mac (ex : `192.168.x.x:8080`)
 - Configurable via `--dart-define=API_BASE_URL=http://...` ou variable d'environnement
 
+### Authentification (mobile)
+
+Voir [ADR 009](docs/adr/009-authentification-flutter.md) pour les décisions détaillées.
+
+**Stockage** : `SecureStorage` (`core/storage/secure_storage.dart`) wrappe `flutter_secure_storage`
+avec `EncryptedSharedPreferences` (Android) / Keychain (iOS). 5 méthodes uniquement :
+`saveAccessToken`, `saveRefreshToken`, `getAccessToken`, `getRefreshToken`, `clearTokens`.
+
+**Transport** : `DioClient` (`core/network/dio_client.dart`) injecte automatiquement le `Bearer`
+sur chaque requête et intercepte les `401` :
+
+- Refresh **sérialisé** via `Completer<bool>` (un seul refresh en vol pour N requêtes 401 parallèles).
+- `_refreshDio` séparé sans intercepteur → pas de récursion.
+- Anti-boucle : `req.path` parmi `/api/auth/{login,register,refresh,logout}` → pas de refresh ;
+  `req.extra['_retried']` empêche de rejouer deux fois.
+- Échec du refresh → `clearTokens()` + propagation de l'erreur (le router renvoie vers `/login`).
+
+**Logout** : `AuthRepository.logout()` appelle `POST /api/auth/logout` en best-effort
+(`try/catch` silencieux), puis purge **toujours** `SecureStorage`. Le `home_screen` complète
+avec `ref.invalidate(loginControllerProvider / registerControllerProvider)` pour libérer les
+`AsyncValue` retenus en mémoire.
+
+**Erreurs 401** : message UI **hard-codé** (`'Email ou mot de passe incorrect'`) — ne jamais
+relayer le `serverMessage` pour éviter une fuite d'info technique. Les 400/409/5xx peuvent en
+revanche utiliser `serverMessage` (codes business contrôlés).
+
+**UI auth** : un seul `AuthScreen` avec onglets en place (`AnimatedSwitcher` entre `LoginView`
+et `RegisterView`, pas de changement de route). `LoginScreen` et `RegisterScreen` sont des
+wrappers minces vers `AuthScreen(initialTab: ...)`.
+
+**Toasts** : `toastification` via les helpers `showAuthSuccessToast / ErrorToast / InfoToast`
+(`presentation/widgets/auth_toasts.dart`). `ToastificationWrapper` est posé dans `app.dart`.
+
 ## Architecture Docker
 
 Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont connectés.
@@ -313,9 +346,11 @@ docker compose ps   # Voir l'état de tous les services
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
+| `docs/adr/006-authentification-jwt.md` | Décision : JWT HS256 + rotation refresh côté backend |
+| `docs/adr/009-authentification-flutter.md` | Décision : stockage sécurisé, refresh auto, logout best-effort côté Flutter |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `008-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `010-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
