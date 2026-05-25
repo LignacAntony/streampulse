@@ -64,11 +64,13 @@ class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
   }
 
   void _onStateChanged(
-    AsyncValue<void>? previous,
-    AsyncValue<void> next,
+    AsyncValue<bool>? previous,
+    AsyncValue<bool> next,
   ) {
     next.when(
-      data: (_) {
+      data: (sent) {
+        if (!sent) return;
+        if (!context.mounted) return;
         showAuthInfoToast(
           context,
           'Si cet email est enregistré, un lien vous a été envoyé.',
@@ -91,7 +93,7 @@ class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<void>>(
+    ref.listen<AsyncValue<bool>>(
       forgotPasswordControllerProvider,
       _onStateChanged,
     );

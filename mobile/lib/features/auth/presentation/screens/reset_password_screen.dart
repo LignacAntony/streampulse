@@ -134,11 +134,13 @@ class _ResetPasswordViewState extends ConsumerState<_ResetPasswordView> {
   }
 
   void _onStateChanged(
-    AsyncValue<void>? previous,
-    AsyncValue<void> next,
+    AsyncValue<bool>? previous,
+    AsyncValue<bool> next,
   ) {
     next.when(
-      data: (_) {
+      data: (reset) {
+        if (!reset) return;
+        if (!context.mounted) return;
         showAuthSuccessToast(
           context,
           'Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.',
@@ -162,7 +164,7 @@ class _ResetPasswordViewState extends ConsumerState<_ResetPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<void>>(
+    ref.listen<AsyncValue<bool>>(
       resetPasswordControllerProvider,
       _onStateChanged,
     );

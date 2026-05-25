@@ -54,7 +54,7 @@ class AuthRemoteDataSource {
     try {
       await _dioClient.dio.post<void>(
         ApiConstants.resetPassword,
-        data: {'token': token, 'new_password': newPassword},
+        data: {'token': token, 'password': newPassword},
       );
     } on DioException catch (e) {
       throw _mapDioException(e);
