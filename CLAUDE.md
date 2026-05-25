@@ -279,6 +279,7 @@ Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont co
 |---|---|---|---|---|
 | `postgres` | `postgres:16-alpine` | Base de données | 5432 | — |
 | `api` | build local Go 1.22 | API REST | 8080 | 8080 |
+| `mailpit` | `axllent/mailpit:latest` | Email de test (dev) | 1025 (SMTP), 8025 (UI) | 1025, 8025 |
 | `prometheus` | `prom/prometheus:latest` | Métriques | 9090 | 9090 |
 | `loki` | `grafana/loki:latest` | Logs | 3100 | — |
 | `tempo` | `grafana/tempo:latest` | Traces (OTLP) | 3200, 4317, 4318 | — |
@@ -337,6 +338,7 @@ docker compose ps   # Voir l'état de tous les services
 | API | http://localhost:8080/health | 200 OK |
 | Prometheus | http://localhost:9090/-/healthy | 200 OK |
 | Grafana | http://localhost:3000/api/health | 200 OK |
+| Mailpit | http://localhost:8025 | 200 OK |
 | Loki | interne : `localhost:3100/ready` | — |
 | Tempo | interne : `localhost:3200/ready` | — |
 
@@ -344,6 +346,16 @@ docker compose ps   # Voir l'état de tous les services
 - Grafana : http://localhost:3000 (admin / `$GRAFANA_ADMIN_PASSWORD`)
 - Prometheus : http://localhost:9090
 - API : http://localhost:8080
+- Mailpit (webmail de test) : http://localhost:8025
+
+**Tester l'envoi d'email en local (Mailpit) :**
+```bash
+docker compose up -d mailpit          # Démarrer Mailpit seul
+docker compose up -d                  # Ou démarrer toute la stack
+# Appeler POST /api/auth/forgot-password avec un email valide
+# → ouvrir http://localhost:8025 pour voir l'email intercepté
+```
+> En production, remplacer `SMTP_HOST=mailpit` par le relay réel et renseigner `SMTP_USERNAME` / `SMTP_PASSWORD`.
 
 ## Documentation
 

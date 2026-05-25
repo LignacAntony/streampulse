@@ -39,7 +39,12 @@ func (m *SMTPMailer) SendPasswordResetEmail(_ context.Context, to, rawToken stri
 	link := m.baseURL + "/reset-password?token=" + rawToken
 	msg := buildPlainEmail(m.from, to, "Réinitialisation de votre mot de passe StreamPulse", link)
 
-	auth := smtp.PlainAuth("", m.username, m.password, m.host)
+	// Auth optionnelle : certains relays locaux (Mailpit, Mailhog) n'en ont pas.
+	var auth smtp.Auth
+	if m.username != "" {
+		auth = smtp.PlainAuth("", m.username, m.password, m.host)
+	}
+
 	addr := m.host + ":" + m.port
 	if err := smtp.SendMail(addr, auth, m.from, []string{to}, msg); err != nil {
 		return fmt.Errorf("email: smtp send: %w", err)
