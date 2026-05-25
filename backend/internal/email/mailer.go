@@ -1,9 +1,3 @@
-// Package email fournit les implémentations concrètes de l'interface auth.Mailer.
-// Il expose deux implémentations :
-//   - SMTPMailer : envoi réel via net/smtp (STARTTLS, port 587 par défaut).
-//   - LogMailer  : log stdout uniquement, utilisé si SMTP_HOST est absent.
-//
-// Choisir l'implémentation avec NewFromConfig.
 package email
 
 import (
@@ -22,9 +16,6 @@ type Mailer interface {
 	SendPasswordResetEmail(ctx context.Context, to, rawToken string) error
 }
 
-// ─── SMTPMailer ──────────────────────────────────────────────────────────────
-
-// SMTPMailer envoie des emails via un relay SMTP (STARTTLS).
 type SMTPMailer struct {
 	host     string
 	port     string
@@ -34,7 +25,6 @@ type SMTPMailer struct {
 	baseURL  string
 }
 
-// SendPasswordResetEmail construit et envoie l'email de réinitialisation.
 func (m *SMTPMailer) SendPasswordResetEmail(_ context.Context, to, rawToken string) error {
 	link := m.baseURL + "/reset-password?token=" + rawToken
 	msg := buildPlainEmail(m.from, to, "Réinitialisation de votre mot de passe StreamPulse", link)
@@ -52,21 +42,13 @@ func (m *SMTPMailer) SendPasswordResetEmail(_ context.Context, to, rawToken stri
 	return nil
 }
 
-// ─── LogMailer ───────────────────────────────────────────────────────────────
-
-// LogMailer écrit l'email dans stdout au lieu de l'envoyer (mode dev/test).
 type LogMailer struct{}
 
-// SendPasswordResetEmail log le token en clair (dev uniquement).
 func (l *LogMailer) SendPasswordResetEmail(_ context.Context, to, rawToken string) error {
 	log.Printf("[email:dev] password-reset to=%s token=%s", to, rawToken)
 	return nil
 }
 
-// ─── Constructeur ─────────────────────────────────────────────────────────────
-
-// NewFromConfig retourne un SMTPMailer si SMTP_HOST est configuré,
-// sinon un LogMailer (aucune configuration SMTP requise en développement).
 func NewFromConfig(cfg *config.Config) Mailer {
 	if cfg.SMTPHost == "" {
 		return &LogMailer{}
@@ -80,8 +62,6 @@ func NewFromConfig(cfg *config.Config) Mailer {
 		baseURL:  cfg.AppBaseURL,
 	}
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 func buildPlainEmail(from, to, subject, resetLink string) []byte {
 	body := fmt.Sprintf(

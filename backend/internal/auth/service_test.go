@@ -10,7 +10,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// fakeRepo implémente Repository en mémoire pour tester le service sans DB.
 type fakeRepo struct {
 	createCalls         int
 	emails              map[string]UserWithHash
@@ -121,8 +120,6 @@ func (f *fakeMailer) SendPasswordResetEmail(_ context.Context, to, rawToken stri
 	return nil
 }
 
-// -- Register ----------------------------------------------------------------
-
 func TestRegister_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, testSecret, &fakeMailer{})
@@ -176,8 +173,6 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 	assertAppError(t, err, apperror.CodeConflict, "email or username already taken")
 }
 
-// -- Login -------------------------------------------------------------------
-
 func TestLogin_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, testSecret, &fakeMailer{})
@@ -209,8 +204,8 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	}
 
 	cases := []LoginInput{
-		{Email: "nobody@example.com", Password: "hunter2hunter"}, // utilisateur inexistant
-		{Email: "alice@example.com", Password: "wrongpassword"},  // mauvais mot de passe
+		{Email: "nobody@example.com", Password: "hunter2hunter"},
+		{Email: "alice@example.com", Password: "wrongpassword"},
 	}
 	for _, in := range cases {
 		_, err := svc.Login(context.Background(), in)
@@ -218,8 +213,6 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 		assertAppError(t, err, apperror.CodeUnauthorized, "invalid credentials")
 	}
 }
-
-// -- Refresh -----------------------------------------------------------------
 
 func TestRefresh_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
@@ -257,8 +250,6 @@ func TestRefresh_TokenReuse_Rejected(t *testing.T) {
 	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
 }
 
-// -- Logout ------------------------------------------------------------------
-
 func TestLogout_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, testSecret, &fakeMailer{})
@@ -284,8 +275,6 @@ func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
 		t.Errorf("logout with unknown token should not error, got: %v", err)
 	}
 }
-
-// -- ForgotPassword ----------------------------------------------------------
 
 func TestForgotPassword_KnownEmail_StoresToken(t *testing.T) {
 	repo := newFakeRepo()
@@ -366,8 +355,6 @@ func (f *fakeRepo) ResetPassword(_ context.Context, tokenHash, passwordHash stri
 	return nil
 }
 
-// -- ResetPassword -----------------------------------------------------------
-
 func TestResetPassword_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, testSecret, &fakeMailer{})
@@ -447,8 +434,6 @@ func TestResetPassword_ShortPassword_Errors(t *testing.T) {
 		t.Errorf("want invalid_argument, got %v", err)
 	}
 }
-
-// -- helpers -----------------------------------------------------------------
 
 func assertAppError(t *testing.T, err error, code apperror.Code, message string) {
 	t.Helper()

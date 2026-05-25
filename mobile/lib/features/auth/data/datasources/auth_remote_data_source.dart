@@ -130,10 +130,6 @@ class AuthRemoteDataSource {
     }
   }
 
-  /// Extrait le message d'erreur du corps de la réponse.
-  /// Gère deux formats :
-  ///   - `{"error": "message"}` (string)
-  ///   - `{"error": {"code": "...", "message": "..."}}` (objet — format API StreamPulse)
   String? _serverErrorMessage(Object? body) {
     if (body is! Map<String, dynamic>) return null;
     final value = body['error'];

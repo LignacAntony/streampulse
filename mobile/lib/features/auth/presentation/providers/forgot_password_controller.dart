@@ -7,7 +7,7 @@ class ForgotPasswordController extends AsyncNotifier<bool> {
   late final AuthRepository _repo = ref.read(authRepositoryProvider);
 
   @override
-  Future<bool> build() async => false; // false = pas encore envoyé
+  Future<bool> build() async => false;
 
   Future<void> submit({required String email}) async {
     state = const AsyncValue.loading();

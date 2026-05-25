@@ -40,8 +40,6 @@ class ResetPasswordScreen extends StatelessWidget {
   }
 }
 
-// ─── Vue token invalide ───────────────────────────────────────────────────────
-
 class _InvalidTokenView extends StatelessWidget {
   const _InvalidTokenView();
 
@@ -88,8 +86,6 @@ class _InvalidTokenView extends StatelessWidget {
   }
 }
 
-// ─── Form object ─────────────────────────────────────────────────────────────
-
 class _ResetPasswordFormObject {
   final password = TextEditingController();
   final confirm = TextEditingController();
@@ -101,8 +97,6 @@ class _ResetPasswordFormObject {
     confirm.dispose();
   }
 }
-
-// ─── Vue principale ───────────────────────────────────────────────────────────
 
 class _ResetPasswordView extends ConsumerStatefulWidget {
   const _ResetPasswordView({required this.token});
@@ -191,8 +185,6 @@ class _ResetPasswordViewState extends ConsumerState<_ResetPasswordView> {
   }
 }
 
-// ─── En-tête ─────────────────────────────────────────────────────────────────
-
 class _ResetPasswordHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -218,8 +210,6 @@ class _ResetPasswordHeader extends StatelessWidget {
     );
   }
 }
-
-// ─── Champs de formulaire ─────────────────────────────────────────────────────
 
 class _ResetPasswordFormFields extends StatelessWidget {
   const _ResetPasswordFormFields({
@@ -318,8 +308,6 @@ class _ResetPasswordFormFields extends StatelessWidget {
     );
   }
 }
-
-// ─── Toggle visibilité mot de passe ──────────────────────────────────────────
 
 class _PasswordToggle extends StatelessWidget {
   const _PasswordToggle({

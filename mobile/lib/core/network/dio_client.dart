@@ -7,8 +7,6 @@ import '../constants/api_constants.dart';
 import '../constants/app_constants.dart';
 import '../storage/secure_storage.dart';
 
-// Principe D : SecureStorage est injecté via le constructeur, pas instancié ici.
-// Principe S : DioClient gère uniquement le transport HTTP.
 class DioClient {
   DioClient(this._storage) {
     _dio = Dio(
