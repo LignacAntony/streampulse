@@ -18,7 +18,9 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 8. [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) — Décision d'architecture : Clean Architecture + Riverpod pour l'application mobile Flutter.
 9. [adr/006-authentification-jwt.md](adr/006-authentification-jwt.md) — Décision d'architecture : authentification JWT (access token + refresh token avec rotation).
 10. [adr/007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) — Décision d'architecture : accès base de données via sqlc (SQL → Go typé).
-11. [adr/006-architecture-handler-service-repository.md](adr/006-architecture-handler-service-repository.md) — Décision d'architecture : layering handler / service / repository côté backend Go.
+11. [adr/008-architecture-handler-service-repository.md](adr/008-architecture-handler-service-repository.md) — Décision d'architecture : layering handler / service / repository côté backend Go.
+12. [adr/010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) — Décision d'architecture : sécurisation du workflow de réinitialisation de mot de passe (backend Go).
+13. [adr/011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) — Décision d'architecture : deep links et gestion d'état Flutter pour la réinitialisation de mot de passe.
 
 ---
 
@@ -37,6 +39,9 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [adr/006-authentification-jwt.md](adr/006-authentification-jwt.md) | ADR 006 — Authentification JWT : access token + refresh token avec rotation |
 | [adr/007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) | ADR 007 — Accès base de données : sqlc (SQL → Go typé) |
 | [adr/008-architecture-handler-service-repository.md](adr/008-architecture-handler-service-repository.md) | ADR 008 — Layering backend Go : handler / service / repository |
+| [adr/009-authentification-flutter.md](adr/009-authentification-flutter.md) | ADR 009 — Authentification Flutter : stockage sécurisé, refresh automatique, logout best-effort |
+| [adr/010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) | ADR 010 — Réinitialisation mot de passe : token haché, anti-énumération, transaction atomique, mailer |
+| [adr/011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) | ADR 011 — Réinitialisation mot de passe Flutter : deep links custom scheme, AsyncNotifier<bool> |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
@@ -47,7 +52,7 @@ Les ADR documentent toutes les décisions d'architecture significatives du proje
 Chaque décision est tracée avec son contexte, les alternatives considérées et les conséquences.
 
 **Convention :** toute nouvelle décision d'architecture → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `009-...`).
+avec le numéro suivant (prochain : `012-...`).
 
 Format utilisé : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) (Michael Nygard).
 
