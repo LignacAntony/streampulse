@@ -325,7 +325,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `SMTP_USERNAME` | Utilisateur SMTP | `postmaster@streampulse.com` |
 | `SMTP_PASSWORD` | Mot de passe SMTP | `mot-de-passe-smtp` |
 | `SMTP_FROM` | Adresse expéditeur | `noreply@streampulse.com` |
-| `APP_BASE_URL` | URL de base pour les liens d'email | `https://streampulse.com` |
+| `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
 
 ## Santé des services
 
@@ -348,13 +348,29 @@ docker compose ps   # Voir l'état de tous les services
 - API : http://localhost:8080
 - Mailpit (webmail de test) : http://localhost:8025
 
-**Tester l'envoi d'email en local (Mailpit) :**
+**Workflow complet de réinitialisation de mot de passe (dev) :**
 ```bash
-docker compose up -d mailpit          # Démarrer Mailpit seul
-docker compose up -d                  # Ou démarrer toute la stack
-# Appeler POST /api/auth/forgot-password avec un email valide
-# → ouvrir http://localhost:8025 pour voir l'email intercepté
+# 1. Lancer la stack
+docker compose up -d
+
+# 2. Dans l'app Flutter (émulateur Android ou simulateur iOS)
+#    Login screen → "Mot de passe oublié ?" → saisir user1@streampulse.dev → Envoyer
+
+# 3. Ouvrir Mailpit → copier le token depuis le lien de l'email
+open http://localhost:8025
+
+# 4a. Déclencher le deep link depuis le terminal (Android)
+adb shell am start -a android.intent.action.VIEW \
+  -d "streampulse://app/reset-password?token=<TOKEN>"
+
+# 4b. Simulateur iOS
+xcrun simctl openurl booted \
+  "streampulse://app/reset-password?token=<TOKEN>"
+
+# 5. Saisir le nouveau mot de passe dans l'app → Réinitialiser
+# 6. Se connecter avec le nouveau mot de passe → ✓
 ```
+> `APP_BASE_URL=streampulse://app` — le lien email ouvre directement l'app Flutter via deep link.  
 > En production, remplacer `SMTP_HOST=mailpit` par le relay réel et renseigner `SMTP_USERNAME` / `SMTP_PASSWORD`.
 
 ## Documentation

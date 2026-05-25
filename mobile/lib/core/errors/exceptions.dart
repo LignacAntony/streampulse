@@ -44,3 +44,12 @@ class DuplicateAccountException implements Exception {
   @override
   String toString() => 'DuplicateAccountException: $message';
 }
+
+class PasswordResetException implements Exception {
+  const PasswordResetException([this.message = 'Lien invalide ou expiré']);
+
+  final String message;
+
+  @override
+  String toString() => 'PasswordResetException: $message';
+}
