@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -23,6 +24,8 @@ const (
 	BcryptCost     = 12
 	MinUsernameLen = 3
 	MaxUsernameLen = 30
+
+	PasswordResetTokenDuration = time.Hour
 )
 
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
@@ -44,6 +47,15 @@ type RefreshInput struct {
 
 type LogoutInput struct {
 	RefreshToken string
+}
+
+type ForgotPasswordInput struct {
+	Email string
+}
+
+type ResetPasswordInput struct {
+	Token    string
+	Password string
 }
 
 type TokenPair struct {
@@ -75,15 +87,25 @@ type Repository interface {
 	GetUserByRefreshToken(ctx context.Context, tokenHash string) (User, error)
 	RotateRefreshToken(ctx context.Context, oldHash, newHash, userID string, expiresAt time.Time) error
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	StorePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
+	DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error
+	CheckPasswordResetToken(ctx context.Context, tokenHash string) error
+	ResetPassword(ctx context.Context, tokenHash, passwordHash string) error
+}
+
+// Mailer envoie des emails transactionnels liés à l'authentification.
+type Mailer interface {
+	SendPasswordResetEmail(ctx context.Context, to, rawToken string) error
 }
 
 type Service struct {
 	repo      Repository
 	jwtSecret string
+	mailer    Mailer
 }
 
-func NewService(repo Repository, jwtSecret string) *Service {
-	return &Service{repo: repo, jwtSecret: jwtSecret}
+func NewService(repo Repository, jwtSecret string, mailer Mailer) *Service {
+	return &Service{repo: repo, jwtSecret: jwtSecret, mailer: mailer}
 }
 
 func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -170,6 +192,59 @@ func (s *Service) Refresh(ctx context.Context, in RefreshInput) (TokenPair, erro
 
 func (s *Service) Logout(ctx context.Context, in LogoutInput) error {
 	return s.repo.RevokeRefreshToken(ctx, hashToken(in.RefreshToken))
+}
+
+// ForgotPassword génère un token de réinitialisation sécurisé et le stocke en BDD.
+// Retourne toujours nil même si l'email est inconnu (évite l'énumération).
+func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) error {
+	email, err := normalizeEmail(in.Email)
+	if err != nil {
+		return nil
+	}
+
+	uwh, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil
+	}
+
+	if err := s.repo.DeletePendingPasswordResetsByUser(ctx, uwh.ID); err != nil {
+		log.Printf("auth: delete pending password resets for user %s: %v", uwh.ID, err)
+	}
+
+	raw, hash, err := GenerateRefreshToken()
+	if err != nil {
+		return apperror.Internal("could not generate reset token", err)
+	}
+
+	expiresAt := time.Now().UTC().Add(PasswordResetTokenDuration)
+	if err := s.repo.StorePasswordResetToken(ctx, uwh.ID, hash, expiresAt); err != nil {
+		return apperror.Internal("could not store reset token", err)
+	}
+
+	if err := s.mailer.SendPasswordResetEmail(ctx, uwh.Email, raw); err != nil {
+		return apperror.Internal("could not send reset email", err)
+	}
+
+	return nil
+}
+
+func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) error {
+	if err := validatePassword(in.Password); err != nil {
+		return err
+	}
+
+	tokenHash := hashToken(in.Token)
+
+	if err := s.repo.CheckPasswordResetToken(ctx, tokenHash); err != nil {
+		return err
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), BcryptCost)
+	if err != nil {
+		return apperror.Internal("could not hash password", err)
+	}
+
+	return s.repo.ResetPassword(ctx, tokenHash, string(hash))
 }
 
 func normalizeEmail(raw string) (string, error) {

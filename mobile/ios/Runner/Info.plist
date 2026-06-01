@@ -54,6 +54,18 @@
 		<string>audio</string>
 		<string>fetch</string>
 	</array>
+	<!-- Deep link : streampulse://app/reset-password?token=xxx -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>streampulse</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>StreamPulse utilise le microphone pour diffuser des flux audio en direct.</string>
 	<key>UILaunchStoryboardName</key>

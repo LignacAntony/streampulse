@@ -235,7 +235,7 @@ class _ForgotPasswordLink extends StatelessWidget {
       alignment: Alignment.centerRight,
       child: TextButton(
         key: const Key('login_forgot_password'),
-        onPressed: () {},
+        onPressed: () => context.push('/forgot-password'),
         child: Text(
           'Mot de passe oublié ?',
           style: text.labelLarge?.copyWith(

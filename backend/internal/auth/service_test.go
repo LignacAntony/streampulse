@@ -10,13 +10,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// fakeRepo implémente Repository en mémoire pour tester le service sans DB.
 type fakeRepo struct {
-	createCalls   int
-	emails        map[string]UserWithHash
-	usernames     map[string]struct{}
-	lastHash      string
-	refreshTokens map[string]fakeRefreshToken
+	createCalls         int
+	emails              map[string]UserWithHash
+	usernames           map[string]struct{}
+	lastHash            string
+	refreshTokens       map[string]fakeRefreshToken
+	passwordResetTokens map[string]fakePasswordResetToken
 }
 
 type fakeRefreshToken struct {
@@ -24,11 +24,18 @@ type fakeRefreshToken struct {
 	expiresAt time.Time
 }
 
+type fakePasswordResetToken struct {
+	userID    string
+	expiresAt time.Time
+	usedAt    *time.Time
+}
+
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		emails:        map[string]UserWithHash{},
-		usernames:     map[string]struct{}{},
-		refreshTokens: map[string]fakeRefreshToken{},
+		emails:              map[string]UserWithHash{},
+		usernames:           map[string]struct{}{},
+		refreshTokens:       map[string]fakeRefreshToken{},
+		passwordResetTokens: map[string]fakePasswordResetToken{},
 	}
 }
 
@@ -88,11 +95,42 @@ func (f *fakeRepo) RevokeRefreshToken(_ context.Context, tokenHash string) error
 	return nil
 }
 
-// -- Register ----------------------------------------------------------------
+func (f *fakeRepo) StorePasswordResetToken(_ context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	f.passwordResetTokens[tokenHash] = fakePasswordResetToken{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (f *fakeRepo) DeletePendingPasswordResetsByUser(_ context.Context, userID string) error {
+	for hash, prt := range f.passwordResetTokens {
+		if prt.userID == userID {
+			delete(f.passwordResetTokens, hash)
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepo) CheckPasswordResetToken(_ context.Context, tokenHash string) error {
+	prt, ok := f.passwordResetTokens[tokenHash]
+	if !ok || time.Now().After(prt.expiresAt) || prt.usedAt != nil {
+		return apperror.InvalidArgument("invalid or expired reset token")
+	}
+	return nil
+}
+
+type fakeMailer struct {
+	lastTo    string
+	lastToken string
+}
+
+func (f *fakeMailer) SendPasswordResetEmail(_ context.Context, to, rawToken string) error {
+	f.lastTo = to
+	f.lastToken = rawToken
+	return nil
+}
 
 func TestRegister_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 
 	user, err := svc.Register(context.Background(), RegisterInput{
 		Email: "Alice@Example.COM", Username: "alice_42", Password: "hunter2hunter",
@@ -124,7 +162,7 @@ func TestRegister_InvalidInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewService(newFakeRepo(), testSecret).Register(context.Background(), tc.input)
+			_, err := NewService(newFakeRepo(), testSecret, &fakeMailer{}).Register(context.Background(), tc.input)
 			if !apperror.IsCode(err, tc.wantCode) {
 				t.Errorf("want %s, got %v", tc.wantCode, err)
 			}
@@ -134,7 +172,7 @@ func TestRegister_InvalidInput(t *testing.T) {
 
 func TestRegister_DuplicateEmail(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	base := RegisterInput{Email: "bob@example.com", Username: "bob", Password: "hunter2hunter"}
 	if _, err := svc.Register(context.Background(), base); err != nil {
 		t.Fatal(err)
@@ -143,11 +181,9 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 	assertAppError(t, err, apperror.CodeConflict, "email or username already taken")
 }
 
-// -- Login -------------------------------------------------------------------
-
 func TestLogin_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,14 +206,14 @@ func TestLogin_HappyPath(t *testing.T) {
 
 func TestLogin_InvalidCredentials(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
 
 	cases := []LoginInput{
-		{Email: "nobody@example.com", Password: "hunter2hunter"}, // utilisateur inexistant
-		{Email: "alice@example.com", Password: "wrongpassword"},  // mauvais mot de passe
+		{Email: "nobody@example.com", Password: "hunter2hunter"},
+		{Email: "alice@example.com", Password: "wrongpassword"},
 	}
 	for _, in := range cases {
 		_, err := svc.Login(context.Background(), in)
@@ -186,11 +222,9 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	}
 }
 
-// -- Refresh -----------------------------------------------------------------
-
 func TestRefresh_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +244,7 @@ func TestRefresh_HappyPath(t *testing.T) {
 
 func TestRefresh_TokenReuse_Rejected(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -224,11 +258,9 @@ func TestRefresh_TokenReuse_Rejected(t *testing.T) {
 	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
 }
 
-// -- Logout ------------------------------------------------------------------
-
 func TestLogout_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewService(repo, testSecret)
+	svc := NewService(repo, testSecret, &fakeMailer{})
 	if _, err := svc.Register(context.Background(), RegisterInput{Email: "alice@example.com", Username: "alice", Password: "hunter2hunter"}); err != nil {
 		t.Fatal(err)
 	}
@@ -246,13 +278,213 @@ func TestLogout_HappyPath(t *testing.T) {
 }
 
 func TestLogout_UnknownToken_IsIdempotent(t *testing.T) {
-	svc := NewService(newFakeRepo(), testSecret)
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
 	if err := svc.Logout(context.Background(), LogoutInput{RefreshToken: "unknown-token"}); err != nil {
 		t.Errorf("logout with unknown token should not error, got: %v", err)
 	}
 }
 
-// -- helpers -----------------------------------------------------------------
+func TestForgotPassword_KnownEmail_StoresToken(t *testing.T) {
+	repo := newFakeRepo()
+	mailer := &fakeMailer{}
+	svc := NewService(repo, testSecret, mailer)
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "alice@example.com"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.passwordResetTokens) != 1 {
+		t.Errorf("expected 1 password reset token stored, got %d", len(repo.passwordResetTokens))
+	}
+	for _, prt := range repo.passwordResetTokens {
+		if prt.expiresAt.Before(time.Now().UTC()) {
+			t.Error("token already expired")
+		}
+	}
+	if mailer.lastTo != "alice@example.com" {
+		t.Errorf("email sent to %q, want alice@example.com", mailer.lastTo)
+	}
+	if mailer.lastToken == "" {
+		t.Error("email sent with empty token")
+	}
+}
+
+func TestForgotPassword_UnknownEmail_ReturnsNil(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "nobody@example.com"}); err != nil {
+		t.Errorf("unknown email should not error, got: %v", err)
+	}
+}
+
+func TestForgotPassword_InvalidEmail_ReturnsNil(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	if err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "not-an-email"}); err != nil {
+		t.Errorf("invalid email should not error, got: %v", err)
+	}
+}
+
+func TestForgotPassword_ReplacesExistingToken(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Deux demandes successives → un seul token en BDD.
+	_ = svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "alice@example.com"})
+	_ = svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "alice@example.com"})
+
+	if len(repo.passwordResetTokens) != 1 {
+		t.Errorf("expected 1 token after double request, got %d", len(repo.passwordResetTokens))
+	}
+}
+
+func (f *fakeRepo) ResetPassword(_ context.Context, tokenHash, passwordHash string) error {
+	prt, ok := f.passwordResetTokens[tokenHash]
+	if !ok || time.Now().After(prt.expiresAt) || prt.usedAt != nil {
+		return apperror.InvalidArgument("invalid or expired reset token")
+	}
+	for email, uwh := range f.emails {
+		if uwh.ID == prt.userID {
+			uwh.PasswordHash = passwordHash
+			f.emails[email] = uwh
+			break
+		}
+	}
+	now := time.Now().UTC()
+	prt.usedAt = &now
+	f.passwordResetTokens[tokenHash] = prt
+	for hash, rt := range f.refreshTokens {
+		if rt.userID == prt.userID {
+			delete(f.refreshTokens, hash)
+		}
+	}
+	return nil
+}
+
+func TestResetPassword_HappyPath(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	user, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const rawToken = "known-raw-reset-token"
+	tokenHash := hashToken(rawToken)
+	repo.passwordResetTokens[tokenHash] = fakePasswordResetToken{
+		userID:    user.ID,
+		expiresAt: time.Now().UTC().Add(time.Hour),
+	}
+
+	if err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: rawToken, Password: "newpassword1"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	uwh := repo.emails["alice@example.com"]
+	if err := bcrypt.CompareHashAndPassword([]byte(uwh.PasswordHash), []byte("newpassword1")); err != nil {
+		t.Errorf("password not updated: %v", err)
+	}
+	if repo.passwordResetTokens[tokenHash].usedAt == nil {
+		t.Error("token not marked as used")
+	}
+}
+
+func TestResetPassword_RevokesAllRefreshTokens(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	loginPair, err := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "oldpassword"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.refreshTokens) == 0 {
+		t.Fatal("expected at least one refresh token before reset")
+	}
+
+	const rawToken = "reset-token-for-revoke-test"
+	tokenHash := hashToken(rawToken)
+	userID := repo.emails["alice@example.com"].ID
+	repo.passwordResetTokens[tokenHash] = fakePasswordResetToken{
+		userID:    userID,
+		expiresAt: time.Now().UTC().Add(time.Hour),
+	}
+
+	if err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: rawToken, Password: "newpassword1"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(repo.refreshTokens) != 0 {
+		t.Errorf("expected all refresh tokens to be revoked after password reset, got %d", len(repo.refreshTokens))
+	}
+
+	_, err = svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
+	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
+}
+
+func TestResetPassword_InvalidToken_Errors(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "unknowntoken", Password: "newpassword1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestResetPassword_ExpiredToken_Errors(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().UTC().Add(-time.Hour)
+	repo.passwordResetTokens["expiredhash"] = fakePasswordResetToken{
+		userID: "00000000-0000-0000-0000-000000000001", expiresAt: past,
+	}
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "expiredhash", Password: "newpassword1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestResetPassword_UsedToken_Errors(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	repo.passwordResetTokens["usedhash"] = fakePasswordResetToken{
+		userID: "00000000-0000-0000-0000-000000000001", expiresAt: now.Add(time.Hour), usedAt: &now,
+	}
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "usedhash", Password: "newpassword1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestResetPassword_ShortPassword_Errors(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "anytoken", Password: "short"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
 
 func assertAppError(t *testing.T, err error, code apperror.Code, message string) {
 	t.Helper()

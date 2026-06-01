@@ -175,6 +175,9 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/register` | `Handler.Register` | Non |
 | POST | `/api/auth/login` | `Handler.Login` | Non |
 | POST | `/api/auth/refresh` | `Handler.Refresh` | Non |
+| POST | `/api/auth/logout` | `Handler.Logout` | Oui (JWT) |
+| POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
+| POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
 
 ### Protéger une route avec JWT
 
@@ -276,6 +279,7 @@ Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont co
 |---|---|---|---|---|
 | `postgres` | `postgres:16-alpine` | Base de données | 5432 | — |
 | `api` | build local Go 1.22 | API REST | 8080 | 8080 |
+| `mailpit` | `axllent/mailpit:latest` | Email de test (dev) | 1025 (SMTP), 8025 (UI) | 1025, 8025 |
 | `prometheus` | `prom/prometheus:latest` | Métriques | 9090 | 9090 |
 | `loki` | `grafana/loki:latest` | Logs | 3100 | — |
 | `tempo` | `grafana/tempo:latest` | Traces (OTLP) | 3200, 4317, 4318 | — |
@@ -316,6 +320,12 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `API_PORT` | Port exposé de l'API sur l'hôte | `8080` |
 | `GO_ENV` | Environnement Go | `development` |
 | `JWT_SECRET` | Clé de signature JWT (min. 32 chars) | `chaine-aleatoire-longue` |
+| `SMTP_HOST` | Serveur SMTP (vide = mode log dev) | `smtp.mailgun.org` |
+| `SMTP_PORT` | Port SMTP STARTTLS | `587` |
+| `SMTP_USERNAME` | Utilisateur SMTP | `postmaster@streampulse.com` |
+| `SMTP_PASSWORD` | Mot de passe SMTP | `mot-de-passe-smtp` |
+| `SMTP_FROM` | Adresse expéditeur | `noreply@streampulse.com` |
+| `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
 
 ## Santé des services
 
@@ -328,6 +338,7 @@ docker compose ps   # Voir l'état de tous les services
 | API | http://localhost:8080/health | 200 OK |
 | Prometheus | http://localhost:9090/-/healthy | 200 OK |
 | Grafana | http://localhost:3000/api/health | 200 OK |
+| Mailpit | http://localhost:8025 | 200 OK |
 | Loki | interne : `localhost:3100/ready` | — |
 | Tempo | interne : `localhost:3200/ready` | — |
 
@@ -335,6 +346,32 @@ docker compose ps   # Voir l'état de tous les services
 - Grafana : http://localhost:3000 (admin / `$GRAFANA_ADMIN_PASSWORD`)
 - Prometheus : http://localhost:9090
 - API : http://localhost:8080
+- Mailpit (webmail de test) : http://localhost:8025
+
+**Workflow complet de réinitialisation de mot de passe (dev) :**
+```bash
+# 1. Lancer la stack
+docker compose up -d
+
+# 2. Dans l'app Flutter (émulateur Android ou simulateur iOS)
+#    Login screen → "Mot de passe oublié ?" → saisir user1@streampulse.dev → Envoyer
+
+# 3. Ouvrir Mailpit → copier le token depuis le lien de l'email
+open http://localhost:8025
+
+# 4a. Déclencher le deep link depuis le terminal (Android)
+adb shell am start -a android.intent.action.VIEW \
+  -d "streampulse://app/reset-password?token=<TOKEN>"
+
+# 4b. Simulateur iOS
+xcrun simctl openurl booted \
+  "streampulse://app/reset-password?token=<TOKEN>"
+
+# 5. Saisir le nouveau mot de passe dans l'app → Réinitialiser
+# 6. Se connecter avec le nouveau mot de passe → ✓
+```
+> `APP_BASE_URL=streampulse://app` — le lien email ouvre directement l'app Flutter via deep link.  
+> En production, remplacer `SMTP_HOST=mailpit` par le relay réel et renseigner `SMTP_USERNAME` / `SMTP_PASSWORD`.
 
 ## Documentation
 

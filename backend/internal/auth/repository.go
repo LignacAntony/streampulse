@@ -131,6 +131,73 @@ func (r *pgRepository) RevokeRefreshToken(ctx context.Context, tokenHash string)
 	return nil
 }
 
+func (r *pgRepository) CheckPasswordResetToken(ctx context.Context, tokenHash string) error {
+	_, err := r.q.GetValidPasswordResetToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperror.InvalidArgument("invalid or expired reset token")
+		}
+		return fmt.Errorf("repo: check password reset token: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepository) StorePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	if err := r.q.InsertPasswordResetToken(ctx, authdb.InsertPasswordResetTokenParams{
+		UserID:    uuidParam(userID),
+		TokenHash: tokenHash,
+		ExpiresAt: expiresAt,
+	}); err != nil {
+		return fmt.Errorf("repo: store password reset token: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepository) DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error {
+	if err := r.q.DeletePendingPasswordResetsByUser(ctx, uuidParam(userID)); err != nil {
+		return fmt.Errorf("repo: delete pending password resets: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepository) ResetPassword(ctx context.Context, tokenHash, passwordHash string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("repo: begin reset password tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := r.q.WithTx(tx)
+
+	userID, err := qtx.GetValidPasswordResetToken(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperror.InvalidArgument("invalid or expired reset token")
+		}
+		return fmt.Errorf("repo: get password reset token: %w", err)
+	}
+
+	if err := qtx.UpdateUserPasswordHash(ctx, authdb.UpdateUserPasswordHashParams{
+		PasswordHash: passwordHash,
+		ID:           uuidParam(userID),
+	}); err != nil {
+		return fmt.Errorf("repo: update user password: %w", err)
+	}
+
+	if err := qtx.MarkPasswordResetTokenUsed(ctx, tokenHash); err != nil {
+		return fmt.Errorf("repo: mark reset token used: %w", err)
+	}
+
+	if err := qtx.DeleteAllRefreshTokensByUser(ctx, uuidParam(userID)); err != nil {
+		return fmt.Errorf("repo: revoke refresh tokens after password reset: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("repo: commit reset password tx: %w", err)
+	}
+	return nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {

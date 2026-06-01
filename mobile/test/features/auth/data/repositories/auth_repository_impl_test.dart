@@ -52,6 +52,19 @@ class _FakeRemote implements AuthRemoteDataSource {
     lastLogoutRefreshToken = refreshToken;
     if (error != null) throw error!;
   }
+
+  @override
+  Future<void> requestPasswordReset({required String email}) async {
+    if (error != null) throw error!;
+  }
+
+  @override
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    if (error != null) throw error!;
+  }
 }
 
 class _FakeSecureStorage implements SecureStorage {

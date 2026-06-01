@@ -10,6 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type PasswordResetToken struct {
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+	TokenHash string
+	ExpiresAt time.Time
+	UsedAt    pgtype.Timestamptz
+	CreatedAt time.Time
+}
+
 type Playlist struct {
 	ID          pgtype.UUID
 	UserID      pgtype.UUID

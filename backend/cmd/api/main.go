@@ -10,6 +10,7 @@ import (
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/config"
+	"github.com/LignacAntony/streampulse/internal/email"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
@@ -55,8 +56,9 @@ func run() error {
 
 	// 4. Composition des dépendances métier
 	authRepo := auth.NewRepository(pool)
-	authSvc := auth.NewService(authRepo, cfg.JWTSecret)
-	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc)
+	mailer := email.NewFromConfig(cfg)
+	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
+	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
@@ -77,6 +79,8 @@ func run() error {
 	mux.HandleFunc("/api/auth/login", authHandler.Login)
 	mux.HandleFunc("/api/auth/refresh", authHandler.Refresh)
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
+	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
+	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),

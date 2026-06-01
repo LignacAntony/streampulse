@@ -36,6 +36,31 @@ class AuthRemoteDataSource {
     }
   }
 
+  Future<void> requestPasswordReset({required String email}) async {
+    try {
+      await _dioClient.dio.post<void>(
+        ApiConstants.forgotPassword,
+        data: {'email': email},
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    try {
+      await _dioClient.dio.post<void>(
+        ApiConstants.resetPassword,
+        data: {'token': token, 'password': newPassword},
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
   Future<void> logout({required String refreshToken}) async {
     try {
       await _dioClient.dio.post<void>(
@@ -106,9 +131,12 @@ class AuthRemoteDataSource {
   }
 
   String? _serverErrorMessage(Object? body) {
-    if (body is Map<String, dynamic>) {
-      final value = body['error'];
-      if (value is String && value.isNotEmpty) return value;
+    if (body is! Map<String, dynamic>) return null;
+    final value = body['error'];
+    if (value is String && value.isNotEmpty) return value;
+    if (value is Map<String, dynamic>) {
+      final msg = value['message'];
+      if (msg is String && msg.isNotEmpty) return msg;
     }
     return null;
   }
