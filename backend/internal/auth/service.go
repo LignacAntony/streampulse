@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -88,6 +89,7 @@ type Repository interface {
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 	StorePasswordResetToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
 	DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error
+	CheckPasswordResetToken(ctx context.Context, tokenHash string) error
 	ResetPassword(ctx context.Context, tokenHash, passwordHash string) error
 }
 
@@ -205,8 +207,9 @@ func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) er
 		return nil
 	}
 
-	// Supprime les tokens en attente existants avant d'en créer un nouveau.
-	_ = s.repo.DeletePendingPasswordResetsByUser(ctx, uwh.ID)
+	if err := s.repo.DeletePendingPasswordResetsByUser(ctx, uwh.ID); err != nil {
+		log.Printf("auth: delete pending password resets for user %s: %v", uwh.ID, err)
+	}
 
 	raw, hash, err := GenerateRefreshToken()
 	if err != nil {
@@ -231,6 +234,10 @@ func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) erro
 	}
 
 	tokenHash := hashToken(in.Token)
+
+	if err := s.repo.CheckPasswordResetToken(ctx, tokenHash); err != nil {
+		return err
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), BcryptCost)
 	if err != nil {

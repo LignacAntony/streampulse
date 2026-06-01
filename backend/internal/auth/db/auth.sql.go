@@ -46,6 +46,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const deleteAllRefreshTokensByUser = `-- name: DeleteAllRefreshTokensByUser :exec
+DELETE FROM refresh_tokens WHERE user_id = $1::uuid
+`
+
+func (q *Queries) DeleteAllRefreshTokensByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAllRefreshTokensByUser, userID)
+	return err
+}
+
 const deleteRefreshToken = `-- name: DeleteRefreshToken :execresult
 DELETE FROM refresh_tokens WHERE token_hash = $1
 `

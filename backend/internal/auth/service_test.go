@@ -109,6 +109,14 @@ func (f *fakeRepo) DeletePendingPasswordResetsByUser(_ context.Context, userID s
 	return nil
 }
 
+func (f *fakeRepo) CheckPasswordResetToken(_ context.Context, tokenHash string) error {
+	prt, ok := f.passwordResetTokens[tokenHash]
+	if !ok || time.Now().After(prt.expiresAt) || prt.usedAt != nil {
+		return apperror.InvalidArgument("invalid or expired reset token")
+	}
+	return nil
+}
+
 type fakeMailer struct {
 	lastTo    string
 	lastToken string
@@ -352,22 +360,28 @@ func (f *fakeRepo) ResetPassword(_ context.Context, tokenHash, passwordHash stri
 	now := time.Now().UTC()
 	prt.usedAt = &now
 	f.passwordResetTokens[tokenHash] = prt
+	for hash, rt := range f.refreshTokens {
+		if rt.userID == prt.userID {
+			delete(f.refreshTokens, hash)
+		}
+	}
 	return nil
 }
 
 func TestResetPassword_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, testSecret, &fakeMailer{})
-	if _, err := svc.Register(context.Background(), RegisterInput{
+	user, err := svc.Register(context.Background(), RegisterInput{
 		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	const rawToken = "known-raw-reset-token"
 	tokenHash := hashToken(rawToken)
 	repo.passwordResetTokens[tokenHash] = fakePasswordResetToken{
-		userID:    "00000000-0000-0000-0000-000000000001",
+		userID:    user.ID,
 		expiresAt: time.Now().UTC().Add(time.Hour),
 	}
 
@@ -381,6 +395,43 @@ func TestResetPassword_HappyPath(t *testing.T) {
 	if repo.passwordResetTokens[tokenHash].usedAt == nil {
 		t.Error("token not marked as used")
 	}
+}
+
+func TestResetPassword_RevokesAllRefreshTokens(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "oldpassword",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	loginPair, err := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "oldpassword"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.refreshTokens) == 0 {
+		t.Fatal("expected at least one refresh token before reset")
+	}
+
+	const rawToken = "reset-token-for-revoke-test"
+	tokenHash := hashToken(rawToken)
+	userID := repo.emails["alice@example.com"].ID
+	repo.passwordResetTokens[tokenHash] = fakePasswordResetToken{
+		userID:    userID,
+		expiresAt: time.Now().UTC().Add(time.Hour),
+	}
+
+	if err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: rawToken, Password: "newpassword1"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(repo.refreshTokens) != 0 {
+		t.Errorf("expected all refresh tokens to be revoked after password reset, got %d", len(repo.refreshTokens))
+	}
+
+	_, err = svc.Refresh(context.Background(), RefreshInput{RefreshToken: loginPair.RefreshToken})
+	assertAppError(t, err, apperror.CodeUnauthorized, "invalid or expired refresh token")
 }
 
 func TestResetPassword_InvalidToken_Errors(t *testing.T) {

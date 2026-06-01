@@ -22,3 +22,6 @@ WHERE rt.token_hash = $1
 
 -- name: DeleteRefreshToken :execresult
 DELETE FROM refresh_tokens WHERE token_hash = $1;
+
+-- name: DeleteAllRefreshTokensByUser :exec
+DELETE FROM refresh_tokens WHERE user_id = sqlc.arg(user_id)::uuid;
