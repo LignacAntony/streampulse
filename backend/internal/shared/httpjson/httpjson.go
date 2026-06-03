@@ -146,5 +146,5 @@ func logRequestError(r *http.Request, err error) {
 	sanitize := func(s string) string {
 		return strings.NewReplacer("\n", "", "\r", "").Replace(s)
 	}
-	log.Printf("http: %s %s %s: %v", r.Method, sanitize(r.URL.Path), sanitize(r.RemoteAddr), err) //nolint:gocritic // #nosec G706 -- path and remoteAddr stripped of newlines by sanitize()
+	log.Printf("http: %s %s %s: %v", r.Method, sanitize(r.URL.Path), sanitize(r.RemoteAddr), err) // #nosec G706 -- path and remoteAddr stripped of newlines by sanitize()
 }
