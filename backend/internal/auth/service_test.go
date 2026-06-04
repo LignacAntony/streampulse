@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ type fakeRepo struct {
 	lastHash            string
 	refreshTokens       map[string]fakeRefreshToken
 	passwordResetTokens map[string]fakePasswordResetToken
+	deleteUserErr       error
 }
 
 type fakeRefreshToken struct {
@@ -368,6 +370,29 @@ func (f *fakeRepo) ResetPassword(_ context.Context, tokenHash, passwordHash stri
 	return nil
 }
 
+func (f *fakeRepo) GetUserByID(_ context.Context, userID string) (UserWithHash, error) {
+	for _, uwh := range f.emails {
+		if uwh.ID == userID {
+			return uwh, nil
+		}
+	}
+	return UserWithHash{}, apperror.NotFound("user not found")
+}
+
+func (f *fakeRepo) DeleteUserByID(_ context.Context, userID string) error {
+	if f.deleteUserErr != nil {
+		return f.deleteUserErr
+	}
+	for email, uwh := range f.emails {
+		if uwh.ID == userID {
+			delete(f.usernames, uwh.Username)
+			delete(f.emails, email)
+			return nil
+		}
+	}
+	return nil
+}
+
 func TestResetPassword_HappyPath(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, testSecret, &fakeMailer{})
@@ -483,6 +508,79 @@ func TestResetPassword_ShortPassword_Errors(t *testing.T) {
 	err := svc.ResetPassword(context.Background(), ResetPasswordInput{Token: "anytoken", Password: "short"})
 	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
 		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestDeleteAccount_HappyPath(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	user, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.DeleteAccount(context.Background(), DeleteAccountInput{
+		UserID: user.ID, Password: "hunter2hunter",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := repo.emails["alice@example.com"]; ok {
+		t.Error("user still present in repo after deletion")
+	}
+}
+
+func TestDeleteAccount_WrongPassword(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	user, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = svc.DeleteAccount(context.Background(), DeleteAccountInput{
+		UserID: user.ID, Password: "wrongpassword",
+	})
+	assertAppError(t, err, apperror.CodeUnauthorized, "invalid credentials")
+}
+
+func TestDeleteAccount_EmptyPassword(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	err := svc.DeleteAccount(context.Background(), DeleteAccountInput{
+		UserID: "00000000-0000-0000-0000-000000000001", Password: "",
+	})
+	assertAppError(t, err, apperror.CodeInvalidArgument, "password required")
+}
+
+func TestDeleteAccount_UserNotFound(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	err := svc.DeleteAccount(context.Background(), DeleteAccountInput{
+		UserID: "00000000-0000-0000-0000-000000000099", Password: "hunter2hunter",
+	})
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Errorf("want not_found, got %v", err)
+	}
+}
+
+func TestDeleteAccount_RepoDeleteError(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	user, err := svc.Register(context.Background(), RegisterInput{
+		Email: "alice@example.com", Username: "alice", Password: "hunter2hunter",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo.deleteUserErr = fmt.Errorf("db unavailable")
+	err = svc.DeleteAccount(context.Background(), DeleteAccountInput{
+		UserID: user.ID, Password: "hunter2hunter",
+	})
+	if !apperror.IsCode(err, apperror.CodeInternal) {
+		t.Errorf("want internal, got %v", err)
 	}
 }
 
