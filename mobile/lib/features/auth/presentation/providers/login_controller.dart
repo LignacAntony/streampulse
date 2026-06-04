@@ -1,25 +1,35 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 
+import '../../../../core/state/async_state.dart';
 import '../../domain/entities/token_pair.dart';
 import '../../domain/repositories/auth_repository.dart';
-import 'auth_providers.dart';
 
-class LoginController extends AsyncNotifier<TokenPair?> {
-  late final AuthRepository _repository = ref.read(authRepositoryProvider);
+class LoginController extends ChangeNotifier {
+  LoginController(this._repository);
 
-  @override
-  Future<TokenPair?> build() async => null;
+  final AuthRepository _repository;
+
+  AsyncState<TokenPair?> _state = const AsyncState.idle();
+  AsyncState<TokenPair?> get state => _state;
 
   Future<void> submit({
     required String email,
     required String password,
   }) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      return _repository.login(email: email, password: password);
-    });
+    _state = const AsyncState.loading();
+    notifyListeners();
+    try {
+      final tokens = await _repository.login(email: email, password: password);
+      _state = AsyncState.data(tokens);
+    } catch (error) {
+      _state = AsyncState.error(error);
+    }
+    notifyListeners();
+  }
+
+  /// Réinitialise l'état (équivalent de `ref.invalidate`).
+  void reset() {
+    _state = const AsyncState.idle();
+    notifyListeners();
   }
 }
-
-final loginControllerProvider =
-    AsyncNotifierProvider<LoginController, TokenPair?>(LoginController.new);

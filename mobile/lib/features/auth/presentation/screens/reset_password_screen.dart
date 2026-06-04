@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -98,21 +98,30 @@ class _ResetPasswordFormObject {
   }
 }
 
-class _ResetPasswordView extends ConsumerStatefulWidget {
+class _ResetPasswordView extends StatefulWidget {
   const _ResetPasswordView({required this.token});
 
   final String token;
 
   @override
-  ConsumerState<_ResetPasswordView> createState() => _ResetPasswordViewState();
+  State<_ResetPasswordView> createState() => _ResetPasswordViewState();
 }
 
-class _ResetPasswordViewState extends ConsumerState<_ResetPasswordView> {
+class _ResetPasswordViewState extends State<_ResetPasswordView> {
   final _formKey = GlobalKey<FormState>();
   final _form = _ResetPasswordFormObject();
+  late final ResetPasswordController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = context.read<ResetPasswordController>();
+    _controller.addListener(_onStateChanged);
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_onStateChanged);
     _form.dispose();
     super.dispose();
   }
@@ -121,28 +130,26 @@ class _ResetPasswordViewState extends ConsumerState<_ResetPasswordView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await ref.read(resetPasswordControllerProvider.notifier).submit(
-          token: widget.token,
-          newPassword: _form.password.text,
-        );
+    await _controller.submit(
+      token: widget.token,
+      newPassword: _form.password.text,
+    );
   }
 
-  void _onStateChanged(
-    AsyncValue<bool>? previous,
-    AsyncValue<bool> next,
-  ) {
-    next.when(
+  void _onStateChanged() {
+    if (!mounted) return;
+    _controller.state.when(
+      idle: () {},
+      loading: () {},
       data: (reset) {
         if (!reset) return;
-        if (!context.mounted) return;
         showAuthSuccessToast(
           context,
           'Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.',
         );
         context.go('/login');
       },
-      loading: () {},
-      error: (error, _) {
+      error: (error) {
         showAuthErrorToast(context, _humanReadable(error));
       },
     );
@@ -158,13 +165,7 @@ class _ResetPasswordViewState extends ConsumerState<_ResetPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<bool>>(
-      resetPasswordControllerProvider,
-      _onStateChanged,
-    );
-
-    final state = ref.watch(resetPasswordControllerProvider);
-    final isLoading = state.isLoading;
+    final isLoading = context.watch<ResetPasswordController>().state.isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

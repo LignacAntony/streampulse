@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -36,20 +36,28 @@ class ForgotPasswordScreen extends StatelessWidget {
   }
 }
 
-class _ForgotPasswordView extends ConsumerStatefulWidget {
+class _ForgotPasswordView extends StatefulWidget {
   const _ForgotPasswordView();
 
   @override
-  ConsumerState<_ForgotPasswordView> createState() =>
-      _ForgotPasswordViewState();
+  State<_ForgotPasswordView> createState() => _ForgotPasswordViewState();
 }
 
-class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
+class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
+  late final ForgotPasswordController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = context.read<ForgotPasswordController>();
+    _controller.addListener(_onStateChanged);
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_onStateChanged);
     _email.dispose();
     super.dispose();
   }
@@ -58,27 +66,23 @@ class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await ref
-        .read(forgotPasswordControllerProvider.notifier)
-        .submit(email: _email.text.trim());
+    await _controller.submit(email: _email.text.trim());
   }
 
-  void _onStateChanged(
-    AsyncValue<bool>? previous,
-    AsyncValue<bool> next,
-  ) {
-    next.when(
+  void _onStateChanged() {
+    if (!mounted) return;
+    _controller.state.when(
+      idle: () {},
+      loading: () {},
       data: (sent) {
         if (!sent) return;
-        if (!context.mounted) return;
         showAuthInfoToast(
           context,
           'Si cet email est enregistré, un lien vous a été envoyé.',
         );
         context.pop();
       },
-      loading: () {},
-      error: (error, _) {
+      error: (error) {
         showAuthErrorToast(context, _humanReadable(error));
       },
     );
@@ -93,13 +97,8 @@ class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<bool>>(
-      forgotPasswordControllerProvider,
-      _onStateChanged,
-    );
-
-    final state = ref.watch(forgotPasswordControllerProvider);
-    final isLoading = state.isLoading;
+    final isLoading =
+        context.watch<ForgotPasswordController>().state.isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

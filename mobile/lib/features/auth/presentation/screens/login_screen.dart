@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -21,19 +21,28 @@ class LoginScreen extends StatelessWidget {
       const AuthScreen(initialTab: AuthTab.login);
 }
 
-class LoginView extends ConsumerStatefulWidget {
+class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
   @override
-  ConsumerState<LoginView> createState() => _LoginViewState();
+  State<LoginView> createState() => _LoginViewState();
 }
 
-class _LoginViewState extends ConsumerState<LoginView> {
+class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _form = LoginFormObject();
+  late final LoginController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = context.read<LoginController>();
+    _controller.addListener(_onStateChanged);
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_onStateChanged);
     _form.dispose();
     super.dispose();
   }
@@ -42,23 +51,23 @@ class _LoginViewState extends ConsumerState<LoginView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await ref
-        .read(loginControllerProvider.notifier)
-        .submit(
-          email: _form.email.text.trim(),
-          password: _form.password.text,
-        );
+    await _controller.submit(
+      email: _form.email.text.trim(),
+      password: _form.password.text,
+    );
   }
 
-  void _onStateChanged(AsyncValue<dynamic>? previous, AsyncValue<dynamic> next) {
-    next.when(
+  void _onStateChanged() {
+    if (!mounted) return;
+    _controller.state.when(
+      idle: () {},
+      loading: () {},
       data: (tokens) {
         if (tokens == null) return;
         showAuthSuccessToast(context, 'Connexion réussie.');
         context.go('/home');
       },
-      loading: () {},
-      error: (error, _) {
+      error: (error) {
         showAuthErrorToast(context, _humanReadable(error));
       },
     );
@@ -74,10 +83,7 @@ class _LoginViewState extends ConsumerState<LoginView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<dynamic>>(loginControllerProvider, _onStateChanged);
-
-    final state = ref.watch(loginControllerProvider);
-    final isLoading = state.isLoading;
+    final isLoading = context.watch<LoginController>().state.isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

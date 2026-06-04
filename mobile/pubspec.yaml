@@ -12,8 +12,7 @@ dependencies:
     sdk: flutter
 
   # State management
-  flutter_riverpod: ^2.5.1
-  riverpod_annotation: ^2.3.5
+  provider: ^6.1.2
 
   # Navigation
   go_router: ^14.2.0
@@ -47,14 +46,11 @@ dev_dependencies:
 
   # Génération de code
   build_runner: ^2.4.9
-  riverpod_generator: ^2.4.0
   freezed: ^2.5.2
   json_serializable: ^6.8.0
 
   # Linting
   flutter_lints: ^4.0.0
-  custom_lint: ^0.6.4
-  riverpod_lint: ^2.3.10
 
 flutter:
   uses-material-design: true

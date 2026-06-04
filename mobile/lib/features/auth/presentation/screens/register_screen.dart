@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -23,21 +23,30 @@ class RegisterScreen extends StatelessWidget {
       const AuthScreen(initialTab: AuthTab.register);
 }
 
-class RegisterView extends ConsumerStatefulWidget {
+class RegisterView extends StatefulWidget {
   const RegisterView({super.key, this.onRegistered});
 
   final VoidCallback? onRegistered;
 
   @override
-  ConsumerState<RegisterView> createState() => _RegisterViewState();
+  State<RegisterView> createState() => _RegisterViewState();
 }
 
-class _RegisterViewState extends ConsumerState<RegisterView> {
+class _RegisterViewState extends State<RegisterView> {
   final _formKey = GlobalKey<FormState>();
   final _form = RegisterFormObject();
+  late final RegisterController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = context.read<RegisterController>();
+    _controller.addListener(_onStateChanged);
+  }
 
   @override
   void dispose() {
+    _controller.removeListener(_onStateChanged);
     _form.dispose();
     super.dispose();
   }
@@ -46,17 +55,18 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate() || !_form.acceptedTerms) return;
 
-    await ref
-        .read(registerControllerProvider.notifier)
-        .submit(
-          email: _form.email.text.trim(),
-          username: _form.username.text.trim(),
-          password: _form.password.text,
-        );
+    await _controller.submit(
+      email: _form.email.text.trim(),
+      username: _form.username.text.trim(),
+      password: _form.password.text,
+    );
   }
 
-  void _onStateChanged(AsyncValue<dynamic>? previous, AsyncValue<dynamic> next) {
-    next.when(
+  void _onStateChanged() {
+    if (!mounted) return;
+    _controller.state.when(
+      idle: () {},
+      loading: () {},
       data: (user) {
         if (user == null) return;
         showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
@@ -67,8 +77,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
           context.go('/login');
         }
       },
-      loading: () {},
-      error: (error, _) {
+      error: (error) {
         showAuthErrorToast(context, _humanReadable(error));
       },
     );
@@ -84,10 +93,7 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<dynamic>>(registerControllerProvider, _onStateChanged);
-
-    final state = ref.watch(registerControllerProvider);
-    final isLoading = state.isLoading;
+    final isLoading = context.watch<RegisterController>().state.isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
