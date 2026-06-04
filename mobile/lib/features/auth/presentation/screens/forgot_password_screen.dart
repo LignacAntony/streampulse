@@ -46,18 +46,9 @@ class _ForgotPasswordView extends StatefulWidget {
 class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
-  late final ForgotPasswordController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = context.read<ForgotPasswordController>();
-    _controller.addListener(_onStateChanged);
-  }
 
   @override
   void dispose() {
-    _controller.removeListener(_onStateChanged);
     _email.dispose();
     super.dispose();
   }
@@ -66,26 +57,20 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await _controller.submit(email: _email.text.trim());
-  }
-
-  void _onStateChanged() {
-    if (!mounted) return;
-    _controller.state.when(
-      idle: () {},
-      loading: () {},
-      data: (sent) {
-        if (!sent) return;
-        showAuthInfoToast(
-          context,
-          'Si cet email est enregistré, un lien vous a été envoyé.',
-        );
-        context.pop();
-      },
-      error: (error) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<ForgotPasswordController>().submit(
+        email: _email.text.trim(),
+      );
+      if (!mounted) return;
+      showAuthInfoToast(
+        context,
+        'Si cet email est enregistré, un lien vous a été envoyé.',
+      );
+      context.pop();
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -97,8 +82,7 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading =
-        context.watch<ForgotPasswordController>().state.isLoading;
+    final isLoading = context.watch<ForgotPasswordController>().isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

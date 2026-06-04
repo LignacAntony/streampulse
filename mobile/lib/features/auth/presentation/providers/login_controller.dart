@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../../core/state/async_state.dart';
 import '../../domain/entities/token_pair.dart';
 import '../../domain/repositories/auth_repository.dart';
 
@@ -9,27 +8,21 @@ class LoginController extends ChangeNotifier {
 
   final AuthRepository _repository;
 
-  AsyncState<TokenPair?> _state = const AsyncState.idle();
-  AsyncState<TokenPair?> get state => _state;
+  bool isLoading = false;
 
-  Future<void> submit({
+  /// Lance la connexion. Renvoie le [TokenPair] en cas de succès,
+  /// laisse remonter l'exception en cas d'échec (gérée par l'écran).
+  Future<TokenPair> submit({
     required String email,
     required String password,
   }) async {
-    _state = const AsyncState.loading();
+    isLoading = true;
     notifyListeners();
     try {
-      final tokens = await _repository.login(email: email, password: password);
-      _state = AsyncState.data(tokens);
-    } catch (error) {
-      _state = AsyncState.error(error);
+      return await _repository.login(email: email, password: password);
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
-    notifyListeners();
-  }
-
-  /// Réinitialise l'état (équivalent de `ref.invalidate`).
-  void reset() {
-    _state = const AsyncState.idle();
-    notifyListeners();
   }
 }

@@ -7,8 +7,6 @@ import 'package:provider/provider.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
-import '../../../auth/presentation/providers/login_controller.dart';
-import '../../../auth/presentation/providers/register_controller.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,8 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _logout() async {
     await context.read<AuthRepository>().logout();
     if (!mounted) return;
-    context.read<LoginController>().reset();
-    context.read<RegisterController>().reset();
     context.go('/login');
   }
 

@@ -110,18 +110,9 @@ class _ResetPasswordView extends StatefulWidget {
 class _ResetPasswordViewState extends State<_ResetPasswordView> {
   final _formKey = GlobalKey<FormState>();
   final _form = _ResetPasswordFormObject();
-  late final ResetPasswordController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = context.read<ResetPasswordController>();
-    _controller.addListener(_onStateChanged);
-  }
 
   @override
   void dispose() {
-    _controller.removeListener(_onStateChanged);
     _form.dispose();
     super.dispose();
   }
@@ -130,29 +121,21 @@ class _ResetPasswordViewState extends State<_ResetPasswordView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await _controller.submit(
-      token: widget.token,
-      newPassword: _form.password.text,
-    );
-  }
-
-  void _onStateChanged() {
-    if (!mounted) return;
-    _controller.state.when(
-      idle: () {},
-      loading: () {},
-      data: (reset) {
-        if (!reset) return;
-        showAuthSuccessToast(
-          context,
-          'Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.',
-        );
-        context.go('/login');
-      },
-      error: (error) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<ResetPasswordController>().submit(
+        token: widget.token,
+        newPassword: _form.password.text,
+      );
+      if (!mounted) return;
+      showAuthSuccessToast(
+        context,
+        'Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.',
+      );
+      context.go('/login');
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -165,7 +148,7 @@ class _ResetPasswordViewState extends State<_ResetPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<ResetPasswordController>().state.isLoading;
+    final isLoading = context.watch<ResetPasswordController>().isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

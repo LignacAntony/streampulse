@@ -31,18 +31,9 @@ class LoginView extends StatefulWidget {
 class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _form = LoginFormObject();
-  late final LoginController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = context.read<LoginController>();
-    _controller.addListener(_onStateChanged);
-  }
 
   @override
   void dispose() {
-    _controller.removeListener(_onStateChanged);
     _form.dispose();
     super.dispose();
   }
@@ -51,26 +42,18 @@ class _LoginViewState extends State<LoginView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await _controller.submit(
-      email: _form.email.text.trim(),
-      password: _form.password.text,
-    );
-  }
-
-  void _onStateChanged() {
-    if (!mounted) return;
-    _controller.state.when(
-      idle: () {},
-      loading: () {},
-      data: (tokens) {
-        if (tokens == null) return;
-        showAuthSuccessToast(context, 'Connexion réussie.');
-        context.go('/home');
-      },
-      error: (error) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<LoginController>().submit(
+        email: _form.email.text.trim(),
+        password: _form.password.text,
+      );
+      if (!mounted) return;
+      showAuthSuccessToast(context, 'Connexion réussie.');
+      context.go('/home');
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -83,7 +66,7 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<LoginController>().state.isLoading;
+    final isLoading = context.watch<LoginController>().isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

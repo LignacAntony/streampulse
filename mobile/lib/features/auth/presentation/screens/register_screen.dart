@@ -35,18 +35,9 @@ class RegisterView extends StatefulWidget {
 class _RegisterViewState extends State<RegisterView> {
   final _formKey = GlobalKey<FormState>();
   final _form = RegisterFormObject();
-  late final RegisterController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = context.read<RegisterController>();
-    _controller.addListener(_onStateChanged);
-  }
 
   @override
   void dispose() {
-    _controller.removeListener(_onStateChanged);
     _form.dispose();
     super.dispose();
   }
@@ -55,32 +46,24 @@ class _RegisterViewState extends State<RegisterView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate() || !_form.acceptedTerms) return;
 
-    await _controller.submit(
-      email: _form.email.text.trim(),
-      username: _form.username.text.trim(),
-      password: _form.password.text,
-    );
-  }
-
-  void _onStateChanged() {
-    if (!mounted) return;
-    _controller.state.when(
-      idle: () {},
-      loading: () {},
-      data: (user) {
-        if (user == null) return;
-        showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
-        final cb = widget.onRegistered;
-        if (cb != null) {
-          cb();
-        } else {
-          context.go('/login');
-        }
-      },
-      error: (error) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<RegisterController>().submit(
+        email: _form.email.text.trim(),
+        username: _form.username.text.trim(),
+        password: _form.password.text,
+      );
+      if (!mounted) return;
+      showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
+      final cb = widget.onRegistered;
+      if (cb != null) {
+        cb();
+      } else {
+        context.go('/login');
+      }
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -93,7 +76,7 @@ class _RegisterViewState extends State<RegisterView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<RegisterController>().state.isLoading;
+    final isLoading = context.watch<RegisterController>().isLoading;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

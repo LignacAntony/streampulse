@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../../core/state/async_state.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
 
@@ -9,32 +8,26 @@ class RegisterController extends ChangeNotifier {
 
   final AuthRepository _repository;
 
-  AsyncState<User?> _state = const AsyncState.idle();
-  AsyncState<User?> get state => _state;
+  bool isLoading = false;
 
-  Future<void> submit({
+  /// Crée le compte. Renvoie le [User] créé, laisse remonter l'exception
+  /// en cas d'échec (gérée par l'écran).
+  Future<User> submit({
     required String email,
     required String username,
     required String password,
   }) async {
-    _state = const AsyncState.loading();
+    isLoading = true;
     notifyListeners();
     try {
-      final user = await _repository.register(
+      return await _repository.register(
         email: email,
         username: username,
         password: password,
       );
-      _state = AsyncState.data(user);
-    } catch (error) {
-      _state = AsyncState.error(error);
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
-    notifyListeners();
-  }
-
-  /// Réinitialise l'état (équivalent de `ref.invalidate`).
-  void reset() {
-    _state = const AsyncState.idle();
-    notifyListeners();
   }
 }
