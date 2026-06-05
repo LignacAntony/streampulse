@@ -17,6 +17,10 @@ const _publicRoutes = {
 };
 
 
+/// Construit le routeur GoRouter de l'application.
+///
+/// [storage] alimente la redirection d'authentification : présence d'un
+/// access token => accès autorisé, sinon redirection vers `/login`.
 GoRouter createAppRouter(SecureStorage storage) {
   return GoRouter(
     initialLocation: '/',

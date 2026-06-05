@@ -2,12 +2,18 @@ import 'package:flutter/foundation.dart';
 
 import '../../domain/repositories/auth_repository.dart';
 
+/// Pilote l'écran de nouveau mot de passe : déclenche la réinitialisation
+/// et expose l'état de chargement à l'UI.
 class ResetPasswordController extends ChangeNotifier {
+  /// Crée le contrôleur avec le dépôt d'authentification injecté.
   ResetPasswordController(this._repository);
 
   final AuthRepository _repository;
 
-  bool isLoading = false;
+  bool _isLoading = false;
+
+  /// Vrai tant que la réinitialisation est en cours.
+  bool get isLoading => _isLoading;
 
   /// Réinitialise le mot de passe via le token. Laisse remonter
   /// l'exception en cas d'échec (gérée par l'écran).
@@ -15,12 +21,12 @@ class ResetPasswordController extends ChangeNotifier {
     required String token,
     required String newPassword,
   }) async {
-    isLoading = true;
+    _isLoading = true;
     notifyListeners();
     try {
       await _repository.resetPassword(token: token, newPassword: newPassword);
     } finally {
-      isLoading = false;
+      _isLoading = false;
       notifyListeners();
     }
   }

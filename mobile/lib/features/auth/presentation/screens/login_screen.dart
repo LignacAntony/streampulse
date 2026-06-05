@@ -66,24 +66,30 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<LoginController>().isLoading;
+    final controller = context.read<LoginController>();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 24,
-      children: [
-        Form(
-          key: _formKey,
-          child: _LoginFormFields(
-            form: _form,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-        const _DividerWithLabel(label: 'Ou'),
-        OAuthButtons(enabled: !isLoading),
-        _GuestButton(enabled: !isLoading),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 24,
+          children: [
+            Form(
+              key: _formKey,
+              child: _LoginFormFields(
+                form: _form,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+            const _DividerWithLabel(label: 'Ou'),
+            OAuthButtons(enabled: !isLoading),
+            _GuestButton(enabled: !isLoading),
+          ],
+        );
+      },
     );
   }
 }

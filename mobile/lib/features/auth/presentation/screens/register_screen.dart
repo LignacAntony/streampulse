@@ -76,35 +76,41 @@ class _RegisterViewState extends State<RegisterView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<RegisterController>().isLoading;
+    final controller = context.read<RegisterController>();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 24,
-      children: [
-        Form(
-          key: _formKey,
-          child: _RegisterFormFields(
-            form: _form,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-        _AlreadyAccountLink(
-          onTap: isLoading
-              ? null
-              : () {
-                  final cb = widget.onRegistered;
-                  if (cb != null) {
-                    cb();
-                  } else {
-                    context.go('/login');
-                  }
-                },
-        ),
-        const _DividerWithLabel(label: "Ou s'inscrire avec"),
-        OAuthButtons(enabled: !isLoading),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 24,
+          children: [
+            Form(
+              key: _formKey,
+              child: _RegisterFormFields(
+                form: _form,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+            _AlreadyAccountLink(
+              onTap: isLoading
+                  ? null
+                  : () {
+                      final cb = widget.onRegistered;
+                      if (cb != null) {
+                        cb();
+                      } else {
+                        context.go('/login');
+                      }
+                    },
+            ),
+            const _DividerWithLabel(label: "Ou s'inscrire avec"),
+            OAuthButtons(enabled: !isLoading),
+          ],
+        );
+      },
     );
   }
 }

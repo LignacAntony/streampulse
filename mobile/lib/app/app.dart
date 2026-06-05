@@ -15,7 +15,13 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> {
-  late final GoRouter _router = createAppRouter(context.read<SecureStorage>());
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = createAppRouter(context.read<SecureStorage>());
+  }
 
   @override
   Widget build(BuildContext context) {

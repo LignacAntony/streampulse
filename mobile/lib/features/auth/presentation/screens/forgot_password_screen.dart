@@ -82,24 +82,30 @@ class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<ForgotPasswordController>().isLoading;
+    final controller = context.read<ForgotPasswordController>();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 32,
-      children: [
-        const BrandedHeader(),
-        _ForgotPasswordHeader(),
-        Form(
-          key: _formKey,
-          child: _ForgotPasswordFormFields(
-            email: _email,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-        _BackToLoginLink(enabled: !isLoading),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 32,
+          children: [
+            const BrandedHeader(),
+            _ForgotPasswordHeader(),
+            Form(
+              key: _formKey,
+              child: _ForgotPasswordFormFields(
+                email: _email,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+            _BackToLoginLink(enabled: !isLoading),
+          ],
+        );
+      },
     );
   }
 }

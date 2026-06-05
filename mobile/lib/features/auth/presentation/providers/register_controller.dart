@@ -3,12 +3,18 @@ import 'package:flutter/foundation.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
 
+/// Pilote l'écran d'inscription : déclenche l'appel au dépôt et expose
+/// l'état de chargement à l'UI.
 class RegisterController extends ChangeNotifier {
+  /// Crée le contrôleur avec le dépôt d'authentification injecté.
   RegisterController(this._repository);
 
   final AuthRepository _repository;
 
-  bool isLoading = false;
+  bool _isLoading = false;
+
+  /// Vrai tant qu'une requête d'inscription est en cours.
+  bool get isLoading => _isLoading;
 
   /// Crée le compte. Renvoie le [User] créé, laisse remonter l'exception
   /// en cas d'échec (gérée par l'écran).
@@ -17,7 +23,7 @@ class RegisterController extends ChangeNotifier {
     required String username,
     required String password,
   }) async {
-    isLoading = true;
+    _isLoading = true;
     notifyListeners();
     try {
       return await _repository.register(
@@ -26,7 +32,7 @@ class RegisterController extends ChangeNotifier {
         password: password,
       );
     } finally {
-      isLoading = false;
+      _isLoading = false;
       notifyListeners();
     }
   }

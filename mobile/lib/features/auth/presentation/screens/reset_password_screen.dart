@@ -148,23 +148,29 @@ class _ResetPasswordViewState extends State<_ResetPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<ResetPasswordController>().isLoading;
+    final controller = context.read<ResetPasswordController>();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 32,
-      children: [
-        const BrandedHeader(),
-        _ResetPasswordHeader(),
-        Form(
-          key: _formKey,
-          child: _ResetPasswordFormFields(
-            form: _form,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 32,
+          children: [
+            const BrandedHeader(),
+            _ResetPasswordHeader(),
+            Form(
+              key: _formKey,
+              child: _ResetPasswordFormFields(
+                form: _form,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
