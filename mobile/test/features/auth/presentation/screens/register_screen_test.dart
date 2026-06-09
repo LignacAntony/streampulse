@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/features/auth/domain/entities/token_pair.dart';
 import 'package:streampulse/features/auth/domain/entities/user.dart';
 import 'package:streampulse/features/auth/domain/repositories/auth_repository.dart';
-import 'package:streampulse/features/auth/presentation/providers/auth_providers.dart';
+import 'package:streampulse/features/auth/presentation/providers/login_controller.dart';
+import 'package:streampulse/features/auth/presentation/providers/register_controller.dart';
 import 'package:streampulse/features/auth/presentation/screens/register_screen.dart';
 import 'package:toastification/toastification.dart';
 
@@ -76,8 +77,16 @@ Widget _buildHarness(_FakeAuthRepository fake) {
     ],
   );
 
-  return ProviderScope(
-    overrides: [authRepositoryProvider.overrideWithValue(fake)],
+  return MultiProvider(
+    providers: [
+      Provider<AuthRepository>.value(value: fake),
+      ChangeNotifierProvider<RegisterController>(
+        create: (ctx) => RegisterController(ctx.read<AuthRepository>()),
+      ),
+      ChangeNotifierProvider<LoginController>(
+        create: (ctx) => LoginController(ctx.read<AuthRepository>()),
+      ),
+    ],
     child: ToastificationWrapper(
       child: MaterialApp.router(routerConfig: router),
     ),

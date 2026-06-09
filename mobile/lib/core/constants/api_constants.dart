@@ -1,11 +1,13 @@
 class ApiConstants {
   ApiConstants._();
 
-  // 10.0.2.2 pointe vers localhost depuis l'émulateur Android.
-  // Sur device physique ou simulateur iOS, utiliser l'IP du Mac (ex: 192.168.x.x).
+  // Défaut : device physique (USB) ou simulateur iOS via `localhost`.
+  // Device physique : nécessite `adb reverse tcp:8080 tcp:8080`.
+  // Émulateur Android : surcharger avec
+  //   --dart-define=API_BASE_URL=http://10.0.2.2:8080
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8080',
+    defaultValue: 'http://localhost:8080',
   );
 
   // Auth

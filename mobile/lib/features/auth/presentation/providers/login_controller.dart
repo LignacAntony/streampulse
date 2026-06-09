@@ -1,25 +1,34 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/token_pair.dart';
 import '../../domain/repositories/auth_repository.dart';
-import 'auth_providers.dart';
 
-class LoginController extends AsyncNotifier<TokenPair?> {
-  late final AuthRepository _repository = ref.read(authRepositoryProvider);
+/// Pilote l'écran de connexion : déclenche l'appel au dépôt et expose
+/// l'état de chargement à l'UI.
+class LoginController extends ChangeNotifier {
+  /// Crée le contrôleur avec le dépôt d'authentification injecté.
+  LoginController(this._repository);
 
-  @override
-  Future<TokenPair?> build() async => null;
+  final AuthRepository _repository;
 
-  Future<void> submit({
+  bool _isLoading = false;
+
+  /// Vrai tant qu'une requête de connexion est en cours.
+  bool get isLoading => _isLoading;
+
+  /// Lance la connexion. Renvoie le [TokenPair] en cas de succès,
+  /// laisse remonter l'exception en cas d'échec (gérée par l'écran).
+  Future<TokenPair> submit({
     required String email,
     required String password,
   }) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      return _repository.login(email: email, password: password);
-    });
+    _isLoading = true;
+    notifyListeners();
+    try {
+      return await _repository.login(email: email, password: password);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }
-
-final loginControllerProvider =
-    AsyncNotifierProvider<LoginController, TokenPair?>(LoginController.new);

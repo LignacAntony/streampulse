@@ -37,17 +37,12 @@ class _AuthScreenState extends State<AuthScreen> {
                 children: [
                   const BrandedHeader(),
                   AuthTabs(active: _active, onChanged: _onTabChanged),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    switchInCurve: Curves.easeOut,
-                    switchOutCurve: Curves.easeIn,
-                    child: _active == AuthTab.login
-                        ? const LoginView(key: ValueKey('login'))
-                        : RegisterView(
-                            key: const ValueKey('register'),
-                            onRegistered: () => _onTabChanged(AuthTab.login),
-                          ),
-                  ),
+                  _active == AuthTab.login
+                      ? const LoginView(key: ValueKey('login'))
+                      : RegisterView(
+                          key: const ValueKey('register'),
+                          onRegistered: () => _onTabChanged(AuthTab.login),
+                        ),
                 ],
               ),
             ),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -21,14 +21,14 @@ class LoginScreen extends StatelessWidget {
       const AuthScreen(initialTab: AuthTab.login);
 }
 
-class LoginView extends ConsumerStatefulWidget {
+class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
   @override
-  ConsumerState<LoginView> createState() => _LoginViewState();
+  State<LoginView> createState() => _LoginViewState();
 }
 
-class _LoginViewState extends ConsumerState<LoginView> {
+class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _form = LoginFormObject();
 
@@ -42,26 +42,18 @@ class _LoginViewState extends ConsumerState<LoginView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await ref
-        .read(loginControllerProvider.notifier)
-        .submit(
-          email: _form.email.text.trim(),
-          password: _form.password.text,
-        );
-  }
-
-  void _onStateChanged(AsyncValue<dynamic>? previous, AsyncValue<dynamic> next) {
-    next.when(
-      data: (tokens) {
-        if (tokens == null) return;
-        showAuthSuccessToast(context, 'Connexion réussie.');
-        context.go('/home');
-      },
-      loading: () {},
-      error: (error, _) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<LoginController>().submit(
+        email: _form.email.text.trim(),
+        password: _form.password.text,
+      );
+      if (!mounted) return;
+      showAuthSuccessToast(context, 'Connexion réussie.');
+      context.go('/home');
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -74,27 +66,30 @@ class _LoginViewState extends ConsumerState<LoginView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<dynamic>>(loginControllerProvider, _onStateChanged);
+    final controller = context.read<LoginController>();
 
-    final state = ref.watch(loginControllerProvider);
-    final isLoading = state.isLoading;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 24,
-      children: [
-        Form(
-          key: _formKey,
-          child: _LoginFormFields(
-            form: _form,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-        const _DividerWithLabel(label: 'Ou'),
-        OAuthButtons(enabled: !isLoading),
-        _GuestButton(enabled: !isLoading),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 24,
+          children: [
+            Form(
+              key: _formKey,
+              child: _LoginFormFields(
+                form: _form,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+            const _DividerWithLabel(label: 'Ou'),
+            OAuthButtons(enabled: !isLoading),
+            _GuestButton(enabled: !isLoading),
+          ],
+        );
+      },
     );
   }
 }

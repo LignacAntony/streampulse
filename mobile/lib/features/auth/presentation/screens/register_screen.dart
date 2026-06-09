@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -23,16 +23,16 @@ class RegisterScreen extends StatelessWidget {
       const AuthScreen(initialTab: AuthTab.register);
 }
 
-class RegisterView extends ConsumerStatefulWidget {
+class RegisterView extends StatefulWidget {
   const RegisterView({super.key, this.onRegistered});
 
   final VoidCallback? onRegistered;
 
   @override
-  ConsumerState<RegisterView> createState() => _RegisterViewState();
+  State<RegisterView> createState() => _RegisterViewState();
 }
 
-class _RegisterViewState extends ConsumerState<RegisterView> {
+class _RegisterViewState extends State<RegisterView> {
   final _formKey = GlobalKey<FormState>();
   final _form = RegisterFormObject();
 
@@ -46,32 +46,24 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate() || !_form.acceptedTerms) return;
 
-    await ref
-        .read(registerControllerProvider.notifier)
-        .submit(
-          email: _form.email.text.trim(),
-          username: _form.username.text.trim(),
-          password: _form.password.text,
-        );
-  }
-
-  void _onStateChanged(AsyncValue<dynamic>? previous, AsyncValue<dynamic> next) {
-    next.when(
-      data: (user) {
-        if (user == null) return;
-        showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
-        final cb = widget.onRegistered;
-        if (cb != null) {
-          cb();
-        } else {
-          context.go('/login');
-        }
-      },
-      loading: () {},
-      error: (error, _) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<RegisterController>().submit(
+        email: _form.email.text.trim(),
+        username: _form.username.text.trim(),
+        password: _form.password.text,
+      );
+      if (!mounted) return;
+      showAuthSuccessToast(context, 'Compte créé. Tu peux te connecter.');
+      final cb = widget.onRegistered;
+      if (cb != null) {
+        cb();
+      } else {
+        context.go('/login');
+      }
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -84,38 +76,41 @@ class _RegisterViewState extends ConsumerState<RegisterView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<dynamic>>(registerControllerProvider, _onStateChanged);
+    final controller = context.read<RegisterController>();
 
-    final state = ref.watch(registerControllerProvider);
-    final isLoading = state.isLoading;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 24,
-      children: [
-        Form(
-          key: _formKey,
-          child: _RegisterFormFields(
-            form: _form,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-        _AlreadyAccountLink(
-          onTap: isLoading
-              ? null
-              : () {
-                  final cb = widget.onRegistered;
-                  if (cb != null) {
-                    cb();
-                  } else {
-                    context.go('/login');
-                  }
-                },
-        ),
-        const _DividerWithLabel(label: "Ou s'inscrire avec"),
-        OAuthButtons(enabled: !isLoading),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 24,
+          children: [
+            Form(
+              key: _formKey,
+              child: _RegisterFormFields(
+                form: _form,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+            _AlreadyAccountLink(
+              onTap: isLoading
+                  ? null
+                  : () {
+                      final cb = widget.onRegistered;
+                      if (cb != null) {
+                        cb();
+                      } else {
+                        context.go('/login');
+                      }
+                    },
+            ),
+            const _DividerWithLabel(label: "Ou s'inscrire avec"),
+            OAuthButtons(enabled: !isLoading),
+          ],
+        );
+      },
     );
   }
 }

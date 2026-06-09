@@ -229,13 +229,15 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 │   └── usecases/          # Logique métier isolée
 └── presentation/
     ├── screens/           # Widgets Flutter
-    └── providers/         # Riverpod Notifiers (@riverpod annotation)
+    └── providers/         # ChangeNotifier controllers (package `provider`)
 ```
 
 ### Adresse API en développement
 
-- **Émulateur Android** : `http://10.0.2.2:8080` (pointe vers `localhost` de la machine hôte)
-- **Simulateur iOS / device physique** : utiliser l'IP locale du Mac (ex : `192.168.x.x:8080`)
+- **Défaut** (`core/constants/api_constants.dart`) : `http://localhost:8080` — couvre **simulateur iOS** et **device Android physique via `adb reverse`**.
+- **Device Android physique (USB)** : `adb reverse tcp:8080 tcp:8080` mappe `localhost:8080` du device vers le Mac, puis `flutter run` (le défaut `localhost` suffit). ⚠️ `adb reverse` est éphémère : à refaire après débranchement / reboot du device.
+- **Émulateur Android** : `10.0.2.2` pointe vers `localhost` de l'hôte → surcharger avec `--dart-define=API_BASE_URL=http://10.0.2.2:8080`.
+- **IP LAN (sans câble)** : `--dart-define=API_BASE_URL=http://192.168.x.x:8080` (IP locale du Mac, `ipconfig getifaddr en0`). Nécessite même Wi-Fi + bind Docker sur `0.0.0.0` + firewall macOS ouvert sur 8080.
 - Configurable via `--dart-define=API_BASE_URL=http://...` ou variable d'environnement
 
 ### Authentification (mobile)

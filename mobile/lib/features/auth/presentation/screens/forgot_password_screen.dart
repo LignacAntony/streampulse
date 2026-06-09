@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
@@ -36,15 +36,14 @@ class ForgotPasswordScreen extends StatelessWidget {
   }
 }
 
-class _ForgotPasswordView extends ConsumerStatefulWidget {
+class _ForgotPasswordView extends StatefulWidget {
   const _ForgotPasswordView();
 
   @override
-  ConsumerState<_ForgotPasswordView> createState() =>
-      _ForgotPasswordViewState();
+  State<_ForgotPasswordView> createState() => _ForgotPasswordViewState();
 }
 
-class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
+class _ForgotPasswordViewState extends State<_ForgotPasswordView> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
 
@@ -58,30 +57,20 @@ class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
 
-    await ref
-        .read(forgotPasswordControllerProvider.notifier)
-        .submit(email: _email.text.trim());
-  }
-
-  void _onStateChanged(
-    AsyncValue<bool>? previous,
-    AsyncValue<bool> next,
-  ) {
-    next.when(
-      data: (sent) {
-        if (!sent) return;
-        if (!context.mounted) return;
-        showAuthInfoToast(
-          context,
-          'Si cet email est enregistré, un lien vous a été envoyé.',
-        );
-        context.pop();
-      },
-      loading: () {},
-      error: (error, _) {
-        showAuthErrorToast(context, _humanReadable(error));
-      },
-    );
+    try {
+      await context.read<ForgotPasswordController>().submit(
+        email: _email.text.trim(),
+      );
+      if (!mounted) return;
+      showAuthInfoToast(
+        context,
+        'Si cet email est enregistré, un lien vous a été envoyé.',
+      );
+      context.pop();
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
   }
 
   String _humanReadable(Object error) {
@@ -93,30 +82,30 @@ class _ForgotPasswordViewState extends ConsumerState<_ForgotPasswordView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<bool>>(
-      forgotPasswordControllerProvider,
-      _onStateChanged,
-    );
+    final controller = context.read<ForgotPasswordController>();
 
-    final state = ref.watch(forgotPasswordControllerProvider);
-    final isLoading = state.isLoading;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 32,
-      children: [
-        const BrandedHeader(),
-        _ForgotPasswordHeader(),
-        Form(
-          key: _formKey,
-          child: _ForgotPasswordFormFields(
-            email: _email,
-            isLoading: isLoading,
-            onSubmit: _submit,
-          ),
-        ),
-        _BackToLoginLink(enabled: !isLoading),
-      ],
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isLoading = controller.isLoading;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 32,
+          children: [
+            const BrandedHeader(),
+            _ForgotPasswordHeader(),
+            Form(
+              key: _formKey,
+              child: _ForgotPasswordFormFields(
+                email: _email,
+                isLoading: isLoading,
+                onSubmit: _submit,
+              ),
+            ),
+            _BackToLoginLink(enabled: !isLoading),
+          ],
+        );
+      },
     );
   }
 }

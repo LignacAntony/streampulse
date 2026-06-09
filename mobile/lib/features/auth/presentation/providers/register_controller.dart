@@ -1,30 +1,39 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
-import 'auth_providers.dart';
 
-class RegisterController extends AsyncNotifier<User?> {
-  late final AuthRepository _repository = ref.read(authRepositoryProvider);
+/// Pilote l'écran d'inscription : déclenche l'appel au dépôt et expose
+/// l'état de chargement à l'UI.
+class RegisterController extends ChangeNotifier {
+  /// Crée le contrôleur avec le dépôt d'authentification injecté.
+  RegisterController(this._repository);
 
-  @override
-  Future<User?> build() async => null;
+  final AuthRepository _repository;
 
-  Future<void> submit({
+  bool _isLoading = false;
+
+  /// Vrai tant qu'une requête d'inscription est en cours.
+  bool get isLoading => _isLoading;
+
+  /// Crée le compte. Renvoie le [User] créé, laisse remonter l'exception
+  /// en cas d'échec (gérée par l'écran).
+  Future<User> submit({
     required String email,
     required String username,
     required String password,
   }) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      return _repository.register(
+    _isLoading = true;
+    notifyListeners();
+    try {
+      return await _repository.register(
         email: email,
         username: username,
         password: password,
       );
-    });
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }
-
-final registerControllerProvider =
-    AsyncNotifierProvider<RegisterController, User?>(RegisterController.new);

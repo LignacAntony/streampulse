@@ -1,22 +1,21 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../auth/presentation/providers/auth_providers.dart';
-import '../../../auth/presentation/providers/login_controller.dart';
-import '../../../auth/presentation/providers/register_controller.dart';
+import '../../../../core/storage/secure_storage.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 
-class HomeScreen extends ConsumerStatefulWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> {
   late Future<String?> _userIdFuture;
 
   @override
@@ -26,7 +25,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<String?> _loadUserId() async {
-    final token = await ref.read(secureStorageProvider).getAccessToken();
+    final token = await context.read<SecureStorage>().getAccessToken();
     if (token == null) return null;
     return _decodeSub(token);
   }
@@ -46,9 +45,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _logout() async {
-    await ref.read(authRepositoryProvider).logout();
-    ref.invalidate(loginControllerProvider);
-    ref.invalidate(registerControllerProvider);
+    await context.read<AuthRepository>().logout();
     if (!mounted) return;
     context.go('/login');
   }

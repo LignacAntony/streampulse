@@ -1,7 +1,6 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/auth/presentation/providers/auth_providers.dart';
+import '../../core/storage/secure_storage.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
@@ -18,9 +17,11 @@ const _publicRoutes = {
 };
 
 
-final routerProvider = Provider<GoRouter>((ref) {
-  final storage = ref.watch(secureStorageProvider);
-
+/// Construit le routeur GoRouter de l'application.
+///
+/// [storage] alimente la redirection d'authentification : présence d'un
+/// access token => accès autorisé, sinon redirection vers `/login`.
+GoRouter createAppRouter(SecureStorage storage) {
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) async {
@@ -63,4 +64,4 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
-});
+}
