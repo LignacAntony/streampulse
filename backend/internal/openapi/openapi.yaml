@@ -286,7 +286,6 @@ components:
   schemas:
     HealthResponse:
       type: object
-      additionalProperties: false
       required:
         - status
       properties:
@@ -381,7 +380,6 @@ components:
           example: newpassword1
     UserResponse:
       type: object
-      additionalProperties: false
       required:
         - id
         - email
@@ -409,7 +407,6 @@ components:
           example: "2026-01-02T03:04:05Z"
     TokenPairResponse:
       type: object
-      additionalProperties: false
       required:
         - access_token
         - refresh_token
@@ -422,7 +419,6 @@ components:
           example: 21ee4d0f5e8c4037a61f48c980b9b3e7dba2f1d3b4f2a9f1bb7be6f99f9f5ef9
     MessageResponse:
       type: object
-      additionalProperties: false
       required:
         - message
       properties:
@@ -430,7 +426,6 @@ components:
           type: string
     ErrorResponse:
       type: object
-      additionalProperties: false
       required:
         - error
       properties:
@@ -438,7 +433,6 @@ components:
           $ref: "#/components/schemas/ErrorDetail"
     ErrorDetail:
       type: object
-      additionalProperties: false
       required:
         - code
         - message

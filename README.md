@@ -79,6 +79,9 @@ L'API expose sa documentation OpenAPI via Swagger UI :
 - Interface interactive : `http://localhost:8080/swagger/`
 - Spécification YAML brute : `http://localhost:8080/swagger/openapi.yaml`
 
+> ⚠️ Ces endpoints ne sont **pas exposés en production** (`GO_ENV=production`) afin
+> de ne pas publier la surface de l'API ; ils restent disponibles en dev et en test.
+
 Le client Dart/Dio utilisé par l'application Flutter est généré depuis cette
 spécification :
 

@@ -31,6 +31,11 @@ class DioClient {
 
     _dio.interceptors.addAll([_authInterceptor(), _logInterceptor()]);
 
+    // Les méthodes générées (ex. AuthApi.logout) émettent une métadonnée
+    // `extra['secure']`, mais le client généré ne branche AUCUN intercepteur
+    // d'auth : l'injection du `Bearer` repose entièrement sur `_authInterceptor`
+    // ci-dessus. Ne pas se fier au mécanisme `secure` généré tant qu'un
+    // HttpBearerAuth n'est pas explicitement configuré.
     _authApi = AuthApi(_dio);
     _refreshAuthApi = AuthApi(_refreshDio);
   }

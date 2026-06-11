@@ -3,6 +3,7 @@ import '../../domain/entities/token_pair.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_data_source.dart';
+import '../mappers/auth_dto_mappers.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl(this._remote, this._secureStorage);
@@ -21,13 +22,7 @@ class AuthRepositoryImpl implements AuthRepository {
       username: username,
       password: password,
     );
-    return User(
-      id: model.id,
-      email: model.email,
-      username: model.username,
-      role: model.role,
-      createdAt: model.createdAt,
-    );
+    return model.toEntity();
   }
 
   @override
@@ -38,10 +33,7 @@ class AuthRepositoryImpl implements AuthRepository {
     final model = await _remote.login(email: email, password: password);
     await _secureStorage.saveAccessToken(model.accessToken);
     await _secureStorage.saveRefreshToken(model.refreshToken);
-    return TokenPair(
-      accessToken: model.accessToken,
-      refreshToken: model.refreshToken,
-    );
+    return model.toEntity();
   }
 
   @override
