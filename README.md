@@ -15,6 +15,7 @@
   - [Structure du repository](#structure-du-repository)
   - [Prérequis](#prérequis)
   - [Installation \& lancement](#installation--lancement)
+  - [Documentation API](#documentation-api)
   - [Variables d'environnement](#variables-denvironnement)
   - [Workflow Git](#workflow-git)
   - [Conventions de commit](#conventions-de-commit)
@@ -70,6 +71,23 @@ cd backend && go run ./cmd/api
 # 5. (App) Lancer l'app Flutter
 cd mobile && flutter run
 ```
+
+## Documentation API
+
+L'API expose sa documentation OpenAPI via Swagger UI :
+
+- Interface interactive : `http://localhost:8080/swagger/`
+- Spécification YAML brute : `http://localhost:8080/swagger/openapi.yaml`
+
+Le client Dart/Dio utilisé par l'application Flutter est généré depuis cette
+spécification :
+
+```bash
+make generate-openapi-client
+```
+
+La commande utilise l'image Docker `openapitools/openapi-generator-cli:v7.23.0`,
+écrase `mobile/packages/streampulse_api`, puis régénère les serializers Dart.
 
 ## Variables d'environnement
 

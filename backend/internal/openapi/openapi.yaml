@@ -1,0 +1,451 @@
+openapi: 3.0.3
+info:
+  title: StreamPulse API
+  version: 0.1.0
+  description: REST API for the StreamPulse backend.
+servers:
+  - url: /
+tags:
+  - name: Health
+    description: Operational endpoints.
+  - name: Metrics
+    description: Observability endpoints.
+  - name: Auth
+    description: Authentication and password reset endpoints.
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      operationId: getHealth
+      summary: Check API health.
+      responses:
+        "200":
+          description: API is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                healthy:
+                  value:
+                    status: ok
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      operationId: getMetrics
+      summary: Expose Prometheus metrics.
+      responses:
+        "200":
+          description: Prometheus text exposition format.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/auth/register:
+    post:
+      tags:
+        - Auth
+      operationId: register
+      summary: Register a new user account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User account created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      operationId: login
+      summary: Authenticate a user and issue tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Token pair issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPairResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/auth/refresh:
+    post:
+      tags:
+        - Auth
+      operationId: refreshToken
+      summary: Rotate a refresh token and issue a new token pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Token pair rotated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPairResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/auth/logout:
+    post:
+      tags:
+        - Auth
+      operationId: logout
+      summary: Revoke the current refresh token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "204":
+          description: Refresh token revoked.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/auth/forgot-password:
+    post:
+      tags:
+        - Auth
+      operationId: forgotPassword
+      summary: Request a password reset email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "200":
+          description: Password reset request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              examples:
+                accepted:
+                  value:
+                    message: if this email is registered, you will receive a password reset link shortly
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/auth/reset-password:
+    post:
+      tags:
+        - Auth
+      operationId: resetPassword
+      summary: Reset a password with a valid reset token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              examples:
+                updated:
+                  value:
+                    message: password updated successfully
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Invalid request payload or invalid input.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            invalidJson:
+              value:
+                error:
+                  code: invalid_json
+                  message: invalid json body
+            invalidArgument:
+              value:
+                error:
+                  code: invalid_argument
+                  message: invalid email
+    Unauthorized:
+      description: Authentication failed or bearer token is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: unauthorized
+                  message: invalid credentials
+    Conflict:
+      description: Resource already exists.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            duplicate:
+              value:
+                error:
+                  code: conflict
+                  message: email or username already taken
+    UnsupportedMediaType:
+      description: Request content type must be application/json.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            unsupported:
+              value:
+                error:
+                  code: unsupported_media_type
+                  message: content-type must be application/json
+    InternalError:
+      description: Internal server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            internal:
+              value:
+                error:
+                  code: internal
+                  message: internal server error
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - username
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+          pattern: ^[a-zA-Z0-9_]+$
+          example: alice
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          example: hunter2hunter
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        password:
+          type: string
+          format: password
+          example: hunter2hunter
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+          example: 21ee4d0f5e8c4037a61f48c980b9b3e7dba2f1d3b4f2a9f1bb7be6f99f9f5ef9
+    LogoutRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+          example: 21ee4d0f5e8c4037a61f48c980b9b3e7dba2f1d3b4f2a9f1bb7be6f99f9f5ef9
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+          minLength: 1
+          example: a0a6d282d432a44f3a3a7e0d75a742f42df1a7f39a260ebc89b3b961df18dd41
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          example: newpassword1
+    UserResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - email
+        - username
+        - role
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        username:
+          type: string
+          example: alice
+        role:
+          type: string
+          example: user
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+    TokenPairResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - access_token
+        - refresh_token
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+        refresh_token:
+          type: string
+          example: 21ee4d0f5e8c4037a61f48c980b9b3e7dba2f1d3b4f2a9f1bb7be6f99f9f5ef9
+    MessageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - message
+      properties:
+        message:
+          type: string
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: invalid_argument
+        message:
+          type: string
+          example: invalid email

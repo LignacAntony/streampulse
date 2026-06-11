@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:logger/logger.dart';
+import 'package:streampulse_api/streampulse_api.dart';
 
 import '../constants/api_constants.dart';
 import '../constants/app_constants.dart';
@@ -28,10 +29,10 @@ class DioClient {
       ),
     );
 
-    _dio.interceptors.addAll([
-      _authInterceptor(),
-      _logInterceptor(),
-    ]);
+    _dio.interceptors.addAll([_authInterceptor(), _logInterceptor()]);
+
+    _authApi = AuthApi(_dio);
+    _refreshAuthApi = AuthApi(_refreshDio);
   }
 
   static const _retriedKey = '_retried';
@@ -39,12 +40,14 @@ class DioClient {
   final SecureStorage _storage;
   late final Dio _dio;
   late final Dio _refreshDio;
+  late final AuthApi _authApi;
+  late final AuthApi _refreshAuthApi;
   final _logger = Logger();
-
 
   Completer<bool>? _refreshing;
 
   Dio get dio => _dio;
+  AuthApi get authApi => _authApi;
 
   InterceptorsWrapper _authInterceptor() {
     return InterceptorsWrapper(
@@ -112,23 +115,16 @@ class DioClient {
         return false;
       }
 
-      final resp = await _refreshDio.post<Map<String, dynamic>>(
-        ApiConstants.refresh,
-        data: {'refresh_token': refreshToken},
+      final resp = await _refreshAuthApi.refreshToken(
+        refreshRequest: RefreshRequest(refreshToken: refreshToken),
       );
-      final body = resp.data;
-      if (body == null) {
+      final pair = resp.data;
+      if (pair == null) {
         completer.complete(false);
         return false;
       }
-      final newAccess = body['access_token'] as String?;
-      final newRefresh = body['refresh_token'] as String?;
-      if (newAccess == null || newRefresh == null) {
-        completer.complete(false);
-        return false;
-      }
-      await _storage.saveAccessToken(newAccess);
-      await _storage.saveRefreshToken(newRefresh);
+      await _storage.saveAccessToken(pair.accessToken);
+      await _storage.saveRefreshToken(pair.refreshToken);
       completer.complete(true);
       return true;
     } catch (_) {
@@ -150,7 +146,9 @@ class DioClient {
       },
       onResponse: (response, handler) {
         assert(() {
-          _logger.d('[HTTP] ${response.statusCode} ${response.requestOptions.uri}');
+          _logger.d(
+            '[HTTP] ${response.statusCode} ${response.requestOptions.uri}',
+          );
           return true;
         }());
         handler.next(response);

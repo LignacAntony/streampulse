@@ -77,6 +77,7 @@ tmp/
 build/
 **/generated_plugin_registrant.dart
 *.g.dart
+!mobile/packages/streampulse_api/lib/**/*.g.dart
 *.freezed.dart
 *.mocks.dart
 

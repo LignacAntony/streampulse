@@ -20,6 +20,8 @@ dependencies:
 
   # Client HTTP
   dio: ^5.4.3+1
+  streampulse_api:
+    path: packages/streampulse_api
 
   # Stockage sécurisé (tokens JWT)
   flutter_secure_storage: ^9.0.0

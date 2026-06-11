@@ -853,6 +853,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.1"
+  streampulse_api:
+    dependency: "direct main"
+    description:
+      path: "packages/streampulse_api"
+      relative: true
+    source: path
+    version: "0.1.0"
   string_scanner:
     dependency: transitive
     description:

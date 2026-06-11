@@ -1,0 +1,18 @@
+name: streampulse_api
+version: 0.1.0
+description: Generated Dart/Dio client for the StreamPulse API
+homepage: homepage
+publish_to: none
+
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  dio: '^5.7.0'
+  json_annotation: '^4.9.0'
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  json_serializable: 6.8.0
+  test: '^1.16.0'
