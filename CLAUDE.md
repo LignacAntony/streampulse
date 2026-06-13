@@ -121,7 +121,7 @@ crée le tag Git et la GitHub Release.
 ## Architecture
 
 - `backend/` — Go REST API
-- `mobile/` — Flutter client (iOS, Android) — Clean Architecture + Riverpod
+- `mobile/` — Flutter client (iOS, Android) — Clean Architecture + provider
 - `docker/` — Compose files and container configuration
 - `docs/` — Project documentation
 
@@ -273,6 +273,38 @@ wrappers minces vers `AuthScreen(initialTab: ...)`.
 **Toasts** : `toastification` via les helpers `showAuthSuccessToast / ErrorToast / InfoToast`
 (`presentation/widgets/auth_toasts.dart`). `ToastificationWrapper` est posé dans `app.dart`.
 
+### Conventions Flutter — State management
+
+Choisir **le plus simple qui suffit**, dans cet ordre :
+
+| Niveau | Outil | Quand |
+|---|---|---|
+| 1 | `setState` | État local jetable d'un seul widget (`_isLoading`, `_hidePassword`) |
+| 2 | `ValueNotifier` + `ValueListenableBuilder` | Une seule valeur réactive locale sans reconstruire tout le widget |
+| 3 | `ChangeNotifier` + `provider` | État partagé entre plusieurs écrans (session, thème) |
+
+- `context.watch<T>()` dans `build()` uniquement — reconstruit à chaque `notifyListeners()`
+- `context.read<T>()` dans les callbacks (`onPressed`, `_onSubmit`) uniquement — ne reconstruit pas
+- `notifyListeners()` après chaque mutation d'un notifier
+
+### Conventions Flutter — Async & cycle de vie
+
+- `if (!mounted) return;` après **chaque** `await` avant d'utiliser `context` ou `setState`
+- `dispose()` systématique des `TextEditingController` et `ValueNotifier`
+
+### Conventions Flutter — Couche données
+
+- Pas d'appel réseau direct dans un écran — toujours via un repository
+- Models avec `fromJson` / `toJson`, classes immuables (`final`, `const`)
+- Erreurs gérées avec des exceptions typées + toast — ne jamais relayer un message serveur brut sur une erreur 401
+
+### Conventions Flutter — Style
+
+- Couleurs via `Theme.of(context).colorScheme`, jamais codées en dur
+- Guillemets simples `'...'`, `const` partout où possible, imports relatifs
+- Handlers privés préfixés `_` (`_onSubmit`, `_loadData`)
+- Pas de `print` — utiliser un guard `if (kDebugMode)`
+
 ## Architecture Docker
 
 Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont connectés.
@@ -406,4 +438,4 @@ Ces principes s'appliquent à **tout le code du projet** (Go et Flutter).
 **En pratique :**
 - Les entités dans `domain/entities/` ne doivent jamais importer de code infra (Dio, SQLite, Flutter)
 - Les interfaces dans `domain/repositories/` définissent les contrats ; `data/repositories/` les implémente
-- Toujours injecter les dépendances (constructeur ou Riverpod provider) plutôt que d'instancier en interne
+- Toujours injecter les dépendances (constructeur ou `provider`) plutôt que d'instancier en interne

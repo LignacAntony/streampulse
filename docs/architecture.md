@@ -62,7 +62,7 @@ Ports internes uniquement : 5432 (PostgreSQL) · 3100 (Loki) · 3200 (Tempo)
 
 | Composant | Image | Port interne | Rôle |
 |---|---|---|---|
-| **app Flutter** (`mobile/`) | — | — | Application mobile iOS + Android (Clean Architecture + Riverpod) |
+| **app Flutter** (`mobile/`) | — | — | Application mobile iOS + Android (Clean Architecture + provider) |
 | **api** | build local (Go 1.22) | 8080 | API REST : logique métier, streaming, authentification JWT |
 | **postgres** | `postgres:16-alpine` | 5432 | Base de données relationnelle : utilisateurs, contenus, sessions |
 | **prometheus** | `prom/prometheus:latest` | 9090 | Collecte et stockage des métriques (scrape pull) |
@@ -172,14 +172,14 @@ features/<nom>/
 │   └── usecases/          # Cas d'utilisation (à créer par US)
 └── presentation/
     ├── screens/           # Widgets Flutter (UI)
-    └── providers/         # Riverpod Notifiers (state management)
+    └── providers/         # ChangeNotifier providers (state management)
 ```
 
 ### Packages clés
 
 | Package | Rôle |
 |---|---|
-| `flutter_riverpod` + `riverpod_annotation` | State management — providers déclaratifs avec code generation |
+| `provider` | State management — `ChangeNotifier` + `context.watch` / `context.read` |
 | `go_router` | Navigation déclarative type-safe |
 | `just_audio` + `audio_service` | Lecture audio HLS natif + background playback |
 | `dio` | Client HTTP avec intercepteurs JWT |

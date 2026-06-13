@@ -2,7 +2,7 @@
 
 Application mobile (iOS · Android · Web) de la plateforme StreamPulse. Consomme l'API Go documentée dans [`../docs/architecture.md`](../docs/architecture.md).
 
-L'architecture suit Clean Architecture + Riverpod, formalisée dans [ADR 005](../docs/adr/005-architecture-flutter-clean.md).
+L'architecture suit Clean Architecture + provider, formalisée dans [ADR 005](../docs/adr/005-architecture-flutter-clean.md).
 
 ---
 
@@ -188,7 +188,7 @@ mobile/lib/
 └── features/<feature>/     # Une feature = un dossier indépendant
     ├── data/               # Datasources (HTTP/local) + models JSON + repo impl
     ├── domain/             # Entités pures + interface repository (Principe D)
-    └── presentation/       # Widgets, screens, providers Riverpod
+    └── presentation/       # Widgets, screens, providers (ChangeNotifier)
 ```
 
 Le pattern data / domain / presentation est imposé par [ADR 005](../docs/adr/005-architecture-flutter-clean.md).
@@ -203,7 +203,7 @@ Le pattern data / domain / presentation est imposé par [ADR 005](../docs/adr/00
 | Validation formulaire | `lib/features/auth/presentation/utils/register_validators.dart` (testée à part) |
 | Client HTTP | `lib/features/auth/data/datasources/auth_remote_data_source.dart` |
 | Repository | `lib/features/auth/data/repositories/auth_repository_impl.dart` |
-| Controller Riverpod | `lib/features/auth/presentation/providers/register_controller.dart` |
+| Controller | `lib/features/auth/presentation/providers/register_controller.dart` |
 | Endpoint backend consommé | `POST /api/auth/register` |
 
 Mapping des erreurs serveur :
@@ -221,7 +221,7 @@ Mapping des erreurs serveur :
 ## Conventions
 
 - **Lint** : `flutter_lints` + règles supplémentaires dans `analysis_options.yaml`. Aucun warning toléré (`flutter analyze` doit être vert).
-- **State management** : Riverpod 2.x (`flutter_riverpod`, `AsyncNotifier` pour les flux asynchrones).
+- **State management** : `provider` (`ChangeNotifier` + `context.watch` / `context.read`).
 - **Navigation** : `go_router`. Routes publiques (sans token) déclarées dans la liste `_publicRoutes` de `app/router/app_router.dart`.
 - **Stockage des tokens** : `flutter_secure_storage` (Keychain iOS / EncryptedSharedPreferences Android).
 - **Tests** : un fichier `<truc>_test.dart` par classe métier ; widget tests pour les écrans (clés `Key('...')` stables pour cibler les widgets).
