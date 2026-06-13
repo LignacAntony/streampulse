@@ -11,3 +11,14 @@ sql:
         overrides:
           - db_type: "timestamptz"
             go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/profiles/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "profilesdb"
+        out: "internal/profiles/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

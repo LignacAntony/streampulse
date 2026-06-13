@@ -14,6 +14,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
+	"github.com/LignacAntony/streampulse/internal/profiles"
 )
 
 func main() {
@@ -60,6 +61,10 @@ func run() error {
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
 	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
+	profilesRepo := profiles.NewRepository(pool)
+	profilesSvc := profiles.NewService(profilesRepo)
+	profilesHandler := profiles.NewHandler(profilesSvc, profilesSvc)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -81,6 +86,8 @@ func run() error {
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
 	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
 	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
+
+	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
