@@ -5,6 +5,7 @@ import 'package:toastification/toastification.dart';
 
 import '../core/storage/secure_storage.dart';
 import '../core/theme/app_theme.dart';
+import '../features/profile/presentation/providers/profile_controller.dart';
 import 'router/app_router.dart';
 
 class App extends StatefulWidget {
@@ -25,13 +26,15 @@ class _AppState extends State<App> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = context.watch<ProfileController>().themeMode;
+
     return ToastificationWrapper(
       child: MaterialApp.router(
         title: 'StreamPulse',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.dark,
+        themeMode: themeMode,
         routerConfig: _router,
       ),
     );

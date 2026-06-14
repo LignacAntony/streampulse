@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/theme/app_colors.dart';
-
 enum AuthTab { login, register }
 
 class AuthTabs extends StatelessWidget {
@@ -25,13 +23,14 @@ class AuthTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       height: _height,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.darkSurface,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(_radius),
-        border: Border.all(color: AppColors.darkOutline),
+        border: Border.all(color: colors.outline),
       ),
       child: Row(
         children: [
@@ -75,16 +74,17 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        color: active ? AppColors.darkSurfaceVariant : Colors.transparent,
+        color: active ? colors.surfaceContainerHighest : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         boxShadow: active
             ? [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
+                  color: colors.shadow.withValues(alpha: 0.2),
                   blurRadius: 6,
                   offset: const Offset(0, 1),
                 ),
@@ -101,9 +101,7 @@ class _Segment extends StatelessWidget {
             child: Text(
               label,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: active
-                        ? AppColors.darkOnBackground
-                        : AppColors.darkOnSurfaceMuted,
+                    color: active ? colors.onSurface : colors.onSurfaceVariant,
                     fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                   ),
             ),
