@@ -14,11 +14,8 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
-<<<<<<< HEAD
-	"github.com/LignacAntony/streampulse/internal/profiles"
-=======
 	"github.com/LignacAntony/streampulse/internal/openapi"
->>>>>>> develop
+	"github.com/LignacAntony/streampulse/internal/profiles"
 )
 
 func main() {
