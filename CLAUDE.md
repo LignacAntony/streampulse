@@ -32,6 +32,9 @@ flutter analyze           # Lint
 docker compose up -d
 docker compose down
 docker compose logs -f
+
+# OpenAPI — depuis la racine du repo
+make generate-openapi-client   # Régénère le client Dart/Dio depuis la spec OpenAPI
 ```
 
 ## Git Workflow
@@ -179,6 +182,18 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
 | POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
 
+### Documentation OpenAPI
+
+La spec OpenAPI est la **source de vérité** du contrat HTTP (cf. [ADR 012](docs/adr/012-openapi-source-de-verite.md)).
+
+- Spec embarquée dans le binaire : `backend/internal/openapi/openapi.yaml` (`//go:embed`).
+- Endpoints, montés **uniquement si `!cfg.IsProd()`** dans `cmd/api/main.go` :
+  - `GET /swagger/` — Swagger UI
+  - `GET /swagger/openapi.yaml` — spec YAML brute
+  - `GET /swagger` — redirection 308 vers `/swagger/`
+- Après toute modif de route : mettre à jour `openapi.yaml`, puis régénérer le client mobile
+  via `make generate-openapi-client`.
+
 ### Protéger une route avec JWT
 
 ```go
@@ -214,6 +229,17 @@ flutter run                                                          # Lancer su
 flutter analyze                                                      # Lint
 flutter test                                                         # Tests unitaires et widgets
 ```
+
+### Client API généré (OpenAPI)
+
+Le client HTTP de la couche data est **généré** depuis la spec OpenAPI du backend, pas écrit à la main :
+
+- Package local `mobile/packages/streampulse_api` (dépendance `path:` dans `pubspec.yaml` ;
+  `*.g.dart` commités → pas besoin de `build_runner` avant compilation).
+- Les DTOs de la couche data (`UserResponse`, `TokenPairResponse`, …) en proviennent.
+- Conversion DTO généré → entité domaine via les extensions `toEntity()` dans
+  `features/auth/data/mappers/auth_dto_mappers.dart` (le type généré ne fuit pas hors de la couche data).
+- Régénération (depuis la racine du repo) : `make generate-openapi-client`.
 
 ### Ajouter une nouvelle feature
 
@@ -387,9 +413,10 @@ xcrun simctl openurl booted \
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
 | `docs/adr/006-authentification-jwt.md` | Décision : JWT HS256 + rotation refresh côté backend |
 | `docs/adr/009-authentification-flutter.md` | Décision : stockage sécurisé, refresh auto, logout best-effort côté Flutter |
+| `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `010-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `013-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
