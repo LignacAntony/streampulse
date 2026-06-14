@@ -14,7 +14,11 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
+<<<<<<< HEAD
 	"github.com/LignacAntony/streampulse/internal/profiles"
+=======
+	"github.com/LignacAntony/streampulse/internal/openapi"
+>>>>>>> develop
 )
 
 func main() {
@@ -88,6 +92,13 @@ func run() error {
 	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
+	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
+	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
+	if !cfg.IsProd() {
+		mux.Handle("/swagger", openapi.RedirectHandler())
+		mux.Handle(openapi.SpecPath, openapi.SpecHandler())
+		mux.Handle("/swagger/", openapi.SwaggerHandler())
+	}
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),

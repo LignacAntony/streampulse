@@ -35,7 +35,7 @@ class StreamPulseApp extends StatelessWidget {
           create: (ctx) => DioClient(ctx.read<SecureStorage>()),
         ),
         Provider<AuthRemoteDataSource>(
-          create: (ctx) => AuthRemoteDataSource(ctx.read<DioClient>()),
+          create: (ctx) => AuthRemoteDataSource(ctx.read<DioClient>().authApi),
         ),
         Provider<AuthRepository>(
           create: (ctx) => AuthRepositoryImpl(

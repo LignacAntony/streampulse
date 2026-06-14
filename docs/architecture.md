@@ -70,6 +70,11 @@ Ports internes uniquement : 5432 (PostgreSQL) · 3100 (Loki) · 3200 (Tempo)
 | **tempo** | `grafana/tempo:latest` | 3200 | Stockage et requête des traces distribuées (OTLP) |
 | **grafana** | `grafana/grafana:latest` | 3000 | Visualisation unifiée : métriques, logs, traces |
 
+**Contrat d'API (OpenAPI).** Le service `api` est documenté par une spec OpenAPI 3.0.3
+embarquée, **source de vérité** du contrat HTTP : elle sert Swagger UI sur `/swagger/` et la
+spec brute sur `/swagger/openapi.yaml` (exposés **hors production** uniquement), et le client
+Dart/Dio de l'app Flutter en est généré. Voir [ADR 012](adr/012-openapi-source-de-verite.md).
+
 ---
 
 ## Flux de données — Requête client
@@ -183,6 +188,7 @@ features/<nom>/
 | `go_router` | Navigation déclarative type-safe |
 | `just_audio` + `audio_service` | Lecture audio HLS natif + background playback |
 | `dio` | Client HTTP avec intercepteurs JWT |
+| `streampulse_api` (package local généré) | Client Dart/Dio généré depuis la spec OpenAPI du backend (cf. ADR 012) |
 | `flutter_secure_storage` | Stockage chiffré des tokens (EncryptedSharedPreferences Android) |
 
 *Voir [ADR 005](adr/005-architecture-flutter-clean.md) pour l'analyse complète des alternatives.*

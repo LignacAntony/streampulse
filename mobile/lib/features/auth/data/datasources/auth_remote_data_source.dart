@@ -1,36 +1,32 @@
 import 'package:dio/dio.dart';
+import 'package:streampulse_api/streampulse_api.dart';
 
-import '../../../../core/constants/api_constants.dart';
 import '../../../../core/errors/exceptions.dart';
-import '../../../../core/network/dio_client.dart';
-import '../models/token_pair_model.dart';
-import '../models/user_model.dart';
 
 class AuthRemoteDataSource {
-  AuthRemoteDataSource(this._dioClient);
+  AuthRemoteDataSource(this._authApi);
 
-  final DioClient _dioClient;
+  final AuthApi _authApi;
 
-  Future<UserModel> register({
+  Future<UserResponse> register({
     required String email,
     required String username,
     required String password,
   }) async {
     try {
-      final response = await _dioClient.dio.post<Map<String, dynamic>>(
-        ApiConstants.register,
-        data: {
-          'email': email,
-          'username': username,
-          'password': password,
-        },
+      final response = await _authApi.register(
+        registerRequest: RegisterRequest(
+          email: email,
+          username: username,
+          password: password,
+        ),
       );
 
       final body = response.data;
       if (body == null) {
         throw const ServerException('Réponse vide du serveur');
       }
-      return UserModel.fromJson(body);
+      return body;
     } on DioException catch (e) {
       throw _mapDioException(e);
     }
@@ -38,9 +34,8 @@ class AuthRemoteDataSource {
 
   Future<void> requestPasswordReset({required String email}) async {
     try {
-      await _dioClient.dio.post<void>(
-        ApiConstants.forgotPassword,
-        data: {'email': email},
+      await _authApi.forgotPassword(
+        forgotPasswordRequest: ForgotPasswordRequest(email: email),
       );
     } on DioException catch (e) {
       throw _mapDioException(e);
@@ -52,9 +47,11 @@ class AuthRemoteDataSource {
     required String newPassword,
   }) async {
     try {
-      await _dioClient.dio.post<void>(
-        ApiConstants.resetPassword,
-        data: {'token': token, 'password': newPassword},
+      await _authApi.resetPassword(
+        resetPasswordRequest: ResetPasswordRequest(
+          token: token,
+          password: newPassword,
+        ),
       );
     } on DioException catch (e) {
       throw _mapDioException(e);
@@ -63,33 +60,28 @@ class AuthRemoteDataSource {
 
   Future<void> logout({required String refreshToken}) async {
     try {
-      await _dioClient.dio.post<void>(
-        ApiConstants.logout,
-        data: {'refresh_token': refreshToken},
+      await _authApi.logout(
+        logoutRequest: LogoutRequest(refreshToken: refreshToken),
       );
     } on DioException catch (e) {
       throw _mapDioException(e);
     }
   }
 
-  Future<TokenPairModel> login({
+  Future<TokenPairResponse> login({
     required String email,
     required String password,
   }) async {
     try {
-      final response = await _dioClient.dio.post<Map<String, dynamic>>(
-        ApiConstants.login,
-        data: {
-          'email': email,
-          'password': password,
-        },
+      final response = await _authApi.login(
+        loginRequest: LoginRequest(email: email, password: password),
       );
 
       final body = response.data;
       if (body == null) {
         throw const ServerException('Réponse vide du serveur');
       }
-      return TokenPairModel.fromJson(body);
+      return body;
     } on DioException catch (e) {
       throw _mapDioException(e);
     }

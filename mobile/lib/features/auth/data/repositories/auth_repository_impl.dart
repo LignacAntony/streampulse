@@ -3,6 +3,7 @@ import '../../domain/entities/token_pair.dart';
 import '../../domain/entities/user.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_remote_data_source.dart';
+import '../mappers/auth_dto_mappers.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl(this._remote, this._secureStorage);
@@ -43,8 +44,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<void> resetPassword({
     required String token,
     required String newPassword,
-  }) =>
-      _remote.resetPassword(token: token, newPassword: newPassword);
+  }) => _remote.resetPassword(token: token, newPassword: newPassword);
 
   @override
   Future<void> logout() async {
@@ -52,8 +52,7 @@ class AuthRepositoryImpl implements AuthRepository {
     if (refresh != null) {
       try {
         await _remote.logout(refreshToken: refresh);
-      } catch (_) {
-      }
+      } catch (_) {}
     }
     await _secureStorage.clearTokens();
   }
