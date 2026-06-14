@@ -54,5 +54,9 @@ dev_dependencies:
   # Linting
   flutter_lints: ^4.0.0
 
+  # Tests HTTP — mock du DioAdapter pour verrouiller le mapping d'erreurs
+  # entre le client généré et AuthRemoteDataSource.
+  http_mock_adapter: ^0.6.1
+
 flutter:
   uses-material-design: true
