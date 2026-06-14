@@ -21,6 +21,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 11. [adr/008-architecture-handler-service-repository.md](adr/008-architecture-handler-service-repository.md) — Décision d'architecture : layering handler / service / repository côté backend Go.
 12. [adr/010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) — Décision d'architecture : sécurisation du workflow de réinitialisation de mot de passe (backend Go).
 13. [adr/011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) — Décision d'architecture : deep links et gestion d'état Flutter pour la réinitialisation de mot de passe.
+14. [adr/012-openapi-source-de-verite.md](adr/012-openapi-source-de-verite.md) — Décision d'architecture : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré.
 
 ---
 
@@ -42,6 +43,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [adr/009-authentification-flutter.md](adr/009-authentification-flutter.md) | ADR 009 — Authentification Flutter : stockage sécurisé, refresh automatique, logout best-effort |
 | [adr/010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) | ADR 010 — Réinitialisation mot de passe : token haché, anti-énumération, transaction atomique, mailer |
 | [adr/011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) | ADR 011 — Réinitialisation mot de passe Flutter : deep links custom scheme, AsyncNotifier<bool> |
+| [adr/012-openapi-source-de-verite.md](adr/012-openapi-source-de-verite.md) | ADR 012 — OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
@@ -52,7 +54,7 @@ Les ADR documentent toutes les décisions d'architecture significatives du proje
 Chaque décision est tracée avec son contexte, les alternatives considérées et les conséquences.
 
 **Convention :** toute nouvelle décision d'architecture → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `012-...`).
+avec le numéro suivant (prochain : `013-...`).
 
 Format utilisé : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) (Michael Nygard).
 
