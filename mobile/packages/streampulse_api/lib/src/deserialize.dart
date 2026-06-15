@@ -5,10 +5,12 @@ import 'package:streampulse_api/src/model/health_response.dart';
 import 'package:streampulse_api/src/model/login_request.dart';
 import 'package:streampulse_api/src/model/logout_request.dart';
 import 'package:streampulse_api/src/model/message_response.dart';
+import 'package:streampulse_api/src/model/profile_response.dart';
 import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
 import 'package:streampulse_api/src/model/reset_password_request.dart';
 import 'package:streampulse_api/src/model/token_pair_response.dart';
+import 'package:streampulse_api/src/model/update_profile_request.dart';
 import 'package:streampulse_api/src/model/user_response.dart';
 
 final _regList = RegExp(r'^List<(.*)>$');
@@ -36,25 +38,40 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'ErrorDetail':
       return ErrorDetail.fromJson(value as Map<String, dynamic>) as ReturnType;
     case 'ErrorResponse':
-      return ErrorResponse.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return ErrorResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'ForgotPasswordRequest':
-      return ForgotPasswordRequest.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return ForgotPasswordRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'HealthResponse':
-      return HealthResponse.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return HealthResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'LoginRequest':
       return LoginRequest.fromJson(value as Map<String, dynamic>) as ReturnType;
     case 'LogoutRequest':
-      return LogoutRequest.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return LogoutRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'MessageResponse':
-      return MessageResponse.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return MessageResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'ProfileResponse':
+      return ProfileResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'RefreshRequest':
-      return RefreshRequest.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return RefreshRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'RegisterRequest':
-      return RegisterRequest.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return RegisterRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'ResetPasswordRequest':
-      return ResetPasswordRequest.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return ResetPasswordRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'TokenPairResponse':
-      return TokenPairResponse.fromJson(value as Map<String, dynamic>) as ReturnType;
+      return TokenPairResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'UpdateProfileRequest':
+      return UpdateProfileRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'UserResponse':
       return UserResponse.fromJson(value as Map<String, dynamic>) as ReturnType;
     default:
@@ -64,7 +81,11 @@ ReturnType deserialize<ReturnType, BaseType>(
         targetType = match![1]!; // ignore: parameter_assignments
         return value
                 .map<BaseType>(
-                  (dynamic v) => deserialize<BaseType, BaseType>(v, targetType, growable: growable),
+                  (dynamic v) => deserialize<BaseType, BaseType>(
+                    v,
+                    targetType,
+                    growable: growable,
+                  ),
                 )
                 .toList(growable: growable)
             as ReturnType;
@@ -73,7 +94,11 @@ ReturnType deserialize<ReturnType, BaseType>(
         targetType = match![1]!; // ignore: parameter_assignments
         return value
                 .map<BaseType>(
-                  (dynamic v) => deserialize<BaseType, BaseType>(v, targetType, growable: growable),
+                  (dynamic v) => deserialize<BaseType, BaseType>(
+                    v,
+                    targetType,
+                    growable: growable,
+                  ),
                 )
                 .toSet()
             as ReturnType;
@@ -83,7 +108,11 @@ ReturnType deserialize<ReturnType, BaseType>(
         return Map<String, BaseType>.fromIterables(
               value.keys as Iterable<String>,
               value.values.map(
-                (dynamic v) => deserialize<BaseType, BaseType>(v, targetType, growable: growable),
+                (dynamic v) => deserialize<BaseType, BaseType>(
+                  v,
+                  targetType,
+                  growable: growable,
+                ),
               ),
             )
             as ReturnType;

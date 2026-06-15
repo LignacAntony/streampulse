@@ -56,7 +56,8 @@ class StreamPulseApp extends StatelessWidget {
           create: (ctx) => ResetPasswordController(ctx.read<AuthRepository>()),
         ),
         Provider<ProfileRemoteDataSource>(
-          create: (ctx) => ProfileRemoteDataSource(ctx.read<DioClient>()),
+          create: (ctx) =>
+              ProfileRemoteDataSource(ctx.read<DioClient>().profileApi),
         ),
         Provider<ProfileRepository>(
           create: (ctx) =>

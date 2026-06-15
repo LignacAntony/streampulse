@@ -1,43 +1,39 @@
 import 'package:dio/dio.dart';
+import 'package:streampulse_api/streampulse_api.dart';
 
-import '../../../../core/constants/api_constants.dart';
 import '../../../../core/errors/exceptions.dart';
-import '../../../../core/network/dio_client.dart';
-import '../models/user_profile_model.dart';
 
-/// Le token JWT est injecté automatiquement par l'intercepteur de [DioClient]
-/// (refresh sur 401 transparent) — aucune gestion manuelle ici.
+/// Le token JWT est injecté automatiquement par l'intercepteur de `DioClient`
+/// (refresh sur 401 transparent) — `ProfileApi` est branché sur ce `Dio`,
+/// aucune gestion manuelle ici.
 class ProfileRemoteDataSource {
-  ProfileRemoteDataSource(this._dioClient);
+  ProfileRemoteDataSource(this._profileApi);
 
-  final DioClient _dioClient;
+  final ProfileApi _profileApi;
 
-  Future<UserProfileModel> getMe() async {
+  Future<ProfileResponse> getMe() async {
     try {
-      final response = await _dioClient.dio.get<Map<String, dynamic>>(
-        ApiConstants.me,
-      );
+      final response = await _profileApi.getMyProfile();
       final body = response.data;
       if (body == null) {
         throw const ServerException('Réponse vide du serveur');
       }
-      return UserProfileModel.fromJson(body);
+      return body;
     } on DioException catch (e) {
       throw _mapDioException(e);
     }
   }
 
-  Future<UserProfileModel> update(UserProfileModel profile) async {
+  Future<ProfileResponse> update(UpdateProfileRequest request) async {
     try {
-      final response = await _dioClient.dio.put<Map<String, dynamic>>(
-        ApiConstants.me,
-        data: profile.toUpdateJson(),
+      final response = await _profileApi.updateMyProfile(
+        updateProfileRequest: request,
       );
       final body = response.data;
       if (body == null) {
         throw const ServerException('Réponse vide du serveur');
       }
-      return UserProfileModel.fromJson(body);
+      return body;
     } on DioException catch (e) {
       throw _mapDioException(e);
     }
