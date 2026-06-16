@@ -386,6 +386,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `SMTP_PASSWORD` | Mot de passe SMTP | `mot-de-passe-smtp` |
 | `SMTP_FROM` | Adresse expéditeur | `noreply@streampulse.com` |
 | `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
+| `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 
 ## Santé des services
 

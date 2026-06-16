@@ -12,12 +12,45 @@ import (
 
 const maxUpdateProfileBodyBytes = 1 << 20 // 1 MiB
 
+// updateProfileRequest utilise des pointeurs pour distinguer « champ absent »
+// de « valeur zéro ». PUT remplace le profil en entier : tous les champs sont
+// requis, et un champ absent (ex. notifications_enabled, bio) doit être rejeté
+// plutôt que d'écraser silencieusement la valeur existante par false / "".
 type updateProfileRequest struct {
-	Pseudo               string `json:"pseudo"`
-	Bio                  string `json:"bio"`
-	Theme                string `json:"theme"`
-	NotificationsEnabled bool   `json:"notifications_enabled"`
-	AudioQuality         string `json:"audio_quality"`
+	Pseudo               *string `json:"pseudo"`
+	Bio                  *string `json:"bio"`
+	Theme                *string `json:"theme"`
+	NotificationsEnabled *bool   `json:"notifications_enabled"`
+	AudioQuality         *string `json:"audio_quality"`
+}
+
+// toInput vérifie la présence de chaque champ requis puis construit l'entrée
+// métier. Retourne une erreur InvalidArgument nommant le premier champ manquant.
+func (r updateProfileRequest) toInput() (UpdateProfileInput, error) {
+	missing := ""
+	switch {
+	case r.Pseudo == nil:
+		missing = "pseudo"
+	case r.Bio == nil:
+		missing = "bio"
+	case r.Theme == nil:
+		missing = "theme"
+	case r.NotificationsEnabled == nil:
+		missing = "notifications_enabled"
+	case r.AudioQuality == nil:
+		missing = "audio_quality"
+	}
+	if missing != "" {
+		return UpdateProfileInput{}, apperror.InvalidArgument("missing required field: " + missing)
+	}
+
+	return UpdateProfileInput{
+		Pseudo:               *r.Pseudo,
+		Bio:                  *r.Bio,
+		Theme:                *r.Theme,
+		NotificationsEnabled: *r.NotificationsEnabled,
+		AudioQuality:         *r.AudioQuality,
+	}, nil
 }
 
 type ProfileReader interface {
@@ -82,7 +115,13 @@ func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.updater.UpdateMe(r.Context(), userID, UpdateProfileInput(req))
+	in, err := req.toInput()
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	profile, err := h.updater.UpdateMe(r.Context(), userID, in)
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return

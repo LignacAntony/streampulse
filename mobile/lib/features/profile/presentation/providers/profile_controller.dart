@@ -13,10 +13,13 @@ class ProfileController extends ChangeNotifier {
   UserProfile? _profile;
   bool _isLoading = false;
   bool _isSaving = false;
+  bool _loadFailed = false;
 
   UserProfile? get profile => _profile;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
+
+  bool get loadFailed => _loadFailed;
 
   /// Thème global, sombre par défaut tant que le profil n'est pas chargé.
   ThemeMode get themeMode {
@@ -33,9 +36,12 @@ class ProfileController extends ChangeNotifier {
 
   Future<void> load() async {
     _isLoading = true;
+    _loadFailed = false;
     notifyListeners();
     try {
       _profile = await _repository.getMe();
+    } catch (_) {
+      _loadFailed = true;
     } finally {
       _isLoading = false;
       notifyListeners();

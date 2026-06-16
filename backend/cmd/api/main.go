@@ -16,6 +16,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
 	"github.com/LignacAntony/streampulse/internal/openapi"
 	"github.com/LignacAntony/streampulse/internal/profiles"
+	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 )
 
 func main() {
@@ -97,9 +98,11 @@ func run() error {
 		mux.Handle("/swagger/", openapi.SwaggerHandler())
 	}
 
+	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(), mux)
+
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,

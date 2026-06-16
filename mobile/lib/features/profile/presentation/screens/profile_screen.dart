@@ -89,10 +89,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     UserProfile? profile,
   ) {
     if (profile == null) {
-      if (controller.isLoading) {
-        return const Center(child: CircularProgressIndicator());
+      if (controller.loadFailed) {
+        return _ErrorView(
+          onRetry: () => context.read<ProfileController>().load(),
+        );
       }
-      return _ErrorView(onRetry: () => context.read<ProfileController>().load());
+      return const Center(child: CircularProgressIndicator());
     }
 
     final text = Theme.of(context).textTheme;
@@ -182,7 +184,7 @@ class _ProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              _maskEmail(profile.email),
+              profile.email,
               style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
@@ -439,12 +441,6 @@ class _ErrorView extends StatelessWidget {
       ),
     );
   }
-}
-
-String _maskEmail(String email) {
-  final at = email.indexOf('@');
-  if (at <= 0) return email;
-  return '${email[0]}***${email.substring(at)}';
 }
 
 String _roleLabel(String role) {
