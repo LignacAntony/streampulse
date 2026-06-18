@@ -36,6 +36,19 @@ type PlaylistTrack struct {
 	AddedAt    time.Time
 }
 
+type Profile struct {
+	ID                   pgtype.UUID
+	UserID               pgtype.UUID
+	Pseudo               pgtype.Text
+	Bio                  string
+	AvatarUrl            pgtype.Text
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	Theme                string
+	NotificationsEnabled bool
+	AudioQuality         string
+}
+
 type QueueItem struct {
 	ID       pgtype.UUID
 	UserID   pgtype.UUID

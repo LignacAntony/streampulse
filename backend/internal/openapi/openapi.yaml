@@ -12,6 +12,8 @@ tags:
     description: Observability endpoints.
   - name: Auth
     description: Authentication and password reset endpoints.
+  - name: Profile
+    description: Current user profile endpoints.
 paths:
   /health:
     get:
@@ -211,6 +213,53 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/users/me:
+    get:
+      tags:
+        - Profile
+      operationId: getMyProfile
+      summary: Retrieve the authenticated user's profile.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Profile
+      operationId: updateMyProfile
+      summary: Update the authenticated user's profile.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated user profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
@@ -405,6 +454,91 @@ components:
           type: string
           format: date-time
           example: "2026-01-02T03:04:05Z"
+    ProfileResponse:
+      type: object
+      required:
+        - id
+        - email
+        - role
+        - pseudo
+        - bio
+        - avatar_url
+        - theme
+        - notifications_enabled
+        - audio_quality
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        role:
+          type: string
+          example: user
+        pseudo:
+          type: string
+          minLength: 3
+          maxLength: 30
+          example: alice
+        bio:
+          type: string
+          maxLength: 280
+          example: Music lover and night owl.
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.streampulse.dev/avatars/alice.png
+        theme:
+          type: string
+          enum: [system, light, dark]
+          example: system
+        notifications_enabled:
+          type: boolean
+          example: true
+        audio_quality:
+          type: string
+          enum: [low, normal, high]
+          example: normal
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - pseudo
+        - bio
+        - theme
+        - notifications_enabled
+        - audio_quality
+      properties:
+        pseudo:
+          type: string
+          minLength: 3
+          maxLength: 30
+          pattern: ^[a-zA-Z0-9_ ]+$
+          example: alice
+        bio:
+          type: string
+          maxLength: 280
+          example: Music lover and night owl.
+        theme:
+          type: string
+          enum: [system, light, dark]
+          example: dark
+        notifications_enabled:
+          type: boolean
+          example: true
+        audio_quality:
+          type: string
+          enum: [low, normal, high]
+          example: high
     TokenPairResponse:
       type: object
       required:

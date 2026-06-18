@@ -38,6 +38,7 @@ class DioClient {
     // HttpBearerAuth n'est pas explicitement configuré.
     _authApi = AuthApi(_dio);
     _refreshAuthApi = AuthApi(_refreshDio);
+    _profileApi = ProfileApi(_dio);
   }
 
   static const _retriedKey = '_retried';
@@ -47,12 +48,14 @@ class DioClient {
   late final Dio _refreshDio;
   late final AuthApi _authApi;
   late final AuthApi _refreshAuthApi;
+  late final ProfileApi _profileApi;
   final _logger = Logger();
 
   Completer<bool>? _refreshing;
 
   Dio get dio => _dio;
   AuthApi get authApi => _authApi;
+  ProfileApi get profileApi => _profileApi;
 
   InterceptorsWrapper _authInterceptor() {
     return InterceptorsWrapper(

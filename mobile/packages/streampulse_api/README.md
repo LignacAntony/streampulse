@@ -74,6 +74,8 @@ Class | Method | HTTP request | Description
 [*AuthApi*](doc/AuthApi.md) | [**resetPassword**](doc/AuthApi.md#resetpassword) | **POST** /api/auth/reset-password | Reset a password with a valid reset token.
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
+[*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
+[*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
 
 
 ## Documentation For Models
@@ -85,10 +87,12 @@ Class | Method | HTTP request | Description
  - [LoginRequest](doc/LoginRequest.md)
  - [LogoutRequest](doc/LogoutRequest.md)
  - [MessageResponse](doc/MessageResponse.md)
+ - [ProfileResponse](doc/ProfileResponse.md)
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
+ - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
  - [UserResponse](doc/UserResponse.md)
 
 

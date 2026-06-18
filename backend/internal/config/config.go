@@ -50,6 +50,9 @@ type Config struct {
 
 	// AppBaseURL est utilisée pour construire les liens dans les emails.
 	AppBaseURL string `mapstructure:"APP_BASE_URL"`
+
+	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
+	CORSAllowedOrigins []string `mapstructure:"-"`
 }
 
 // Load lit la configuration depuis l'environnement et la valide.
@@ -86,7 +89,7 @@ func Load() (*Config, error) {
 		"GO_ENV", "API_PORT", "JWT_SECRET",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
-		"APP_BASE_URL",
+		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
@@ -97,6 +100,8 @@ func Load() (*Config, error) {
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("config: unmarshal: %w", err)
 	}
+
+	cfg.CORSAllowedOrigins = parseCSV(v.GetString("CORS_ALLOWED_ORIGINS"))
 
 	// Une variable d'environnement définie à "" est sémantiquement équivalente
 	// à une variable absente (12-Factor) — on retombe sur le défaut.
@@ -130,6 +135,17 @@ func (c *Config) applyDefaultsForEmpty() {
 	if c.SMTPPort == "" {
 		c.SMTPPort = "587"
 	}
+}
+
+// parseCSV découpe une liste CSV en ignorant espaces et entrées vides.
+func parseCSV(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // IsDev indique si l'application tourne en mode développement.

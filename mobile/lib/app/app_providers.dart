@@ -10,6 +10,10 @@ import '../features/auth/presentation/providers/forgot_password_controller.dart'
 import '../features/auth/presentation/providers/login_controller.dart';
 import '../features/auth/presentation/providers/register_controller.dart';
 import '../features/auth/presentation/providers/reset_password_controller.dart';
+import '../features/profile/data/datasources/profile_remote_data_source.dart';
+import '../features/profile/data/repositories/profile_repository_impl.dart';
+import '../features/profile/domain/repositories/profile_repository.dart';
+import '../features/profile/presentation/providers/profile_controller.dart';
 
 /// Conteneur racine d'injection de dépendances (remplace `ProviderScope`).
 ///
@@ -50,6 +54,17 @@ class StreamPulseApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<ResetPasswordController>(
           create: (ctx) => ResetPasswordController(ctx.read<AuthRepository>()),
+        ),
+        Provider<ProfileRemoteDataSource>(
+          create: (ctx) =>
+              ProfileRemoteDataSource(ctx.read<DioClient>().profileApi),
+        ),
+        Provider<ProfileRepository>(
+          create: (ctx) =>
+              ProfileRepositoryImpl(ctx.read<ProfileRemoteDataSource>()),
+        ),
+        ChangeNotifierProvider<ProfileController>(
+          create: (ctx) => ProfileController(ctx.read<ProfileRepository>()),
         ),
       ],
       child: child,

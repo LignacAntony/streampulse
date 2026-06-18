@@ -15,6 +15,8 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
 	"github.com/LignacAntony/streampulse/internal/openapi"
+	"github.com/LignacAntony/streampulse/internal/profiles"
+	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 )
 
 func main() {
@@ -61,6 +63,10 @@ func run() error {
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
 	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
+	profilesRepo := profiles.NewRepository(pool)
+	profilesSvc := profiles.NewService(profilesRepo)
+	profilesHandler := profiles.NewHandler(profilesSvc, profilesSvc)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -83,6 +89,7 @@ func run() error {
 	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
 	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
 
+	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {
@@ -91,9 +98,11 @@ func run() error {
 		mux.Handle("/swagger/", openapi.SwaggerHandler())
 	}
 
+	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(), mux)
+
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
