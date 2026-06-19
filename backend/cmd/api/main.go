@@ -17,6 +17,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/openapi"
 	"github.com/LignacAntony/streampulse/internal/profiles"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
+	"github.com/LignacAntony/streampulse/internal/streaming"
 )
 
 func main() {
@@ -67,6 +68,11 @@ func run() error {
 	profilesSvc := profiles.NewService(profilesRepo)
 	profilesHandler := profiles.NewHandler(profilesSvc, profilesSvc)
 
+	streamingRepo := streaming.NewRepository(pool)
+	streamingKeys := streaming.NewKeyGenerator()
+	streamingSvc := streaming.NewService(streamingRepo, streamingKeys)
+	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -90,6 +96,10 @@ func run() error {
 	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
+
+	// Création d'un flux : réservé au rôle broadcaster (cf. ADR 013).
+	mux.Handle("/api/streams", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Create))))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

@@ -77,6 +77,7 @@ type Stream struct {
 	EndedAt     pgtype.Timestamptz
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	StreamKey   string
 }
 
 type Track struct {
