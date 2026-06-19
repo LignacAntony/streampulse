@@ -76,10 +76,12 @@ Class | Method | HTTP request | Description
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
 [*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
+[*StreamingApi*](doc/StreamingApi.md) | [**createStream**](doc/StreamingApi.md#createstream) | **POST** /api/streams | Create and configure a new live stream (broadcaster only).
 
 
 ## Documentation For Models
 
+ - [CreateStreamRequest](doc/CreateStreamRequest.md)
  - [ErrorDetail](doc/ErrorDetail.md)
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)
@@ -91,6 +93,7 @@ Class | Method | HTTP request | Description
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
+ - [StreamResponse](doc/StreamResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
  - [UserResponse](doc/UserResponse.md)

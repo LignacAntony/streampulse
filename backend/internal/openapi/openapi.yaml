@@ -260,6 +260,39 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/streams:
+    post:
+      tags:
+        - Streaming
+      operationId: createStream
+      summary: Create and configure a new live stream (broadcaster only).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStreamRequest"
+      responses:
+        "201":
+          description: The newly created stream, including its source URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
@@ -308,6 +341,18 @@ components:
                 error:
                   code: conflict
                   message: email or username already taken
+    Forbidden:
+      description: Authenticated but the role is insufficient for this action.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: forbidden
+                  message: insufficient role
     UnsupportedMediaType:
       description: Request content type must be application/json.
       content:
@@ -577,3 +622,95 @@ components:
         message:
           type: string
           example: invalid email
+    CreateStreamRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - is_public
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: Morning Jazz Session
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+          example: A relaxing jazz set to start the day.
+        category:
+          type: string
+          enum: [music, talk, technology, gaming, news, sport, other]
+          nullable: true
+          example: music
+        is_public:
+          type: boolean
+          example: true
+    StreamResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - description
+        - category
+        - status
+        - is_public
+        - stream_key
+        - stream_source_url
+        - started_at
+        - ended_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        user_id:
+          type: string
+          format: uuid
+          example: 99999999-8888-7777-6666-555555555555
+        title:
+          type: string
+          example: Morning Jazz Session
+        description:
+          type: string
+          nullable: true
+          example: A relaxing jazz set to start the day.
+        category:
+          type: string
+          nullable: true
+          example: music
+        status:
+          type: string
+          enum: [idle, live, ended]
+          example: idle
+        is_public:
+          type: boolean
+          example: true
+        stream_key:
+          type: string
+          description: Secret push key for the source URL. Treat as a credential.
+          example: 8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
+        stream_source_url:
+          type: string
+          format: uri
+          example: http://localhost:8080/api/streams/ingest/8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"

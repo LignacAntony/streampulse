@@ -12,7 +12,9 @@ export 'package:streampulse_api/src/api/auth_api.dart';
 export 'package:streampulse_api/src/api/health_api.dart';
 export 'package:streampulse_api/src/api/metrics_api.dart';
 export 'package:streampulse_api/src/api/profile_api.dart';
+export 'package:streampulse_api/src/api/streaming_api.dart';
 
+export 'package:streampulse_api/src/model/create_stream_request.dart';
 export 'package:streampulse_api/src/model/error_detail.dart';
 export 'package:streampulse_api/src/model/error_response.dart';
 export 'package:streampulse_api/src/model/forgot_password_request.dart';
@@ -24,6 +26,7 @@ export 'package:streampulse_api/src/model/profile_response.dart';
 export 'package:streampulse_api/src/model/refresh_request.dart';
 export 'package:streampulse_api/src/model/register_request.dart';
 export 'package:streampulse_api/src/model/reset_password_request.dart';
+export 'package:streampulse_api/src/model/stream_response.dart';
 export 'package:streampulse_api/src/model/token_pair_response.dart';
 export 'package:streampulse_api/src/model/update_profile_request.dart';
 export 'package:streampulse_api/src/model/user_response.dart';
