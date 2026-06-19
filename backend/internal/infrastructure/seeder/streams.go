@@ -32,8 +32,8 @@ func seedStreams(ctx context.Context, tx pgx.Tx) error {
 
 	for _, s := range streams {
 		_, err = tx.Exec(ctx, `
-			INSERT INTO streams (user_id, title, category, status, is_public)
-			VALUES ($1, $2, $3, $4, true)
+			INSERT INTO streams (user_id, title, category, status, is_public, stream_key)
+			VALUES ($1, $2, $3, $4, true, replace(gen_random_uuid()::text, '-', ''))
 			ON CONFLICT DO NOTHING
 		`, broadcasterID, s.title, s.category, s.status)
 		if err != nil {
