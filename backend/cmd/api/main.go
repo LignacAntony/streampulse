@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
+	"github.com/LignacAntony/streampulse/internal/broadcaster"
 	"github.com/LignacAntony/streampulse/internal/config"
 	"github.com/LignacAntony/streampulse/internal/email"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
@@ -67,6 +68,10 @@ func run() error {
 	profilesSvc := profiles.NewService(profilesRepo)
 	profilesHandler := profiles.NewHandler(profilesSvc, profilesSvc)
 
+	broadcasterRepo := broadcaster.NewRepository(pool)
+	broadcasterSvc := broadcaster.NewService(broadcasterRepo)
+	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -91,6 +96,12 @@ func run() error {
 	mux.Handle("/api/auth/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.DeleteAccount)))
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
+
+	mux.Handle("/api/broadcaster-requests", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(broadcasterHandler.Create)))
+	mux.Handle("/api/broadcaster-requests/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(broadcasterHandler.GetMine)))
+	mux.Handle("/api/admin/broadcaster-requests", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.List))))
+	mux.Handle("/api/admin/broadcaster-requests/{id}/approve", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Approve))))
+	mux.Handle("/api/admin/broadcaster-requests/{id}/reject", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Reject))))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

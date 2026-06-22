@@ -39,6 +39,7 @@ class DioClient {
     _authApi = AuthApi(_dio);
     _refreshAuthApi = AuthApi(_refreshDio);
     _profileApi = ProfileApi(_dio);
+    _broadcasterApi = BroadcasterApi(_dio);
   }
 
   static const _retriedKey = '_retried';
@@ -49,6 +50,7 @@ class DioClient {
   late final AuthApi _authApi;
   late final AuthApi _refreshAuthApi;
   late final ProfileApi _profileApi;
+  late final BroadcasterApi _broadcasterApi;
   final _logger = Logger();
 
   Completer<bool>? _refreshing;
@@ -56,6 +58,7 @@ class DioClient {
   Dio get dio => _dio;
   AuthApi get authApi => _authApi;
   ProfileApi get profileApi => _profileApi;
+  BroadcasterApi get broadcasterApi => _broadcasterApi;
 
   InterceptorsWrapper _authInterceptor() {
     return InterceptorsWrapper(

@@ -230,19 +230,21 @@ class _ProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RoleBadge(role: profile.role),
-            const SizedBox(height: 16),
-            ConstrainedBox(
-              constraints: const BoxConstraints.tightFor(
-                height: AppConstants.minTouchTarget,
-              ),
-              child: OutlinedButton(
-                onPressed: () => showAuthInfoToast(
-                  context,
-                  'Demande de rôle Diffuseur — bientôt disponible',
+            // Réservé aux utilisateurs standard : un diffuseur/admin n'a pas
+            // de demande à faire.
+            if (profile.role == 'user') ...[
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints.tightFor(
+                  height: AppConstants.minTouchTarget,
                 ),
-                child: const Text('Demander le rôle Diffuseur'),
+                child: OutlinedButton(
+                  key: const Key('profile_become_broadcaster'),
+                  onPressed: () => context.push('/broadcaster-request'),
+                  child: const Text('Demander le rôle Diffuseur'),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
