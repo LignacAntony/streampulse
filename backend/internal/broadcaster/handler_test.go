@@ -131,6 +131,22 @@ func TestHandler_Approve_UsesPathID(t *testing.T) {
 	}
 }
 
+func TestHandler_Approve_InvalidID(t *testing.T) {
+	stub := &stubService{}
+	mux := http.NewServeMux()
+	mux.Handle("/api/admin/broadcaster-requests/{id}/approve",
+		auth.RequireAuth(testSecret, auth.RequireRole("admin", http.HandlerFunc(newHandler(stub).Approve))))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/broadcaster-requests/not-a-uuid/approve", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken(t, "admin"))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
 func TestHandler_Approve_ForbiddenForNonAdmin(t *testing.T) {
 	stub := &stubService{}
 	mux := http.NewServeMux()

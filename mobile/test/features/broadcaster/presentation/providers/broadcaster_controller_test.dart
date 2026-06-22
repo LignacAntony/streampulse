@@ -96,4 +96,18 @@ void main() {
       expect(controller.isSubmitting, isFalse);
     });
   });
+
+  test('reset() efface la demande retenue entre deux sessions', () async {
+    final controller = BroadcasterController(
+      _FakeRepository(existing: _request(BroadcasterRequestStatus.rejected)),
+    );
+    await controller.load();
+    expect(controller.request, isNotNull);
+
+    controller.reset();
+
+    expect(controller.request, isNull);
+    expect(controller.hasPendingRequest, isFalse);
+    expect(controller.loadFailed, isFalse);
+  });
 }

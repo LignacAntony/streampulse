@@ -6,6 +6,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../../domain/entities/user_profile.dart';
 import '../providers/profile_controller.dart';
 import '../widgets/profile_avatar.dart';
@@ -57,6 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _logout() async {
     await context.read<AuthRepository>().logout();
     if (!mounted) return;
+    context.read<BroadcasterController>().reset();
     context.go('/login');
   }
 

@@ -20,6 +20,14 @@ class BroadcasterController extends ChangeNotifier {
 
   bool get hasPendingRequest => _request?.isPending ?? false;
 
+  void reset() {
+    _request = null;
+    _isLoading = false;
+    _isSubmitting = false;
+    _loadFailed = false;
+    notifyListeners();
+  }
+
   Future<void> load() async {
     _isLoading = true;
     _loadFailed = false;

@@ -5,7 +5,7 @@ import '../../domain/entities/broadcaster_request.dart';
 extension BroadcasterRequestResponseMapper on BroadcasterRequestResponse {
   BroadcasterRequest toEntity() => BroadcasterRequest(
         id: id,
-        status: _statusFromValue(status.value),
+        status: _statusFromDto(status),
         message: message,
         reviewNote: reviewNote,
         reviewedBy: reviewedBy,
@@ -14,14 +14,13 @@ extension BroadcasterRequestResponseMapper on BroadcasterRequestResponse {
       );
 }
 
-BroadcasterRequestStatus _statusFromValue(String value) {
-  switch (value) {
-    case 'approved':
-      return BroadcasterRequestStatus.approved;
-    case 'rejected':
-      return BroadcasterRequestStatus.rejected;
-    case 'pending':
-    default:
+BroadcasterRequestStatus _statusFromDto(BroadcasterRequestResponseStatusEnum s) {
+  switch (s) {
+    case BroadcasterRequestResponseStatusEnum.pending:
       return BroadcasterRequestStatus.pending;
+    case BroadcasterRequestResponseStatusEnum.approved:
+      return BroadcasterRequestStatus.approved;
+    case BroadcasterRequestResponseStatusEnum.rejected:
+      return BroadcasterRequestStatus.rejected;
   }
 }

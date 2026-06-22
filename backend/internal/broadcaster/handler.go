@@ -4,13 +4,21 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
 )
 
-const maxRequestBodyBytes = 1 << 20 // 1 MiB
+const maxRequestBodyBytes = 1 << 20
+
+var uuidPathRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func methodNotAllowed(w http.ResponseWriter, r *http.Request, allow string) {
+	w.Header().Set("Allow", allow)
+	httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+}
 
 type Requester interface {
 	RequestBroadcaster(ctx context.Context, userID, message string) (Request, error)
@@ -50,8 +58,7 @@ func NewHandler(requester Requester, reader MyRequestReader, lister RequestListe
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		methodNotAllowed(w, r, http.MethodPost)
 		return
 	}
 
@@ -80,8 +87,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetMine(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		methodNotAllowed(w, r, http.MethodGet)
 		return
 	}
 
@@ -104,8 +110,7 @@ func (h *Handler) GetMine(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		methodNotAllowed(w, r, http.MethodGet)
 		return
 	}
 
@@ -130,8 +135,7 @@ func (h *Handler) Reject(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) review(w http.ResponseWriter, r *http.Request, approve bool) {
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		methodNotAllowed(w, r, http.MethodPost)
 		return
 	}
 
@@ -142,8 +146,8 @@ func (h *Handler) review(w http.ResponseWriter, r *http.Request, approve bool) {
 	}
 
 	requestID := r.PathValue("id")
-	if requestID == "" {
-		httpjson.WriteError(w, r, apperror.InvalidArgument("missing request id"))
+	if !uuidPathRe.MatchString(requestID) {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("invalid request id"))
 		return
 	}
 
