@@ -258,11 +258,6 @@ func (h *Handler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Password == "" {
-		httpjson.WriteError(w, r, apperror.InvalidArgument("password required"))
-		return
-	}
-
 	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))

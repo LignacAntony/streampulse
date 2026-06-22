@@ -105,7 +105,8 @@ class DioClient {
     return path.endsWith(ApiConstants.refresh) ||
         path.endsWith(ApiConstants.login) ||
         path.endsWith(ApiConstants.logout) ||
-        path.endsWith(ApiConstants.register);
+        path.endsWith(ApiConstants.register) ||
+        path.endsWith(ApiConstants.deleteAccount);
   }
 
   /// Refresh sérialisé : si un refresh est déjà en cours, on attend son résultat.

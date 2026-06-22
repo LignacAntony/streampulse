@@ -181,6 +181,7 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/logout` | `Handler.Logout` | Oui (JWT) |
 | POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
 | POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
+| DELETE | `/api/auth/me` | `Handler.DeleteAccount` | Oui (JWT) |
 
 ### Documentation OpenAPI
 

@@ -308,7 +308,7 @@ func TestHandler_DeleteAccount_InvalidJSON(t *testing.T) {
 
 func TestHandler_DeleteAccount_MissingPassword(t *testing.T) {
 	rec := httptest.NewRecorder()
-	NewHandler(nil, nil, nil, nil, nil, nil, &stubAccountDeleter{}).DeleteAccount(rec,
+	NewHandler(nil, nil, nil, nil, nil, nil, &stubAccountDeleter{err: apperror.InvalidArgument("password required")}).DeleteAccount(rec,
 		deleteReq(t, "/api/auth/me", `{"password":""}`, "user-1"))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", rec.Code)

@@ -497,41 +497,43 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         'Supprimer mon compte',
         style: TextStyle(color: colors.error),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Cette action est irréversible. Toutes vos données '
-            '(profil, playlists, morceaux, historique) seront '
-            'définitivement supprimées.',
-          ),
-          const SizedBox(height: 16),
-          CheckboxListTile(
-            key: const Key('delete_account_confirm_checkbox'),
-            contentPadding: EdgeInsets.zero,
-            value: _confirmed,
-            onChanged: (v) => setState(() => _confirmed = v ?? false),
-            title: const Text('Je comprends que cette action est irréversible'),
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            key: const Key('delete_account_password_field'),
-            controller: _controller,
-            obscureText: _obscure,
-            enabled: _confirmed,
-            decoration: InputDecoration(
-              labelText: 'Mot de passe',
-              hintText: 'Confirmez votre mot de passe',
-              suffixIcon: IconButton(
-                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => setState(() => _obscure = !_obscure),
-              ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Cette action est irréversible. Toutes vos données '
+              '(profil, playlists, morceaux, historique) seront '
+              'définitivement supprimées.',
             ),
-            onSubmitted: _confirmed ? (_) => _submit() : null,
-          ),
-        ],
+            const SizedBox(height: 16),
+            CheckboxListTile(
+              key: const Key('delete_account_confirm_checkbox'),
+              contentPadding: EdgeInsets.zero,
+              value: _confirmed,
+              onChanged: (v) => setState(() => _confirmed = v ?? false),
+              title: const Text('Je comprends que cette action est irréversible'),
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('delete_account_password_field'),
+              controller: _controller,
+              obscureText: _obscure,
+              enabled: _confirmed,
+              decoration: InputDecoration(
+                labelText: 'Mot de passe',
+                hintText: 'Confirmez votre mot de passe',
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              onSubmitted: _confirmed ? (_) => _submit() : null,
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
