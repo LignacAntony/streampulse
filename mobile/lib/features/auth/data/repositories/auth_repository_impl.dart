@@ -56,4 +56,10 @@ class AuthRepositoryImpl implements AuthRepository {
     }
     await _secureStorage.clearTokens();
   }
+
+  @override
+  Future<void> deleteAccount({required String password}) async {
+    await _remote.deleteAccount(password: password);
+    await _secureStorage.clearTokens();
+  }
 }
