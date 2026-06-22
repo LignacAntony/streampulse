@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../../domain/entities/broadcaster_request.dart';
 import '../../domain/repositories/broadcaster_repository.dart';
 
-/// Pilote l'écran « Devenir diffuseur » : charge la demande existante et en
-/// soumet une nouvelle. Partagé via `ChangeNotifierProvider` (niveau 3).
 class BroadcasterController extends ChangeNotifier {
   BroadcasterController(this._repository);
 
@@ -20,7 +18,6 @@ class BroadcasterController extends ChangeNotifier {
   bool get isSubmitting => _isSubmitting;
   bool get loadFailed => _loadFailed;
 
-  /// Vrai s'il existe une demande en attente : on masque alors le formulaire.
   bool get hasPendingRequest => _request?.isPending ?? false;
 
   Future<void> load() async {
@@ -37,8 +34,6 @@ class BroadcasterController extends ChangeNotifier {
     }
   }
 
-  /// Soumet une demande. Relaie l'exception (ex. `ConflictException`) pour que
-  /// l'écran affiche un toast ; le `finally` réinitialise toujours l'état.
   Future<void> submit(String message) async {
     _isSubmitting = true;
     notifyListeners();

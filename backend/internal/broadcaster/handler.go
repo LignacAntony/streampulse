@@ -48,8 +48,6 @@ func NewHandler(requester Requester, reader MyRequestReader, lister RequestListe
 	return &Handler{requester: requester, reader: reader, lister: lister, reviewer: reviewer}
 }
 
-// Create route POST /api/broadcaster-requests : l'utilisateur courant soumet une
-// demande de rôle diffuseur. L'authentification est garantie par RequireAuth.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -80,8 +78,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetMine route GET /api/broadcaster-requests/me : statut de la dernière demande
-// de l'utilisateur courant (404 s'il n'en a jamais soumis).
 func (h *Handler) GetMine(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -106,8 +102,6 @@ func (h *Handler) GetMine(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// List route GET /api/admin/broadcaster-requests (réservée aux admins via
-// RequireRole). Filtre optionnel ?status=pending|approved|rejected.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -126,12 +120,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Approve route POST /api/admin/broadcaster-requests/{id}/approve.
 func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	h.review(w, r, true)
 }
 
-// Reject route POST /api/admin/broadcaster-requests/{id}/reject.
 func (h *Handler) Reject(w http.ResponseWriter, r *http.Request) {
 	h.review(w, r, false)
 }

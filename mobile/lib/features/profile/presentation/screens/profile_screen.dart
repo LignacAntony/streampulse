@@ -230,8 +230,6 @@ class _ProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RoleBadge(role: profile.role),
-            // Réservé aux utilisateurs standard : un diffuseur/admin n'a pas
-            // de demande à faire.
             if (profile.role == 'user') ...[
               const SizedBox(height: 16),
               ConstrainedBox(

@@ -3,10 +3,6 @@ import 'package:streampulse_api/streampulse_api.dart';
 
 import '../../../../core/errors/exceptions.dart';
 
-/// Accès réseau aux endpoints « demande de rôle diffuseur ».
-///
-/// Le `Bearer` est injecté par l'intercepteur de `DioClient` (refresh 401
-/// transparent) — `BroadcasterApi` est branché sur ce `Dio`.
 class BroadcasterRemoteDataSource {
   BroadcasterRemoteDataSource(this._api);
 
@@ -27,7 +23,6 @@ class BroadcasterRemoteDataSource {
     }
   }
 
-  /// Retourne `null` sur 404 : l'utilisateur n'a jamais soumis de demande.
   Future<BroadcasterRequestResponse?> getMine() async {
     try {
       final response = await _api.getMyBroadcasterRequest();

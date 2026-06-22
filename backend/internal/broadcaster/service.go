@@ -9,25 +9,20 @@ import (
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
-// MaxMessageLen borne la motivation de la demande et la note de traitement admin.
 const MaxMessageLen = 500
 
-// Statuts possibles d'une demande de rôle diffuseur.
 const (
 	StatusPending  = "pending"
 	StatusApproved = "approved"
 	StatusRejected = "rejected"
 )
 
-// Rôles concernés par la promotion. La hiérarchie complète vit dans auth.
 const (
 	roleUser        = "user"
 	roleBroadcaster = "broadcaster"
 	roleAdmin       = "admin"
 )
 
-// Request est la vue d'une demande de rôle diffuseur côté demandeur.
-// ReviewedBy est nul tant que la demande n'a pas été traitée par un admin.
 type Request struct {
 	ID         string    `json:"id"`
 	Status     string    `json:"status"`
@@ -38,7 +33,6 @@ type Request struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// AdminRequest enrichit Request de l'identité du demandeur, pour la liste admin.
 type AdminRequest struct {
 	Request
 	UserID   string `json:"user_id"`
@@ -46,7 +40,6 @@ type AdminRequest struct {
 	Username string `json:"username"`
 }
 
-// Repository isole l'accès aux données des demandes diffuseur.
 type Repository interface {
 	GetUserRole(ctx context.Context, userID string) (string, error)
 	Create(ctx context.Context, userID, message string) (Request, error)
@@ -65,9 +58,6 @@ func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// RequestBroadcaster enregistre une demande de passage au rôle diffuseur pour
-// l'utilisateur courant. Refuse si l'utilisateur est déjà diffuseur/admin ou
-// s'il a déjà une demande en attente (contrainte unique partielle → Conflict).
 func (s *Service) RequestBroadcaster(ctx context.Context, userID, message string) (Request, error) {
 	msg, err := normalizeMessage(message)
 	if err != nil {
@@ -85,12 +75,10 @@ func (s *Service) RequestBroadcaster(ctx context.Context, userID, message string
 	return s.repo.Create(ctx, userID, msg)
 }
 
-// GetMyRequest retourne la demande la plus récente de l'utilisateur courant.
 func (s *Service) GetMyRequest(ctx context.Context, userID string) (Request, error) {
 	return s.repo.GetLatestByUser(ctx, userID)
 }
 
-// ListRequests retourne les demandes pour l'admin, filtrées par statut optionnel.
 func (s *Service) ListRequests(ctx context.Context, status string) ([]AdminRequest, error) {
 	var filter *string
 	if status != "" {
@@ -102,7 +90,6 @@ func (s *Service) ListRequests(ctx context.Context, status string) ([]AdminReque
 	return s.repo.List(ctx, filter)
 }
 
-// ApproveRequest valide la demande et promeut l'utilisateur au rôle diffuseur.
 func (s *Service) ApproveRequest(ctx context.Context, requestID, adminID, note string) (Request, error) {
 	n, err := normalizeMessage(note)
 	if err != nil {
@@ -111,7 +98,6 @@ func (s *Service) ApproveRequest(ctx context.Context, requestID, adminID, note s
 	return s.repo.Review(ctx, requestID, adminID, StatusApproved, n, true)
 }
 
-// RejectRequest refuse la demande sans changer le rôle de l'utilisateur.
 func (s *Service) RejectRequest(ctx context.Context, requestID, adminID, note string) (Request, error) {
 	n, err := normalizeMessage(note)
 	if err != nil {

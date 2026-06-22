@@ -7,8 +7,6 @@ import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/broadcaster_request.dart';
 import '../providers/broadcaster_controller.dart';
 
-/// Écran « Devenir diffuseur » : soumission d'une demande et suivi du statut.
-/// La validation est faite par un admin (back-office web) — non couverte ici.
 class BroadcasterRequestScreen extends StatefulWidget {
   const BroadcasterRequestScreen({super.key});
 
@@ -87,7 +85,6 @@ class _BroadcasterRequestScreenState extends State<BroadcasterRequestScreen> {
             _StatusCard(request: request),
             const SizedBox(height: 24),
           ],
-          // Le formulaire est masqué tant qu'une demande est en attente.
           if (!controller.hasPendingRequest)
             _RequestForm(
               controller: _messageController,
