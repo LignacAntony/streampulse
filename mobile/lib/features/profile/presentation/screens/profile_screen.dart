@@ -61,6 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _deleteAccount() async {
+    final repo = context.read<AuthRepository>();
     final password = await showDialog<String>(
       context: context,
       builder: (_) => const _DeleteAccountDialog(),
@@ -68,7 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (password == null || password.isEmpty) return;
 
     try {
-      await context.read<AuthRepository>().deleteAccount(password: password);
+      await repo.deleteAccount(password: password);
       if (!mounted) return;
       showAuthSuccessToast(context, 'Compte supprimé avec succès');
       context.go('/login');
