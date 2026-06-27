@@ -287,10 +287,124 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-        "409":
-          $ref: "#/components/responses/Conflict"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags:
+        - Streaming
+      operationId: listStreams
+      summary: List public live streams (paginated).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Public live streams (without any secret).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: getStream
+      summary: Get a stream by id.
+      description: >-
+        The owner receives the full stream (including stream_key and
+        stream_source_url). Other users receive a public summary without
+        secrets. A private stream owned by someone else returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The stream (full for the owner, summary otherwise).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StreamResponse"
+                  - $ref: "#/components/schemas/StreamSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Streaming
+      operationId: updateStream
+      summary: Update a stream (owner only).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStreamRequest"
+      responses:
+        "200":
+          description: The updated stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Streaming
+      operationId: deleteStream
+      summary: Delete (archive) a stream (owner only).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream was archived.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 components:
@@ -353,6 +467,18 @@ components:
                 error:
                   code: forbidden
                   message: insufficient role
+    NotFound:
+      description: The resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            notFound:
+              value:
+                error:
+                  code: not_found
+                  message: stream not found
     UnsupportedMediaType:
       description: Request content type must be application/json.
       content:
@@ -636,7 +762,7 @@ components:
           example: Morning Jazz Session
         description:
           type: string
-          maxLength: 2000
+          maxLength: 500
           nullable: true
           example: A relaxing jazz set to start the day.
         category:
@@ -647,6 +773,45 @@ components:
         is_public:
           type: boolean
           example: true
+    StreamSummaryResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - description
+        - category
+        - status
+        - is_public
+        - started_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [idle, live, ended]
+        is_public:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
     StreamResponse:
       type: object
       required:
