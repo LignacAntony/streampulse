@@ -47,6 +47,34 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Stream, erro
 	}, nil
 }
 
+func (r *pgRepository) ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error) {
+	rows, err := r.q.ListPublicLiveStreams(ctx, streamingdb.ListPublicLiveStreamsParams{
+		Lim: limit,
+		Off: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repo: list public live streams: %w", err)
+	}
+
+	streams := make([]Stream, 0, len(rows))
+	for _, row := range rows {
+		streams = append(streams, Stream{
+			ID:          row.ID,
+			UserID:      row.UserID,
+			Title:       row.Title,
+			Description: textValue(row.Description),
+			Category:    textValue(row.Category),
+			Status:      row.Status,
+			IsPublic:    row.IsPublic,
+			StartedAt:   row.StartedAt,
+			EndedAt:     row.EndedAt,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+		})
+	}
+	return streams, nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {

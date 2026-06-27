@@ -133,12 +133,23 @@ type fakeRepo struct {
 	gotParams CreateParams
 	ret       Stream
 	err       error
+
+	gotLimit  int32
+	gotOffset int32
+	listRet   []Stream
+	listErr   error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
 	f.called = true
 	f.gotParams = p
 	return f.ret, f.err
+}
+
+func (f *fakeRepo) ListPublicLive(_ context.Context, limit, offset int32) ([]Stream, error) {
+	f.gotLimit = limit
+	f.gotOffset = offset
+	return f.listRet, f.listErr
 }
 
 type fakeKeys struct {
@@ -213,5 +224,21 @@ func TestService_CreateStream_RepoErrorPropagated(t *testing.T) {
 	_, err := svc.CreateStream(context.Background(), CreateStreamInput{Title: "abc"})
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("code = %v, want conflict", err)
+	}
+}
+
+func TestService_ListPublicLive_DelegatesToRepo(t *testing.T) {
+	repo := &fakeRepo{listRet: []Stream{{ID: "s1"}, {ID: "s2"}}}
+	svc := NewService(repo, fakeKeys{})
+
+	got, err := svc.ListPublicLive(context.Background(), 20, 40)
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("len = %d, want 2", len(got))
+	}
+	if repo.gotLimit != 20 || repo.gotOffset != 40 {
+		t.Errorf("pagination transmise = (%d, %d), want (20, 40)", repo.gotLimit, repo.gotOffset)
 	}
 }

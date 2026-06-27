@@ -24,6 +24,12 @@ const (
 	StatusEnded = "ended"
 )
 
+// Bornes de pagination de la liste des flux.
+const (
+	DefaultListLimit = 20
+	MaxListLimit     = 100
+)
+
 // validCategories est la liste blanche des catégories autorisées.
 var validCategories = map[string]bool{
 	"music":      true,
@@ -114,6 +120,7 @@ type CreateParams struct {
 // Repository est l'interface de persistance (implémentée par pgRepository).
 type Repository interface {
 	Create(ctx context.Context, p CreateParams) (Stream, error)
+	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
 }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
@@ -153,4 +160,9 @@ func (s *Service) CreateStream(ctx context.Context, in CreateStreamInput) (Strea
 		Status:      StatusIdle,
 		StreamKey:   key,
 	})
+}
+
+// ListPublicLive retourne les flux publics en direct (non archivés), paginés.
+func (s *Service) ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error) {
+	return s.repo.ListPublicLive(ctx, limit, offset)
 }

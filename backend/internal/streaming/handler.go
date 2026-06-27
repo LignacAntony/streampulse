@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,21 +15,21 @@ import (
 
 const maxCreateStreamBodyBytes = 1 << 20 // 1 MiB
 
-// StreamCreator est l'interface étroite requise par le handler (ISP) : *Service
-// la satisfait.
-type StreamCreator interface {
+// StreamService est l'interface requise par le handler (ISP) : *Service la satisfait.
+type StreamService interface {
 	CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error)
+	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
 }
 
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
 // l'URL de stream source renvoyée au diffuseur.
 type Handler struct {
-	creator       StreamCreator
+	svc           StreamService
 	ingestBaseURL string
 }
 
-func NewHandler(creator StreamCreator, ingestBaseURL string) *Handler {
-	return &Handler{creator: creator, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/")}
+func NewHandler(svc StreamService, ingestBaseURL string) *Handler {
+	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/")}
 }
 
 // createStreamRequest : pointeurs pour distinguer « champ absent » de zéro.
@@ -99,7 +100,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stream, err := h.creator.CreateStream(r.Context(), in)
+	stream, err := h.svc.CreateStream(r.Context(), in)
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
@@ -126,4 +127,72 @@ func (h *Handler) toResponse(s Stream) streamResponse {
 		CreatedAt:       s.CreatedAt,
 		UpdatedAt:       s.UpdatedAt,
 	}
+}
+
+// streamSummaryResponse est la vue publique d'un flux : aucun secret
+// (stream_key, stream_source_url) n'y figure.
+type streamSummaryResponse struct {
+	ID          string     `json:"id"`
+	UserID      string     `json:"user_id"`
+	Title       string     `json:"title"`
+	Description *string    `json:"description"`
+	Category    *string    `json:"category"`
+	Status      string     `json:"status"`
+	IsPublic    bool       `json:"is_public"`
+	StartedAt   *time.Time `json:"started_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+func toSummary(s Stream) streamSummaryResponse {
+	return streamSummaryResponse{
+		ID:          s.ID,
+		UserID:      s.UserID,
+		Title:       s.Title,
+		Description: s.Description,
+		Category:    s.Category,
+		Status:      s.Status,
+		IsPublic:    s.IsPublic,
+		StartedAt:   s.StartedAt,
+		CreatedAt:   s.CreatedAt,
+	}
+}
+
+// List gère GET /api/streams : flux publics en direct, paginés. Auth requise.
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntDefault(r.URL.Query().Get("limit"), DefaultListLimit)
+	if limit < 1 {
+		limit = DefaultListLimit
+	}
+	if limit > MaxListLimit {
+		limit = MaxListLimit
+	}
+	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
+	if offset < 0 {
+		offset = 0
+	}
+
+	streams, err := h.svc.ListPublicLive(r.Context(), int32(limit), int32(offset))
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]streamSummaryResponse, 0, len(streams))
+	for _, s := range streams {
+		out = append(out, toSummary(s))
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		log.Printf("streaming: encode list response: %v", err)
+	}
+}
+
+func parseIntDefault(raw string, def int) int {
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return n
 }

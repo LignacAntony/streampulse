@@ -97,9 +97,12 @@ func run() error {
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
 
-	// Création d'un flux : réservé au rôle broadcaster (cf. ADR 013).
-	mux.Handle("/api/streams", auth.RequireAuth(cfg.JWTSecret,
+	// Flux : création réservée au broadcaster ; liste accessible à tout
+	// utilisateur authentifié (cf. ADR 013).
+	mux.Handle("POST /api/streams", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Create))))
+	mux.Handle("GET /api/streams", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.List)))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

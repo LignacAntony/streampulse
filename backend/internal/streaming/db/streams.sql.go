@@ -75,3 +75,64 @@ func (q *Queries) CreateStream(ctx context.Context, arg CreateStreamParams) (Cre
 	)
 	return i, err
 }
+
+const listPublicLiveStreams = `-- name: ListPublicLiveStreams :many
+SELECT id::text AS id, user_id::text AS user_id, title, description, category,
+       status, is_public, started_at, ended_at, created_at, updated_at
+FROM streams
+WHERE is_public = true AND status = 'live' AND archived_at IS NULL
+ORDER BY started_at DESC NULLS LAST, created_at DESC
+LIMIT $2 OFFSET $1
+`
+
+type ListPublicLiveStreamsParams struct {
+	Off int32
+	Lim int32
+}
+
+type ListPublicLiveStreamsRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Flux publics en direct, non archivés. Le stream_key n'est jamais exposé ici.
+func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveStreamsParams) ([]ListPublicLiveStreamsRow, error) {
+	rows, err := q.db.Query(ctx, listPublicLiveStreams, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicLiveStreamsRow
+	for rows.Next() {
+		var i ListPublicLiveStreamsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Title,
+			&i.Description,
+			&i.Category,
+			&i.Status,
+			&i.IsPublic,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

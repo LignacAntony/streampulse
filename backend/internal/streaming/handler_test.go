@@ -17,17 +17,28 @@ const (
 	testIngestURL = "http://localhost:8080"
 )
 
-type stubCreator struct {
+type stubService struct {
 	ret      Stream
 	err      error
 	called   bool
 	gotInput CreateStreamInput
+
+	listRet   []Stream
+	listErr   error
+	gotLimit  int32
+	gotOffset int32
 }
 
-func (s *stubCreator) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
+func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
 	s.called = true
 	s.gotInput = in
 	return s.ret, s.err
+}
+
+func (s *stubService) ListPublicLive(_ context.Context, limit, offset int32) ([]Stream, error) {
+	s.gotLimit = limit
+	s.gotOffset = offset
+	return s.listRet, s.listErr
 }
 
 // doCreate exécute la requête à travers la chaîne réelle RequireAuth + RequireRole(broadcaster).
@@ -50,7 +61,7 @@ func doCreate(t *testing.T, h *Handler, method, role, body string, withToken boo
 }
 
 func TestHandler_Create_OK(t *testing.T) {
-	stub := &stubCreator{ret: Stream{
+	stub := &stubService{ret: Stream{
 		ID:        "s1",
 		UserID:    testUserID,
 		Title:     "Mon flux",
@@ -85,7 +96,7 @@ func TestHandler_Create_OK(t *testing.T) {
 }
 
 func TestHandler_Create_MissingTitle(t *testing.T) {
-	stub := &stubCreator{}
+	stub := &stubService{}
 	h := NewHandler(stub, testIngestURL)
 
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"is_public":true}`, true)
@@ -102,7 +113,7 @@ func TestHandler_Create_MissingTitle(t *testing.T) {
 }
 
 func TestHandler_Create_MissingIsPublic(t *testing.T) {
-	h := NewHandler(&stubCreator{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL)
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"Mon flux"}`, true)
 
 	if rec.Code != http.StatusBadRequest {
@@ -114,7 +125,7 @@ func TestHandler_Create_MissingIsPublic(t *testing.T) {
 }
 
 func TestHandler_Create_UnknownField(t *testing.T) {
-	h := NewHandler(&stubCreator{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL)
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"x","is_public":true,"foo":1}`, true)
 
 	if rec.Code != http.StatusBadRequest {
@@ -123,7 +134,7 @@ func TestHandler_Create_UnknownField(t *testing.T) {
 }
 
 func TestHandler_Create_RequiresToken(t *testing.T) {
-	h := NewHandler(&stubCreator{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL)
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"x","is_public":true}`, false)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -132,7 +143,7 @@ func TestHandler_Create_RequiresToken(t *testing.T) {
 }
 
 func TestHandler_Create_ForbiddenForUser(t *testing.T) {
-	stub := &stubCreator{}
+	stub := &stubService{}
 	h := NewHandler(stub, testIngestURL)
 
 	rec := doCreate(t, h, http.MethodPost, "user", `{"title":"x","is_public":true}`, true)
@@ -146,10 +157,74 @@ func TestHandler_Create_ForbiddenForUser(t *testing.T) {
 }
 
 func TestHandler_Create_MethodNotAllowed(t *testing.T) {
-	h := NewHandler(&stubCreator{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL)
 	rec := doCreate(t, h, http.MethodGet, "broadcaster", "", true)
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("want 405, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// doList exécute GET /api/streams via RequireAuth (sans rôle).
+func doList(t *testing.T, h *Handler, query string, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/streams"+query, nil)
+	if withToken {
+		token, err := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testSecret, http.HandlerFunc(h.List)).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandler_List_OK_NoStreamKey(t *testing.T) {
+	stub := &stubService{listRet: []Stream{
+		{ID: "s1", UserID: "u9", Title: "En direct", Status: StatusLive, IsPublic: true, StreamKey: "SECRET_KEY"},
+	}}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doList(t, h, "", true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"title":"En direct"`) {
+		t.Errorf("body manque le flux: %s", body)
+	}
+	// Sécurité : aucun secret ne doit fuiter dans la liste.
+	if strings.Contains(body, "SECRET_KEY") || strings.Contains(body, "stream_key") || strings.Contains(body, "stream_source_url") {
+		t.Errorf("la liste ne doit pas exposer la clé/URL source: %s", body)
+	}
+}
+
+func TestHandler_List_RequiresToken(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL)
+	rec := doList(t, h, "", false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_List_PaginationClamp(t *testing.T) {
+	stub := &stubService{}
+	h := NewHandler(stub, testIngestURL)
+
+	doList(t, h, "?limit=999&offset=-5", true)
+	if stub.gotLimit != MaxListLimit {
+		t.Errorf("limit = %d, want clamp à %d", stub.gotLimit, MaxListLimit)
+	}
+	if stub.gotOffset != 0 {
+		t.Errorf("offset = %d, want 0", stub.gotOffset)
+	}
+
+	doList(t, h, "", true)
+	if stub.gotLimit != DefaultListLimit {
+		t.Errorf("limit par défaut = %d, want %d", stub.gotLimit, DefaultListLimit)
 	}
 }
