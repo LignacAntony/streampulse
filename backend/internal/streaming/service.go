@@ -71,38 +71,63 @@ type CreateStreamInput struct {
 // validate applique les règles métier de création et retourne une copie
 // normalisée (titre/description trimés, optionnels vides ramenés à nil).
 func (in CreateStreamInput) validate() (CreateStreamInput, error) {
-	title := strings.TrimSpace(in.Title)
+	title, desc, cat, err := normalizeStreamFields(in.Title, in.Description, in.Category)
+	if err != nil {
+		return CreateStreamInput{}, err
+	}
+	return CreateStreamInput{
+		UserID:      in.UserID,
+		Title:       title,
+		Description: desc,
+		Category:    cat,
+		IsPublic:    in.IsPublic,
+	}, nil
+}
+
+// normalizeStreamFields applique les règles communes à la création et à la mise
+// à jour : titre 3-120 (trimé), description <=500 (vide -> nil), category dans la
+// liste blanche (vide -> nil).
+func normalizeStreamFields(rawTitle string, rawDesc, rawCat *string) (title string, desc, cat *string, err error) {
+	title = strings.TrimSpace(rawTitle)
 	if n := utf8.RuneCountInString(title); n < MinTitleLen || n > MaxTitleLen {
-		return CreateStreamInput{}, apperror.InvalidArgument("invalid title")
+		return "", nil, nil, apperror.InvalidArgument("invalid title")
 	}
-
-	out := CreateStreamInput{
-		UserID:   in.UserID,
-		Title:    title,
-		IsPublic: in.IsPublic,
-	}
-
-	if in.Description != nil {
-		desc := strings.TrimSpace(*in.Description)
-		if utf8.RuneCountInString(desc) > MaxDescriptionLen {
-			return CreateStreamInput{}, apperror.InvalidArgument("description too long")
+	if rawDesc != nil {
+		d := strings.TrimSpace(*rawDesc)
+		if utf8.RuneCountInString(d) > MaxDescriptionLen {
+			return "", nil, nil, apperror.InvalidArgument("description too long")
 		}
-		if desc != "" {
-			out.Description = &desc
+		if d != "" {
+			desc = &d
 		}
 	}
-
-	if in.Category != nil {
-		cat := strings.TrimSpace(*in.Category)
-		if cat != "" {
-			if !validCategories[cat] {
-				return CreateStreamInput{}, apperror.InvalidArgument("invalid category")
+	if rawCat != nil {
+		c := strings.TrimSpace(*rawCat)
+		if c != "" {
+			if !validCategories[c] {
+				return "", nil, nil, apperror.InvalidArgument("invalid category")
 			}
-			out.Category = &cat
+			cat = &c
 		}
 	}
+	return title, desc, cat, nil
+}
 
-	return out, nil
+// UpdateStreamInput porte les champs modifiables d'un flux (PUT = remplacement
+// complet ; status, stream_key et user_id ne sont jamais modifiables ici).
+type UpdateStreamInput struct {
+	Title       string
+	Description *string
+	Category    *string
+	IsPublic    bool
+}
+
+func (in UpdateStreamInput) validate() (UpdateStreamInput, error) {
+	title, desc, cat, err := normalizeStreamFields(in.Title, in.Description, in.Category)
+	if err != nil {
+		return UpdateStreamInput{}, err
+	}
+	return UpdateStreamInput{Title: title, Description: desc, Category: cat, IsPublic: in.IsPublic}, nil
 }
 
 // CreateParams est la demande de persistance adressée au Repository (champs
@@ -117,10 +142,24 @@ type CreateParams struct {
 	StreamKey   string
 }
 
+// UpdateParams est la demande de mise à jour adressée au Repository, restreinte
+// au flux du propriétaire (id + user_id) et non archivé.
+type UpdateParams struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description *string
+	Category    *string
+	IsPublic    bool
+}
+
 // Repository est l'interface de persistance (implémentée par pgRepository).
 type Repository interface {
 	Create(ctx context.Context, p CreateParams) (Stream, error)
 	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
+	GetByID(ctx context.Context, id string) (Stream, error)
+	Update(ctx context.Context, p UpdateParams) (Stream, error)
+	Archive(ctx context.Context, id, userID string) error
 }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
@@ -165,4 +204,41 @@ func (s *Service) CreateStream(ctx context.Context, in CreateStreamInput) (Strea
 // ListPublicLive retourne les flux publics en direct (non archivés), paginés.
 func (s *Service) ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error) {
 	return s.repo.ListPublicLive(ctx, limit, offset)
+}
+
+// GetStream retourne un flux par id et indique si le demandeur en est le
+// propriétaire. Un flux privé n'est visible que de son propriétaire (sinon 404,
+// pour ne pas divulguer son existence).
+func (s *Service) GetStream(ctx context.Context, id, requesterID string) (Stream, bool, error) {
+	stream, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return Stream{}, false, err
+	}
+	isOwner := stream.UserID == requesterID
+	if !isOwner && !stream.IsPublic {
+		return Stream{}, false, apperror.NotFound("stream not found")
+	}
+	return stream, isOwner, nil
+}
+
+// UpdateStream valide puis met à jour le flux du propriétaire (404 si absent,
+// archivé, ou appartenant à un autre diffuseur).
+func (s *Service) UpdateStream(ctx context.Context, id, requesterID string, in UpdateStreamInput) (Stream, error) {
+	validated, err := in.validate()
+	if err != nil {
+		return Stream{}, err
+	}
+	return s.repo.Update(ctx, UpdateParams{
+		ID:          id,
+		UserID:      requesterID,
+		Title:       validated.Title,
+		Description: validated.Description,
+		Category:    validated.Category,
+		IsPublic:    validated.IsPublic,
+	})
+}
+
+// ArchiveStream effectue le soft delete du flux du propriétaire (404 sinon).
+func (s *Service) ArchiveStream(ctx context.Context, id, requesterID string) error {
+	return s.repo.Archive(ctx, id, requesterID)
 }

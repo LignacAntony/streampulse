@@ -138,6 +138,14 @@ type fakeRepo struct {
 	gotOffset int32
 	listRet   []Stream
 	listErr   error
+
+	gotID      string
+	getRet     Stream
+	getErr     error
+	gotUpdate  UpdateParams
+	updateRet  Stream
+	updateErr  error
+	archiveErr error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
@@ -150,6 +158,21 @@ func (f *fakeRepo) ListPublicLive(_ context.Context, limit, offset int32) ([]Str
 	f.gotLimit = limit
 	f.gotOffset = offset
 	return f.listRet, f.listErr
+}
+
+func (f *fakeRepo) GetByID(_ context.Context, id string) (Stream, error) {
+	f.gotID = id
+	return f.getRet, f.getErr
+}
+
+func (f *fakeRepo) Update(_ context.Context, p UpdateParams) (Stream, error) {
+	f.gotUpdate = p
+	return f.updateRet, f.updateErr
+}
+
+func (f *fakeRepo) Archive(_ context.Context, id, _ string) error {
+	f.gotID = id
+	return f.archiveErr
 }
 
 type fakeKeys struct {
@@ -240,5 +263,74 @@ func TestService_ListPublicLive_DelegatesToRepo(t *testing.T) {
 	}
 	if repo.gotLimit != 20 || repo.gotOffset != 40 {
 		t.Errorf("pagination transmise = (%d, %d), want (20, 40)", repo.gotLimit, repo.gotOffset)
+	}
+}
+
+func TestService_GetStream_Owner(t *testing.T) {
+	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
+	svc := NewService(repo, fakeKeys{})
+
+	s, isOwner, err := svc.GetStream(context.Background(), "s1", "u1")
+	if err != nil || !isOwner || s.ID != "s1" {
+		t.Fatalf("owner: (%+v, %v, %v)", s, isOwner, err)
+	}
+}
+
+func TestService_GetStream_PublicNonOwner(t *testing.T) {
+	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: true}}
+	svc := NewService(repo, fakeKeys{})
+
+	_, isOwner, err := svc.GetStream(context.Background(), "s1", "u2")
+	if err != nil || isOwner {
+		t.Fatalf("public non-owner: isOwner=%v err=%v", isOwner, err)
+	}
+}
+
+func TestService_GetStream_PrivateNonOwner_NotFound(t *testing.T) {
+	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
+	svc := NewService(repo, fakeKeys{})
+
+	_, _, err := svc.GetStream(context.Background(), "s1", "u2")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not_found", err)
+	}
+}
+
+func TestService_UpdateStream_ValidationError(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo, fakeKeys{})
+
+	_, err := svc.UpdateStream(context.Background(), "s1", "u1", UpdateStreamInput{Title: "ab"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("code = %v, want invalid_argument", err)
+	}
+	if repo.gotUpdate.ID != "" {
+		t.Error("repo.Update ne devrait pas être appelé si la validation échoue")
+	}
+}
+
+func TestService_UpdateStream_DelegatesOwnerScope(t *testing.T) {
+	repo := &fakeRepo{updateRet: Stream{ID: "s1"}}
+	svc := NewService(repo, fakeKeys{})
+
+	_, err := svc.UpdateStream(context.Background(), "s1", "u1", UpdateStreamInput{Title: "Nouveau", IsPublic: true})
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if repo.gotUpdate.ID != "s1" || repo.gotUpdate.UserID != "u1" || repo.gotUpdate.Title != "Nouveau" {
+		t.Errorf("update transmis = %+v", repo.gotUpdate)
+	}
+}
+
+func TestService_ArchiveStream_Delegates(t *testing.T) {
+	repo := &fakeRepo{archiveErr: apperror.NotFound("stream not found")}
+	svc := NewService(repo, fakeKeys{})
+
+	err := svc.ArchiveStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not_found", err)
+	}
+	if repo.gotID != "s1" {
+		t.Errorf("id transmis = %q, want s1", repo.gotID)
 	}
 }

@@ -19,6 +19,9 @@ const maxCreateStreamBodyBytes = 1 << 20 // 1 MiB
 type StreamService interface {
 	CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error)
 	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
+	GetStream(ctx context.Context, id, requesterID string) (Stream, bool, error)
+	UpdateStream(ctx context.Context, id, requesterID string, in UpdateStreamInput) (Stream, error)
+	ArchiveStream(ctx context.Context, id, requesterID string) error
 }
 
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
@@ -195,4 +198,92 @@ func parseIntDefault(raw string, def int) int {
 		return def
 	}
 	return n
+}
+
+// toUpdateInput réutilise la forme de createStreamRequest : title et is_public
+// sont requis (PUT = remplacement complet), description et category optionnels.
+func (r createStreamRequest) toUpdateInput() (UpdateStreamInput, error) {
+	if r.Title == nil {
+		return UpdateStreamInput{}, apperror.InvalidArgument("missing required field: title")
+	}
+	if r.IsPublic == nil {
+		return UpdateStreamInput{}, apperror.InvalidArgument("missing required field: is_public")
+	}
+	return UpdateStreamInput{
+		Title:       *r.Title,
+		Description: r.Description,
+		Category:    r.Category,
+		IsPublic:    *r.IsPublic,
+	}, nil
+}
+
+// Get gère GET /api/streams/{id}. Le propriétaire reçoit l'objet complet (avec
+// stream_key + URL source) ; un autre utilisateur reçoit le résumé public.
+func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	stream, isOwner, err := h.svc.GetStream(r.Context(), r.PathValue("id"), requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	var payload any = toSummary(stream)
+	if isOwner {
+		payload = h.toResponse(stream)
+	}
+	if err := httpjson.Write(w, http.StatusOK, payload); err != nil {
+		log.Printf("streaming: encode get response: %v", err)
+	}
+}
+
+// Update gère PUT /api/streams/{id} : remplacement complet, propriétaire uniquement.
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	var req createStreamRequest
+	if err := httpjson.Decode(w, r, &req, maxCreateStreamBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	in, err := req.toUpdateInput()
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	stream, err := h.svc.UpdateStream(r.Context(), r.PathValue("id"), requesterID, in)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream)); err != nil {
+		log.Printf("streaming: encode update response: %v", err)
+	}
+}
+
+// Delete gère DELETE /api/streams/{id} : soft delete, propriétaire uniquement.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	if err := h.svc.ArchiveStream(r.Context(), r.PathValue("id"), requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

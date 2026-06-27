@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const archiveStream = `-- name: ArchiveStream :execrows
+UPDATE streams
+SET archived_at = NOW(), updated_at = NOW()
+WHERE id = $1::uuid AND user_id = $2::uuid AND archived_at IS NULL
+`
+
+type ArchiveStreamParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) ArchiveStream(ctx context.Context, arg ArchiveStreamParams) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveStream, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createStream = `-- name: CreateStream :one
 INSERT INTO streams (user_id, title, description, category, status, is_public, stream_key)
 VALUES (
@@ -70,6 +89,48 @@ func (q *Queries) CreateStream(ctx context.Context, arg CreateStreamParams) (Cre
 		&i.Status,
 		&i.IsPublic,
 		&i.StreamKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getStreamByID = `-- name: GetStreamByID :one
+SELECT id::text AS id, user_id::text AS user_id, title, description, category,
+       status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+FROM streams
+WHERE id = $1::uuid AND archived_at IS NULL
+`
+
+type GetStreamByIDRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StreamKey   string
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) GetStreamByID(ctx context.Context, id pgtype.UUID) (GetStreamByIDRow, error) {
+	row := q.db.QueryRow(ctx, getStreamByID, id)
+	var i GetStreamByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.Status,
+		&i.IsPublic,
+		&i.StreamKey,
+		&i.StartedAt,
+		&i.EndedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -135,4 +196,67 @@ func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveS
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateStream = `-- name: UpdateStream :one
+UPDATE streams
+SET title = $1::text,
+    description = $2::text,
+    category = $3::text,
+    is_public = $4::boolean,
+    updated_at = NOW()
+WHERE id = $5::uuid AND user_id = $6::uuid AND archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+`
+
+type UpdateStreamParams struct {
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	IsPublic    bool
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+}
+
+type UpdateStreamRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StreamKey   string
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) UpdateStream(ctx context.Context, arg UpdateStreamParams) (UpdateStreamRow, error) {
+	row := q.db.QueryRow(ctx, updateStream,
+		arg.Title,
+		arg.Description,
+		arg.Category,
+		arg.IsPublic,
+		arg.ID,
+		arg.UserID,
+	)
+	var i UpdateStreamRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.Status,
+		&i.IsPublic,
+		&i.StreamKey,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

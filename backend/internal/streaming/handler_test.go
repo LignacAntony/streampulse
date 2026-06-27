@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
+	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
 const (
@@ -27,6 +28,16 @@ type stubService struct {
 	listErr   error
 	gotLimit  int32
 	gotOffset int32
+
+	getRet         Stream
+	getOwner       bool
+	getErr         error
+	updateRet      Stream
+	updateErr      error
+	gotUpdateInput UpdateStreamInput
+	archiveErr     error
+	gotID          string
+	gotRequester   string
 }
 
 func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
@@ -39,6 +50,25 @@ func (s *stubService) ListPublicLive(_ context.Context, limit, offset int32) ([]
 	s.gotLimit = limit
 	s.gotOffset = offset
 	return s.listRet, s.listErr
+}
+
+func (s *stubService) GetStream(_ context.Context, id, requesterID string) (Stream, bool, error) {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.getRet, s.getOwner, s.getErr
+}
+
+func (s *stubService) UpdateStream(_ context.Context, id, requesterID string, in UpdateStreamInput) (Stream, error) {
+	s.gotID = id
+	s.gotRequester = requesterID
+	s.gotUpdateInput = in
+	return s.updateRet, s.updateErr
+}
+
+func (s *stubService) ArchiveStream(_ context.Context, id, requesterID string) error {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.archiveErr
 }
 
 // doCreate exécute la requête à travers la chaîne réelle RequireAuth + RequireRole(broadcaster).
@@ -226,5 +256,144 @@ func TestHandler_List_PaginationClamp(t *testing.T) {
 	doList(t, h, "", true)
 	if stub.gotLimit != DefaultListLimit {
 		t.Errorf("limit par défaut = %d, want %d", stub.gotLimit, DefaultListLimit)
+	}
+}
+
+// doID exécute GET/PUT/DELETE /api/streams/{id} via RequireAuth, avec le path
+// value renseigné (comme le ferait le ServeMux).
+func doID(t *testing.T, method, id, body string, h http.Handler, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, "/api/streams/"+id, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.SetPathValue("id", id)
+	if withToken {
+		token, err := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testSecret, h).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandler_Get_OwnerFull(t *testing.T) {
+	stub := &stubService{
+		getOwner: true,
+		getRet:   Stream{ID: "s1", UserID: testUserID, Title: "Mon flux", Status: StatusIdle, StreamKey: "KEY123"},
+	}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Get), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"stream_key":"KEY123"`) || !strings.Contains(body, "stream_source_url") {
+		t.Errorf("le propriétaire doit recevoir la clé + URL source: %s", body)
+	}
+}
+
+func TestHandler_Get_NonOwnerSummary(t *testing.T) {
+	stub := &stubService{
+		getOwner: false,
+		getRet:   Stream{ID: "s1", UserID: "autre", Title: "Public", IsPublic: true, StreamKey: "SECRET"},
+	}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Get), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "SECRET") || strings.Contains(body, "stream_key") || strings.Contains(body, "stream_source_url") {
+		t.Errorf("un non-propriétaire ne doit pas voir la clé/URL source: %s", body)
+	}
+}
+
+func TestHandler_Get_NotFound(t *testing.T) {
+	stub := &stubService{getErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Get), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Update_OK(t *testing.T) {
+	stub := &stubService{updateRet: Stream{ID: "s1", UserID: testUserID, Title: "Nouveau", StreamKey: "KEY123"}}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPut, "s1", `{"title":"Nouveau","is_public":false}`, http.HandlerFunc(h.Update), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotID != "s1" || stub.gotRequester != testUserID {
+		t.Errorf("scope owner = (%q, %q)", stub.gotID, stub.gotRequester)
+	}
+	if !strings.Contains(rec.Body.String(), `"stream_key":"KEY123"`) {
+		t.Errorf("le propriétaire doit recevoir la clé: %s", rec.Body)
+	}
+}
+
+func TestHandler_Update_MissingTitle(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL)
+	rec := doID(t, http.MethodPut, "s1", `{"is_public":true}`, http.HandlerFunc(h.Update), true)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Update_NotFound(t *testing.T) {
+	stub := &stubService{updateErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPut, "s1", `{"title":"Nouveau","is_public":true}`, http.HandlerFunc(h.Update), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Delete_NoContent(t *testing.T) {
+	stub := &stubService{}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.Delete), true)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotID != "s1" {
+		t.Errorf("id transmis = %q, want s1", stub.gotID)
+	}
+}
+
+func TestHandler_Delete_NotFound(t *testing.T) {
+	stub := &stubService{archiveErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.Delete), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Delete_RequiresToken(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL)
+	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.Delete), false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
 	}
 }

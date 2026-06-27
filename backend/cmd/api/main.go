@@ -103,6 +103,14 @@ func run() error {
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Create))))
 	mux.Handle("GET /api/streams", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.List)))
+	// Consultation/modification/suppression d'un flux : auth requise, la
+	// propriété est vérifiée dans le service (cf. ADR 013).
+	mux.Handle("GET /api/streams/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Get)))
+	mux.Handle("PUT /api/streams/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Update)))
+	mux.Handle("DELETE /api/streams/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Delete)))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {
