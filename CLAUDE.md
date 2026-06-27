@@ -182,6 +182,21 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
 | POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
 
+### Routes streams existantes
+
+Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 013](docs/adr/013-domaine-streaming.md).
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| POST | `/api/streams` | `Handler.Create` | Oui — rôle `broadcaster` |
+| GET | `/api/streams` | `Handler.List` | Oui (JWT) — liste publique en direct, paginée, sans secret |
+| GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — propriétaire : objet complet ; tiers : résumé (public) ou 404 (privé) |
+| PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
+| DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
+
+- Titre **non unique** (contrainte retirée en `000013`) : pas de 409 sur le titre.
+- `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
+
 ### Documentation OpenAPI
 
 La spec OpenAPI est la **source de vérité** du contrat HTTP (cf. [ADR 012](docs/adr/012-openapi-source-de-verite.md)).
