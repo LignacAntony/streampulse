@@ -30,9 +30,9 @@ class StreamResponse {
 
     required this.isPublic,
 
-    required this.streamKey,
+    this.streamKey,
 
-    required this.streamSourceUrl,
+    this.streamSourceUrl,
 
     required this.startedAt,
 
@@ -64,12 +64,13 @@ class StreamResponse {
   @JsonKey(name: r'is_public', required: true, includeIfNull: false)
   final bool isPublic;
 
-  /// Secret push key for the source URL. Treat as a credential.
-  @JsonKey(name: r'stream_key', required: true, includeIfNull: false)
-  final String streamKey;
+  /// Secret push key. Populated only for the stream owner; null for any other user. Treat as a credential.
+  @JsonKey(name: r'stream_key', required: false, includeIfNull: false)
+  final String? streamKey;
 
-  @JsonKey(name: r'stream_source_url', required: true, includeIfNull: false)
-  final String streamSourceUrl;
+  /// Populated only for the stream owner; null otherwise.
+  @JsonKey(name: r'stream_source_url', required: false, includeIfNull: false)
+  final String? streamSourceUrl;
 
   @JsonKey(name: r'started_at', required: true, includeIfNull: true)
   final DateTime? startedAt;
@@ -110,8 +111,8 @@ class StreamResponse {
       (category == null ? 0 : category.hashCode) +
       status.hashCode +
       isPublic.hashCode +
-      streamKey.hashCode +
-      streamSourceUrl.hashCode +
+      (streamKey == null ? 0 : streamKey.hashCode) +
+      (streamSourceUrl == null ? 0 : streamSourceUrl.hashCode) +
       (startedAt == null ? 0 : startedAt.hashCode) +
       (endedAt == null ? 0 : endedAt.hashCode) +
       createdAt.hashCode +

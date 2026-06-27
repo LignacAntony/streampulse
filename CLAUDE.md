@@ -190,7 +190,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 |---|---|---|---|
 | POST | `/api/streams` | `Handler.Create` | Oui — rôle `broadcaster` |
 | GET | `/api/streams` | `Handler.List` | Oui (JWT) — liste publique en direct, paginée, sans secret |
-| GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — propriétaire : objet complet ; tiers : résumé (public) ou 404 (privé) |
+| GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — réponse unique : propriétaire = `stream_key`/`stream_source_url` remplis, tiers = ces secrets à `null`, ou 404 (privé) |
 | PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
 | DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
 

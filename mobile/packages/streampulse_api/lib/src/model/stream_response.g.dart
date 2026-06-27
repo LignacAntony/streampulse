@@ -21,8 +21,6 @@ StreamResponse _$StreamResponseFromJson(Map<String, dynamic> json) =>
             'category',
             'status',
             'is_public',
-            'stream_key',
-            'stream_source_url',
             'started_at',
             'ended_at',
             'created_at',
@@ -40,10 +38,10 @@ StreamResponse _$StreamResponseFromJson(Map<String, dynamic> json) =>
             (v) => $enumDecode(_$StreamResponseStatusEnumEnumMap, v),
           ),
           isPublic: $checkedConvert('is_public', (v) => v as bool),
-          streamKey: $checkedConvert('stream_key', (v) => v as String),
+          streamKey: $checkedConvert('stream_key', (v) => v as String?),
           streamSourceUrl: $checkedConvert(
             'stream_source_url',
-            (v) => v as String,
+            (v) => v as String?,
           ),
           startedAt: $checkedConvert(
             'started_at',
@@ -76,22 +74,31 @@ StreamResponse _$StreamResponseFromJson(Map<String, dynamic> json) =>
       },
     );
 
-Map<String, dynamic> _$StreamResponseToJson(StreamResponse instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'user_id': instance.userId,
-      'title': instance.title,
-      'description': instance.description,
-      'category': instance.category,
-      'status': _$StreamResponseStatusEnumEnumMap[instance.status]!,
-      'is_public': instance.isPublic,
-      'stream_key': instance.streamKey,
-      'stream_source_url': instance.streamSourceUrl,
-      'started_at': instance.startedAt?.toIso8601String(),
-      'ended_at': instance.endedAt?.toIso8601String(),
-      'created_at': instance.createdAt.toIso8601String(),
-      'updated_at': instance.updatedAt.toIso8601String(),
-    };
+Map<String, dynamic> _$StreamResponseToJson(StreamResponse instance) {
+  final val = <String, dynamic>{
+    'id': instance.id,
+    'user_id': instance.userId,
+    'title': instance.title,
+    'description': instance.description,
+    'category': instance.category,
+    'status': _$StreamResponseStatusEnumEnumMap[instance.status]!,
+    'is_public': instance.isPublic,
+  };
+
+  void writeNotNull(String key, dynamic value) {
+    if (value != null) {
+      val[key] = value;
+    }
+  }
+
+  writeNotNull('stream_key', instance.streamKey);
+  writeNotNull('stream_source_url', instance.streamSourceUrl);
+  val['started_at'] = instance.startedAt?.toIso8601String();
+  val['ended_at'] = instance.endedAt?.toIso8601String();
+  val['created_at'] = instance.createdAt.toIso8601String();
+  val['updated_at'] = instance.updatedAt.toIso8601String();
+  return val;
+}
 
 const _$StreamResponseStatusEnumEnumMap = {
   StreamResponseStatusEnum.idle: 'idle',

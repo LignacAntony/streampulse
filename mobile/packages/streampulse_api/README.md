@@ -89,7 +89,6 @@ Class | Method | HTTP request | Description
  - [ErrorDetail](doc/ErrorDetail.md)
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)
- - [GetStream200Response](doc/GetStream200Response.md)
  - [HealthResponse](doc/HealthResponse.md)
  - [LoginRequest](doc/LoginRequest.md)
  - [LogoutRequest](doc/LogoutRequest.md)

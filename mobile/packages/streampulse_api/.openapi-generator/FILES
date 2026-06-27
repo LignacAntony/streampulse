@@ -19,7 +19,6 @@ lib/src/model/create_stream_request.dart
 lib/src/model/error_detail.dart
 lib/src/model/error_response.dart
 lib/src/model/forgot_password_request.dart
-lib/src/model/get_stream200_response.dart
 lib/src/model/health_response.dart
 lib/src/model/login_request.dart
 lib/src/model/logout_request.dart

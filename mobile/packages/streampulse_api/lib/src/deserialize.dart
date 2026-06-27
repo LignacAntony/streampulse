@@ -2,7 +2,6 @@ import 'package:streampulse_api/src/model/create_stream_request.dart';
 import 'package:streampulse_api/src/model/error_detail.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/forgot_password_request.dart';
-import 'package:streampulse_api/src/model/get_stream200_response.dart';
 import 'package:streampulse_api/src/model/health_response.dart';
 import 'package:streampulse_api/src/model/login_request.dart';
 import 'package:streampulse_api/src/model/logout_request.dart';
@@ -49,9 +48,6 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'ForgotPasswordRequest':
       return ForgotPasswordRequest.fromJson(value as Map<String, dynamic>)
-          as ReturnType;
-    case 'GetStream200Response':
-      return GetStream200Response.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'HealthResponse':
       return HealthResponse.fromJson(value as Map<String, dynamic>)

@@ -11,7 +11,6 @@ import 'package:dio/dio.dart';
 
 import 'package:streampulse_api/src/model/create_stream_request.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
-import 'package:streampulse_api/src/model/get_stream200_response.dart';
 import 'package:streampulse_api/src/model/stream_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 
@@ -176,9 +175,9 @@ class StreamingApi {
   /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
   /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
   ///
-  /// Returns a [Future] containing a [Response] with a [GetStream200Response] as data
+  /// Returns a [Future] containing a [Response] with a [StreamResponse] as data
   /// Throws [DioException] if API call or serialization fails
-  Future<Response<GetStream200Response>> getStream({
+  Future<Response<StreamResponse>> getStream({
     required String id,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
@@ -213,15 +212,15 @@ class StreamingApi {
       onReceiveProgress: onReceiveProgress,
     );
 
-    GetStream200Response? _responseData;
+    StreamResponse? _responseData;
 
     try {
       final rawData = _response.data;
       _responseData = rawData == null
           ? null
-          : deserialize<GetStream200Response, GetStream200Response>(
+          : deserialize<StreamResponse, StreamResponse>(
               rawData,
-              'GetStream200Response',
+              'StreamResponse',
               growable: true,
             );
     } catch (error, stackTrace) {
@@ -234,7 +233,7 @@ class StreamingApi {
       );
     }
 
-    return Response<GetStream200Response>(
+    return Response<StreamResponse>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

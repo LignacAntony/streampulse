@@ -34,8 +34,10 @@ brut via un endpoint HTTP, et le backend Go segmente en HLS. L'URL de stream sou
   (modèle Twitch/OBS). Un hachage rendrait l'URL illisible après la création.
 - URL renvoyée : `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}` — nouvelle variable
   d'environnement (12-Factor, cf. ADR 004), défaut dev `http://localhost:8080`.
-- **Le `stream_key` (et l'URL source) n'est jamais exposé à un tiers** : ni dans la liste, ni
-  dans la vue d'un flux dont le demandeur n'est pas propriétaire.
+- **Le `stream_key` (et l'URL source) n'est jamais exposé à un tiers** : absent de la liste, et
+  à `null` dans la vue d'un flux dont le demandeur n'est pas propriétaire. `GET /api/streams/{id}`
+  renvoie un **schéma unique** (`StreamResponse`, secrets nullable) plutôt qu'un `oneOf` — pour
+  rester correctement désérialisable par le client Dart/Dio généré.
 - **Sécurité** : un secret en clair en base implique qu'une lecture DB expose toutes les clés
   (risque **accepté pour le MVP**). Régénération et chiffrement at-rest = tickets ultérieurs.
 
@@ -58,7 +60,7 @@ Le ticket emploie « inactif » ; le schéma utilise déjà `idle` (`CHECK statu
 |---|---|---|---|
 | `POST` | `/api/streams` | broadcaster | crée un flux `idle`, **201** objet complet (+ `stream_key` + `stream_source_url`) |
 | `GET` | `/api/streams` | auth | liste paginée (`?limit`=20 max 100, `?offset`) des flux `is_public AND status='live' AND archived_at IS NULL`, **résumés sans secret** |
-| `GET` | `/api/streams/{id}` | auth | propriétaire → objet complet ; autre + public → résumé ; autre + privé / archivé / absent → **404** |
+| `GET` | `/api/streams/{id}` | auth | **réponse unique** (`StreamResponse`) : propriétaire → `stream_key` + `stream_source_url` remplis ; tiers → même objet, secrets à `null` ; privé d'un autre / archivé / absent → **404** |
 | `PUT` | `/api/streams/{id}` | auth, owner | remplacement complet (`title` + `is_public` requis, `description`/`category` optionnels), **404** sinon |
 | `DELETE` | `/api/streams/{id}` | auth, owner | soft delete, **204**, **404** sinon |
 

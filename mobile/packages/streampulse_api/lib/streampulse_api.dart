@@ -18,7 +18,6 @@ export 'package:streampulse_api/src/model/create_stream_request.dart';
 export 'package:streampulse_api/src/model/error_detail.dart';
 export 'package:streampulse_api/src/model/error_response.dart';
 export 'package:streampulse_api/src/model/forgot_password_request.dart';
-export 'package:streampulse_api/src/model/get_stream200_response.dart';
 export 'package:streampulse_api/src/model/health_response.dart';
 export 'package:streampulse_api/src/model/login_request.dart';
 export 'package:streampulse_api/src/model/logout_request.dart';

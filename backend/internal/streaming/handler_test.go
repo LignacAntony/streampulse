@@ -298,7 +298,7 @@ func TestHandler_Get_OwnerFull(t *testing.T) {
 	}
 }
 
-func TestHandler_Get_NonOwnerSummary(t *testing.T) {
+func TestHandler_Get_NonOwnerNoSecrets(t *testing.T) {
 	stub := &stubService{
 		getOwner: false,
 		getRet:   Stream{ID: "s1", UserID: "autre", Title: "Public", IsPublic: true, StreamKey: "SECRET"},
@@ -311,8 +311,17 @@ func TestHandler_Get_NonOwnerSummary(t *testing.T) {
 		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
 	}
 	body := rec.Body.String()
-	if strings.Contains(body, "SECRET") || strings.Contains(body, "stream_key") || strings.Contains(body, "stream_source_url") {
-		t.Errorf("un non-propriétaire ne doit pas voir la clé/URL source: %s", body)
+	// Réponse parsable par le client (même schéma), mais secrets à null et
+	// jamais la valeur réelle de la clé.
+	if !strings.Contains(body, `"stream_key":null`) || !strings.Contains(body, `"stream_source_url":null`) {
+		t.Errorf("un tiers doit recevoir stream_key/stream_source_url à null: %s", body)
+	}
+	if strings.Contains(body, "SECRET") {
+		t.Errorf("la valeur du stream_key ne doit jamais fuiter: %s", body)
+	}
+	// Le reste des métadonnées publiques reste présent.
+	if !strings.Contains(body, `"title":"Public"`) {
+		t.Errorf("body manque les métadonnées: %s", body)
 	}
 }
 

@@ -60,6 +60,9 @@ func (r createStreamRequest) toInput(userID string) (CreateStreamInput, error) {
 	}, nil
 }
 
+// streamResponse est la vue détaillée d'un flux. stream_key et stream_source_url
+// sont des pointeurs : ils ne sont remplis que pour le propriétaire et valent
+// null pour un tiers (un seul schéma, désérialisable côté client, sans fuite).
 type streamResponse struct {
 	ID              string     `json:"id"`
 	UserID          string     `json:"user_id"`
@@ -68,8 +71,8 @@ type streamResponse struct {
 	Category        *string    `json:"category"`
 	Status          string     `json:"status"`
 	IsPublic        bool       `json:"is_public"`
-	StreamKey       string     `json:"stream_key"`
-	StreamSourceURL string     `json:"stream_source_url"`
+	StreamKey       *string    `json:"stream_key"`
+	StreamSourceURL *string    `json:"stream_source_url"`
 	StartedAt       *time.Time `json:"started_at"`
 	EndedAt         *time.Time `json:"ended_at"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -109,27 +112,34 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := httpjson.Write(w, http.StatusCreated, h.toResponse(stream)); err != nil {
+	if err := httpjson.Write(w, http.StatusCreated, h.toResponse(stream, true)); err != nil {
 		log.Printf("streaming: encode create response: %v", err)
 	}
 }
 
-func (h *Handler) toResponse(s Stream) streamResponse {
-	return streamResponse{
-		ID:              s.ID,
-		UserID:          s.UserID,
-		Title:           s.Title,
-		Description:     s.Description,
-		Category:        s.Category,
-		Status:          s.Status,
-		IsPublic:        s.IsPublic,
-		StreamKey:       s.StreamKey,
-		StreamSourceURL: h.ingestBaseURL + "/api/streams/ingest/" + s.StreamKey,
-		StartedAt:       s.StartedAt,
-		EndedAt:         s.EndedAt,
-		CreatedAt:       s.CreatedAt,
-		UpdatedAt:       s.UpdatedAt,
+// toResponse construit la vue détaillée d'un flux. includeSecrets n'est vrai que
+// pour le propriétaire : sinon stream_key et stream_source_url restent null.
+func (h *Handler) toResponse(s Stream, includeSecrets bool) streamResponse {
+	resp := streamResponse{
+		ID:          s.ID,
+		UserID:      s.UserID,
+		Title:       s.Title,
+		Description: s.Description,
+		Category:    s.Category,
+		Status:      s.Status,
+		IsPublic:    s.IsPublic,
+		StartedAt:   s.StartedAt,
+		EndedAt:     s.EndedAt,
+		CreatedAt:   s.CreatedAt,
+		UpdatedAt:   s.UpdatedAt,
 	}
+	if includeSecrets {
+		key := s.StreamKey
+		url := h.ingestBaseURL + "/api/streams/ingest/" + s.StreamKey
+		resp.StreamKey = &key
+		resp.StreamSourceURL = &url
+	}
+	return resp
 }
 
 // streamSummaryResponse est la vue publique d'un flux : aucun secret
@@ -217,8 +227,8 @@ func (r createStreamRequest) toUpdateInput() (UpdateStreamInput, error) {
 	}, nil
 }
 
-// Get gère GET /api/streams/{id}. Le propriétaire reçoit l'objet complet (avec
-// stream_key + URL source) ; un autre utilisateur reçoit le résumé public.
+// Get gère GET /api/streams/{id}. Réponse unique (streamResponse) : le
+// propriétaire reçoit stream_key + stream_source_url, un tiers les reçoit à null.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	requesterID, ok := auth.UserIDFromContext(r.Context())
 	if !ok {
@@ -232,11 +242,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload any = toSummary(stream)
-	if isOwner {
-		payload = h.toResponse(stream)
-	}
-	if err := httpjson.Write(w, http.StatusOK, payload); err != nil {
+	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, isOwner)); err != nil {
 		log.Printf("streaming: encode get response: %v", err)
 	}
 }
@@ -267,7 +273,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream)); err != nil {
+	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
 		log.Printf("streaming: encode update response: %v", err)
 	}
 }

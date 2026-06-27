@@ -348,13 +348,13 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: The stream (full for the owner, summary otherwise).
+          description: >-
+            The stream. For the owner, stream_key and stream_source_url are
+            populated; for any other user they are null.
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/StreamResponse"
-                  - $ref: "#/components/schemas/StreamSummaryResponse"
+                $ref: "#/components/schemas/StreamResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -822,8 +822,6 @@ components:
         - category
         - status
         - is_public
-        - stream_key
-        - stream_source_url
         - started_at
         - ended_at
         - created_at
@@ -857,11 +855,16 @@ components:
           example: true
         stream_key:
           type: string
-          description: Secret push key for the source URL. Treat as a credential.
+          nullable: true
+          description: >-
+            Secret push key. Populated only for the stream owner; null for any
+            other user. Treat as a credential.
           example: 8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
         stream_source_url:
           type: string
           format: uri
+          nullable: true
+          description: Populated only for the stream owner; null otherwise.
           example: http://localhost:8080/api/streams/ingest/8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
         started_at:
           type: string
