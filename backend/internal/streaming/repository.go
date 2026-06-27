@@ -2,14 +2,11 @@ package streaming
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	streamingdb "github.com/LignacAntony/streampulse/internal/streaming/db"
 )
 
@@ -33,9 +30,6 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Stream, erro
 		StreamKey:   p.StreamKey,
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			return Stream{}, apperror.Conflict("a stream with this title already exists")
-		}
 		return Stream{}, fmt.Errorf("repo: create stream: %w", err)
 	}
 
@@ -73,12 +67,4 @@ func textValue(t pgtype.Text) *string {
 		return nil
 	}
 	return &t.String
-}
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.SQLState() == "23505"
-	}
-	return false
 }

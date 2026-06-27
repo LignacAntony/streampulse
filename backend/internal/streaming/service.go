@@ -13,7 +13,7 @@ import (
 const (
 	MinTitleLen       = 3
 	MaxTitleLen       = 120
-	MaxDescriptionLen = 2000
+	MaxDescriptionLen = 500
 )
 
 // Statuts d'un flux (miroir du CHECK SQL sur streams.status).

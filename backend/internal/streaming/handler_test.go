@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
-	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
 const (
@@ -120,17 +119,6 @@ func TestHandler_Create_UnknownField(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d: %s", rec.Code, rec.Body)
-	}
-}
-
-func TestHandler_Create_Conflict(t *testing.T) {
-	stub := &stubCreator{err: apperror.Conflict("a stream with this title already exists")}
-	h := NewHandler(stub, testIngestURL)
-
-	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"Mon flux","is_public":true}`, true)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
 	}
 }
 

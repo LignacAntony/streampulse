@@ -31,10 +31,14 @@ func seedStreams(ctx context.Context, tx pgx.Tx) error {
 	}
 
 	for _, s := range streams {
+		// Idempotent sans contrainte d'unicité sur le titre (retirée en 000013) :
+		// on n'insère que si ce diffuseur n'a pas déjà un flux de ce titre.
 		_, err = tx.Exec(ctx, `
 			INSERT INTO streams (user_id, title, category, status, is_public, stream_key)
-			VALUES ($1, $2, $3, $4, true, replace(gen_random_uuid()::text, '-', ''))
-			ON CONFLICT DO NOTHING
+			SELECT $1, $2, $3, $4, true, replace(gen_random_uuid()::text, '-', '')
+			WHERE NOT EXISTS (
+				SELECT 1 FROM streams WHERE user_id = $1 AND title = $2
+			)
 		`, broadcasterID, s.title, s.category, s.status)
 		if err != nil {
 			return fmt.Errorf("insert stream %s: %w", s.title, err)
