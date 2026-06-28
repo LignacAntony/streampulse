@@ -61,7 +61,7 @@ func run() error {
 	authRepo := auth.NewRepository(pool)
 	mailer := email.NewFromConfig(cfg)
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
-	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
+	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
 	profilesRepo := profiles.NewRepository(pool)
 	profilesSvc := profiles.NewService(profilesRepo)
@@ -88,6 +88,7 @@ func run() error {
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
 	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
 	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
+	mux.Handle("/api/auth/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.DeleteAccount)))
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production

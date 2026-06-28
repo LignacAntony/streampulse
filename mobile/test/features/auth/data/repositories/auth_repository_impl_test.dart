@@ -64,6 +64,11 @@ class _FakeRemote implements AuthRemoteDataSource {
   }) async {
     if (error != null) throw error!;
   }
+
+  @override
+  Future<void> deleteAccount({required String password}) async {
+    if (error != null) throw error!;
+  }
 }
 
 class _FakeSecureStorage implements SecureStorage {

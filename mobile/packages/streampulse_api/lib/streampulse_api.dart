@@ -13,6 +13,7 @@ export 'package:streampulse_api/src/api/health_api.dart';
 export 'package:streampulse_api/src/api/metrics_api.dart';
 export 'package:streampulse_api/src/api/profile_api.dart';
 
+export 'package:streampulse_api/src/model/delete_account_request.dart';
 export 'package:streampulse_api/src/model/error_detail.dart';
 export 'package:streampulse_api/src/model/error_response.dart';
 export 'package:streampulse_api/src/model/forgot_password_request.dart';

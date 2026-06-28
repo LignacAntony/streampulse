@@ -63,6 +63,15 @@ func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) (pgc
 	return q.db.Exec(ctx, deleteRefreshToken, tokenHash)
 }
 
+const deleteUserByID = `-- name: DeleteUserByID :exec
+DELETE FROM users WHERE id = $1::uuid
+`
+
+func (q *Queries) DeleteUserByID(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserByID, userID)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id::text, email, username, role, created_at, password_hash
 FROM users
@@ -81,6 +90,35 @@ type GetUserByEmailRow struct {
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i GetUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Username,
+		&i.Role,
+		&i.CreatedAt,
+		&i.PasswordHash,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id::text, email, username, role, created_at, password_hash
+FROM users
+WHERE id = $1::uuid AND is_active = true
+`
+
+type GetUserByIDRow struct {
+	ID           string
+	Email        string
+	Username     string
+	Role         string
+	CreatedAt    time.Time
+	PasswordHash string
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, userID pgtype.UUID) (GetUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByID, userID)
+	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,

@@ -78,7 +78,6 @@ class DioClient {
         }
 
         if (req.extra[_retriedKey] == true) {
-          await _storage.clearTokens();
           return handler.next(error);
         }
 

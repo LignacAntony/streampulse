@@ -49,13 +49,12 @@ import 'package:streampulse_api/streampulse_api.dart';
 
 
 final api = StreampulseApi().getAuthApi();
-final ForgotPasswordRequest forgotPasswordRequest = ; // ForgotPasswordRequest | 
+final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest | 
 
 try {
-    final response = await api.forgotPassword(forgotPasswordRequest);
-    print(response);
+    api.deleteAccount(deleteAccountRequest);
 } on DioException catch (e) {
-    print("Exception when calling AuthApi->forgotPassword: $e\n");
+    print("Exception when calling AuthApi->deleteAccount: $e\n");
 }
 
 ```
@@ -66,6 +65,7 @@ All URIs are relative to *http://localhost*
 
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
+[*AuthApi*](doc/AuthApi.md) | [**deleteAccount**](doc/AuthApi.md#deleteaccount) | **DELETE** /api/auth/me | Permanently delete the authenticated user&#39;s account (GDPR art. 17).
 [*AuthApi*](doc/AuthApi.md) | [**forgotPassword**](doc/AuthApi.md#forgotpassword) | **POST** /api/auth/forgot-password | Request a password reset email.
 [*AuthApi*](doc/AuthApi.md) | [**login**](doc/AuthApi.md#login) | **POST** /api/auth/login | Authenticate a user and issue tokens.
 [*AuthApi*](doc/AuthApi.md) | [**logout**](doc/AuthApi.md#logout) | **POST** /api/auth/logout | Revoke the current refresh token.
@@ -80,6 +80,7 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
  - [ErrorDetail](doc/ErrorDetail.md)
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)

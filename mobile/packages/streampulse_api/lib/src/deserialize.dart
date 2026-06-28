@@ -1,3 +1,4 @@
+import 'package:streampulse_api/src/model/delete_account_request.dart';
 import 'package:streampulse_api/src/model/error_detail.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/forgot_password_request.dart';
@@ -35,6 +36,9 @@ ReturnType deserialize<ReturnType, BaseType>(
       return (valueString == 'true' || valueString == '1') as ReturnType;
     case 'double':
       return (value is double ? value : double.parse('$value')) as ReturnType;
+    case 'DeleteAccountRequest':
+      return DeleteAccountRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'ErrorDetail':
       return ErrorDetail.fromJson(value as Map<String, dynamic>) as ReturnType;
     case 'ErrorResponse':

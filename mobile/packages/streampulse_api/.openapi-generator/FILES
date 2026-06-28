@@ -14,6 +14,7 @@ lib/src/auth/basic_auth.dart
 lib/src/auth/bearer_auth.dart
 lib/src/auth/oauth.dart
 lib/src/deserialize.dart
+lib/src/model/delete_account_request.dart
 lib/src/model/error_detail.dart
 lib/src/model/error_response.dart
 lib/src/model/forgot_password_request.dart

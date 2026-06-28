@@ -68,6 +68,16 @@ class AuthRemoteDataSource {
     }
   }
 
+  Future<void> deleteAccount({required String password}) async {
+    try {
+      await _authApi.deleteAccount(
+        deleteAccountRequest: DeleteAccountRequest(password: password),
+      );
+    } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
   Future<TokenPairResponse> login({
     required String email,
     required String password,

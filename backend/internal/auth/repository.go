@@ -64,6 +64,33 @@ func (r *pgRepository) GetUserByEmail(ctx context.Context, email string) (UserWi
 	}, nil
 }
 
+func (r *pgRepository) GetUserByID(ctx context.Context, userID string) (UserWithHash, error) {
+	row, err := r.q.GetUserByID(ctx, uuidParam(userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return UserWithHash{}, apperror.NotFound("user not found")
+		}
+		return UserWithHash{}, fmt.Errorf("repo: get user by id: %w", err)
+	}
+	return UserWithHash{
+		User: User{
+			ID:        row.ID,
+			Email:     row.Email,
+			Username:  row.Username,
+			Role:      row.Role,
+			CreatedAt: row.CreatedAt,
+		},
+		PasswordHash: row.PasswordHash,
+	}, nil
+}
+
+func (r *pgRepository) DeleteUserByID(ctx context.Context, userID string) error {
+	if err := r.q.DeleteUserByID(ctx, uuidParam(userID)); err != nil {
+		return fmt.Errorf("repo: delete user: %w", err)
+	}
+	return nil
+}
+
 func (r *pgRepository) StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
 	if err := r.q.InsertRefreshToken(ctx, authdb.InsertRefreshTokenParams{
 		UserID:    uuidParam(userID),

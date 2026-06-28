@@ -213,6 +213,31 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/auth/me:
+    delete:
+      tags:
+        - Auth
+      operationId: deleteAccount
+      summary: Permanently delete the authenticated user's account (GDPR art. 17).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteAccountRequest"
+      responses:
+        "204":
+          description: Account permanently deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/users/me:
     get:
       tags:
@@ -427,6 +452,17 @@ components:
           minLength: 8
           maxLength: 72
           example: newpassword1
+    DeleteAccountRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
+          example: hunter2hunter
     UserResponse:
       type: object
       required:

@@ -54,6 +54,9 @@ class _FakeAuthRepository implements AuthRepository {
     required String token,
     required String newPassword,
   }) async {}
+
+  @override
+  Future<void> deleteAccount({required String password}) async {}
 }
 
 class _MarkerScreen extends StatelessWidget {
