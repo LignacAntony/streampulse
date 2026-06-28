@@ -138,8 +138,12 @@ func (r *pgRepository) Review(ctx context.Context, requestID, adminID, status, n
 	}
 
 	if promote {
-		if err := qtx.PromoteUserToBroadcaster(ctx, uuidParam(current.UserID)); err != nil {
+		affected, err := qtx.PromoteUserToBroadcaster(ctx, uuidParam(current.UserID))
+		if err != nil {
 			return Request{}, fmt.Errorf("repo: promote user: %w", err)
+		}
+		if affected == 0 {
+			return Request{}, apperror.Conflict("user is no longer eligible for promotion")
 		}
 	}
 

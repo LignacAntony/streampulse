@@ -45,7 +45,7 @@ WHERE id = sqlc.arg(id)::uuid AND status = 'pending'
 RETURNING id::text AS id, user_id::text AS user_id, status, message,
           review_note, reviewed_by, created_at, updated_at;
 
--- name: PromoteUserToBroadcaster :exec
+-- name: PromoteUserToBroadcaster :execrows
 UPDATE users
 SET role = 'broadcaster', updated_at = NOW()
-WHERE id = sqlc.arg(user_id)::uuid AND role = 'user';
+WHERE id = sqlc.arg(user_id)::uuid AND role = 'user' AND is_active = true;

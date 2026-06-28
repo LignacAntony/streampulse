@@ -191,15 +191,18 @@ func (q *Queries) ListBroadcasterRequests(ctx context.Context, status pgtype.Tex
 	return items, nil
 }
 
-const promoteUserToBroadcaster = `-- name: PromoteUserToBroadcaster :exec
+const promoteUserToBroadcaster = `-- name: PromoteUserToBroadcaster :execrows
 UPDATE users
 SET role = 'broadcaster', updated_at = NOW()
-WHERE id = $1::uuid AND role = 'user'
+WHERE id = $1::uuid AND role = 'user' AND is_active = true
 `
 
-func (q *Queries) PromoteUserToBroadcaster(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, promoteUserToBroadcaster, userID)
-	return err
+func (q *Queries) PromoteUserToBroadcaster(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, promoteUserToBroadcaster, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const reviewRequest = `-- name: ReviewRequest :one
