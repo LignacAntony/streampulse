@@ -483,7 +483,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   }
 
   void _submit() {
-    final password = _controller.text.trim();
+    final password = _controller.text;
     if (password.isNotEmpty) {
       Navigator.of(context).pop(password);
     }

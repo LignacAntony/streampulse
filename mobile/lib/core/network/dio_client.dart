@@ -78,7 +78,6 @@ class DioClient {
         }
 
         if (req.extra[_retriedKey] == true) {
-          await _storage.clearTokens();
           return handler.next(error);
         }
 
@@ -105,8 +104,7 @@ class DioClient {
     return path.endsWith(ApiConstants.refresh) ||
         path.endsWith(ApiConstants.login) ||
         path.endsWith(ApiConstants.logout) ||
-        path.endsWith(ApiConstants.register) ||
-        path.endsWith(ApiConstants.deleteAccount);
+        path.endsWith(ApiConstants.register);
   }
 
   /// Refresh sérialisé : si un refresh est déjà en cours, on attend son résultat.
