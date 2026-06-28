@@ -138,10 +138,7 @@ func (r *pgRepository) Review(ctx context.Context, requestID, adminID, status, n
 	}
 
 	if promote {
-		if err := qtx.UpdateUserRole(ctx, broadcasterdb.UpdateUserRoleParams{
-			Role:   roleBroadcaster,
-			UserID: uuidParam(current.UserID),
-		}); err != nil {
+		if err := qtx.PromoteUserToBroadcaster(ctx, uuidParam(current.UserID)); err != nil {
 			return Request{}, fmt.Errorf("repo: promote user: %w", err)
 		}
 	}

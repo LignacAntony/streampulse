@@ -393,6 +393,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BroadcasterRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -401,6 +403,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/admin/broadcaster-requests/{id}/reject:
@@ -426,6 +430,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BroadcasterRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -434,6 +440,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
 components:

@@ -191,6 +191,17 @@ func (q *Queries) ListBroadcasterRequests(ctx context.Context, status pgtype.Tex
 	return items, nil
 }
 
+const promoteUserToBroadcaster = `-- name: PromoteUserToBroadcaster :exec
+UPDATE users
+SET role = 'broadcaster', updated_at = NOW()
+WHERE id = $1::uuid AND role = 'user'
+`
+
+func (q *Queries) PromoteUserToBroadcaster(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, promoteUserToBroadcaster, userID)
+	return err
+}
+
 const reviewRequest = `-- name: ReviewRequest :one
 UPDATE broadcaster_requests
 SET status      = $1::text,
@@ -239,20 +250,4 @@ func (q *Queries) ReviewRequest(ctx context.Context, arg ReviewRequestParams) (R
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const updateUserRole = `-- name: UpdateUserRole :exec
-UPDATE users
-SET role = $1::text, updated_at = NOW()
-WHERE id = $2::uuid
-`
-
-type UpdateUserRoleParams struct {
-	Role   string
-	UserID pgtype.UUID
-}
-
-func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
-	_, err := q.db.Exec(ctx, updateUserRole, arg.Role, arg.UserID)
-	return err
 }

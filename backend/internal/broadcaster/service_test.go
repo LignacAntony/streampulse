@@ -88,6 +88,17 @@ func TestRequestBroadcaster_AlreadyBroadcasterOrAdmin(t *testing.T) {
 	}
 }
 
+func TestRequestBroadcaster_RejectsUnexpectedRole(t *testing.T) {
+	repo := &fakeRepo{role: "anonymous"}
+	_, err := NewService(repo).RequestBroadcaster(context.Background(), testUserID, "x")
+	if !apperror.IsCode(err, apperror.CodeForbidden) {
+		t.Fatalf("want forbidden, got %v", err)
+	}
+	if repo.createCalls != 0 {
+		t.Errorf("repo must not be called for an unexpected role")
+	}
+}
+
 func TestRequestBroadcaster_MessageTooLong(t *testing.T) {
 	repo := &fakeRepo{role: roleUser}
 	long := strings.Repeat("a", MaxMessageLen+1)

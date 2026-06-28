@@ -68,8 +68,12 @@ func (s *Service) RequestBroadcaster(ctx context.Context, userID, message string
 	if err != nil {
 		return Request{}, err
 	}
-	if role == roleBroadcaster || role == roleAdmin {
+	switch role {
+	case roleBroadcaster, roleAdmin:
 		return Request{}, apperror.Conflict("user is already a broadcaster")
+	case roleUser:
+	default:
+		return Request{}, apperror.Forbidden("role not allowed to request broadcaster role")
 	}
 
 	return s.repo.Create(ctx, userID, msg)
