@@ -14,6 +14,8 @@ tags:
     description: Authentication and password reset endpoints.
   - name: Profile
     description: Current user profile endpoints.
+  - name: Broadcaster
+    description: Broadcaster role requests and admin review.
 paths:
   /health:
     get:
@@ -285,12 +287,178 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/broadcaster-requests:
+    post:
+      tags:
+        - Broadcaster
+      operationId: createBroadcasterRequest
+      summary: Submit a request to become a broadcaster.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcasterRequestInput"
+      responses:
+        "201":
+          description: Broadcaster request created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/broadcaster-requests/me:
+    get:
+      tags:
+        - Broadcaster
+      operationId: getMyBroadcasterRequest
+      summary: Retrieve the authenticated user's latest broadcaster request.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Latest broadcaster request for the current user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterRequestResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/broadcaster-requests:
+    get:
+      tags:
+        - Broadcaster
+      operationId: listBroadcasterRequests
+      summary: List broadcaster requests (admin only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Optional status filter.
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        "200":
+          description: Broadcaster requests, most recent first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterRequestListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/broadcaster-requests/{id}/approve:
+    post:
+      tags:
+        - Broadcaster
+      operationId: approveBroadcasterRequest
+      summary: Approve a broadcaster request and promote the user (admin only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BroadcasterRequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequestInput"
+      responses:
+        "200":
+          description: Updated broadcaster request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/broadcaster-requests/{id}/reject:
+    post:
+      tags:
+        - Broadcaster
+      operationId: rejectBroadcasterRequest
+      summary: Reject a broadcaster request (admin only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BroadcasterRequestId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequestInput"
+      responses:
+        "200":
+          description: Updated broadcaster request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcasterRequestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    BroadcasterRequestId:
+      name: id
+      in: path
+      required: true
+      description: Broadcaster request identifier.
+      schema:
+        type: string
+        format: uuid
   responses:
     BadRequest:
       description: Invalid request payload or invalid input.
@@ -333,6 +501,30 @@ components:
                 error:
                   code: conflict
                   message: email or username already taken
+    Forbidden:
+      description: The authenticated user lacks the required role.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: forbidden
+                  message: insufficient role
+    NotFound:
+      description: The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            notFound:
+              value:
+                error:
+                  code: not_found
+                  message: no broadcaster request found
     UnsupportedMediaType:
       description: Request content type must be application/json.
       content:
@@ -594,6 +786,91 @@ components:
       properties:
         message:
           type: string
+    BroadcasterRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          maxLength: 500
+          description: Optional motivation message for the request.
+          example: J'anime une émission hebdomadaire et souhaite diffuser en direct.
+    ReviewRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        review_note:
+          type: string
+          maxLength: 500
+          description: Optional note explaining the admin decision.
+          example: Profil complet, demande validée.
+    BroadcasterRequestResponse:
+      type: object
+      required:
+        - id
+        - status
+        - message
+        - review_note
+        - reviewed_by
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          example: pending
+        message:
+          type: string
+          example: J'anime une émission hebdomadaire.
+        review_note:
+          type: string
+          example: ""
+        reviewed_by:
+          type: string
+          format: uuid
+          nullable: true
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+    BroadcasterRequestAdmin:
+      allOf:
+        - $ref: "#/components/schemas/BroadcasterRequestResponse"
+        - type: object
+          required:
+            - user_id
+            - email
+            - username
+          properties:
+            user_id:
+              type: string
+              format: uuid
+              example: 22222222-3333-4444-5555-666666666666
+            email:
+              type: string
+              format: email
+              example: alice@example.com
+            username:
+              type: string
+              example: alice
+    BroadcasterRequestListResponse:
+      type: object
+      required:
+        - requests
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcasterRequestAdmin"
     ErrorResponse:
       type: object
       required:

@@ -22,3 +22,14 @@ sql:
         overrides:
           - db_type: "timestamptz"
             go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/broadcaster/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "broadcasterdb"
+        out: "internal/broadcaster/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

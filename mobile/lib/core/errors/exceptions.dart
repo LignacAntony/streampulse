@@ -34,6 +34,15 @@ class ValidationException implements Exception {
   String toString() => 'ValidationException: $message';
 }
 
+class ConflictException implements Exception {
+  const ConflictException([this.message = 'Conflit avec une ressource existante']);
+
+  final String message;
+
+  @override
+  String toString() => 'ConflictException: $message';
+}
+
 class DuplicateAccountException implements Exception {
   const DuplicateAccountException([
     this.message = 'Email ou pseudo déjà utilisé',

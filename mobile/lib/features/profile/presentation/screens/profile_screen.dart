@@ -6,6 +6,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../../domain/entities/user_profile.dart';
 import '../providers/profile_controller.dart';
 import '../widgets/profile_avatar.dart';
@@ -57,6 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _logout() async {
     await context.read<AuthRepository>().logout();
     if (!mounted) return;
+    context.read<BroadcasterController>().reset();
     context.go('/login');
   }
 
@@ -230,19 +232,19 @@ class _ProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RoleBadge(role: profile.role),
-            const SizedBox(height: 16),
-            ConstrainedBox(
-              constraints: const BoxConstraints.tightFor(
-                height: AppConstants.minTouchTarget,
-              ),
-              child: OutlinedButton(
-                onPressed: () => showAuthInfoToast(
-                  context,
-                  'Demande de rôle Diffuseur — bientôt disponible',
+            if (profile.role == 'user') ...[
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints.tightFor(
+                  height: AppConstants.minTouchTarget,
                 ),
-                child: const Text('Demander le rôle Diffuseur'),
+                child: OutlinedButton(
+                  key: const Key('profile_become_broadcaster'),
+                  onPressed: () => context.push('/broadcaster-request'),
+                  child: const Text('Demander le rôle Diffuseur'),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

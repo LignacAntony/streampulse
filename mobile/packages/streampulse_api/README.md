@@ -49,7 +49,7 @@ import 'package:streampulse_api/streampulse_api.dart';
 
 
 final api = StreampulseApi().getAuthApi();
-final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest | 
+final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest |
 
 try {
     api.deleteAccount(deleteAccountRequest);
@@ -72,6 +72,11 @@ Class | Method | HTTP request | Description
 [*AuthApi*](doc/AuthApi.md) | [**refreshToken**](doc/AuthApi.md#refreshtoken) | **POST** /api/auth/refresh | Rotate a refresh token and issue a new token pair.
 [*AuthApi*](doc/AuthApi.md) | [**register**](doc/AuthApi.md#register) | **POST** /api/auth/register | Register a new user account.
 [*AuthApi*](doc/AuthApi.md) | [**resetPassword**](doc/AuthApi.md#resetpassword) | **POST** /api/auth/reset-password | Reset a password with a valid reset token.
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**approveBroadcasterRequest**](doc/BroadcasterApi.md#approvebroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/approve | Approve a broadcaster request and promote the user (admin only).
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**createBroadcasterRequest**](doc/BroadcasterApi.md#createbroadcasterrequest) | **POST** /api/broadcaster-requests | Submit a request to become a broadcaster.
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**getMyBroadcasterRequest**](doc/BroadcasterApi.md#getmybroadcasterrequest) | **GET** /api/broadcaster-requests/me | Retrieve the authenticated user&#39;s latest broadcaster request.
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**listBroadcasterRequests**](doc/BroadcasterApi.md#listbroadcasterrequests) | **GET** /api/admin/broadcaster-requests | List broadcaster requests (admin only).
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**rejectBroadcasterRequest**](doc/BroadcasterApi.md#rejectbroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/reject | Reject a broadcaster request (admin only).
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
@@ -81,6 +86,10 @@ Class | Method | HTTP request | Description
 ## Documentation For Models
 
  - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
+ - [BroadcasterRequestAdmin](doc/BroadcasterRequestAdmin.md)
+ - [BroadcasterRequestInput](doc/BroadcasterRequestInput.md)
+ - [BroadcasterRequestListResponse](doc/BroadcasterRequestListResponse.md)
+ - [BroadcasterRequestResponse](doc/BroadcasterRequestResponse.md)
  - [ErrorDetail](doc/ErrorDetail.md)
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)
@@ -92,6 +101,7 @@ Class | Method | HTTP request | Description
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
+ - [ReviewRequestInput](doc/ReviewRequestInput.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
  - [UserResponse](doc/UserResponse.md)
@@ -107,6 +117,3 @@ Authentication schemes defined for the API:
 
 
 ## Author
-
-
-
