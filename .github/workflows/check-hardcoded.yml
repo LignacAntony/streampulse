@@ -1,0 +1,70 @@
+name: Check hardcoded values
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan for hardcoded ports / DSN / secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hardcoded port literals (e.g. ":8080" outside tests)
+        # Bloque les littéraux ":<port>" dans le code Go non-test, sauf dans le package config.
+        run: |
+          set -e
+          MATCHES=$(grep -rEn '"\:[0-9]{2,5}"' backend/cmd backend/internal --include='*.go' \
+            | grep -v '_test.go' \
+            | grep -v 'backend/internal/config/' || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Hardcoded port literal(s) detected — load from config instead:"
+            echo "$MATCHES"
+            exit 1
+          fi
+
+      - name: Hardcoded Postgres DSN with credentials
+        # Détecte les DSN postgres://user:pwd@host... ou similaires en dur.
+        run: |
+          set -e
+          MATCHES=$(grep -rEn '(postgres|postgresql)://[A-Za-z0-9_]+:[^@"]+@' backend --include='*.go' \
+            | grep -v '_test.go' || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Hardcoded Postgres DSN with credentials detected:"
+            echo "$MATCHES"
+            exit 1
+          fi
+
+      - name: Hardcoded JWT / API secrets in code
+        # Détecte des assignations littérales de secrets connus.
+        run: |
+          set -e
+          MATCHES=$(grep -rEn '(JWT_SECRET|API_KEY|API_SECRET)\s*[:=]\s*"[A-Za-z0-9_\-]{8,}"' backend --include='*.go' \
+            | grep -v '_test.go' || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Hardcoded secret literal(s) detected:"
+            echo "$MATCHES"
+            exit 1
+          fi
+
+  gitleaks:
+    name: Gitleaks secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

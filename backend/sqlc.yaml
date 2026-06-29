@@ -1,0 +1,35 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/auth/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "authdb"
+        out: "internal/auth/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/profiles/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "profilesdb"
+        out: "internal/profiles/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/broadcaster/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "broadcasterdb"
+        out: "internal/broadcaster/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

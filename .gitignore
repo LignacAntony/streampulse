@@ -4,6 +4,7 @@
 .env
 .env.*
 !.env.example
+!.env.example.json
 *.pem
 *.key
 *.crt
@@ -76,6 +77,7 @@ tmp/
 build/
 **/generated_plugin_registrant.dart
 *.g.dart
+!mobile/packages/streampulse_api/lib/**/*.g.dart
 *.freezed.dart
 *.mocks.dart
 
@@ -141,8 +143,3 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
-
-# ============================================================
-# Ia related files
-# ============================================================
-CLAUDE.md

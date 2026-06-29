@@ -1,0 +1,68 @@
+package database
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/LignacAntony/streampulse/internal/config"
+)
+
+const (
+	poolMaxConns       = 10
+	poolMinConns       = 2
+	poolMaxConnLife    = 30 * time.Minute
+	poolMaxConnIdle    = 5 * time.Minute
+	poolHealthCheck    = 1 * time.Minute
+	poolPingTimeoutSec = 10
+)
+
+// NewPool ouvre un *pgxpool.Pool prêt à servir les requêtes HTTP.
+// La DSN provient de config.DBDSN() (12-factor) avec fallback DATABASE_URL
+// pour rester compatible avec le seeder déjà câblé sur cette variable.
+func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+	dsn := cfg.DBDSN()
+
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("pool: parse config: %w", err)
+	}
+
+	poolCfg.MaxConns = poolMaxConns
+	poolCfg.MinConns = poolMinConns
+	poolCfg.MaxConnLifetime = poolMaxConnLife
+	poolCfg.MaxConnIdleTime = poolMaxConnIdle
+	poolCfg.HealthCheckPeriod = poolHealthCheck
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("pool: open: %w", err)
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, poolPingTimeoutSec*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		// Masque le mot de passe dans le message d'erreur si présent.
+		return nil, fmt.Errorf("pool: ping: %w", redactDSN(err))
+	}
+
+	return pool, nil
+}
+
+// redactDSN remplace une éventuelle valeur "password=..." dans le message
+// d'erreur par "password=***" pour éviter les fuites en logs.
+func redactDSN(err error) error {
+	msg := err.Error()
+	if idx := strings.Index(msg, "password="); idx >= 0 {
+		end := strings.IndexAny(msg[idx:], " \"")
+		if end == -1 {
+			end = len(msg) - idx
+		}
+		msg = msg[:idx] + "password=***" + msg[idx+end:]
+	}
+	return fmt.Errorf("%s", msg)
+}

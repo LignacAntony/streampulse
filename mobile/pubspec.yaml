@@ -1,0 +1,62 @@
+name: streampulse
+description: Plateforme audio hybride live & on-demand — StreamPulse
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+  flutter: '>=3.27.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.1.2
+
+  # Navigation
+  go_router: ^14.2.0
+  toastification: ^3.2.0
+
+  # Client HTTP
+  dio: ^5.4.3+1
+  streampulse_api:
+    path: packages/streampulse_api
+
+  # Stockage sécurisé (tokens JWT)
+  flutter_secure_storage: ^9.0.0
+
+  # Lecture audio (live HLS + on-demand)
+  just_audio: ^0.9.40
+  audio_service: ^0.18.12
+
+  # WebSocket (chat live)
+  web_socket_channel: ^3.0.1
+
+  # Typographie
+  google_fonts: ^6.2.1
+
+  # Utilitaires
+  equatable: ^2.0.5
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+  logger: ^2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Génération de code
+  build_runner: ^2.4.9
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+
+  # Linting
+  flutter_lints: ^4.0.0
+
+  # Tests HTTP — mock du DioAdapter pour verrouiller le mapping d'erreurs
+  # entre le client généré et AuthRemoteDataSource.
+  http_mock_adapter: ^0.6.1
+
+flutter:
+  uses-material-design: true

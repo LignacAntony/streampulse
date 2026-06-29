@@ -17,6 +17,8 @@ services:
       - streampulse-net
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -49,6 +51,14 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@streampulse.com}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +68,24 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Email de test — Mailpit (dev uniquement)
+  # ──────────────────────────────────────────
+  mailpit:
+    image: axllent/mailpit:latest
+    networks:
+      - streampulse-net
+    ports:
+      - "1025:1025"   # SMTP (relay interne)
+      - "8025:8025"   # Interface web
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8025 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # ──────────────────────────────────────────
