@@ -105,8 +105,12 @@ func (r *pgRepository) List(ctx context.Context, status *string) ([]AdminRequest
 	return requests, nil
 }
 
-// Review traite une demande en attente dans une transaction : verrouillage de la
-// ligne, vérification du statut, mise à jour, puis promotion du rôle si demandé.
+type reviewQueries interface {
+	GetRequestForReview(ctx context.Context, id pgtype.UUID) (broadcasterdb.GetRequestForReviewRow, error)
+	PromoteUserToBroadcaster(ctx context.Context, userID pgtype.UUID) (int64, error)
+	ReviewRequest(ctx context.Context, arg broadcasterdb.ReviewRequestParams) (broadcasterdb.ReviewRequestRow, error)
+}
+
 func (r *pgRepository) Review(ctx context.Context, requestID, adminID, status, note string, promote bool) (Request, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -114,9 +118,19 @@ func (r *pgRepository) Review(ctx context.Context, requestID, adminID, status, n
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := r.q.WithTx(tx)
+	res, err := reviewWithQueries(ctx, r.q.WithTx(tx), requestID, adminID, status, note, promote)
+	if err != nil {
+		return Request{}, err
+	}
 
-	current, err := qtx.GetRequestForReview(ctx, uuidParam(requestID))
+	if err := tx.Commit(ctx); err != nil {
+		return Request{}, fmt.Errorf("repo: commit review tx: %w", err)
+	}
+	return res, nil
+}
+
+func reviewWithQueries(ctx context.Context, q reviewQueries, requestID, adminID, status, note string, promote bool) (Request, error) {
+	current, err := q.GetRequestForReview(ctx, uuidParam(requestID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Request{}, apperror.NotFound("broadcaster request not found")
@@ -127,18 +141,8 @@ func (r *pgRepository) Review(ctx context.Context, requestID, adminID, status, n
 		return Request{}, apperror.Conflict("broadcaster request already reviewed")
 	}
 
-	row, err := qtx.ReviewRequest(ctx, broadcasterdb.ReviewRequestParams{
-		ID:         uuidParam(requestID),
-		Status:     status,
-		ReviewedBy: uuidParam(adminID),
-		ReviewNote: note,
-	})
-	if err != nil {
-		return Request{}, fmt.Errorf("repo: review request: %w", err)
-	}
-
 	if promote {
-		affected, err := qtx.PromoteUserToBroadcaster(ctx, uuidParam(current.UserID))
+		affected, err := q.PromoteUserToBroadcaster(ctx, uuidParam(current.UserID))
 		if err != nil {
 			return Request{}, fmt.Errorf("repo: promote user: %w", err)
 		}
@@ -147,8 +151,14 @@ func (r *pgRepository) Review(ctx context.Context, requestID, adminID, status, n
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return Request{}, fmt.Errorf("repo: commit review tx: %w", err)
+	row, err := q.ReviewRequest(ctx, broadcasterdb.ReviewRequestParams{
+		ID:         uuidParam(requestID),
+		Status:     status,
+		ReviewedBy: uuidParam(adminID),
+		ReviewNote: note,
+	})
+	if err != nil {
+		return Request{}, fmt.Errorf("repo: review request: %w", err)
 	}
 
 	return Request{
