@@ -1,4 +1,9 @@
+import 'package:streampulse_api/src/model/broadcaster_request_admin.dart';
+import 'package:streampulse_api/src/model/broadcaster_request_input.dart';
+import 'package:streampulse_api/src/model/broadcaster_request_list_response.dart';
+import 'package:streampulse_api/src/model/broadcaster_request_response.dart';
 import 'package:streampulse_api/src/model/create_stream_request.dart';
+import 'package:streampulse_api/src/model/delete_account_request.dart';
 import 'package:streampulse_api/src/model/error_detail.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/forgot_password_request.dart';
@@ -10,6 +15,7 @@ import 'package:streampulse_api/src/model/profile_response.dart';
 import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
 import 'package:streampulse_api/src/model/reset_password_request.dart';
+import 'package:streampulse_api/src/model/review_request_input.dart';
 import 'package:streampulse_api/src/model/stream_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 import 'package:streampulse_api/src/model/token_pair_response.dart';
@@ -38,8 +44,25 @@ ReturnType deserialize<ReturnType, BaseType>(
       return (valueString == 'true' || valueString == '1') as ReturnType;
     case 'double':
       return (value is double ? value : double.parse('$value')) as ReturnType;
+    case 'BroadcasterRequestAdmin':
+      return BroadcasterRequestAdmin.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'BroadcasterRequestInput':
+      return BroadcasterRequestInput.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'BroadcasterRequestListResponse':
+      return BroadcasterRequestListResponse.fromJson(
+            value as Map<String, dynamic>,
+          )
+          as ReturnType;
+    case 'BroadcasterRequestResponse':
+      return BroadcasterRequestResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'CreateStreamRequest':
       return CreateStreamRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'DeleteAccountRequest':
+      return DeleteAccountRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'ErrorDetail':
       return ErrorDetail.fromJson(value as Map<String, dynamic>) as ReturnType;
@@ -71,6 +94,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'ResetPasswordRequest':
       return ResetPasswordRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'ReviewRequestInput':
+      return ReviewRequestInput.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'StreamResponse':
       return StreamResponse.fromJson(value as Map<String, dynamic>)

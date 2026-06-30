@@ -26,8 +26,8 @@ d'architecture interne à réconcilier, seulement le texte du CDC à mettre à j
 
 ## 2. Suivis (tickets dédiés)
 
-- [ ] **Promotion `user → broadcaster`** : aucun endpoint n'existe ; seuls les broadcasters
-  seedés/admin peuvent créer un flux. Nécessaire pour qu'un compte standard devienne diffuseur.
+- [x] **Promotion `user → broadcaster`** : couverte par ADR 014 / STR-49. Un compte standard
+  approuvé devient diffuseur après refresh de son access token.
 - [ ] **Régénération + durcissement du `stream_key`** : aujourd'hui en clair (risque MVP accepté,
   ADR 013) ; prévoir régénération côté diffuseur et chiffrement at-rest.
 

@@ -33,7 +33,7 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Stream, erro
 		StreamKey:   p.StreamKey,
 	})
 	if err != nil {
-		return Stream{}, fmt.Errorf("repo: create stream: %w", err)
+		return Stream{}, createStreamError(err)
 	}
 
 	return Stream{
@@ -191,4 +191,19 @@ func textValue(t pgtype.Text) *string {
 		return nil
 	}
 	return &t.String
+}
+
+func createStreamError(err error) error {
+	if isForeignKeyViolation(err) {
+		return apperror.Unauthorized("invalid user")
+	}
+	return fmt.Errorf("repo: create stream: %w", err)
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr interface{ SQLState() string }
+	if errors.As(err, &pgErr) {
+		return pgErr.SQLState() == "23503"
+	}
+	return false
 }

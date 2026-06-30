@@ -58,6 +58,11 @@ type ResetPasswordInput struct {
 	Password string
 }
 
+type DeleteAccountInput struct {
+	UserID   string
+	Password string
+}
+
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -83,6 +88,7 @@ type UserWithHash struct {
 type Repository interface {
 	CreateUser(ctx context.Context, email, username, passwordHash string) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (UserWithHash, error)
+	GetUserByID(ctx context.Context, userID string) (UserWithHash, error)
 	StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
 	GetUserByRefreshToken(ctx context.Context, tokenHash string) (User, error)
 	RotateRefreshToken(ctx context.Context, oldHash, newHash, userID string, expiresAt time.Time) error
@@ -91,6 +97,7 @@ type Repository interface {
 	DeletePendingPasswordResetsByUser(ctx context.Context, userID string) error
 	CheckPasswordResetToken(ctx context.Context, tokenHash string) error
 	ResetPassword(ctx context.Context, tokenHash, passwordHash string) error
+	DeleteUserByID(ctx context.Context, userID string) error
 }
 
 // Mailer envoie des emails transactionnels liés à l'authentification.
@@ -245,6 +252,28 @@ func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) erro
 	}
 
 	return s.repo.ResetPassword(ctx, tokenHash, string(hash))
+}
+
+func (s *Service) DeleteAccount(ctx context.Context, in DeleteAccountInput) error {
+	if in.Password == "" {
+		return apperror.InvalidArgument("password required")
+	}
+
+	uwh, err := s.repo.GetUserByID(ctx, in.UserID)
+	if err != nil {
+		return err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(uwh.PasswordHash), []byte(in.Password)); err != nil {
+		return apperror.Unauthorized("invalid credentials")
+	}
+
+	if err := s.repo.DeleteUserByID(ctx, in.UserID); err != nil {
+		return apperror.Internal("could not delete account", err)
+	}
+
+	log.Printf("auth: account deleted for user %s", in.UserID)
+	return nil
 }
 
 func normalizeEmail(raw string) (string, error) {

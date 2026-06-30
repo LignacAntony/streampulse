@@ -181,6 +181,7 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/logout` | `Handler.Logout` | Oui (JWT) |
 | POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
 | POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
+| DELETE | `/api/auth/me` | `Handler.DeleteAccount` | Oui (JWT) |
 
 ### Routes streams existantes
 
@@ -194,7 +195,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
 | DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
 
-- Titre **non unique** (contrainte retirée en `000013`) : pas de 409 sur le titre.
+- Titre **non unique** (contrainte retirée en `000015`) : pas de 409 sur le titre.
 - `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
 
 ### Documentation OpenAPI
@@ -465,7 +466,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `013-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `015-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

@@ -28,7 +28,7 @@ brut via un endpoint HTTP, et le backend Go segmente en HLS. L'URL de stream sou
 
 ### 1. `stream_key` dédié, stocké en clair, pour l'URL de stream source
 
-- Migration `000012` : ajoute `stream_key TEXT NOT NULL UNIQUE` sur `streams`.
+- Migration `000014` : ajoute `stream_key TEXT NOT NULL UNIQUE` sur `streams`.
 - Généré à la création : **32 octets `crypto/rand` → base64url** (sans padding).
 - Stocké **en clair** : le diffuseur doit pouvoir **relire** son URL source dans son dashboard
   (modèle Twitch/OBS). Un hachage rendrait l'URL illisible après la création.
@@ -51,8 +51,9 @@ Le ticket emploie « inactif » ; le schéma utilise déjà `idle` (`CHECK statu
 - **Création** réservée au rôle `broadcaster` (`RequireRole`).
 - **Lecture/édition/suppression** : `RequireAuth` ; la **propriété est vérifiée dans le service**
   (un flux ne peut être modifié/supprimé que par son propriétaire).
-- La **promotion `user → broadcaster` est hors scope** (aucun endpoint aujourd'hui) → ticket
-  dédié, tracé dans `docs/cdc-conflits-codebase.md`.
+- La **promotion `user → broadcaster`** est fournie par ADR 014 / STR-49. Après approbation,
+  l'access token existant garde l'ancien rôle jusqu'au prochain refresh ; le diffuseur doit donc
+  obtenir un nouveau JWT avant que `POST /api/streams` passe `RequireRole("broadcaster")`.
 
 ### 4. Surface HTTP (CRUD)
 
@@ -69,7 +70,7 @@ Le ticket emploie « inactif » ; le schéma utilise déjà `idle` (`CHECK statu
 - Routage en **patterns méthode** `http.ServeMux` (Go 1.22+) ; l'`id` du path est lu via
   `r.PathValue("id")` et converti sans paniquer (un UUID invalide → 404).
 
-### 5. Titre non unique + soft delete (migration `000013`)
+### 5. Titre non unique + soft delete (migration `000015`)
 
 - **DROP de `UNIQUE (user_id, title)`** : le titre d'un flux n'a pas à être unique. Un diffuseur
   ne peut pas diffuser plusieurs flux en même temps (règle appliquée au passage en `live`, hors
@@ -80,6 +81,9 @@ Le ticket emploie « inactif » ; le schéma utilise déjà `idle` (`CHECK statu
   `archived_at = NOW()` au lieu d'effacer la ligne ; **toutes les lectures filtrent
   `archived_at IS NULL`**. Nom `archived_at` (pas `deleted_at`) : « archivé » colle mieux à un
   flux passé. Index partiel `idx_streams_public_live` pour la liste.
+- **Suppression de compte RGPD** : le soft delete ne concerne que `DELETE /api/streams/{id}`.
+  `DELETE /api/auth/me` supprime physiquement le compte ; la FK `streams.user_id ON DELETE
+  CASCADE` efface alors définitivement les streams du compte.
 
 ### 6. Structure : handler / service / repository (ADR 008)
 
@@ -108,7 +112,9 @@ reste du backend et éviter le boilerplate usecase (cf. ADR 008). Écart tracé 
   régénérable indépendamment du compte.
 - **`stream_key` haché** : rejeté — le diffuseur ne pourrait jamais relire son URL source.
 - **Garder l'unicité du titre** : rejeté — pas de sens métier (cf. décision 5).
-- **Hard delete** : rejeté — on conserve l'historique via `archived_at` (soft delete).
+- **Hard delete d'un stream isolé** : rejeté — on conserve l'historique via `archived_at`
+  (soft delete). Ce choix ne s'applique pas à la suppression RGPD du compte, qui hard-delete les
+  streams par cascade.
 - **Migrer l'enum vers `inactive`** : rejeté — casse l'existant pour un gain nul.
 - **Clean Architecture / DDD + Gin/GORM du CDC** : rejeté — incohérent avec `auth`/`profiles`.
 
@@ -127,7 +133,8 @@ reste du backend et éviter le boilerplate usecase (cf. ADR 008). Écart tracé 
 ### Inconvénients
 
 - **Clé en clair** en base (risque accepté MVP).
-- **Promotion broadcaster manquante** : un `user` normal ne peut pas créer de flux.
+- **Propagation du rôle non immédiate** : après approbation broadcaster, le JWT doit être refresh
+  avant la création de flux.
 - **Soft delete** : toute nouvelle requête de lecture doit penser à filtrer `archived_at IS NULL`.
 
 ---
@@ -137,5 +144,6 @@ reste du backend et éviter le boilerplate usecase (cf. ADR 008). Écart tracé 
 - [ADR 008](008-architecture-handler-service-repository.md) — handler/service/repository.
 - [ADR 007](007-sqlc-generation-code-sql.md) — sqlc. [ADR 004](004-config-12-factor-viper.md) — config 12-Factor.
 - [ADR 012](012-openapi-source-de-verite.md) — OpenAPI source de vérité du contrat HTTP.
-- Migrations `000012` (stream_key) et `000013` (drop unicité titre + archived_at).
+- Migrations `000014` (stream_key) et `000015` (drop unicité titre + archived_at).
+- [ADR 014](014-demande-activation-role-diffuseur.md) — demande et activation du rôle diffuseur.
 - `docs/cdc-conflits-codebase.md` — conflits CDC ↔ codebase + suivis hors scope.

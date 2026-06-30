@@ -15,6 +15,7 @@ const (
 	maxRefreshBodyBytes        = 1 << 20
 	maxForgotPasswordBodyBytes = 1 << 20
 	maxResetPasswordBodyBytes  = 1 << 20
+	maxDeleteAccountBodyBytes  = 1 << 20
 )
 
 type registerRequest struct {
@@ -45,6 +46,10 @@ type resetPasswordRequest struct {
 	Password string `json:"password"`
 }
 
+type deleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
 type Registrar interface {
 	Register(ctx context.Context, in RegisterInput) (User, error)
 }
@@ -69,6 +74,10 @@ type PasswordResetExecutor interface {
 	ResetPassword(ctx context.Context, in ResetPasswordInput) error
 }
 
+type AccountDeleter interface {
+	DeleteAccount(ctx context.Context, in DeleteAccountInput) error
+}
+
 type Handler struct {
 	svc           Registrar
 	authenticator Authenticator
@@ -76,10 +85,11 @@ type Handler struct {
 	logouter      Logouter
 	resetter      PasswordResetter
 	executor      PasswordResetExecutor
+	deleter       AccountDeleter
 }
 
-func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher, logouter Logouter, resetter PasswordResetter, executor PasswordResetExecutor) *Handler {
-	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher, logouter: logouter, resetter: resetter, executor: executor}
+func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher, logouter Logouter, resetter PasswordResetter, executor PasswordResetExecutor, deleter AccountDeleter) *Handler {
+	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher, logouter: logouter, resetter: resetter, executor: executor, deleter: deleter}
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -233,4 +243,31 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Printf("auth: encode reset-password response: %v", err)
 	}
+}
+
+func (h *Handler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.Header().Set("Allow", http.MethodDelete)
+		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		return
+	}
+
+	var req deleteAccountRequest
+	if err := httpjson.Decode(w, r, &req, maxDeleteAccountBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	if err := h.deleter.DeleteAccount(r.Context(), DeleteAccountInput{UserID: userID, Password: req.Password}); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

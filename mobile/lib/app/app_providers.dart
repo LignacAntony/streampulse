@@ -10,6 +10,10 @@ import '../features/auth/presentation/providers/forgot_password_controller.dart'
 import '../features/auth/presentation/providers/login_controller.dart';
 import '../features/auth/presentation/providers/register_controller.dart';
 import '../features/auth/presentation/providers/reset_password_controller.dart';
+import '../features/broadcaster/data/datasources/broadcaster_remote_data_source.dart';
+import '../features/broadcaster/data/repositories/broadcaster_repository_impl.dart';
+import '../features/broadcaster/domain/repositories/broadcaster_repository.dart';
+import '../features/broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../features/profile/data/datasources/profile_remote_data_source.dart';
 import '../features/profile/data/repositories/profile_repository_impl.dart';
 import '../features/profile/domain/repositories/profile_repository.dart';
@@ -65,6 +69,18 @@ class StreamPulseApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<ProfileController>(
           create: (ctx) => ProfileController(ctx.read<ProfileRepository>()),
+        ),
+        Provider<BroadcasterRemoteDataSource>(
+          create: (ctx) =>
+              BroadcasterRemoteDataSource(ctx.read<DioClient>().broadcasterApi),
+        ),
+        Provider<BroadcasterRepository>(
+          create: (ctx) =>
+              BroadcasterRepositoryImpl(ctx.read<BroadcasterRemoteDataSource>()),
+        ),
+        ChangeNotifierProvider<BroadcasterController>(
+          create: (ctx) =>
+              BroadcasterController(ctx.read<BroadcasterRepository>()),
         ),
       ],
       child: child,

@@ -49,13 +49,12 @@ import 'package:streampulse_api/streampulse_api.dart';
 
 
 final api = StreampulseApi().getAuthApi();
-final ForgotPasswordRequest forgotPasswordRequest = ; // ForgotPasswordRequest | 
+final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest | 
 
 try {
-    final response = await api.forgotPassword(forgotPasswordRequest);
-    print(response);
+    api.deleteAccount(deleteAccountRequest);
 } on DioException catch (e) {
-    print("Exception when calling AuthApi->forgotPassword: $e\n");
+    print("Exception when calling AuthApi->deleteAccount: $e\n");
 }
 
 ```
@@ -66,12 +65,18 @@ All URIs are relative to *http://localhost*
 
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
+[*AuthApi*](doc/AuthApi.md) | [**deleteAccount**](doc/AuthApi.md#deleteaccount) | **DELETE** /api/auth/me | Permanently delete the authenticated user&#39;s account (GDPR art. 17).
 [*AuthApi*](doc/AuthApi.md) | [**forgotPassword**](doc/AuthApi.md#forgotpassword) | **POST** /api/auth/forgot-password | Request a password reset email.
 [*AuthApi*](doc/AuthApi.md) | [**login**](doc/AuthApi.md#login) | **POST** /api/auth/login | Authenticate a user and issue tokens.
 [*AuthApi*](doc/AuthApi.md) | [**logout**](doc/AuthApi.md#logout) | **POST** /api/auth/logout | Revoke the current refresh token.
 [*AuthApi*](doc/AuthApi.md) | [**refreshToken**](doc/AuthApi.md#refreshtoken) | **POST** /api/auth/refresh | Rotate a refresh token and issue a new token pair.
 [*AuthApi*](doc/AuthApi.md) | [**register**](doc/AuthApi.md#register) | **POST** /api/auth/register | Register a new user account.
 [*AuthApi*](doc/AuthApi.md) | [**resetPassword**](doc/AuthApi.md#resetpassword) | **POST** /api/auth/reset-password | Reset a password with a valid reset token.
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**approveBroadcasterRequest**](doc/BroadcasterApi.md#approvebroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/approve | Approve a broadcaster request and promote the user (admin only).
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**createBroadcasterRequest**](doc/BroadcasterApi.md#createbroadcasterrequest) | **POST** /api/broadcaster-requests | Submit a request to become a broadcaster.
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**getMyBroadcasterRequest**](doc/BroadcasterApi.md#getmybroadcasterrequest) | **GET** /api/broadcaster-requests/me | Retrieve the authenticated user&#39;s latest broadcaster request.
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**listBroadcasterRequests**](doc/BroadcasterApi.md#listbroadcasterrequests) | **GET** /api/admin/broadcaster-requests | List broadcaster requests (admin only).
+[*BroadcasterApi*](doc/BroadcasterApi.md) | [**rejectBroadcasterRequest**](doc/BroadcasterApi.md#rejectbroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/reject | Reject a broadcaster request (admin only).
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
@@ -85,7 +90,12 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [BroadcasterRequestAdmin](doc/BroadcasterRequestAdmin.md)
+ - [BroadcasterRequestInput](doc/BroadcasterRequestInput.md)
+ - [BroadcasterRequestListResponse](doc/BroadcasterRequestListResponse.md)
+ - [BroadcasterRequestResponse](doc/BroadcasterRequestResponse.md)
  - [CreateStreamRequest](doc/CreateStreamRequest.md)
+ - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
  - [ErrorDetail](doc/ErrorDetail.md)
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)
@@ -97,6 +107,7 @@ Class | Method | HTTP request | Description
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
+ - [ReviewRequestInput](doc/ReviewRequestInput.md)
  - [StreamResponse](doc/StreamResponse.md)
  - [StreamSummaryResponse](doc/StreamSummaryResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)

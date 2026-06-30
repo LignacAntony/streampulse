@@ -25,3 +25,11 @@ DELETE FROM refresh_tokens WHERE token_hash = $1;
 
 -- name: DeleteAllRefreshTokensByUser :exec
 DELETE FROM refresh_tokens WHERE user_id = sqlc.arg(user_id)::uuid;
+
+-- name: GetUserByID :one
+SELECT id::text, email, username, role, created_at, password_hash
+FROM users
+WHERE id = sqlc.arg(user_id)::uuid AND is_active = true;
+
+-- name: DeleteUserByID :exec
+DELETE FROM users WHERE id = sqlc.arg(user_id)::uuid;

@@ -10,6 +10,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BroadcasterRequest struct {
+	ID         pgtype.UUID
+	UserID     pgtype.UUID
+	Status     string
+	Message    string
+	ReviewedBy pgtype.UUID
+	ReviewNote string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type PasswordResetToken struct {
 	ID        pgtype.UUID
 	UserID    pgtype.UUID

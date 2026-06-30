@@ -17,6 +17,10 @@ abstract class AuthRepository {
   /// Ne lève jamais : un échec réseau ne doit pas bloquer la déconnexion locale.
   Future<void> logout();
 
+  /// Supprime définitivement le compte (RGPD art. 17).
+  /// Lève [AuthException] si le mot de passe est incorrect.
+  Future<void> deleteAccount({required String password});
+
   /// Déclenche l'envoi de l'email de réinitialisation.
   /// Ne lève jamais sur email inconnu (anti-énumération côté serveur).
   Future<void> requestPasswordReset({required String email});

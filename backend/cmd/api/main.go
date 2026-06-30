@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
+	"github.com/LignacAntony/streampulse/internal/broadcaster"
 	"github.com/LignacAntony/streampulse/internal/config"
 	"github.com/LignacAntony/streampulse/internal/email"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
@@ -62,7 +63,7 @@ func run() error {
 	authRepo := auth.NewRepository(pool)
 	mailer := email.NewFromConfig(cfg)
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
-	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
+	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
 	profilesRepo := profiles.NewRepository(pool)
 	profilesSvc := profiles.NewService(profilesRepo)
@@ -72,6 +73,10 @@ func run() error {
 	streamingKeys := streaming.NewKeyGenerator()
 	streamingSvc := streaming.NewService(streamingRepo, streamingKeys)
 	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL)
+
+	broadcasterRepo := broadcaster.NewRepository(pool)
+	broadcasterSvc := broadcaster.NewService(broadcasterRepo)
+	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
 
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
@@ -94,8 +99,15 @@ func run() error {
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
 	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
 	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
+	mux.Handle("/api/auth/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.DeleteAccount)))
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
+
+	mux.Handle("/api/broadcaster-requests", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(broadcasterHandler.Create)))
+	mux.Handle("/api/broadcaster-requests/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(broadcasterHandler.GetMine)))
+	mux.Handle("/api/admin/broadcaster-requests", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.List))))
+	mux.Handle("/api/admin/broadcaster-requests/{id}/approve", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Approve))))
+	mux.Handle("/api/admin/broadcaster-requests/{id}/reject", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Reject))))
 
 	// Flux : création réservée au broadcaster ; liste accessible à tout
 	// utilisateur authentifié (cf. ADR 013).

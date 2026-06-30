@@ -31,7 +31,7 @@ func seedStreams(ctx context.Context, tx pgx.Tx) error {
 	}
 
 	for _, s := range streams {
-		// Idempotent sans contrainte d'unicité sur le titre (retirée en 000013) :
+		// Idempotent sans contrainte d'unicité sur le titre (retirée en 000015) :
 		// on n'insère que si ce diffuseur n'a pas déjà un flux de ce titre.
 		_, err = tx.Exec(ctx, `
 			INSERT INTO streams (user_id, title, category, status, is_public, stream_key)

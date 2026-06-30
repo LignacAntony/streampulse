@@ -6,6 +6,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../../domain/entities/user_profile.dart';
 import '../providers/profile_controller.dart';
 import '../widgets/profile_avatar.dart';
@@ -57,7 +58,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _logout() async {
     await context.read<AuthRepository>().logout();
     if (!mounted) return;
+    context.read<BroadcasterController>().reset();
     context.go('/login');
+  }
+
+  Future<void> _deleteAccount() async {
+    final repo = context.read<AuthRepository>();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (_) => const _DeleteAccountDialog(),
+    );
+    if (password == null || password.isEmpty) return;
+
+    try {
+      await repo.deleteAccount(password: password);
+      if (!mounted) return;
+      showAuthSuccessToast(context, 'Compte supprimé avec succès');
+      context.go('/login');
+    } on AuthException {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Mot de passe incorrect');
+    } on NetworkException {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Pas de connexion réseau');
+    } catch (_) {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Échec de la suppression');
+    }
   }
 
   @override
@@ -141,6 +168,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
               label: const Text('Se déconnecter'),
             ),
           ),
+          const SizedBox(height: 12),
+          ConstrainedBox(
+            constraints: const BoxConstraints.tightFor(
+              height: AppConstants.minTouchTarget,
+            ),
+            child: OutlinedButton.icon(
+              key: const Key('profile_delete_account_button'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: colors.error,
+                side: BorderSide(color: colors.error),
+              ),
+              onPressed: _deleteAccount,
+              icon: const Icon(Icons.delete_forever),
+              label: const Text('Supprimer mon compte'),
+            ),
+          ),
         ],
       ),
     );
@@ -189,19 +232,19 @@ class _ProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RoleBadge(role: profile.role),
-            const SizedBox(height: 16),
-            ConstrainedBox(
-              constraints: const BoxConstraints.tightFor(
-                height: AppConstants.minTouchTarget,
-              ),
-              child: OutlinedButton(
-                onPressed: () => showAuthInfoToast(
-                  context,
-                  'Demande de rôle Diffuseur — bientôt disponible',
+            if (profile.role == 'user') ...[
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints.tightFor(
+                  height: AppConstants.minTouchTarget,
                 ),
-                child: const Text('Demander le rôle Diffuseur'),
+                child: OutlinedButton(
+                  key: const Key('profile_become_broadcaster'),
+                  onPressed: () => context.push('/broadcaster-request'),
+                  child: const Text('Demander le rôle Diffuseur'),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -417,6 +460,97 @@ class _EditPseudoDialogState extends State<_EditPseudoDialog> {
         FilledButton(
           onPressed: _submit,
           child: const Text('Enregistrer'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _controller = TextEditingController();
+  bool _confirmed = false;
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final password = _controller.text;
+    if (password.isNotEmpty) {
+      Navigator.of(context).pop(password);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return AlertDialog(
+      title: Text(
+        'Supprimer mon compte',
+        style: TextStyle(color: colors.error),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Cette action est irréversible. Toutes vos données '
+              '(profil, playlists, morceaux, historique) seront '
+              'définitivement supprimées.',
+            ),
+            const SizedBox(height: 16),
+            CheckboxListTile(
+              key: const Key('delete_account_confirm_checkbox'),
+              contentPadding: EdgeInsets.zero,
+              value: _confirmed,
+              onChanged: (v) => setState(() => _confirmed = v ?? false),
+              title: const Text('Je comprends que cette action est irréversible'),
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('delete_account_password_field'),
+              controller: _controller,
+              obscureText: _obscure,
+              enabled: _confirmed,
+              decoration: InputDecoration(
+                labelText: 'Mot de passe',
+                hintText: 'Confirmez votre mot de passe',
+                suffixIcon: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              onSubmitted: _confirmed ? (_) => _submit() : null,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          key: const Key('delete_account_submit_button'),
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          ),
+          onPressed: _confirmed ? _submit : null,
+          child: const Text('Supprimer'),
         ),
       ],
     );
