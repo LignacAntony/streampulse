@@ -186,15 +186,6 @@ func TestHandler_Create_ForbiddenForUser(t *testing.T) {
 	}
 }
 
-func TestHandler_Create_MethodNotAllowed(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
-	rec := doCreate(t, h, http.MethodGet, "broadcaster", "", true)
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("want 405, got %d: %s", rec.Code, rec.Body)
-	}
-}
-
 // doList exécute GET /api/streams via RequireAuth (sans rôle).
 func doList(t *testing.T, h *Handler, query string, withToken bool) *httptest.ResponseRecorder {
 	t.Helper()

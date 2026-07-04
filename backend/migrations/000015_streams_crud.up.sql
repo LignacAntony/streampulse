@@ -8,5 +8,7 @@ ALTER TABLE streams DROP CONSTRAINT IF EXISTS uq_streams_user_title;
 ALTER TABLE streams ADD COLUMN archived_at TIMESTAMPTZ;
 
 -- Index ciblé pour la liste des flux publics en direct et non archivés.
-CREATE INDEX idx_streams_public_live ON streams (started_at DESC)
+-- L'ordre des colonnes reflète exactement le ORDER BY de ListPublicLiveStreams
+-- (started_at DESC NULLS LAST, created_at DESC) pour que l'index le serve.
+CREATE INDEX idx_streams_public_live ON streams (started_at DESC NULLS LAST, created_at DESC)
     WHERE is_public AND status = 'live' AND archived_at IS NULL;

@@ -82,12 +82,6 @@ type streamResponse struct {
 // Create gère POST /api/streams. L'authentification et le rôle broadcaster
 // sont garantis en amont par auth.RequireAuth + auth.RequireRole.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
-		return
-	}
-
 	userID, ok := auth.UserIDFromContext(r.Context())
 	if !ok {
 		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
@@ -182,6 +176,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
 	if offset < 0 {
 		offset = 0
+	}
+	if offset > 1<<31-1 {
+		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
 	}
 
 	streams, err := h.svc.ListPublicLive(r.Context(), int32(limit), int32(offset))
