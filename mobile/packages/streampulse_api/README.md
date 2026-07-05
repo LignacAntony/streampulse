@@ -49,7 +49,7 @@ import 'package:streampulse_api/streampulse_api.dart';
 
 
 final api = StreampulseApi().getAuthApi();
-final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest |
+final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest | 
 
 try {
     api.deleteAccount(deleteAccountRequest);
@@ -81,15 +81,21 @@ Class | Method | HTTP request | Description
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
 [*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
+[*StreamingApi*](doc/StreamingApi.md) | [**createStream**](doc/StreamingApi.md#createstream) | **POST** /api/streams | Create and configure a new live stream (broadcaster only).
+[*StreamingApi*](doc/StreamingApi.md) | [**deleteStream**](doc/StreamingApi.md#deletestream) | **DELETE** /api/streams/{id} | Delete (archive) a stream (owner only).
+[*StreamingApi*](doc/StreamingApi.md) | [**getStream**](doc/StreamingApi.md#getstream) | **GET** /api/streams/{id} | Get a stream by id.
+[*StreamingApi*](doc/StreamingApi.md) | [**listStreams**](doc/StreamingApi.md#liststreams) | **GET** /api/streams | List public live streams (paginated).
+[*StreamingApi*](doc/StreamingApi.md) | [**updateStream**](doc/StreamingApi.md#updatestream) | **PUT** /api/streams/{id} | Update a stream (owner only).
 
 
 ## Documentation For Models
 
- - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
  - [BroadcasterRequestAdmin](doc/BroadcasterRequestAdmin.md)
  - [BroadcasterRequestInput](doc/BroadcasterRequestInput.md)
  - [BroadcasterRequestListResponse](doc/BroadcasterRequestListResponse.md)
  - [BroadcasterRequestResponse](doc/BroadcasterRequestResponse.md)
+ - [CreateStreamRequest](doc/CreateStreamRequest.md)
+ - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
  - [ErrorDetail](doc/ErrorDetail.md)
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)
@@ -102,6 +108,8 @@ Class | Method | HTTP request | Description
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
  - [ReviewRequestInput](doc/ReviewRequestInput.md)
+ - [StreamResponse](doc/StreamResponse.md)
+ - [StreamSummaryResponse](doc/StreamSummaryResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
  - [UserResponse](doc/UserResponse.md)
@@ -117,3 +125,6 @@ Authentication schemes defined for the API:
 
 
 ## Author
+
+
+

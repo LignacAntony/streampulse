@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.31.1
 
-package profilesdb
+package streamingdb
 
 import (
 	"time"
@@ -26,7 +26,7 @@ type PasswordResetToken struct {
 	UserID    pgtype.UUID
 	TokenHash string
 	ExpiresAt time.Time
-	UsedAt    pgtype.Timestamptz
+	UsedAt    *time.Time
 	CreatedAt time.Time
 }
 
@@ -84,12 +84,12 @@ type Stream struct {
 	Category    pgtype.Text
 	Status      string
 	IsPublic    bool
-	StartedAt   pgtype.Timestamptz
-	EndedAt     pgtype.Timestamptz
+	StartedAt   *time.Time
+	EndedAt     *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	StreamKey   string
-	ArchivedAt  pgtype.Timestamptz
+	ArchivedAt  *time.Time
 }
 
 type Track struct {

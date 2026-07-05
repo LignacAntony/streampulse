@@ -444,6 +444,153 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/streams:
+    post:
+      tags:
+        - Streaming
+      operationId: createStream
+      summary: Create and configure a new live stream (broadcaster only).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStreamRequest"
+      responses:
+        "201":
+          description: The newly created stream, including its source URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags:
+        - Streaming
+      operationId: listStreams
+      summary: List public live streams (paginated).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Public live streams (without any secret).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: getStream
+      summary: Get a stream by id.
+      description: >-
+        The owner receives the full stream (including stream_key and
+        stream_source_url). Other users receive a public summary without
+        secrets. A private stream owned by someone else returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: >-
+            The stream. For the owner, stream_key and stream_source_url are
+            populated; for any other user they are null.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Streaming
+      operationId: updateStream
+      summary: Update a stream (owner only).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStreamRequest"
+      responses:
+        "200":
+          description: The updated stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Streaming
+      operationId: deleteStream
+      summary: Delete (archive) a stream (owner only).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream was archived.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
@@ -524,7 +671,7 @@ components:
               value:
                 error:
                   code: not_found
-                  message: no broadcaster request found
+                  message: resource not found
     UnsupportedMediaType:
       description: Request content type must be application/json.
       content:
@@ -890,3 +1037,137 @@ components:
         message:
           type: string
           example: invalid email
+    CreateStreamRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - is_public
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: Morning Jazz Session
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: A relaxing jazz set to start the day.
+        category:
+          type: string
+          enum: [music, talk, technology, gaming, news, sport, other]
+          nullable: true
+          example: music
+        is_public:
+          type: boolean
+          example: true
+    StreamSummaryResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - description
+        - category
+        - status
+        - is_public
+        - started_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [idle, live, ended]
+        is_public:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    StreamResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - description
+        - category
+        - status
+        - is_public
+        - started_at
+        - ended_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        user_id:
+          type: string
+          format: uuid
+          example: 99999999-8888-7777-6666-555555555555
+        title:
+          type: string
+          example: Morning Jazz Session
+        description:
+          type: string
+          nullable: true
+          example: A relaxing jazz set to start the day.
+        category:
+          type: string
+          nullable: true
+          example: music
+        status:
+          type: string
+          enum: [idle, live, ended]
+          example: idle
+        is_public:
+          type: boolean
+          example: true
+        stream_key:
+          type: string
+          nullable: true
+          description: >-
+            Secret push key. Populated only for the stream owner; null for any
+            other user. Treat as a credential.
+          example: 8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
+        stream_source_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Populated only for the stream owner; null otherwise.
+          example: http://localhost:8080/api/streams/ingest/8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"

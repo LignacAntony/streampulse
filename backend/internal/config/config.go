@@ -18,10 +18,11 @@ import (
 // constantes pour qu'elles soient à la fois passées à viper.SetDefault
 // et appliquées en post-processing si la variable est définie à "".
 const (
-	defaultGoEnv   = "development"
-	defaultAPIPort = "8080"
-	defaultDBHost  = "localhost"
-	defaultDBPort  = "5432"
+	defaultGoEnv               = "development"
+	defaultAPIPort             = "8080"
+	defaultDBHost              = "localhost"
+	defaultDBPort              = "5432"
+	defaultStreamIngestBaseURL = "http://localhost:8080"
 
 	minJWTSecretLen = 32
 )
@@ -51,6 +52,10 @@ type Config struct {
 	// AppBaseURL est utilisée pour construire les liens dans les emails.
 	AppBaseURL string `mapstructure:"APP_BASE_URL"`
 
+	// StreamIngestBaseURL préfixe l'URL de stream source renvoyée au diffuseur
+	// (cf. ADR 013) : {StreamIngestBaseURL}/api/streams/ingest/{stream_key}.
+	StreamIngestBaseURL string `mapstructure:"STREAM_INGEST_BASE_URL"`
+
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
 }
@@ -66,6 +71,7 @@ func Load() (*Config, error) {
 	v.SetDefault("API_PORT", defaultAPIPort)
 	v.SetDefault("DB_HOST", defaultDBHost)
 	v.SetDefault("DB_PORT", defaultDBPort)
+	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -89,7 +95,7 @@ func Load() (*Config, error) {
 		"GO_ENV", "API_PORT", "JWT_SECRET",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
-		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS",
+		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
@@ -134,6 +140,9 @@ func (c *Config) applyDefaultsForEmpty() {
 	}
 	if c.SMTPPort == "" {
 		c.SMTPPort = "587"
+	}
+	if c.StreamIngestBaseURL == "" {
+		c.StreamIngestBaseURL = defaultStreamIngestBaseURL
 	}
 }
 

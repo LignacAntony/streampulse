@@ -183,6 +183,21 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 | POST | `/api/auth/reset-password` | `Handler.ResetPassword` | Non |
 | DELETE | `/api/auth/me` | `Handler.DeleteAccount` | Oui (JWT) |
 
+### Routes streams existantes
+
+Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 013](docs/adr/013-domaine-streaming.md).
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| POST | `/api/streams` | `Handler.Create` | Oui — rôle `broadcaster` |
+| GET | `/api/streams` | `Handler.List` | Oui (JWT) — liste publique en direct, paginée, sans secret |
+| GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — réponse unique : propriétaire = `stream_key`/`stream_source_url` remplis, tiers = ces secrets à `null`, ou 404 (privé) |
+| PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
+| DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
+
+- Titre **non unique** (contrainte retirée en `000015`) : pas de 409 sur le titre.
+- `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
+
 ### Documentation OpenAPI
 
 La spec OpenAPI est la **source de vérité** du contrat HTTP (cf. [ADR 012](docs/adr/012-openapi-source-de-verite.md)).
@@ -388,6 +403,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `SMTP_FROM` | Adresse expéditeur | `noreply@streampulse.com` |
 | `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
+| `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
 
 ## Santé des services
 

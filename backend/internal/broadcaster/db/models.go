@@ -88,6 +88,8 @@ type Stream struct {
 	EndedAt     pgtype.Timestamptz
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	StreamKey   string
+	ArchivedAt  pgtype.Timestamptz
 }
 
 type Track struct {
