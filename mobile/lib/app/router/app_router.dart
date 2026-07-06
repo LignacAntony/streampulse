@@ -10,6 +10,8 @@ import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/broadcaster/presentation/screens/broadcaster_request_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/streams/domain/entities/live_stream.dart';
+import '../../features/streams/presentation/screens/stream_player_screen.dart';
 import '../shell/main_shell.dart';
 import '../shell/placeholder_screen.dart';
 
@@ -24,6 +26,10 @@ const _publicRoutes = {
   '/reset-password',
 };
 
+const _publicRoutePrefixes = {
+  '/stream/',
+};
+
 /// Construit le routeur GoRouter de l'application.
 ///
 /// [storage] alimente la redirection d'authentification : présence d'un
@@ -36,7 +42,9 @@ GoRouter createAppRouter(SecureStorage storage) {
     redirect: (context, state) async {
       final token = await storage.getAccessToken();
       final isOnSplash = state.matchedLocation == '/';
-      final isPublic = _publicRoutes.contains(state.matchedLocation);
+      final isPublic = _publicRoutes.contains(state.matchedLocation) ||
+          _publicRoutePrefixes
+              .any((prefix) => state.matchedLocation.startsWith(prefix));
 
       if (isOnSplash) return null;
       if (isPublic) return null;
@@ -70,6 +78,13 @@ GoRouter createAppRouter(SecureStorage storage) {
       GoRoute(
         path: '/broadcaster-request',
         builder: (context, state) => const BroadcasterRequestScreen(),
+      ),
+      GoRoute(
+        path: '/stream/:id',
+        builder: (context, state) => StreamPlayerScreen(
+          streamId: state.pathParameters['id']!,
+          stream: state.extra as LiveStream?,
+        ),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

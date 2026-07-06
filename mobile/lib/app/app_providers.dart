@@ -18,6 +18,10 @@ import '../features/profile/data/datasources/profile_remote_data_source.dart';
 import '../features/profile/data/repositories/profile_repository_impl.dart';
 import '../features/profile/domain/repositories/profile_repository.dart';
 import '../features/profile/presentation/providers/profile_controller.dart';
+import '../features/streams/data/datasources/stream_remote_data_source.dart';
+import '../features/streams/data/repositories/stream_repository_impl.dart';
+import '../features/streams/domain/repositories/stream_repository.dart';
+import '../features/streams/presentation/providers/stream_notifier.dart';
 
 /// Conteneur racine d'injection de dépendances (remplace `ProviderScope`).
 ///
@@ -81,6 +85,17 @@ class StreamPulseApp extends StatelessWidget {
         ChangeNotifierProvider<BroadcasterController>(
           create: (ctx) =>
               BroadcasterController(ctx.read<BroadcasterRepository>()),
+        ),
+        Provider<StreamRemoteDataSource>(
+          create: (ctx) =>
+              StreamRemoteDataSource(ctx.read<DioClient>().streamingApi),
+        ),
+        Provider<StreamRepository>(
+          create: (ctx) =>
+              StreamRepositoryImpl(ctx.read<StreamRemoteDataSource>()),
+        ),
+        ChangeNotifierProvider<StreamNotifier>(
+          create: (ctx) => StreamNotifier(ctx.read<StreamRepository>()),
         ),
       ],
       child: child,

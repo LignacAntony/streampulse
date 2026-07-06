@@ -1,12 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../core/constants/app_constants.dart';
-import '../../../../core/storage/secure_storage.dart';
-import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../streams/domain/entities/live_stream.dart';
+import '../../../streams/presentation/providers/stream_notifier.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,147 +13,171 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<String?> _userIdFuture;
-
   @override
   void initState() {
     super.initState();
-    _userIdFuture = _loadUserId();
+    final notifier = context.read<StreamNotifier>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifier.load();
+      notifier.startPolling();
+    });
   }
 
-  Future<String?> _loadUserId() async {
-    final token = await context.read<SecureStorage>().getAccessToken();
-    if (token == null) return null;
-    return _decodeSub(token);
-  }
-
-  String? _decodeSub(String jwt) {
-    final parts = jwt.split('.');
-    if (parts.length != 3) return null;
-    try {
-      var payload = parts[1];
-      payload += '=' * ((4 - payload.length % 4) % 4);
-      final json = jsonDecode(utf8.decode(base64Url.decode(payload)));
-      if (json is Map && json['sub'] is String) return json['sub'] as String;
-    } catch (_) {
-      return null;
-    }
-    return null;
-  }
-
-  Future<void> _logout() async {
-    await context.read<AuthRepository>().logout();
-    if (!mounted) return;
-    context.go('/login');
+  @override
+  void dispose() {
+    context.read<StreamNotifier>().stopPolling();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final notifier = context.watch<StreamNotifier>();
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Accueil')),
+      appBar: AppBar(title: const Text('En direct')),
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: FutureBuilder<String?>(
-              future: _userIdFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const CircularProgressIndicator();
-                }
-                final userId = snapshot.data;
-                return userId == null
-                    ? const _GuestView()
-                    : _AuthenticatedView(
-                        userId: userId,
-                        onLogout: _logout,
-                      );
-              },
-            ),
+        child: RefreshIndicator(
+          onRefresh: notifier.refresh,
+          child: _buildBody(context, notifier),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, StreamNotifier notifier) {
+    final streams = notifier.streams;
+
+    if (notifier.isLoading && streams.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (notifier.hasError && streams.isEmpty) {
+      return _MessageView(
+        icon: Icons.wifi_off_outlined,
+        message: 'Impossible de charger les flux',
+        actionLabel: 'Réessayer',
+        onAction: notifier.load,
+      );
+    }
+
+    if (notifier.isEmpty) {
+      return const _MessageView(
+        icon: Icons.podcasts_outlined,
+        message: 'Aucun flux actif pour le moment',
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: streams.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) => _StreamTile(stream: streams[index]),
+    );
+  }
+}
+
+class _StreamTile extends StatelessWidget {
+  const _StreamTile({required this.stream});
+
+  final LiveStream stream;
+
+  void _openPlayer(BuildContext context) {
+    context.push('/stream/${stream.id}', extra: stream);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final colors = Theme.of(context).colorScheme;
+    final duration = stream.liveDurationAt(DateTime.now());
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        onTap: () => _openPlayer(context),
+        leading: CircleAvatar(
+          backgroundColor: colors.primaryContainer,
+          child: Icon(Icons.graphic_eq, color: colors.onPrimaryContainer),
+        ),
+        title: Text(
+          stream.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: text.titleMedium,
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            children: [
+              Icon(Icons.people_outline, size: 16, color: colors.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Text(
+                _formatListeners(stream.listenerCount),
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(width: 12),
+              Icon(Icons.schedule, size: 16, color: colors.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Text(
+                _formatDuration(duration),
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
           ),
         ),
+        trailing: const Icon(Icons.chevron_right),
       ),
     );
   }
 }
 
-class _AuthenticatedView extends StatelessWidget {
-  const _AuthenticatedView({required this.userId, required this.onLogout});
+String _formatListeners(int? count) => count == null ? '—' : '$count';
 
-  final String userId;
-  final VoidCallback onLogout;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    final colors = Theme.of(context).colorScheme;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      spacing: 16,
-      children: [
-        Text(
-          'Connecté — userID',
-          textAlign: TextAlign.center,
-          style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
-        SelectableText(
-          userId,
-          key: const Key('home_user_id'),
-          textAlign: TextAlign.center,
-          style: text.titleMedium,
-        ),
-        const SizedBox(height: 16),
-        ConstrainedBox(
-          constraints: const BoxConstraints.tightFor(
-            height: AppConstants.minTouchTarget,
-          ),
-          child: OutlinedButton.icon(
-            key: const Key('home_logout_button'),
-            onPressed: onLogout,
-            icon: const Icon(Icons.logout),
-            label: const Text('Se déconnecter'),
-          ),
-        ),
-      ],
-    );
-  }
+String _formatDuration(Duration? d) {
+  if (d == null) return '—';
+  final hours = d.inHours;
+  final minutes = d.inMinutes % 60;
+  if (hours > 0) return '${hours}h ${minutes.toString().padLeft(2, '0')}min';
+  return '${minutes}min';
 }
 
-class _GuestView extends StatelessWidget {
-  const _GuestView();
+class _MessageView extends StatelessWidget {
+  const _MessageView({
+    required this.icon,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      spacing: 16,
+    return ListView(
       children: [
-        Text(
-          'Mode invité',
-          textAlign: TextAlign.center,
-          style: text.titleMedium,
-        ),
-        Text(
-          'Connecte-toi pour accéder à toutes les fonctionnalités.',
-          textAlign: TextAlign.center,
-          style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
+        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+        Icon(icon, size: 64, color: colors.onSurfaceVariant),
         const SizedBox(height: 16),
-        ConstrainedBox(
-          constraints: const BoxConstraints.tightFor(
-            height: AppConstants.minTouchTarget,
-          ),
-          child: FilledButton.icon(
-            key: const Key('home_login_button'),
-            onPressed: () => context.go('/login'),
-            icon: const Icon(Icons.login),
-            label: const Text('Se connecter'),
-          ),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: text.titleMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
+        if (actionLabel != null && onAction != null) ...[
+          const SizedBox(height: 16),
+          Center(
+            child: FilledButton(
+              onPressed: onAction,
+              child: Text(actionLabel!),
+            ),
+          ),
+        ],
       ],
     );
   }
