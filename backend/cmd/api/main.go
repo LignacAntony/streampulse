@@ -71,7 +71,9 @@ func run() error {
 
 	streamingRepo := streaming.NewRepository(pool)
 	streamingKeys := streaming.NewKeyGenerator()
-	streamingSvc := streaming.NewService(streamingRepo, streamingKeys)
+	streamingSessions := streaming.NewLiveSessions(ctx)
+	defer streamingSessions.StopAll()
+	streamingSvc := streaming.NewService(streamingRepo, streamingKeys, streamingSessions)
 	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL)
 
 	broadcasterRepo := broadcaster.NewRepository(pool)
@@ -123,6 +125,11 @@ func run() error {
 		http.HandlerFunc(streamingHandler.Update)))
 	mux.Handle("DELETE /api/streams/{id}", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Delete)))
+	// Cycle de vie du direct (STR-77) : start/stop réservés au diffuseur propriétaire.
+	mux.Handle("PATCH /api/streams/{id}/start", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Start))))
+	mux.Handle("PATCH /api/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Stop))))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

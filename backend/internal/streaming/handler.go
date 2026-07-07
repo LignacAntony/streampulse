@@ -22,6 +22,8 @@ type StreamService interface {
 	GetStream(ctx context.Context, id, requesterID string) (Stream, bool, error)
 	UpdateStream(ctx context.Context, id, requesterID string, in UpdateStreamInput) (Stream, error)
 	ArchiveStream(ctx context.Context, id, requesterID string) error
+	StartStream(ctx context.Context, id, requesterID string) (Stream, error)
+	StopStream(ctx context.Context, id, requesterID string) (Stream, error)
 }
 
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
@@ -289,4 +291,42 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Start gère PATCH /api/streams/{id}/start : passe le flux du diffuseur en direct.
+func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	stream, err := h.svc.StartStream(r.Context(), r.PathValue("id"), requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
+		log.Printf("streaming: encode start response: %v", err)
+	}
+}
+
+// Stop gère PATCH /api/streams/{id}/stop : termine le flux du diffuseur.
+func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	stream, err := h.svc.StopStream(r.Context(), r.PathValue("id"), requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
+		log.Printf("streaming: encode stop response: %v", err)
+	}
 }

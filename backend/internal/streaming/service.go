@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -160,6 +161,8 @@ type Repository interface {
 	GetByID(ctx context.Context, id string) (Stream, error)
 	Update(ctx context.Context, p UpdateParams) (Stream, error)
 	Archive(ctx context.Context, id, userID string) error
+	StartStream(ctx context.Context, id, userID string) (Stream, error)
+	StopStream(ctx context.Context, id, userID string) (Stream, error)
 }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
@@ -167,14 +170,22 @@ type KeyGenerator interface {
 	NewStreamKey() (string, error)
 }
 
-// Service porte la logique métier du domaine streaming.
-type Service struct {
-	repo Repository
-	keys KeyGenerator
+// Sessions gère le cycle de vie des goroutines de diffusion (implémenté par
+// *LiveSessions). Le service enregistre/annule la session au start/stop.
+type Sessions interface {
+	Start(streamID string)
+	Stop(streamID string)
 }
 
-func NewService(repo Repository, keys KeyGenerator) *Service {
-	return &Service{repo: repo, keys: keys}
+// Service porte la logique métier du domaine streaming.
+type Service struct {
+	repo     Repository
+	keys     KeyGenerator
+	sessions Sessions
+}
+
+func NewService(repo Repository, keys KeyGenerator, sessions Sessions) *Service {
+	return &Service{repo: repo, keys: keys, sessions: sessions}
 }
 
 // CreateStream valide l'entrée, génère le stream_key et persiste le flux avec
@@ -241,4 +252,61 @@ func (s *Service) UpdateStream(ctx context.Context, id, requesterID string, in U
 // ArchiveStream effectue le soft delete du flux du propriétaire (404 sinon).
 func (s *Service) ArchiveStream(ctx context.Context, id, requesterID string) error {
 	return s.repo.Archive(ctx, id, requesterID)
+}
+
+// StartStream fait passer un flux idle -> live (propriétaire uniquement) puis
+// enregistre la session de diffusion. 404 si absent/pas propriétaire ; 409 si
+// le flux n'est pas idle ou si le diffuseur a déjà un flux en direct.
+func (s *Service) StartStream(ctx context.Context, id, requesterID string) (Stream, error) {
+	stream, err := s.repo.StartStream(ctx, id, requesterID)
+	if err != nil {
+		if errors.Is(err, errNoRowAffected) {
+			return Stream{}, s.classifyStartFailure(ctx, id, requesterID)
+		}
+		return Stream{}, err
+	}
+	s.sessions.Start(stream.ID)
+	return stream, nil
+}
+
+// StopStream fait passer un flux live -> ended (propriétaire uniquement) puis
+// annule la session (notifie les auditeurs). 404 si absent/pas propriétaire ;
+// 409 si le flux n'est pas en direct.
+func (s *Service) StopStream(ctx context.Context, id, requesterID string) (Stream, error) {
+	stream, err := s.repo.StopStream(ctx, id, requesterID)
+	if err != nil {
+		if errors.Is(err, errNoRowAffected) {
+			return Stream{}, s.classifyStopFailure(ctx, id, requesterID)
+		}
+		return Stream{}, err
+	}
+	s.sessions.Stop(stream.ID)
+	return stream, nil
+}
+
+// classifyStartFailure traduit un échec de transition start en 404 ou 409, à
+// partir de l'état réel du flux.
+func (s *Service) classifyStartFailure(ctx context.Context, id, requesterID string) error {
+	stream, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err // NotFound (absent/archivé)
+	}
+	if stream.UserID != requesterID {
+		return apperror.NotFound("stream not found")
+	}
+	if stream.Status != StatusIdle {
+		return apperror.Conflict("stream is not idle")
+	}
+	return apperror.Conflict("you already have a live stream")
+}
+
+func (s *Service) classifyStopFailure(ctx context.Context, id, requesterID string) error {
+	stream, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if stream.UserID != requesterID {
+		return apperror.NotFound("stream not found")
+	}
+	return apperror.Conflict("stream is not live")
 }

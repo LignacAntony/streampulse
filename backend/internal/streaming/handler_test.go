@@ -38,6 +38,11 @@ type stubService struct {
 	archiveErr     error
 	gotID          string
 	gotRequester   string
+
+	startRet Stream
+	startErr error
+	stopRet  Stream
+	stopErr  error
 }
 
 func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
@@ -69,6 +74,18 @@ func (s *stubService) ArchiveStream(_ context.Context, id, requesterID string) e
 	s.gotID = id
 	s.gotRequester = requesterID
 	return s.archiveErr
+}
+
+func (s *stubService) StartStream(_ context.Context, id, requesterID string) (Stream, error) {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.startRet, s.startErr
+}
+
+func (s *stubService) StopStream(_ context.Context, id, requesterID string) (Stream, error) {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.stopRet, s.stopErr
 }
 
 // doCreate exécute la requête à travers la chaîne réelle RequireAuth + RequireRole(broadcaster).
@@ -395,5 +412,79 @@ func TestHandler_Delete_RequiresToken(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Start_OK(t *testing.T) {
+	stub := &stubService{startRet: Stream{ID: "s1", UserID: testUserID, Status: StatusLive, StreamKey: "KEY123"}}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"status":"live"`) || !strings.Contains(body, `"stream_key":"KEY123"`) {
+		t.Errorf("réponse start incomplète (status live + clé): %s", body)
+	}
+	if stub.gotID != "s1" || stub.gotRequester != testUserID {
+		t.Errorf("scope owner = (%q, %q)", stub.gotID, stub.gotRequester)
+	}
+}
+
+func TestHandler_Start_Conflict(t *testing.T) {
+	stub := &stubService{startErr: apperror.Conflict("you already have a live stream")}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), true)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Start_NotFound(t *testing.T) {
+	stub := &stubService{startErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Start_RequiresToken(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL)
+	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Stop_OK(t *testing.T) {
+	stub := &stubService{stopRet: Stream{ID: "s1", UserID: testUserID, Status: StatusEnded, StreamKey: "KEY123"}}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Stop), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ended"`) {
+		t.Errorf("statut ended attendu: %s", rec.Body)
+	}
+}
+
+func TestHandler_Stop_Conflict(t *testing.T) {
+	stub := &stubService{stopErr: apperror.Conflict("stream is not live")}
+	h := NewHandler(stub, testIngestURL)
+
+	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Stop), true)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
 	}
 }

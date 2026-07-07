@@ -162,6 +162,66 @@ func (r *pgRepository) Archive(ctx context.Context, id, userID string) error {
 
 // uuidParam convertit un UUID provenant d'une source de confiance (JWT) ;
 // une valeur invalide est un bug, d'où le panic.
+// errNoRowAffected signale qu'aucune ligne n'a été mise à jour par une
+// transition de statut (le service classe alors 404 vs 409 via un GetByID).
+var errNoRowAffected = errors.New("streaming: no row affected")
+
+func (r *pgRepository) StartStream(ctx context.Context, id, userID string) (Stream, error) {
+	uid, ok := parseUUID(id)
+	if !ok {
+		return Stream{}, errNoRowAffected
+	}
+	row, err := r.q.StartStream(ctx, streamingdb.StartStreamParams{ID: uid, UserID: uuidParam(userID)})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Stream{}, errNoRowAffected
+		}
+		return Stream{}, fmt.Errorf("repo: start stream: %w", err)
+	}
+	return Stream{
+		ID:          row.ID,
+		UserID:      row.UserID,
+		Title:       row.Title,
+		Description: textValue(row.Description),
+		Category:    textValue(row.Category),
+		Status:      row.Status,
+		IsPublic:    row.IsPublic,
+		StreamKey:   row.StreamKey,
+		StartedAt:   row.StartedAt,
+		EndedAt:     row.EndedAt,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}, nil
+}
+
+func (r *pgRepository) StopStream(ctx context.Context, id, userID string) (Stream, error) {
+	uid, ok := parseUUID(id)
+	if !ok {
+		return Stream{}, errNoRowAffected
+	}
+	row, err := r.q.StopStream(ctx, streamingdb.StopStreamParams{ID: uid, UserID: uuidParam(userID)})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Stream{}, errNoRowAffected
+		}
+		return Stream{}, fmt.Errorf("repo: stop stream: %w", err)
+	}
+	return Stream{
+		ID:          row.ID,
+		UserID:      row.UserID,
+		Title:       row.Title,
+		Description: textValue(row.Description),
+		Category:    textValue(row.Category),
+		Status:      row.Status,
+		IsPublic:    row.IsPublic,
+		StreamKey:   row.StreamKey,
+		StartedAt:   row.StartedAt,
+		EndedAt:     row.EndedAt,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}, nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
