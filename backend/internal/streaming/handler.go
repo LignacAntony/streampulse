@@ -384,7 +384,9 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return // session terminée : le canal est fermé
 			}
-			fmt.Fprintf(w, "event: %s\ndata: {\"type\":%q}\n\n", ev.Type, ev.Type)
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: {\"type\":%q}\n\n", ev.Type, ev.Type); err != nil {
+				return // client déconnecté
+			}
 			flusher.Flush()
 		}
 	}
