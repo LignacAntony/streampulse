@@ -85,6 +85,9 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**deleteStream**](doc/StreamingApi.md#deletestream) | **DELETE** /api/streams/{id} | Delete (archive) a stream (owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**getStream**](doc/StreamingApi.md#getstream) | **GET** /api/streams/{id} | Get a stream by id.
 [*StreamingApi*](doc/StreamingApi.md) | [**listStreams**](doc/StreamingApi.md#liststreams) | **GET** /api/streams | List public live streams (paginated).
+[*StreamingApi*](doc/StreamingApi.md) | [**startStream**](doc/StreamingApi.md#startstream) | **PATCH** /api/streams/{id}/start | Start a stream — go live (broadcaster owner only).
+[*StreamingApi*](doc/StreamingApi.md) | [**stopStream**](doc/StreamingApi.md#stopstream) | **PATCH** /api/streams/{id}/stop | Stop a live stream — end it (broadcaster owner only).
+[*StreamingApi*](doc/StreamingApi.md) | [**streamEvents**](doc/StreamingApi.md#streamevents) | **GET** /api/streams/{id}/events | Subscribe to a live stream&#39;s events (SSE).
 [*StreamingApi*](doc/StreamingApi.md) | [**updateStream**](doc/StreamingApi.md#updatestream) | **PUT** /api/streams/{id} | Update a stream (owner only).
 
 

@@ -104,6 +104,29 @@ La Clean Architecture / DDD du CDC (§4.2) **n'est pas adoptée** ici, pour rest
 reste du backend et éviter le boilerplate usecase (cf. ADR 008). Écart tracé dans
 `docs/cdc-conflits-codebase.md`.
 
+### 7. Cycle de vie du direct (STR-77)
+
+Le passage `idle → live → ended` se fait par des **endpoints dédiés** (pas par le PUT, qui ne
+touche jamais au statut) :
+
+| Méthode | Route | Effet |
+|---|---|---|
+| `PATCH` | `/api/streams/{id}/start` | `idle → live`, `started_at=NOW()` ; **409** si pas idle ou si le diffuseur a déjà un flux live |
+| `PATCH` | `/api/streams/{id}/stop` | `live → ended`, `ended_at=NOW()` ; **409** si pas live |
+| `GET` | `/api/streams/{id}/events` | flux **SSE** ; event `ended` à l'arrêt |
+
+- **Un seul live à la fois par diffuseur** : garantie par une garde SQL atomique dans `StartStream`
+  (`... AND NOT EXISTS (SELECT 1 FROM streams WHERE user_id = $ AND status = 'live')`). `ended` est
+  terminal (re-streamer = créer un nouveau flux). Owner-only (404 sinon).
+- **Concurrence** : composant `LiveSessions` (in-memory, `sync.Mutex`) = `map[streamID]*session`,
+  chaque session portant le `context.CancelFunc` de sa goroutine et ses abonnés SSE. `start`
+  enregistre + lance la goroutine (**placeholder** `<-ctx.Done()` que STR-70/71 rempliront avec la
+  segmentation HLS), `stop` annule + notifie + retire, `StopAll` libère tout au shutdown. Absence
+  de fuite vérifiée par test (`runtime.NumGoroutine`, STR-86).
+- **Notification** : **SSE** (`text/event-stream`, stdlib, zéro dépendance) plutôt que WebSocket —
+  la notif est unidirectionnelle serveur→client. La WriteTimeout du serveur est neutralisée pour ce
+  handler long via `http.NewResponseController`.
+
 ---
 
 ## Alternatives considérées
