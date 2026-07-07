@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -26,15 +27,22 @@ type StreamService interface {
 	StopStream(ctx context.Context, id, requesterID string) (Stream, error)
 }
 
+// StreamEvents fournit l'abonnement SSE aux événements d'un flux (implémenté par
+// *LiveSessions).
+type StreamEvents interface {
+	Subscribe(streamID string) (<-chan SessionEvent, func())
+}
+
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
 // l'URL de stream source renvoyée au diffuseur.
 type Handler struct {
 	svc           StreamService
 	ingestBaseURL string
+	events        StreamEvents
 }
 
-func NewHandler(svc StreamService, ingestBaseURL string) *Handler {
-	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/")}
+func NewHandler(svc StreamService, ingestBaseURL string, events StreamEvents) *Handler {
+	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"), events: events}
 }
 
 // createStreamRequest : pointeurs pour distinguer « champ absent » de zéro.
@@ -328,5 +336,56 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
 		log.Printf("streaming: encode stop response: %v", err)
+	}
+}
+
+// Events gère GET /api/streams/{id}/events : flux SSE d'événements du direct.
+// L'abonné reçoit un event "ended" quand le diffuseur arrête le flux.
+func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	id := r.PathValue("id")
+
+	// Réutilise la visibilité de GetStream (404 si absent ou privé non-propriétaire).
+	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	ch, unsub := h.events.Subscribe(id)
+	if ch == nil {
+		httpjson.WriteError(w, r, apperror.Conflict("stream is not live"))
+		return
+	}
+	defer unsub()
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Internal("streaming unsupported", nil))
+		return
+	}
+	// Connexion longue : neutralise la WriteTimeout du serveur pour ce handler.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return // session terminée : le canal est fermé
+			}
+			fmt.Fprintf(w, "event: %s\ndata: {\"type\":%q}\n\n", ev.Type, ev.Type)
+			flusher.Flush()
+		}
 	}
 }

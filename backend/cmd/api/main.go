@@ -74,7 +74,7 @@ func run() error {
 	streamingSessions := streaming.NewLiveSessions(ctx)
 	defer streamingSessions.StopAll()
 	streamingSvc := streaming.NewService(streamingRepo, streamingKeys, streamingSessions)
-	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL)
+	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL, streamingSessions)
 
 	broadcasterRepo := broadcaster.NewRepository(pool)
 	broadcasterSvc := broadcaster.NewService(broadcasterRepo)
@@ -130,6 +130,9 @@ func run() error {
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Start))))
 	mux.Handle("PATCH /api/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Stop))))
+	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
+	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Events)))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

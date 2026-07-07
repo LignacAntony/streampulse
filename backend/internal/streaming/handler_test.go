@@ -117,7 +117,7 @@ func TestHandler_Create_OK(t *testing.T) {
 		StreamKey: "KEY123",
 		CreatedAt: time.Now().UTC(),
 	}}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"Mon flux","is_public":true}`, true)
 
@@ -144,7 +144,7 @@ func TestHandler_Create_OK(t *testing.T) {
 
 func TestHandler_Create_MissingTitle(t *testing.T) {
 	stub := &stubService{}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"is_public":true}`, true)
 
@@ -160,7 +160,7 @@ func TestHandler_Create_MissingTitle(t *testing.T) {
 }
 
 func TestHandler_Create_MissingIsPublic(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"Mon flux"}`, true)
 
 	if rec.Code != http.StatusBadRequest {
@@ -172,7 +172,7 @@ func TestHandler_Create_MissingIsPublic(t *testing.T) {
 }
 
 func TestHandler_Create_UnknownField(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"x","is_public":true,"foo":1}`, true)
 
 	if rec.Code != http.StatusBadRequest {
@@ -181,7 +181,7 @@ func TestHandler_Create_UnknownField(t *testing.T) {
 }
 
 func TestHandler_Create_RequiresToken(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doCreate(t, h, http.MethodPost, "broadcaster", `{"title":"x","is_public":true}`, false)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -191,7 +191,7 @@ func TestHandler_Create_RequiresToken(t *testing.T) {
 
 func TestHandler_Create_ForbiddenForUser(t *testing.T) {
 	stub := &stubService{}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doCreate(t, h, http.MethodPost, "user", `{"title":"x","is_public":true}`, true)
 
@@ -223,7 +223,7 @@ func TestHandler_List_OK_NoStreamKey(t *testing.T) {
 	stub := &stubService{listRet: []Stream{
 		{ID: "s1", UserID: "u9", Title: "En direct", Status: StatusLive, IsPublic: true, StreamKey: "SECRET_KEY"},
 	}}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doList(t, h, "", true)
 
@@ -241,7 +241,7 @@ func TestHandler_List_OK_NoStreamKey(t *testing.T) {
 }
 
 func TestHandler_List_RequiresToken(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doList(t, h, "", false)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -251,7 +251,7 @@ func TestHandler_List_RequiresToken(t *testing.T) {
 
 func TestHandler_List_PaginationClamp(t *testing.T) {
 	stub := &stubService{}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	doList(t, h, "?limit=999&offset=-5", true)
 	if stub.gotLimit != MaxListLimit {
@@ -293,7 +293,7 @@ func TestHandler_Get_OwnerFull(t *testing.T) {
 		getOwner: true,
 		getRet:   Stream{ID: "s1", UserID: testUserID, Title: "Mon flux", Status: StatusIdle, StreamKey: "KEY123"},
 	}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Get), true)
 
@@ -311,7 +311,7 @@ func TestHandler_Get_NonOwnerNoSecrets(t *testing.T) {
 		getOwner: false,
 		getRet:   Stream{ID: "s1", UserID: "autre", Title: "Public", IsPublic: true, StreamKey: "SECRET"},
 	}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Get), true)
 
@@ -335,7 +335,7 @@ func TestHandler_Get_NonOwnerNoSecrets(t *testing.T) {
 
 func TestHandler_Get_NotFound(t *testing.T) {
 	stub := &stubService{getErr: apperror.NotFound("stream not found")}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Get), true)
 
@@ -346,7 +346,7 @@ func TestHandler_Get_NotFound(t *testing.T) {
 
 func TestHandler_Update_OK(t *testing.T) {
 	stub := &stubService{updateRet: Stream{ID: "s1", UserID: testUserID, Title: "Nouveau", StreamKey: "KEY123"}}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPut, "s1", `{"title":"Nouveau","is_public":false}`, http.HandlerFunc(h.Update), true)
 
@@ -362,7 +362,7 @@ func TestHandler_Update_OK(t *testing.T) {
 }
 
 func TestHandler_Update_MissingTitle(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doID(t, http.MethodPut, "s1", `{"is_public":true}`, http.HandlerFunc(h.Update), true)
 
 	if rec.Code != http.StatusBadRequest {
@@ -372,7 +372,7 @@ func TestHandler_Update_MissingTitle(t *testing.T) {
 
 func TestHandler_Update_NotFound(t *testing.T) {
 	stub := &stubService{updateErr: apperror.NotFound("stream not found")}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPut, "s1", `{"title":"Nouveau","is_public":true}`, http.HandlerFunc(h.Update), true)
 
@@ -383,7 +383,7 @@ func TestHandler_Update_NotFound(t *testing.T) {
 
 func TestHandler_Delete_NoContent(t *testing.T) {
 	stub := &stubService{}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.Delete), true)
 
@@ -397,7 +397,7 @@ func TestHandler_Delete_NoContent(t *testing.T) {
 
 func TestHandler_Delete_NotFound(t *testing.T) {
 	stub := &stubService{archiveErr: apperror.NotFound("stream not found")}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.Delete), true)
 
@@ -407,7 +407,7 @@ func TestHandler_Delete_NotFound(t *testing.T) {
 }
 
 func TestHandler_Delete_RequiresToken(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.Delete), false)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -417,7 +417,7 @@ func TestHandler_Delete_RequiresToken(t *testing.T) {
 
 func TestHandler_Start_OK(t *testing.T) {
 	stub := &stubService{startRet: Stream{ID: "s1", UserID: testUserID, Status: StatusLive, StreamKey: "KEY123"}}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), true)
 
@@ -435,7 +435,7 @@ func TestHandler_Start_OK(t *testing.T) {
 
 func TestHandler_Start_Conflict(t *testing.T) {
 	stub := &stubService{startErr: apperror.Conflict("you already have a live stream")}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), true)
 
@@ -446,7 +446,7 @@ func TestHandler_Start_Conflict(t *testing.T) {
 
 func TestHandler_Start_NotFound(t *testing.T) {
 	stub := &stubService{startErr: apperror.NotFound("stream not found")}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), true)
 
@@ -456,7 +456,7 @@ func TestHandler_Start_NotFound(t *testing.T) {
 }
 
 func TestHandler_Start_RequiresToken(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL)
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
 	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Start), false)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -466,7 +466,7 @@ func TestHandler_Start_RequiresToken(t *testing.T) {
 
 func TestHandler_Stop_OK(t *testing.T) {
 	stub := &stubService{stopRet: Stream{ID: "s1", UserID: testUserID, Status: StatusEnded, StreamKey: "KEY123"}}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Stop), true)
 
@@ -480,11 +480,81 @@ func TestHandler_Stop_OK(t *testing.T) {
 
 func TestHandler_Stop_Conflict(t *testing.T) {
 	stub := &stubService{stopErr: apperror.Conflict("stream is not live")}
-	h := NewHandler(stub, testIngestURL)
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	rec := doID(t, http.MethodPatch, "s1", "", http.HandlerFunc(h.Stop), true)
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Events_NotLive_Conflict(t *testing.T) {
+	// Flux visible mais sans session active -> 409.
+	stub := &stubService{getOwner: true, getRet: Stream{ID: "s1", UserID: testUserID, IsPublic: true}}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Events), true)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Events_NotFound(t *testing.T) {
+	stub := &stubService{getErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Events), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Events_RequiresToken(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Events), false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Events_StreamsEndedThenCloses(t *testing.T) {
+	sessions := NewLiveSessions(context.Background())
+	sessions.Start("s1")
+	stub := &stubService{getOwner: true, getRet: Stream{ID: "s1", UserID: testUserID, IsPublic: true}}
+	h := NewHandler(stub, testIngestURL, sessions)
+
+	token, err := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/events", nil)
+	req.SetPathValue("id", "s1")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		auth.RequireAuth(testSecret, http.HandlerFunc(h.Events)).ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond) // laisser le handler s'abonner
+	sessions.Stop("s1")               // publie "ended" + ferme le canal
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("le handler SSE n'a pas terminé après Stop")
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "event: ended") {
+		t.Errorf("le flux SSE doit contenir l'event ended: %s", rec.Body.String())
 	}
 }
