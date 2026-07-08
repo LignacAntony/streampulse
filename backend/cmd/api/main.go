@@ -155,14 +155,21 @@ func run() error {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	serveErr := make(chan error, 1)
 	go func() {
 		log.Printf("API StreamPulse démarrée sur %s (env=%s)", cfg.HTTPAddr(), cfg.GoEnv)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("serveur http: %v", err)
+			serveErr <- err
 		}
 	}()
 
-	<-ctx.Done() // SIGINT / SIGTERM
+	// Échec de démarrage (port pris, adresse invalide) → on remonte l'erreur ;
+	// sinon on attend le signal d'arrêt.
+	select {
+	case err := <-serveErr:
+		return fmt.Errorf("serveur http: %w", err)
+	case <-ctx.Done(): // SIGINT / SIGTERM
+	}
 	log.Println("arrêt en cours…")
 
 	streamingSessions.StopAll()
