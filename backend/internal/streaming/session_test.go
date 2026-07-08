@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -96,5 +97,48 @@ func TestLiveSessions_SlowSubscriberStillCloses(t *testing.T) {
 		case <-deadline:
 			t.Fatal("le canal de l'abonné n'a jamais été fermé après Stop")
 		}
+	}
+}
+
+func TestLiveSessions_SubscribeAfterStop(t *testing.T) {
+	ls := NewLiveSessions(context.Background())
+	ls.Start("s1")
+	ls.Stop("s1")
+
+	ch, unsub := ls.Subscribe("s1")
+	if ch != nil || unsub != nil {
+		t.Fatal("Subscribe après Stop devrait retourner (nil, nil)")
+	}
+}
+
+// TestLiveSessions_SubscribeStopRace exerce Subscribe et Stop en parallèle : sous
+// `-race`, garantit l'absence de course sur l'état de la session (flag closed +
+// abonnés) et qu'aucun abonné tardif ne reste ouvert sans être fermé.
+func TestLiveSessions_SubscribeStopRace(t *testing.T) {
+	for iter := 0; iter < 100; iter++ {
+		ls := NewLiveSessions(context.Background())
+		ls.Start("s1")
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			ch, unsub := ls.Subscribe("s1")
+			if ch == nil {
+				return // session déjà arrêtée : acceptable
+			}
+			defer unsub()
+			// Si on a un canal, il doit finir fermé (jamais bloquer indéfiniment).
+			select {
+			case <-ch:
+			case <-time.After(time.Second):
+				t.Errorf("abonné jamais notifié/fermé (fuite)")
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			ls.Stop("s1")
+		}()
+		wg.Wait()
 	}
 }

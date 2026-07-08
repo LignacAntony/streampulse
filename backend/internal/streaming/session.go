@@ -16,6 +16,7 @@ type session struct {
 	cancel context.CancelFunc
 
 	mu          sync.Mutex
+	closed      bool
 	subscribers map[chan SessionEvent]struct{}
 }
 
@@ -91,6 +92,12 @@ func (ls *LiveSessions) Subscribe(streamID string) (<-chan SessionEvent, func())
 
 	ch := make(chan SessionEvent, 1)
 	s.mu.Lock()
+	if s.closed {
+		// La session a été arrêtée entre la lecture de la map et ici : ne pas
+		// ajouter un abonné qui ne serait jamais notifié ni fermé.
+		s.mu.Unlock()
+		return nil, nil
+	}
 	s.subscribers[ch] = struct{}{}
 	s.mu.Unlock()
 
@@ -148,6 +155,7 @@ func (s *session) publish(ev SessionEvent) {
 func (s *session) closeSubscribers() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.closed = true
 	for ch := range s.subscribers {
 		close(ch)
 		delete(s.subscribers, ch)
