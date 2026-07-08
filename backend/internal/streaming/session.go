@@ -27,6 +27,7 @@ type LiveSessions struct {
 
 	mu   sync.Mutex
 	byID map[string]*session
+	wg   sync.WaitGroup
 }
 
 // NewLiveSessions construit le registre. base est le context de cycle de vie du
@@ -46,7 +47,11 @@ func (ls *LiveSessions) Start(streamID string) {
 	ctx, cancel := context.WithCancel(ls.base)
 	s := &session{cancel: cancel, subscribers: make(map[chan SessionEvent]struct{})}
 	ls.byID[streamID] = s
-	go s.run(ctx)
+	ls.wg.Add(1)
+	go func() {
+		defer ls.wg.Done()
+		s.run(ctx)
+	}()
 }
 
 // run est la goroutine de session. Placeholder : elle vit jusqu'à l'annulation
@@ -55,8 +60,9 @@ func (s *session) run(ctx context.Context) {
 	<-ctx.Done()
 }
 
-// Stop retire la session, publie l'événement "ended" à ses abonnés, ferme leurs
-// canaux et annule la goroutine. No-op si aucune session active.
+// Stop retire la session, publie l'événement "ended" (best-effort) à ses abonnés,
+// PUIS ferme leurs canaux (signal de fin de flux faisant autorité) et annule la
+// goroutine. No-op si aucune session active.
 func (ls *LiveSessions) Stop(streamID string) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
@@ -120,6 +126,14 @@ func (ls *LiveSessions) StopAll() {
 	}
 }
 
+// Wait bloque jusqu'à la terminaison de toutes les goroutines de session (après
+// Stop/StopAll ou annulation du context de base). Permet un drain déterministe
+// (arrêt gracieux, tests).
+func (ls *LiveSessions) Wait() { ls.wg.Wait() }
+
+// publish diffuse un événement aux abonnés en best-effort (non bloquant). La
+// livraison n'est PAS garantie pour un abonné lent ; le signal de fin de flux
+// faisant autorité est la fermeture du canal par closeSubscribers (cf. Stop).
 func (s *session) publish(ev SessionEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

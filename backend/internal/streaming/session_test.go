@@ -3,6 +3,7 @@ package streaming
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestLiveSessions_StartRegisters_StopRemoves(t *testing.T) {
@@ -69,5 +70,31 @@ func TestLiveSessions_StopAll(t *testing.T) {
 
 	if ls.IsLive("s1") || ls.IsLive("s2") {
 		t.Fatal("aucune session ne devrait rester après StopAll")
+	}
+}
+
+func TestLiveSessions_SlowSubscriberStillCloses(t *testing.T) {
+	ls := NewLiveSessions(context.Background())
+	ls.Start("s1")
+
+	ch, unsub := ls.Subscribe("s1")
+	if ch == nil {
+		t.Fatal("Subscribe sur un flux live devrait retourner un canal")
+	}
+	defer unsub()
+
+	ls.Stop("s1") // ne lit pas l'event avant : simule un consommateur lent
+
+	// Le canal doit finir fermé (fin de flux garantie) même sans lecture de l'event.
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return // canal fermé : contrat respecté
+			}
+		case <-deadline:
+			t.Fatal("le canal de l'abonné n'a jamais été fermé après Stop")
+		}
 	}
 }

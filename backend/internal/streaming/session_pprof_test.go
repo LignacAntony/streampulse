@@ -5,25 +5,11 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
-	"time"
 )
 
-// waitGoroutines attend que le nombre de goroutines redescende à target (ou en
-// dessous), le temps que les goroutines annulées se terminent.
-func waitGoroutines(target int, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if runtime.NumGoroutine() <= target {
-			return true
-		}
-		runtime.Gosched()
-		time.Sleep(5 * time.Millisecond)
-	}
-	return runtime.NumGoroutine() <= target
-}
-
 // TestLiveSessions_NoGoroutineLeak_OnStop vérifie qu'un Stop libère la goroutine
-// de session (STR-86) : aucune fuite après start puis stop de N sessions.
+// de session (STR-86). LiveSessions.Wait rend l'assertion déterministe (pas de
+// poll) : il attend la fin réelle des goroutines avant de compter.
 func TestLiveSessions_NoGoroutineLeak_OnStop(t *testing.T) {
 	before := runtime.NumGoroutine()
 
@@ -36,8 +22,9 @@ func TestLiveSessions_NoGoroutineLeak_OnStop(t *testing.T) {
 		ls.Stop(fmt.Sprintf("s%d", i))
 	}
 
-	if !waitGoroutines(before, 2*time.Second) {
-		t.Fatalf("fuite de goroutines : avant=%d, après=%d", before, runtime.NumGoroutine())
+	ls.Wait()
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("fuite de goroutines : avant=%d, après=%d", before, after)
 	}
 }
 
@@ -53,8 +40,9 @@ func TestLiveSessions_NoGoroutineLeak_OnStopAll(t *testing.T) {
 	}
 	ls.StopAll()
 
-	if !waitGoroutines(before, 2*time.Second) {
-		t.Fatalf("fuite de goroutines après StopAll : avant=%d, après=%d", before, runtime.NumGoroutine())
+	ls.Wait()
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("fuite de goroutines après StopAll : avant=%d, après=%d", before, after)
 	}
 }
 
@@ -70,7 +58,8 @@ func TestLiveSessions_NoGoroutineLeak_OnContextCancel(t *testing.T) {
 	}
 	cancel() // annule le context de base -> toutes les goroutines run() retournent
 
-	if !waitGoroutines(before, 2*time.Second) {
-		t.Fatalf("fuite de goroutines après annulation du context : avant=%d, après=%d", before, runtime.NumGoroutine())
+	ls.Wait()
+	if after := runtime.NumGoroutine(); after > before {
+		t.Fatalf("fuite de goroutines après annulation du context : avant=%d, après=%d", before, after)
 	}
 }
