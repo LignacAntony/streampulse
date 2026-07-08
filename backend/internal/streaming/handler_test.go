@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -521,6 +522,20 @@ func TestHandler_Events_RequiresToken(t *testing.T) {
 	}
 }
 
+// flushSignalRecorder ferme `flushed` au premier Flush du handler (= headers
+// envoyés, donc handler abonné et dans sa boucle) — permet un test SSE
+// déterministe sans sleep.
+type flushSignalRecorder struct {
+	*httptest.ResponseRecorder
+	once    sync.Once
+	flushed chan struct{}
+}
+
+func (f *flushSignalRecorder) Flush() {
+	f.once.Do(func() { close(f.flushed) })
+	f.ResponseRecorder.Flush()
+}
+
 func TestHandler_Events_StreamsEndedThenCloses(t *testing.T) {
 	sessions := NewLiveSessions(context.Background())
 	sessions.Start("s1")
@@ -534,16 +549,21 @@ func TestHandler_Events_StreamsEndedThenCloses(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/events", nil)
 	req.SetPathValue("id", "s1")
 	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
+	sw := &flushSignalRecorder{ResponseRecorder: httptest.NewRecorder(), flushed: make(chan struct{})}
 
 	done := make(chan struct{})
 	go func() {
-		auth.RequireAuth(testSecret, http.HandlerFunc(h.Events)).ServeHTTP(rec, req)
+		auth.RequireAuth(testSecret, http.HandlerFunc(h.Events)).ServeHTTP(sw, req)
 		close(done)
 	}()
 
-	time.Sleep(50 * time.Millisecond) // laisser le handler s'abonner
-	sessions.Stop("s1")               // publie "ended" + ferme le canal
+	// Attendre que le handler ait envoyé les headers (donc soit abonné), sans sleep.
+	select {
+	case <-sw.flushed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("le handler SSE ne s'est pas initialisé")
+	}
+	sessions.Stop("s1") // publie "ended" + ferme le canal
 
 	select {
 	case <-done:
@@ -551,10 +571,10 @@ func TestHandler_Events_StreamsEndedThenCloses(t *testing.T) {
 		t.Fatal("le handler SSE n'a pas terminé après Stop")
 	}
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", rec.Code)
+	if sw.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", sw.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "event: ended") {
-		t.Errorf("le flux SSE doit contenir l'event ended: %s", rec.Body.String())
+	if !strings.Contains(sw.Body.String(), "event: ended") {
+		t.Errorf("le flux SSE doit contenir l'event ended: %s", sw.Body.String())
 	}
 }
