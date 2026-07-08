@@ -125,7 +125,12 @@ touche jamais au statut) :
   de fuite vérifiée par test (`runtime.NumGoroutine`, STR-86).
 - **Notification** : **SSE** (`text/event-stream`, stdlib, zéro dépendance) plutôt que WebSocket —
   la notif est unidirectionnelle serveur→client. La WriteTimeout du serveur est neutralisée pour ce
-  handler long via `http.NewResponseController`.
+  handler long via `http.NewResponseController` ; un commentaire keep-alive est émis toutes les 15 s
+  pour survivre aux timeouts idle des proxies.
+- ⚠️ **Client mobile** : la méthode `streamEvents` générée par openapi-generator (`dart-dio`)
+  **bufferise** la réponse (`Future<Response<String>>`) et n'est **pas** utilisable en streaming.
+  La consommation SSE côté Flutter devra être écrite à la main (`Dio` + `ResponseType.stream`) dans
+  le ticket mobile dédié (écran auditeur) — hors périmètre STR-77.
 
 ---
 
