@@ -163,6 +163,7 @@ type Repository interface {
 	Archive(ctx context.Context, id, userID string) (string, error)
 	StartStream(ctx context.Context, id, userID string) (Stream, error)
 	StopStream(ctx context.Context, id, userID string) (Stream, error)
+	EndOrphanLiveStreams(ctx context.Context) (int64, error)
 }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
@@ -267,8 +268,11 @@ func (s *Service) ArchiveStream(ctx context.Context, id, requesterID string) err
 func (s *Service) StartStream(ctx context.Context, id, requesterID string) (Stream, error) {
 	stream, err := s.repo.StartStream(ctx, id, requesterID)
 	if err != nil {
+		if errors.Is(err, errStreamAlreadyLive) {
+			return Stream{}, apperror.Conflict("you already have a live stream")
+		}
 		if errors.Is(err, errNoRowAffected) {
-			return Stream{}, s.classifyStartFailure(ctx, id, requesterID)
+			return Stream{}, s.classifyTransitionFailure(ctx, id, requesterID, "stream is not idle")
 		}
 		return Stream{}, err
 	}
@@ -283,7 +287,7 @@ func (s *Service) StopStream(ctx context.Context, id, requesterID string) (Strea
 	stream, err := s.repo.StopStream(ctx, id, requesterID)
 	if err != nil {
 		if errors.Is(err, errNoRowAffected) {
-			return Stream{}, s.classifyStopFailure(ctx, id, requesterID)
+			return Stream{}, s.classifyTransitionFailure(ctx, id, requesterID, "stream is not live")
 		}
 		return Stream{}, err
 	}
@@ -291,9 +295,9 @@ func (s *Service) StopStream(ctx context.Context, id, requesterID string) (Strea
 	return stream, nil
 }
 
-// classifyStartFailure traduit un échec de transition start en 404 ou 409, à
-// partir de l'état réel du flux.
-func (s *Service) classifyStartFailure(ctx context.Context, id, requesterID string) error {
+// classifyTransitionFailure traduit un échec de transition (0 ligne mise à jour)
+// en 404 (absent/archivé/pas propriétaire) ou 409 (mauvais statut, conflictMsg).
+func (s *Service) classifyTransitionFailure(ctx context.Context, id, requesterID, conflictMsg string) error {
 	stream, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return err // NotFound (absent/archivé)
@@ -301,19 +305,11 @@ func (s *Service) classifyStartFailure(ctx context.Context, id, requesterID stri
 	if stream.UserID != requesterID {
 		return apperror.NotFound("stream not found")
 	}
-	if stream.Status != StatusIdle {
-		return apperror.Conflict("stream is not idle")
-	}
-	return apperror.Conflict("you already have a live stream")
+	return apperror.Conflict(conflictMsg)
 }
 
-func (s *Service) classifyStopFailure(ctx context.Context, id, requesterID string) error {
-	stream, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	if stream.UserID != requesterID {
-		return apperror.NotFound("stream not found")
-	}
-	return apperror.Conflict("stream is not live")
+// ReconcileLiveStreams termine les flux restés 'live' en base sans session active
+// (à appeler au démarrage — cf. divergence DB/registre après un redémarrage).
+func (s *Service) ReconcileLiveStreams(ctx context.Context) (int64, error) {
+	return s.repo.EndOrphanLiveStreams(ctx)
 }

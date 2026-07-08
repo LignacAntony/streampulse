@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,6 +13,14 @@ import (
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	streamingdb "github.com/LignacAntony/streampulse/internal/streaming/db"
 )
+
+// errNoRowAffected signale qu'aucune ligne n'a été mise à jour par une transition
+// de statut (le service classe alors 404 vs 409 via un GetByID).
+var errNoRowAffected = errors.New("streaming: no row affected")
+
+// errStreamAlreadyLive signale que la garde d'unicité « un seul live par diffuseur »
+// a rejeté un start (index unique partiel, 23505) → 409.
+var errStreamAlreadyLive = errors.New("streaming: broadcaster already has a live stream")
 
 type pgRepository struct {
 	q *streamingdb.Queries
@@ -35,7 +44,6 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Stream, erro
 	if err != nil {
 		return Stream{}, createStreamError(err)
 	}
-
 	return Stream{
 		ID:          row.ID,
 		UserID:      row.UserID,
@@ -90,20 +98,8 @@ func (r *pgRepository) GetByID(ctx context.Context, id string) (Stream, error) {
 		}
 		return Stream{}, fmt.Errorf("repo: get stream: %w", err)
 	}
-	return Stream{
-		ID:          row.ID,
-		UserID:      row.UserID,
-		Title:       row.Title,
-		Description: textValue(row.Description),
-		Category:    textValue(row.Category),
-		Status:      row.Status,
-		IsPublic:    row.IsPublic,
-		StreamKey:   row.StreamKey,
-		StartedAt:   row.StartedAt,
-		EndedAt:     row.EndedAt,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-	}, nil
+	return fullStream(row.ID, row.UserID, row.Title, row.Description, row.Category,
+		row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *pgRepository) Update(ctx context.Context, p UpdateParams) (Stream, error) {
@@ -126,20 +122,8 @@ func (r *pgRepository) Update(ctx context.Context, p UpdateParams) (Stream, erro
 		}
 		return Stream{}, fmt.Errorf("repo: update stream: %w", err)
 	}
-	return Stream{
-		ID:          row.ID,
-		UserID:      row.UserID,
-		Title:       row.Title,
-		Description: textValue(row.Description),
-		Category:    textValue(row.Category),
-		Status:      row.Status,
-		IsPublic:    row.IsPublic,
-		StreamKey:   row.StreamKey,
-		StartedAt:   row.StartedAt,
-		EndedAt:     row.EndedAt,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-	}, nil
+	return fullStream(row.ID, row.UserID, row.Title, row.Description, row.Category,
+		row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *pgRepository) Archive(ctx context.Context, id, userID string) (string, error) {
@@ -160,12 +144,6 @@ func (r *pgRepository) Archive(ctx context.Context, id, userID string) (string, 
 	return archivedID, nil
 }
 
-// uuidParam convertit un UUID provenant d'une source de confiance (JWT) ;
-// une valeur invalide est un bug, d'où le panic.
-// errNoRowAffected signale qu'aucune ligne n'a été mise à jour par une
-// transition de statut (le service classe alors 404 vs 409 via un GetByID).
-var errNoRowAffected = errors.New("streaming: no row affected")
-
 func (r *pgRepository) StartStream(ctx context.Context, id, userID string) (Stream, error) {
 	uid, ok := parseUUID(id)
 	if !ok {
@@ -173,25 +151,17 @@ func (r *pgRepository) StartStream(ctx context.Context, id, userID string) (Stre
 	}
 	row, err := r.q.StartStream(ctx, streamingdb.StartStreamParams{ID: uid, UserID: uuidParam(userID)})
 	if err != nil {
+		if isUniqueViolation(err) {
+			// L'index unique partiel a rejeté un 2e live concurrent (write-skew).
+			return Stream{}, errStreamAlreadyLive
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Stream{}, errNoRowAffected
 		}
 		return Stream{}, fmt.Errorf("repo: start stream: %w", err)
 	}
-	return Stream{
-		ID:          row.ID,
-		UserID:      row.UserID,
-		Title:       row.Title,
-		Description: textValue(row.Description),
-		Category:    textValue(row.Category),
-		Status:      row.Status,
-		IsPublic:    row.IsPublic,
-		StreamKey:   row.StreamKey,
-		StartedAt:   row.StartedAt,
-		EndedAt:     row.EndedAt,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-	}, nil
+	return fullStream(row.ID, row.UserID, row.Title, row.Description, row.Category,
+		row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *pgRepository) StopStream(ctx context.Context, id, userID string) (Stream, error) {
@@ -206,20 +176,37 @@ func (r *pgRepository) StopStream(ctx context.Context, id, userID string) (Strea
 		}
 		return Stream{}, fmt.Errorf("repo: stop stream: %w", err)
 	}
+	return fullStream(row.ID, row.UserID, row.Title, row.Description, row.Category,
+		row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt, row.CreatedAt, row.UpdatedAt), nil
+}
+
+// EndOrphanLiveStreams termine les flux restés 'live' en base sans session active
+// (réconciliation au démarrage après un redémarrage du process).
+func (r *pgRepository) EndOrphanLiveStreams(ctx context.Context) (int64, error) {
+	n, err := r.q.EndOrphanLiveStreams(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("repo: end orphan live streams: %w", err)
+	}
+	return n, nil
+}
+
+// fullStream construit une entité Stream à partir des colonnes complètes d'une
+// ligne (mapping partagé par GetByID/Update/StartStream/StopStream).
+func fullStream(id, userID, title string, description, category pgtype.Text, status string, isPublic bool, streamKey string, startedAt, endedAt *time.Time, createdAt, updatedAt time.Time) Stream {
 	return Stream{
-		ID:          row.ID,
-		UserID:      row.UserID,
-		Title:       row.Title,
-		Description: textValue(row.Description),
-		Category:    textValue(row.Category),
-		Status:      row.Status,
-		IsPublic:    row.IsPublic,
-		StreamKey:   row.StreamKey,
-		StartedAt:   row.StartedAt,
-		EndedAt:     row.EndedAt,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-	}, nil
+		ID:          id,
+		UserID:      userID,
+		Title:       title,
+		Description: textValue(description),
+		Category:    textValue(category),
+		Status:      status,
+		IsPublic:    isPublic,
+		StreamKey:   streamKey,
+		StartedAt:   startedAt,
+		EndedAt:     endedAt,
+		CreatedAt:   createdAt,
+		UpdatedAt:   updatedAt,
+	}
 }
 
 func uuidParam(s string) pgtype.UUID {
@@ -261,9 +248,17 @@ func createStreamError(err error) error {
 }
 
 func isForeignKeyViolation(err error) bool {
+	return isPgError(err, "23503")
+}
+
+func isUniqueViolation(err error) bool {
+	return isPgError(err, "23505")
+}
+
+func isPgError(err error, sqlState string) bool {
 	var pgErr interface{ SQLState() string }
 	if errors.As(err, &pgErr) {
-		return pgErr.SQLState() == "23503"
+		return pgErr.SQLState() == sqlState
 	}
 	return false
 }

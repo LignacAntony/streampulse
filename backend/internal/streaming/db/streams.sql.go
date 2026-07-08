@@ -99,6 +99,23 @@ func (q *Queries) CreateStream(ctx context.Context, arg CreateStreamParams) (Cre
 	return i, err
 }
 
+const endOrphanLiveStreams = `-- name: EndOrphanLiveStreams :execrows
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE status = 'live' AND archived_at IS NULL
+`
+
+// Réconciliation au démarrage : les sessions LiveSessions sont en mémoire et
+// reparties vides après un redémarrage ; on termine les flux restés 'live' en
+// base (orphelins sans session ni audio).
+func (q *Queries) EndOrphanLiveStreams(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, endOrphanLiveStreams)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getStreamByID = `-- name: GetStreamByID :one
 SELECT id::text AS id, user_id::text AS user_id, title, description, category,
        status, is_public, stream_key, started_at, ended_at, created_at, updated_at
@@ -209,10 +226,6 @@ WHERE s.id = $1::uuid
   AND s.user_id = $2::uuid
   AND s.status = 'idle'
   AND s.archived_at IS NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM streams o
-    WHERE o.user_id = $2::uuid AND o.status = 'live' AND o.archived_at IS NULL
-  )
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at
 `
@@ -237,9 +250,9 @@ type StartStreamRow struct {
 	UpdatedAt   time.Time
 }
 
-// Passe un flux idle -> live. Garde atomique : réservé au propriétaire, flux non
-// archivé, statut idle, ET le diffuseur ne doit avoir aucun autre flux live
-// (règle un-seul-live-à-la-fois). Aucune ligne mise à jour sinon.
+// Passe un flux idle -> live (propriétaire, non archivé). La règle « un seul live
+// par diffuseur » est garantie atomiquement par l'index unique partiel
+// streams_one_live_per_user (000016) : un 2e live concurrent lève un 23505.
 func (q *Queries) StartStream(ctx context.Context, arg StartStreamParams) (StartStreamRow, error) {
 	row := q.db.QueryRow(ctx, startStream, arg.ID, arg.UserID)
 	var i StartStreamRow
@@ -263,7 +276,8 @@ func (q *Queries) StartStream(ctx context.Context, arg StartStreamParams) (Start
 const stopStream = `-- name: StopStream :one
 UPDATE streams
 SET status = 'ended', ended_at = NOW(), updated_at = NOW()
-WHERE id = $1::uuid AND user_id = $2::uuid AND status = 'live'
+WHERE id = $1::uuid AND user_id = $2::uuid
+  AND status = 'live' AND archived_at IS NULL
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at
 `
@@ -288,7 +302,7 @@ type StopStreamRow struct {
 	UpdatedAt   time.Time
 }
 
-// Passe un flux live -> ended. Réservé au propriétaire, statut live.
+// Passe un flux live -> ended. Réservé au propriétaire, statut live, non archivé.
 func (q *Queries) StopStream(ctx context.Context, arg StopStreamParams) (StopStreamRow, error) {
 	row := q.db.QueryRow(ctx, stopStream, arg.ID, arg.UserID)
 	var i StopStreamRow

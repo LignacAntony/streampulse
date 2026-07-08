@@ -151,6 +151,9 @@ type fakeRepo struct {
 	startErr error
 	stopRet  Stream
 	stopErr  error
+
+	orphanEnded int64
+	orphanErr   error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
@@ -191,6 +194,10 @@ func (f *fakeRepo) StartStream(_ context.Context, id, _ string) (Stream, error) 
 func (f *fakeRepo) StopStream(_ context.Context, id, _ string) (Stream, error) {
 	f.gotID = id
 	return f.stopRet, f.stopErr
+}
+
+func (f *fakeRepo) EndOrphanLiveStreams(_ context.Context) (int64, error) {
+	return f.orphanEnded, f.orphanErr
 }
 
 type fakeKeys struct {
@@ -445,5 +452,33 @@ func TestService_StopStream_NotLive_Conflict(t *testing.T) {
 	_, err := svc.StopStream(context.Background(), "s1", "u1")
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("code = %v, want conflict", err)
+	}
+}
+
+func TestService_StartStream_AlreadyLive_UniqueViolation(t *testing.T) {
+	// L'index unique partiel rejette un 2e live concurrent -> errStreamAlreadyLive.
+	repo := &fakeRepo{startErr: errStreamAlreadyLive}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	_, err := svc.StartStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict (déjà un live)", err)
+	}
+	if len(sessions.started) != 0 {
+		t.Error("aucune session ne doit démarrer sur échec")
+	}
+}
+
+func TestService_ReconcileLiveStreams(t *testing.T) {
+	repo := &fakeRepo{orphanEnded: 3}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	n, err := svc.ReconcileLiveStreams(context.Background())
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("n = %d, want 3", n)
 	}
 }

@@ -25,7 +25,10 @@ func seedStreams(ctx context.Context, tx pgx.Tx) error {
 		category string
 		status   string
 	}{
-		{"Morning Jazz Session", "music", "live"},
+		// Statut 'idle' : un flux 'live' seedé serait un orphelin sans session en
+		// mémoire (terminé au boot par la réconciliation), et bloquerait la règle
+		// un-seul-live. Le diffuseur peut le passer live via PATCH .../start.
+		{"Morning Jazz Session", "music", "idle"},
 		{"Tech Talk Live", "technology", "ended"},
 		{"Chill Beats Radio", "music", "idle"},
 	}

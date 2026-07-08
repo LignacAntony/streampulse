@@ -20,6 +20,10 @@ const maxCreateStreamBodyBytes = 1 << 20 // 1 MiB
 // idle vivantes à travers proxies/LB (doit rester < aux timeouts idle amont).
 const sseKeepAliveInterval = 15 * time.Second
 
+// sseWriteTimeout borne chaque écriture SSE : un lecteur lent/half-open ne doit
+// pas pouvoir bloquer indéfiniment le Write (fuite de goroutine/connexion).
+const sseWriteTimeout = 10 * time.Second
+
 // StreamService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type StreamService interface {
 	CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error)
@@ -371,35 +375,44 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 		httpjson.WriteError(w, r, apperror.Internal("streaming unsupported", nil))
 		return
 	}
-	// Connexion longue : neutralise la WriteTimeout du serveur pour ce handler.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	rc := http.NewResponseController(w)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 	flusher.Flush()
 
 	ticker := time.NewTicker(sseKeepAliveInterval)
 	defer ticker.Stop()
+
+	// write borne chaque écriture par une deadline puis flush ; retourne false si
+	// l'écriture échoue (client déconnecté ou lecteur bloqué au-delà du délai).
+	write := func(payload string) bool {
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		if _, err := fmt.Fprint(w, payload); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
-				return // client déconnecté
+			if !write(": keepalive\n\n") {
+				return
 			}
-			flusher.Flush()
 		case ev, ok := <-ch:
 			if !ok {
 				return // session terminée : le canal est fermé
 			}
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: {\"type\":%q}\n\n", ev.Type, ev.Type); err != nil {
-				return // client déconnecté
+			if !write(fmt.Sprintf("event: %s\ndata: {\"type\":%q}\n\n", ev.Type, ev.Type)) {
+				return // client déconnecté ou écriture expirée
 			}
-			flusher.Flush()
 		}
 	}
 }

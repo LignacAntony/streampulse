@@ -80,6 +80,15 @@ func run() error {
 	streamingSvc := streaming.NewService(streamingRepo, streamingKeys, streamingSessions)
 	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL, streamingSessions)
 
+	// Réconciliation : les sessions LiveSessions sont en mémoire et reparties
+	// vides ; on termine les flux restés 'live' en base (orphelins d'un précédent
+	// process) pour éviter une divergence DB/registre.
+	if n, err := streamingSvc.ReconcileLiveStreams(ctx); err != nil {
+		return fmt.Errorf("reconcile live streams: %w", err)
+	} else if n > 0 {
+		log.Printf("réconciliation: %d flux live orphelin(s) terminé(s)", n)
+	}
+
 	broadcasterRepo := broadcaster.NewRepository(pool)
 	broadcasterSvc := broadcaster.NewService(broadcasterRepo)
 	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
@@ -172,6 +181,9 @@ func run() error {
 	}
 	log.Println("arrêt en cours…")
 
+	// StopAll d'abord : ferme les canaux SSE pour débloquer les handlers en vol
+	// (srv.Shutdown n'annule pas les contextes de requête). Shutdown draine ensuite
+	// les connexions, puis Wait garantit la fin des goroutines de session.
 	streamingSessions.StopAll()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -179,5 +191,6 @@ func run() error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("arrêt serveur: %w", err)
 	}
+	streamingSessions.Wait()
 	return nil
 }
