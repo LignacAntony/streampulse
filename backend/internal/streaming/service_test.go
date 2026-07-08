@@ -175,9 +175,12 @@ func (f *fakeRepo) Update(_ context.Context, p UpdateParams) (Stream, error) {
 	return f.updateRet, f.updateErr
 }
 
-func (f *fakeRepo) Archive(_ context.Context, id, _ string) error {
+func (f *fakeRepo) Archive(_ context.Context, id, _ string) (string, error) {
 	f.gotID = id
-	return f.archiveErr
+	if f.archiveErr != nil {
+		return "", f.archiveErr
+	}
+	return id, nil
 }
 
 func (f *fakeRepo) StartStream(_ context.Context, id, _ string) (Stream, error) {
@@ -355,6 +358,19 @@ func TestService_ArchiveStream_Delegates(t *testing.T) {
 	}
 	if repo.gotID != "s1" {
 		t.Errorf("id transmis = %q, want s1", repo.gotID)
+	}
+}
+
+func TestService_ArchiveStream_StopsSession(t *testing.T) {
+	repo := &fakeRepo{} // archiveErr nil -> succès, renvoie l'id
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	if err := svc.ArchiveStream(context.Background(), "s1", "u1"); err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(sessions.stopped) != 1 || sessions.stopped[0] != "s1" {
+		t.Errorf("archive doit stopper la session du flux: %v", sessions.stopped)
 	}
 }
 

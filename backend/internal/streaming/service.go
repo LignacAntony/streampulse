@@ -160,7 +160,7 @@ type Repository interface {
 	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
 	GetByID(ctx context.Context, id string) (Stream, error)
 	Update(ctx context.Context, p UpdateParams) (Stream, error)
-	Archive(ctx context.Context, id, userID string) error
+	Archive(ctx context.Context, id, userID string) (string, error)
 	StartStream(ctx context.Context, id, userID string) (Stream, error)
 	StopStream(ctx context.Context, id, userID string) (Stream, error)
 }
@@ -249,9 +249,16 @@ func (s *Service) UpdateStream(ctx context.Context, id, requesterID string, in U
 	})
 }
 
-// ArchiveStream effectue le soft delete du flux du propriétaire (404 sinon).
+// ArchiveStream effectue le soft delete du flux du propriétaire (404 sinon) et,
+// si le flux était en direct, libère sa session (goroutine + abonnés SSE notifiés).
+// La query a déjà ramené status à 'ended' pour un flux live archivé.
 func (s *Service) ArchiveStream(ctx context.Context, id, requesterID string) error {
-	return s.repo.Archive(ctx, id, requesterID)
+	archivedID, err := s.repo.Archive(ctx, id, requesterID)
+	if err != nil {
+		return err
+	}
+	s.sessions.Stop(archivedID) // no-op si aucune session active
+	return nil
 }
 
 // StartStream fait passer un flux idle -> live (propriétaire uniquement) puis

@@ -12,10 +12,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const archiveStream = `-- name: ArchiveStream :execrows
+const archiveStream = `-- name: ArchiveStream :one
 UPDATE streams
-SET archived_at = NOW(), updated_at = NOW()
+SET archived_at = NOW(),
+    updated_at = NOW(),
+    status = CASE WHEN status = 'live' THEN 'ended' ELSE status END
 WHERE id = $1::uuid AND user_id = $2::uuid AND archived_at IS NULL
+RETURNING id::text AS id
 `
 
 type ArchiveStreamParams struct {
@@ -23,12 +26,13 @@ type ArchiveStreamParams struct {
 	UserID pgtype.UUID
 }
 
-func (q *Queries) ArchiveStream(ctx context.Context, arg ArchiveStreamParams) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveStream, arg.ID, arg.UserID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+// Soft delete. Si le flux était en direct, on le termine (status -> ended) pour
+// ne pas laisser de ligne archivée « live » (cf. garde un-seul-live).
+func (q *Queries) ArchiveStream(ctx context.Context, arg ArchiveStreamParams) (string, error) {
+	row := q.db.QueryRow(ctx, archiveStream, arg.ID, arg.UserID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createStream = `-- name: CreateStream :one
@@ -207,7 +211,7 @@ WHERE s.id = $1::uuid
   AND s.archived_at IS NULL
   AND NOT EXISTS (
     SELECT 1 FROM streams o
-    WHERE o.user_id = $2::uuid AND o.status = 'live'
+    WHERE o.user_id = $2::uuid AND o.status = 'live' AND o.archived_at IS NULL
   )
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at

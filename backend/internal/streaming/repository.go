@@ -142,22 +142,22 @@ func (r *pgRepository) Update(ctx context.Context, p UpdateParams) (Stream, erro
 	}, nil
 }
 
-func (r *pgRepository) Archive(ctx context.Context, id, userID string) error {
+func (r *pgRepository) Archive(ctx context.Context, id, userID string) (string, error) {
 	uid, ok := parseUUID(id)
 	if !ok {
-		return apperror.NotFound("stream not found")
+		return "", apperror.NotFound("stream not found")
 	}
-	n, err := r.q.ArchiveStream(ctx, streamingdb.ArchiveStreamParams{
+	archivedID, err := r.q.ArchiveStream(ctx, streamingdb.ArchiveStreamParams{
 		ID:     uid,
 		UserID: uuidParam(userID),
 	})
 	if err != nil {
-		return fmt.Errorf("repo: archive stream: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", apperror.NotFound("stream not found")
+		}
+		return "", fmt.Errorf("repo: archive stream: %w", err)
 	}
-	if n == 0 {
-		return apperror.NotFound("stream not found")
-	}
-	return nil
+	return archivedID, nil
 }
 
 // uuidParam convertit un UUID provenant d'une source de confiance (JWT) ;

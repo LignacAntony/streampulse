@@ -38,10 +38,15 @@ WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid AND archived
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
 
--- name: ArchiveStream :execrows
+-- name: ArchiveStream :one
+-- Soft delete. Si le flux était en direct, on le termine (status -> ended) pour
+-- ne pas laisser de ligne archivée « live » (cf. garde un-seul-live).
 UPDATE streams
-SET archived_at = NOW(), updated_at = NOW()
-WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid AND archived_at IS NULL;
+SET archived_at = NOW(),
+    updated_at = NOW(),
+    status = CASE WHEN status = 'live' THEN 'ended' ELSE status END
+WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid AND archived_at IS NULL
+RETURNING id::text AS id;
 
 -- name: StartStream :one
 -- Passe un flux idle -> live. Garde atomique : réservé au propriétaire, flux non
@@ -55,7 +60,7 @@ WHERE s.id = sqlc.arg(id)::uuid
   AND s.archived_at IS NULL
   AND NOT EXISTS (
     SELECT 1 FROM streams o
-    WHERE o.user_id = sqlc.arg(user_id)::uuid AND o.status = 'live'
+    WHERE o.user_id = sqlc.arg(user_id)::uuid AND o.status = 'live' AND o.archived_at IS NULL
   )
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
