@@ -16,6 +16,10 @@ import (
 
 const maxCreateStreamBodyBytes = 1 << 20 // 1 MiB
 
+// sseKeepAliveInterval : commentaire SSE périodique pour garder les connexions
+// idle vivantes à travers proxies/LB (doit rester < aux timeouts idle amont).
+const sseKeepAliveInterval = 15 * time.Second
+
 // StreamService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type StreamService interface {
 	CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error)
@@ -376,10 +380,18 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
+	ticker := time.NewTicker(sseKeepAliveInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-ticker.C:
+			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
+				return // client déconnecté
+			}
+			flusher.Flush()
 		case ev, ok := <-ch:
 			if !ok {
 				return // session terminée : le canal est fermé
