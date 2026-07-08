@@ -3,9 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
@@ -28,7 +32,8 @@ func main() {
 }
 
 func run() error {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -72,7 +77,6 @@ func run() error {
 	streamingRepo := streaming.NewRepository(pool)
 	streamingKeys := streaming.NewKeyGenerator()
 	streamingSessions := streaming.NewLiveSessions(ctx)
-	defer streamingSessions.StopAll()
 	streamingSvc := streaming.NewService(streamingRepo, streamingKeys, streamingSessions)
 	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL, streamingSessions)
 
@@ -151,10 +155,22 @@ func run() error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	log.Printf("API StreamPulse démarrée sur %s (env=%s)", cfg.HTTPAddr(), cfg.GoEnv)
-	if err := srv.ListenAndServe(); err != nil {
-		return fmt.Errorf("serveur http: %w", err)
-	}
+	go func() {
+		log.Printf("API StreamPulse démarrée sur %s (env=%s)", cfg.HTTPAddr(), cfg.GoEnv)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("serveur http: %v", err)
+		}
+	}()
 
+	<-ctx.Done() // SIGINT / SIGTERM
+	log.Println("arrêt en cours…")
+
+	streamingSessions.StopAll()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("arrêt serveur: %w", err)
+	}
 	return nil
 }
