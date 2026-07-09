@@ -60,7 +60,7 @@ Le ticket emploie « inactif » ; le schéma utilise déjà `idle` (`CHECK statu
 | Méthode | Route | Auth | Comportement |
 |---|---|---|---|
 | `POST` | `/api/streams` | broadcaster | crée un flux `idle`, **201** objet complet (+ `stream_key` + `stream_source_url`) |
-| `GET` | `/api/streams` | auth | liste paginée (`?limit`=20 max 100, `?offset`) des flux `is_public AND status='live' AND archived_at IS NULL`, **résumés sans secret** |
+| `GET` | `/api/streams` | public | liste paginée (`?limit`=20 max 100, `?offset`) des flux `is_public AND status='live' AND archived_at IS NULL`, **résumés sans secret** ; découverte accessible en invité (US-04-01) |
 | `GET` | `/api/streams/{id}` | auth | **réponse unique** (`StreamResponse`) : propriétaire → `stream_key` + `stream_source_url` remplis ; tiers → même objet, secrets à `null` ; privé d'un autre / archivé / absent → **404** |
 | `PUT` | `/api/streams/{id}` | auth, owner | remplacement complet (`title` + `is_public` requis, `description`/`category` optionnels), **404** sinon |
 | `DELETE` | `/api/streams/{id}` | auth, owner | soft delete, **204**, **404** sinon |

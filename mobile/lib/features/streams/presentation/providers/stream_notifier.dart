@@ -11,15 +11,20 @@ class StreamNotifier extends ChangeNotifier {
   final StreamRepository _repository;
 
   static const Duration pollInterval = Duration(seconds: 10);
+  static const int pageSize = 20;
 
   List<LiveStream> _streams = const [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
   bool _hasError = false;
+  bool _hasMore = false;
   Timer? _timer;
 
   List<LiveStream> get streams => _streams;
   bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore;
   bool get hasError => _hasError;
+  bool get hasMore => _hasMore;
 
   bool get isEmpty => !_isLoading && !_hasError && _streams.isEmpty;
 
@@ -27,16 +32,38 @@ class StreamNotifier extends ChangeNotifier {
     _isLoading = true;
     _hasError = false;
     notifyListeners();
-    await _fetch();
+    await _refreshLoaded();
     _isLoading = false;
     notifyListeners();
   }
 
-  Future<void> refresh() => _fetch();
+  Future<void> refresh() => _refreshLoaded();
 
-  Future<void> _fetch() async {
+  Future<void> loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    _isLoadingMore = true;
+    notifyListeners();
     try {
-      _streams = await _repository.listLiveStreams();
+      final page = await _repository.listLiveStreams(
+        limit: pageSize,
+        offset: _streams.length,
+      );
+      _streams = [..._streams, ...page];
+      _hasMore = page.length >= pageSize;
+      _hasError = false;
+    } catch (_) {
+      _hasError = true;
+    }
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
+  Future<void> _refreshLoaded() async {
+    final limit = _streams.length < pageSize ? pageSize : _streams.length;
+    try {
+      final page = await _repository.listLiveStreams(limit: limit, offset: 0);
+      _streams = page;
+      _hasMore = page.length >= limit;
       _hasError = false;
     } catch (_) {
       _hasError = true;
@@ -45,7 +72,7 @@ class StreamNotifier extends ChangeNotifier {
   }
 
   void startPolling() {
-    _timer ??= Timer.periodic(pollInterval, (_) => _fetch());
+    _timer ??= Timer.periodic(pollInterval, (_) => _refreshLoaded());
   }
 
   void stopPolling() {

@@ -13,20 +13,45 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final ScrollController _scrollController = ScrollController();
+  late final StreamNotifier _notifier;
+  late final AppLifecycleListener _lifecycleListener;
+
   @override
   void initState() {
     super.initState();
-    final notifier = context.read<StreamNotifier>();
+    _notifier = context.read<StreamNotifier>();
+    _scrollController.addListener(_onScroll);
+    _lifecycleListener = AppLifecycleListener(onStateChange: _onLifecycleChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      notifier.load();
-      notifier.startPolling();
+      _notifier.load();
+      _notifier.startPolling();
     });
   }
 
   @override
   void dispose() {
-    context.read<StreamNotifier>().stopPolling();
+    _lifecycleListener.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _notifier.stopPolling();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_notifier.hasMore || _notifier.isLoadingMore) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 200) {
+      _notifier.loadMore();
+    }
+  }
+
+  void _onLifecycleChange(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _notifier.startPolling();
+    } else {
+      _notifier.stopPolling();
+    }
   }
 
   @override
@@ -67,12 +92,77 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return ListView.separated(
+    final list = ListView.separated(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: streams.length,
+      itemCount: streams.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) => _StreamTile(stream: streams[index]),
+      itemBuilder: (context, index) {
+        if (index < streams.length) {
+          return _StreamTile(stream: streams[index]);
+        }
+        return _ListFooter(notifier: notifier);
+      },
     );
+
+    if (notifier.hasError) {
+      return Column(
+        children: [const _StaleBanner(), Expanded(child: list)],
+      );
+    }
+    return list;
+  }
+}
+
+class _StaleBanner extends StatelessWidget {
+  const _StaleBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      width: double.infinity,
+      color: colors.errorContainer,
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off_outlined, size: 16, color: colors.onErrorContainer),
+          const SizedBox(width: 8),
+          Text(
+            'Hors ligne — liste peut-être périmée',
+            style: text.bodySmall?.copyWith(color: colors.onErrorContainer),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListFooter extends StatelessWidget {
+  const _ListFooter({required this.notifier});
+
+  final StreamNotifier notifier;
+
+  @override
+  Widget build(BuildContext context) {
+    if (notifier.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (notifier.hasMore) {
+      return Center(
+        child: OutlinedButton(
+          onPressed: notifier.loadMore,
+          child: const Text('Charger plus'),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
