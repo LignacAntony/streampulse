@@ -194,7 +194,11 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — réponse unique : propriétaire = `stream_key`/`stream_source_url` remplis, tiers = ces secrets à `null`, ou 404 (privé) |
 | PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
 | DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
+| PATCH | `/api/streams/{id}/start` | `Handler.Start` | Oui — rôle `broadcaster`, owner ; `idle→live` (409 si pas idle ou déjà un live) |
+| PATCH | `/api/streams/{id}/stop` | `Handler.Stop` | Oui — rôle `broadcaster`, owner ; `live→ended` (409 si pas live) |
+| GET | `/api/streams/{id}/events` | `Handler.Events` | Oui (JWT) — flux **SSE**, event `ended` à l'arrêt (STR-77) |
 
+- Cycle de vie du direct (STR-77) : `start`/`stop` = endpoints dédiés (le PUT ne touche pas au statut) ; **un seul flux live par diffuseur** ; goroutines gérées par `LiveSessions` (context + mutex). Détails [ADR 013](docs/adr/013-domaine-streaming.md) §7.
 - Titre **non unique** (contrainte retirée en `000015`) : pas de 409 sur le titre.
 - `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
 

@@ -104,6 +104,46 @@ La Clean Architecture / DDD du CDC (§4.2) **n'est pas adoptée** ici, pour rest
 reste du backend et éviter le boilerplate usecase (cf. ADR 008). Écart tracé dans
 `docs/cdc-conflits-codebase.md`.
 
+### 7. Cycle de vie du direct (STR-77)
+
+Le passage `idle → live → ended` se fait par des **endpoints dédiés** (pas par le PUT, qui ne
+touche jamais au statut) :
+
+| Méthode | Route | Effet |
+|---|---|---|
+| `PATCH` | `/api/streams/{id}/start` | `idle → live`, `started_at=NOW()` ; **409** si pas idle ou si le diffuseur a déjà un flux live |
+| `PATCH` | `/api/streams/{id}/stop` | `live → ended`, `ended_at=NOW()` ; **409** si pas live |
+| `GET` | `/api/streams/{id}/events` | flux **SSE** ; event `ended` à l'arrêt |
+
+- **Transitions** : `start` = `idle → live`, `stop` = `live → ended` ; `ended` est terminal
+  (re-streamer = créer un nouveau flux) ; owner-only (404 sinon).
+- **Un seul live par diffuseur** : garanti **atomiquement** par un **index unique partiel**
+  `streams_one_live_per_user` (`UNIQUE(user_id) WHERE status='live' AND archived_at IS NULL`,
+  migration `000016`). Le `NOT EXISTS` seul ne suffisait pas (write-skew sous READ COMMITTED) ;
+  un 2e `start` concurrent lève un `23505` → 409.
+- **Concurrence** : composant `LiveSessions` (in-memory, `sync.Mutex`) = `map[streamID]*session`,
+  chaque session portant le `context.CancelFunc` de sa goroutine et ses abonnés SSE. `start`
+  enregistre + lance la goroutine (**placeholder** `<-ctx.Done()` que STR-70/71 rempliront avec la
+  segmentation HLS), `stop` annule + notifie + retire. Un flag `closed` (sous `s.mu`) évite la
+  course Subscribe/Stop (abonné tardif jamais fermé). Arrêt serveur : `StopAll()` (débloque les SSE)
+  → `srv.Shutdown()` → `Wait()` (drain). Absence de fuite vérifiée par test (drain déterministe via
+  `LiveSessions.Wait`, STR-86).
+- **Registre en mémoire = source de vérité secondaire** : au **redémarrage**, `LiveSessions` repart
+  vide alors que des lignes peuvent rester `live` en base → **réconciliation au boot**
+  (`EndOrphanLiveStreams` passe les `live` orphelins à `ended`). Persiste aussi une fenêtre µs entre
+  le commit `live` de `start` et `sessions.Start` (un `GET /events` peut voir `live` mais `Subscribe`
+  → 409 transitoire) ; acceptable, le client retente. Limite structurelle : mono-instance (cf.
+  suivis hors scope pour le multi-réplica).
+- **Notification** : **SSE** (`text/event-stream`, stdlib, zéro dépendance) plutôt que WebSocket —
+  la notif est unidirectionnelle serveur→client. Un commentaire keep-alive est émis toutes les 15 s
+  (timeouts idle des proxies) et **chaque écriture est bornée** par une deadline courte
+  (`http.NewResponseController.SetWriteDeadline`) pour qu'un lecteur lent/half-open ne bloque pas la
+  goroutine indéfiniment.
+- ⚠️ **Client mobile** : la méthode `streamEvents` générée par openapi-generator (`dart-dio`)
+  **bufferise** la réponse (`Future<Response<String>>`) et n'est **pas** utilisable en streaming.
+  La consommation SSE côté Flutter devra être écrite à la main (`Dio` + `ResponseType.stream`) dans
+  le ticket mobile dédié (écran auditeur) — hors périmètre STR-77.
+
 ---
 
 ## Alternatives considérées

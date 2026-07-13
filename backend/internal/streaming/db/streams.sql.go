@@ -12,10 +12,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const archiveStream = `-- name: ArchiveStream :execrows
+const archiveStream = `-- name: ArchiveStream :one
 UPDATE streams
-SET archived_at = NOW(), updated_at = NOW()
+SET archived_at = NOW(),
+    updated_at = NOW(),
+    status = CASE WHEN status = 'live' THEN 'ended' ELSE status END
 WHERE id = $1::uuid AND user_id = $2::uuid AND archived_at IS NULL
+RETURNING id::text AS id
 `
 
 type ArchiveStreamParams struct {
@@ -23,12 +26,13 @@ type ArchiveStreamParams struct {
 	UserID pgtype.UUID
 }
 
-func (q *Queries) ArchiveStream(ctx context.Context, arg ArchiveStreamParams) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveStream, arg.ID, arg.UserID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+// Soft delete. Si le flux était en direct, on le termine (status -> ended) pour
+// ne pas laisser de ligne archivée « live » (cf. garde un-seul-live).
+func (q *Queries) ArchiveStream(ctx context.Context, arg ArchiveStreamParams) (string, error) {
+	row := q.db.QueryRow(ctx, archiveStream, arg.ID, arg.UserID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createStream = `-- name: CreateStream :one
@@ -93,6 +97,23 @@ func (q *Queries) CreateStream(ctx context.Context, arg CreateStreamParams) (Cre
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const endOrphanLiveStreams = `-- name: EndOrphanLiveStreams :execrows
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE status = 'live' AND archived_at IS NULL
+`
+
+// Réconciliation au démarrage : les sessions LiveSessions sont en mémoire et
+// reparties vides après un redémarrage ; on termine les flux restés 'live' en
+// base (orphelins sans session ni audio).
+func (q *Queries) EndOrphanLiveStreams(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, endOrphanLiveStreams)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getStreamByID = `-- name: GetStreamByID :one
@@ -196,6 +217,110 @@ func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveS
 		return nil, err
 	}
 	return items, nil
+}
+
+const startStream = `-- name: StartStream :one
+UPDATE streams AS s
+SET status = 'live', started_at = NOW(), updated_at = NOW()
+WHERE s.id = $1::uuid
+  AND s.user_id = $2::uuid
+  AND s.status = 'idle'
+  AND s.archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+`
+
+type StartStreamParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+type StartStreamRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StreamKey   string
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Passe un flux idle -> live (propriétaire, non archivé). La règle « un seul live
+// par diffuseur » est garantie atomiquement par l'index unique partiel
+// streams_one_live_per_user (000016) : un 2e live concurrent lève un 23505.
+func (q *Queries) StartStream(ctx context.Context, arg StartStreamParams) (StartStreamRow, error) {
+	row := q.db.QueryRow(ctx, startStream, arg.ID, arg.UserID)
+	var i StartStreamRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.Status,
+		&i.IsPublic,
+		&i.StreamKey,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const stopStream = `-- name: StopStream :one
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE id = $1::uuid AND user_id = $2::uuid
+  AND status = 'live' AND archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+`
+
+type StopStreamParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+type StopStreamRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StreamKey   string
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Passe un flux live -> ended. Réservé au propriétaire, statut live, non archivé.
+func (q *Queries) StopStream(ctx context.Context, arg StopStreamParams) (StopStreamRow, error) {
+	row := q.db.QueryRow(ctx, stopStream, arg.ID, arg.UserID)
+	var i StopStreamRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.Status,
+		&i.IsPublic,
+		&i.StreamKey,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateStream = `-- name: UpdateStream :one

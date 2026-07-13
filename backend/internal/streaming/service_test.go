@@ -146,6 +146,14 @@ type fakeRepo struct {
 	updateRet  Stream
 	updateErr  error
 	archiveErr error
+
+	startRet Stream
+	startErr error
+	stopRet  Stream
+	stopErr  error
+
+	orphanEnded int64
+	orphanErr   error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
@@ -170,9 +178,26 @@ func (f *fakeRepo) Update(_ context.Context, p UpdateParams) (Stream, error) {
 	return f.updateRet, f.updateErr
 }
 
-func (f *fakeRepo) Archive(_ context.Context, id, _ string) error {
+func (f *fakeRepo) Archive(_ context.Context, id, _ string) (string, error) {
 	f.gotID = id
-	return f.archiveErr
+	if f.archiveErr != nil {
+		return "", f.archiveErr
+	}
+	return id, nil
+}
+
+func (f *fakeRepo) StartStream(_ context.Context, id, _ string) (Stream, error) {
+	f.gotID = id
+	return f.startRet, f.startErr
+}
+
+func (f *fakeRepo) StopStream(_ context.Context, id, _ string) (Stream, error) {
+	f.gotID = id
+	return f.stopRet, f.stopErr
+}
+
+func (f *fakeRepo) EndOrphanLiveStreams(_ context.Context) (int64, error) {
+	return f.orphanEnded, f.orphanErr
 }
 
 type fakeKeys struct {
@@ -182,9 +207,17 @@ type fakeKeys struct {
 
 func (f fakeKeys) NewStreamKey() (string, error) { return f.key, f.err }
 
+type fakeSessions struct {
+	started []string
+	stopped []string
+}
+
+func (f *fakeSessions) Start(id string) { f.started = append(f.started, id) }
+func (f *fakeSessions) Stop(id string)  { f.stopped = append(f.stopped, id) }
+
 func TestService_CreateStream_Success(t *testing.T) {
 	repo := &fakeRepo{ret: Stream{ID: "s1", Title: "Mon flux"}}
-	svc := NewService(repo, fakeKeys{key: "SECRET_KEY"})
+	svc := NewService(repo, fakeKeys{key: "SECRET_KEY"}, &fakeSessions{})
 
 	got, err := svc.CreateStream(context.Background(), CreateStreamInput{
 		UserID:   "u1",
@@ -216,7 +249,7 @@ func TestService_CreateStream_Success(t *testing.T) {
 
 func TestService_CreateStream_ValidationError_NoRepoCall(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo, fakeKeys{key: "K"})
+	svc := NewService(repo, fakeKeys{key: "K"}, &fakeSessions{})
 
 	_, err := svc.CreateStream(context.Background(), CreateStreamInput{Title: "ab"})
 	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
@@ -229,7 +262,7 @@ func TestService_CreateStream_ValidationError_NoRepoCall(t *testing.T) {
 
 func TestService_CreateStream_KeyGenError(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo, fakeKeys{err: errors.New("rand failed")})
+	svc := NewService(repo, fakeKeys{err: errors.New("rand failed")}, &fakeSessions{})
 
 	_, err := svc.CreateStream(context.Background(), CreateStreamInput{Title: "abc"})
 	if !apperror.IsCode(err, apperror.CodeInternal) {
@@ -242,7 +275,7 @@ func TestService_CreateStream_KeyGenError(t *testing.T) {
 
 func TestService_CreateStream_RepoErrorPropagated(t *testing.T) {
 	repo := &fakeRepo{err: apperror.Conflict("title already used")}
-	svc := NewService(repo, fakeKeys{key: "K"})
+	svc := NewService(repo, fakeKeys{key: "K"}, &fakeSessions{})
 
 	_, err := svc.CreateStream(context.Background(), CreateStreamInput{Title: "abc"})
 	if !apperror.IsCode(err, apperror.CodeConflict) {
@@ -252,7 +285,7 @@ func TestService_CreateStream_RepoErrorPropagated(t *testing.T) {
 
 func TestService_ListPublicLive_DelegatesToRepo(t *testing.T) {
 	repo := &fakeRepo{listRet: []Stream{{ID: "s1"}, {ID: "s2"}}}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	got, err := svc.ListPublicLive(context.Background(), 20, 40)
 	if err != nil {
@@ -268,7 +301,7 @@ func TestService_ListPublicLive_DelegatesToRepo(t *testing.T) {
 
 func TestService_GetStream_Owner(t *testing.T) {
 	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	s, isOwner, err := svc.GetStream(context.Background(), "s1", "u1")
 	if err != nil || !isOwner || s.ID != "s1" {
@@ -278,7 +311,7 @@ func TestService_GetStream_Owner(t *testing.T) {
 
 func TestService_GetStream_PublicNonOwner(t *testing.T) {
 	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: true}}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	_, isOwner, err := svc.GetStream(context.Background(), "s1", "u2")
 	if err != nil || isOwner {
@@ -288,7 +321,7 @@ func TestService_GetStream_PublicNonOwner(t *testing.T) {
 
 func TestService_GetStream_PrivateNonOwner_NotFound(t *testing.T) {
 	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	_, _, err := svc.GetStream(context.Background(), "s1", "u2")
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
@@ -298,7 +331,7 @@ func TestService_GetStream_PrivateNonOwner_NotFound(t *testing.T) {
 
 func TestService_UpdateStream_ValidationError(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	_, err := svc.UpdateStream(context.Background(), "s1", "u1", UpdateStreamInput{Title: "ab"})
 	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
@@ -311,7 +344,7 @@ func TestService_UpdateStream_ValidationError(t *testing.T) {
 
 func TestService_UpdateStream_DelegatesOwnerScope(t *testing.T) {
 	repo := &fakeRepo{updateRet: Stream{ID: "s1"}}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	_, err := svc.UpdateStream(context.Background(), "s1", "u1", UpdateStreamInput{Title: "Nouveau", IsPublic: true})
 	if err != nil {
@@ -324,7 +357,7 @@ func TestService_UpdateStream_DelegatesOwnerScope(t *testing.T) {
 
 func TestService_ArchiveStream_Delegates(t *testing.T) {
 	repo := &fakeRepo{archiveErr: apperror.NotFound("stream not found")}
-	svc := NewService(repo, fakeKeys{})
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
 	err := svc.ArchiveStream(context.Background(), "s1", "u1")
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
@@ -332,5 +365,120 @@ func TestService_ArchiveStream_Delegates(t *testing.T) {
 	}
 	if repo.gotID != "s1" {
 		t.Errorf("id transmis = %q, want s1", repo.gotID)
+	}
+}
+
+func TestService_ArchiveStream_StopsSession(t *testing.T) {
+	repo := &fakeRepo{} // archiveErr nil -> succès, renvoie l'id
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	if err := svc.ArchiveStream(context.Background(), "s1", "u1"); err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(sessions.stopped) != 1 || sessions.stopped[0] != "s1" {
+		t.Errorf("archive doit stopper la session du flux: %v", sessions.stopped)
+	}
+}
+
+func TestService_StartStream_Success(t *testing.T) {
+	repo := &fakeRepo{startRet: Stream{ID: "s1", Status: StatusLive}}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	got, err := svc.StartStream(context.Background(), "s1", "u1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if got.Status != StatusLive {
+		t.Errorf("status = %q, want live", got.Status)
+	}
+	if len(sessions.started) != 1 || sessions.started[0] != "s1" {
+		t.Errorf("session non démarrée: %v", sessions.started)
+	}
+}
+
+func TestService_StartStream_NotIdle_Conflict(t *testing.T) {
+	repo := &fakeRepo{startErr: errNoRowAffected, getRet: Stream{UserID: "u1", Status: StatusLive}}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	_, err := svc.StartStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict", err)
+	}
+	if len(sessions.started) != 0 {
+		t.Error("aucune session ne doit démarrer sur échec")
+	}
+}
+
+func TestService_StartStream_AlreadyLive_Conflict(t *testing.T) {
+	repo := &fakeRepo{startErr: errNoRowAffected, getRet: Stream{UserID: "u1", Status: StatusIdle}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	_, err := svc.StartStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict (déjà un live)", err)
+	}
+}
+
+func TestService_StartStream_NotOwner_NotFound(t *testing.T) {
+	repo := &fakeRepo{startErr: errNoRowAffected, getRet: Stream{UserID: "autre", Status: StatusIdle}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	_, err := svc.StartStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not_found", err)
+	}
+}
+
+func TestService_StopStream_Success(t *testing.T) {
+	repo := &fakeRepo{stopRet: Stream{ID: "s1", Status: StatusEnded}}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	if _, err := svc.StopStream(context.Background(), "s1", "u1"); err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(sessions.stopped) != 1 || sessions.stopped[0] != "s1" {
+		t.Errorf("session non arrêtée: %v", sessions.stopped)
+	}
+}
+
+func TestService_StopStream_NotLive_Conflict(t *testing.T) {
+	repo := &fakeRepo{stopErr: errNoRowAffected, getRet: Stream{UserID: "u1", Status: StatusIdle}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	_, err := svc.StopStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict", err)
+	}
+}
+
+func TestService_StartStream_AlreadyLive_UniqueViolation(t *testing.T) {
+	// L'index unique partiel rejette un 2e live concurrent -> errStreamAlreadyLive.
+	repo := &fakeRepo{startErr: errStreamAlreadyLive}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	_, err := svc.StartStream(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict (déjà un live)", err)
+	}
+	if len(sessions.started) != 0 {
+		t.Error("aucune session ne doit démarrer sur échec")
+	}
+}
+
+func TestService_ReconcileLiveStreams(t *testing.T) {
+	repo := &fakeRepo{orphanEnded: 3}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	n, err := svc.ReconcileLiveStreams(context.Background())
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("n = %d, want 3", n)
 	}
 }

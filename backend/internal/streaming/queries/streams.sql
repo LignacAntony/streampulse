@@ -38,7 +38,42 @@ WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid AND archived
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
 
--- name: ArchiveStream :execrows
+-- name: ArchiveStream :one
+-- Soft delete. Si le flux était en direct, on le termine (status -> ended) pour
+-- ne pas laisser de ligne archivée « live » (cf. garde un-seul-live).
 UPDATE streams
-SET archived_at = NOW(), updated_at = NOW()
-WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid AND archived_at IS NULL;
+SET archived_at = NOW(),
+    updated_at = NOW(),
+    status = CASE WHEN status = 'live' THEN 'ended' ELSE status END
+WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid AND archived_at IS NULL
+RETURNING id::text AS id;
+
+-- name: StartStream :one
+-- Passe un flux idle -> live (propriétaire, non archivé). La règle « un seul live
+-- par diffuseur » est garantie atomiquement par l'index unique partiel
+-- streams_one_live_per_user (000016) : un 2e live concurrent lève un 23505.
+UPDATE streams AS s
+SET status = 'live', started_at = NOW(), updated_at = NOW()
+WHERE s.id = sqlc.arg(id)::uuid
+  AND s.user_id = sqlc.arg(user_id)::uuid
+  AND s.status = 'idle'
+  AND s.archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
+
+-- name: StopStream :one
+-- Passe un flux live -> ended. Réservé au propriétaire, statut live, non archivé.
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid
+  AND status = 'live' AND archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
+
+-- name: EndOrphanLiveStreams :execrows
+-- Réconciliation au démarrage : les sessions LiveSessions sont en mémoire et
+-- reparties vides après un redémarrage ; on termine les flux restés 'live' en
+-- base (orphelins sans session ni audio).
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE status = 'live' AND archived_at IS NULL;
