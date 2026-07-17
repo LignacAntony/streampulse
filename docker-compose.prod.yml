@@ -58,6 +58,10 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@streampulse.com}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Préfixe de la stream_source_url renvoyée aux diffuseurs (STR-70/71). Sans
+      # cette variable, le backend retombe sur http://localhost:8080 (config.go),
+      # inutilisable en prod où l'API est exposée via Caddy sur le domaine public.
+      STREAM_INGEST_BASE_URL: ${STREAM_INGEST_BASE_URL:-https://api.streampulse.win}
     depends_on:
       postgres:
         condition: service_healthy

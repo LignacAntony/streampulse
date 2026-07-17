@@ -446,8 +446,12 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	// ferme PAS l'entrée du segmenteur : la session reste live (fenêtre de
 	// segments disponible) jusqu'au stop explicite.
 	if _, err := io.Copy(writer, r.Body); err != nil {
-		// Ne jamais logger le stream_key (secret) : on ne trace que l'erreur.
+		// Push interrompu par une erreur : refléter l'échec plutôt qu'un 204
+		// trompeur (un broadcast avorté ≠ déconnexion propre). Ne jamais logger le
+		// stream_key (secret). Si le client est déjà parti, l'écriture est un no-op.
 		log.Printf("streaming: ingest interrompu: %v", err)
+		httpjson.WriteError(w, r, apperror.Internal("ingest interrupted", err))
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -465,35 +469,27 @@ func ingestError(err error) error {
 }
 
 // Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS à un
-// auditeur authentifié. Visibilité alignée sur GetStream (404 si absent/privé).
+// auditeur authentifié. 409 si le flux n'est pas en direct.
 func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
-	requesterID, ok := auth.UserIDFromContext(r.Context())
-	if !ok {
-		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
-		return
-	}
-	id := r.PathValue("id")
-
-	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
-		httpjson.WriteError(w, r, err)
-		return
-	}
-
-	path, ok := h.sessions.Playlist(id)
-	if !ok {
-		httpjson.WriteError(w, r, apperror.Conflict("stream is not live"))
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeFile(w, r, path)
+	h.serveHLSFile(w, r, "application/vnd.apple.mpegurl",
+		func(id string) (string, bool) { return h.sessions.Playlist(id) },
+		apperror.Conflict("stream is not live"))
 }
 
 // Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts à un
 // auditeur authentifié. Le nom du segment est validé (anti path-traversal) dans
-// la couche session.
+// la couche session ; nom invalide ou segment absent -> 404.
 func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
+	h.serveHLSFile(w, r, "video/mp2t",
+		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },
+		apperror.NotFound("segment not found"))
+}
+
+// serveHLSFile factorise le service d'un fichier HLS (manifeste ou segment) à un
+// auditeur authentifié : contrôle de visibilité (GetStream, 404 si absent/privé),
+// lookup de la session (unavailable si le flux n'est pas en direct), en-têtes puis
+// ServeFile. lookup renvoie le chemin disque et sa validité.
+func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, contentType string, lookup func(id string) (string, bool), unavailable error) {
 	requesterID, ok := auth.UserIDFromContext(r.Context())
 	if !ok {
 		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
@@ -506,13 +502,13 @@ func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path, ok := h.sessions.Segment(id, r.PathValue("segment"))
+	path, ok := lookup(id)
 	if !ok {
-		httpjson.WriteError(w, r, apperror.NotFound("segment not found"))
+		httpjson.WriteError(w, r, unavailable)
 		return
 	}
 
-	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, r, path)
 }

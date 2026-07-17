@@ -54,9 +54,12 @@ comme obsolète sur ce point.
 
 ### 1. Segmentation déléguée à **ffmpeg** en sous-processus (une instance par session live)
 
-La goroutine `session.run(ctx)` lance un process **ffmpeg** avec `exec.CommandContext(ctx, …)` :
-l'annulation du context (stop diffuseur ou shutdown serveur) tue proprement ffmpeg via le pipeline
-d'arrêt existant (`Stop`/`StopAll` → `cancel()`).
+Le segmenteur (`hlsSegmenter`, `hls.go`) lance un process **ffmpeg** avec `exec.Command` et une
+goroutine `cmd.Wait()` qui ferme un canal `done` à la sortie du process. La goroutine
+`session.run(ctx)` **supervise** : elle attend `ctx.Done()` (stop diffuseur ou shutdown →
+`Stop`/`StopAll` → `cancel()`) **ou** `done` (arrêt spontané de ffmpeg), puis appelle
+`hlsSegmenter.close()`. Le segmenteur est démarré par `LiveSessions.Start` (hors du verrou du
+registre), pas par `run`.
 
 Invocation cible (remux **sans ré-encodage**, AAC/ADTS → MPEG-TS) :
 
@@ -125,8 +128,8 @@ Deux routes de lecture, servies depuis `<dir>` de la session (via `http.ServeFil
 | `GET` | `/api/streams/{id}/segments/{name}.ts` | un segment | `video/mp2t` |
 
 - **Visibilité** : réutilise la logique de `GetStream` (flux privé d'un tiers / absent / archivé →
-  `404`). `Cache-Control: no-cache` sur le manifeste (il change en continu), cache court sur les
-  segments (immuables une fois écrits).
+  `404`). `Cache-Control: no-cache` sur le manifeste **et** les segments (choix conservateur pour le
+  MVP ; mettre les segments — immuables une fois écrits — en cache court reste une optimisation possible).
 - **Auth auditeur** : `RequireAuth` (JWT), cohérent avec les autres lectures. ⚠️ *caveat* connu :
   certains players HLS natifs passent mal les en-têtes `Authorization` sur les sous-requêtes de
   segments ; si cela bloque la démo, un token de lecture court dans l'URL sera tracé comme suivi
@@ -135,10 +138,16 @@ Deux routes de lecture, servies depuis `<dir>` de la session (via `http.ServeFil
 
 ### 4. Câblage dans la session + arrêt
 
-- `session` porte désormais : le `*exec.Cmd` ffmpeg, son `stdin` (`io.WriteCloser`), et le chemin
-  `<dir>`.
-- `run(ctx)` : crée `<dir>`, lance ffmpeg, puis **attend** sa fin **ou** `ctx.Done()`. À la sortie :
-  ferme stdin, tue le process s'il vit encore, **supprime `<dir>`** (`os.RemoveAll`).
+- Le `*exec.Cmd`, son `stdin` (`io.WriteCloser`), le canal `done` et le chemin `<dir>` sont portés
+  par `hlsSegmenter` (pas par `session`). `LiveSessions.Start` le démarre **hors du verrou** du
+  registre (le `fork` ffmpeg peut être lent), puis le publie sous le verrou de session.
+- `session.run(ctx)` **supervise** : attend `ctx.Done()` **ou** l'arrêt spontané de ffmpeg (`done`),
+  puis `hlsSegmenter.close()` (ferme stdin → ffmpeg finalise, kill après un délai de grâce,
+  **supprime `<dir>`**).
+- **Mort spontanée de ffmpeg** (entrée invalide, crash) : la session est marquée morte puis
+  **récoltée** (retrait du registre + événement SSE `ended`), pour éviter une session « zombie » qui
+  servirait des 404 jusqu'au stop. La ligne DB reste `live` jusqu'au stop du diffuseur (réconciliée
+  au boot, cf. ADR 013 §7).
 - L'événement SSE `ended` existant (ADR 013 §7) reste le **signal de fin faisant autorité** pour
   l'auditeur ; le manifeste cesse simplement d'être mis à jour. On n'ajoute pas de dépendance à un
   `#EXT-X-ENDLIST` écrit à la volée (un `kill` en cours de flux ne le garantirait pas).
@@ -191,7 +200,8 @@ dans le `PATH` (`brew install ffmpeg`).
 - **Dépendance système ffmpeg** dans l'image runtime (rompt l'idéal « binaire autonome pur ») et à
   installer en dev local.
 - **Un process par session live** : à surveiller (limites de process, zombies) ; l'arrêt s'appuie
-  sur `exec.CommandContext` + le pipeline `cancel()` existant.
+  sur `hlsSegmenter.close()` (fermeture de stdin, kill après grâce) déclenché par le pipeline
+  `cancel()` existant, ou par la récolte de la session si ffmpeg meurt seul.
 - **Stockage disque temporaire** par session : nettoyage impératif à l'arrêt (`os.RemoveAll`), sous
   peine de fuite d'espace.
 - **Mono-instance** : le tmp dir est local au process — même limite structurelle que le registre

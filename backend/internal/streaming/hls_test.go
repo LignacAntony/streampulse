@@ -90,6 +90,60 @@ func TestAttachIngest_RoutesByKeyAndGuards(t *testing.T) {
 	release2()
 }
 
+// waitFor sonde une condition jusqu'à timeout (pour les transitions asynchrones
+// pilotées par la goroutine de session, ex. le reap).
+func waitFor(cond func() bool, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return cond()
+}
+
+// TestSegmenterDeath_ReapsSession vérifie qu'à la mort spontanée de ffmpeg, la
+// session est retirée du registre et les abonnés SSE notifiés (fin de flux) — plus
+// de session « zombie » servant des 404 jusqu'au stop.
+func TestSegmenterDeath_ReapsSession(t *testing.T) {
+	ls := NewLiveSessions(context.Background())
+	seg := fakeSegmenter(t)
+	ls.newSeg = func() (*hlsSegmenter, error) { return seg, nil }
+	ls.Start("s1", "KEY1")
+
+	if _, ok := ls.Playlist("s1"); !ok {
+		t.Fatal("le flux devrait être servi tant que le segmenteur est vivant")
+	}
+
+	ch, unsub := ls.Subscribe("s1")
+	if ch == nil {
+		t.Fatal("Subscribe devrait fonctionner tant que le flux est live")
+	}
+	defer unsub()
+
+	close(seg.done) // simule l'arrêt spontané de ffmpeg
+
+	select {
+	case ev, ok := <-ch:
+		if ok && ev.Type != "ended" {
+			t.Fatalf("event attendu ended, obtenu %+v", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucun événement SSE après la mort du segmenteur")
+	}
+
+	if !waitFor(func() bool { return !ls.IsLive("s1") }, 2*time.Second) {
+		t.Fatal("session non récoltée (toujours live) après la mort du segmenteur")
+	}
+	if _, ok := ls.Playlist("s1"); ok {
+		t.Fatal("Playlist devrait échouer après reap")
+	}
+	if _, _, err := ls.AttachIngest("KEY1"); !errors.Is(err, errNotLive) {
+		t.Fatalf("AttachIngest après reap: want errNotLive, got %v", err)
+	}
+}
+
 func TestAttachIngest_AfterStop(t *testing.T) {
 	ls := sessionsWithFakeSeg(t)
 	ls.Start("s1", "KEY1")

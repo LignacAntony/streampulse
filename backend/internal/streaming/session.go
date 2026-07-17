@@ -17,12 +17,24 @@ type SessionEvent struct {
 type session struct {
 	streamKey string // secret de push (index d'ingest) ; "" si non routable
 	cancel    context.CancelFunc
-	hls       *hlsSegmenter // nil si le segmenteur n'a pas pu démarrer
 
 	mu          sync.Mutex
 	closed      bool
-	ingesting   bool // un seul push audio à la fois
+	dead        bool          // ffmpeg s'est arrêté seul : segmenteur inexploitable
+	ingesting   bool          // un seul push audio à la fois
+	hls         *hlsSegmenter // publié après le spawn ; protégé par mu
 	subscribers map[chan SessionEvent]struct{}
+}
+
+// segmenter retourne le segmenteur si la session est exploitable (segmenteur
+// présent et process vivant), nil sinon. Sérialise l'accès à s.hls / s.dead.
+func (s *session) segmenter() *hlsSegmenter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dead {
+		return nil
+	}
+	return s.hls
 }
 
 // LiveSessions est le registre in-memory des flux en direct (une session par
@@ -50,29 +62,21 @@ func NewLiveSessions(base context.Context) *LiveSessions {
 }
 
 // Start enregistre une session pour streamID (indexée aussi par streamKey pour
-// l'ingest) et lance sa goroutine, après avoir démarré le segmenteur HLS.
-// Idempotent : si une session existe déjà, rien n'est fait.
+// l'ingest) puis démarre son segmenteur HLS et lance sa goroutine. Idempotent :
+// si une session existe déjà, rien n'est fait. Le spawn ffmpeg (MkdirTemp + fork,
+// potentiellement lents) se fait HORS du verrou du registre pour ne pas bloquer
+// les autres sessions ; le segmenteur est publié ensuite sous le verrou de session.
 func (ls *LiveSessions) Start(streamID, streamKey string) {
+	// Phase 1 — réserver l'entrée dans le registre sous verrou (aucune I/O).
 	ls.mu.Lock()
-	defer ls.mu.Unlock()
 	if _, ok := ls.byID[streamID]; ok {
+		ls.mu.Unlock()
 		return
 	}
 	ctx, cancel := context.WithCancel(ls.base)
-
-	seg, err := ls.newSeg()
-	if err != nil {
-		// Le flux est déjà 'live' en base : on enregistre quand même la session
-		// (stop/SSE fonctionnent) mais sans audio. En pratique ffmpeg est présent
-		// dans l'image (ADR 015) ; ce chemin couvre son absence en dev.
-		log.Printf("streaming: segmenteur HLS indisponible pour %s: %v", streamID, err)
-		seg = nil
-	}
-
 	s := &session{
 		streamKey:   streamKey,
 		cancel:      cancel,
-		hls:         seg,
 		subscribers: make(map[chan SessionEvent]struct{}),
 	}
 	ls.byID[streamID] = s
@@ -80,25 +84,71 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 		ls.byKey[streamKey] = s
 	}
 	ls.wg.Add(1)
+	ls.mu.Unlock()
+
+	// Phase 2 — spawn du segmenteur HORS verrou (le flux est déjà 'live' en base ;
+	// en cas d'échec ffmpeg, la session reste enregistrée mais sans audio — stop/SSE
+	// fonctionnent. En pratique ffmpeg est présent dans l'image, ADR 015).
+	seg, err := ls.newSeg()
+	if err != nil {
+		log.Printf("streaming: segmenteur HLS indisponible pour %s: %v", streamID, err)
+		seg = nil
+	}
+
+	// Phase 3 — publier le segmenteur puis lancer la goroutine de session.
+	s.mu.Lock()
+	s.hls = seg
+	s.mu.Unlock()
+
 	go func() {
 		defer ls.wg.Done()
-		s.run(ctx)
+		if s.run(ctx) {
+			// ffmpeg est mort seul : on récolte la session (retrait + notif).
+			ls.reap(streamID, s)
+		}
 	}()
 }
 
 // run est la goroutine de session : elle vit jusqu'à l'annulation du context
 // (stop diffuseur ou shutdown) ou l'arrêt spontané de ffmpeg (entrée terminée /
-// erreur), puis libère le segmenteur (process + répertoire de travail).
-func (s *session) run(ctx context.Context) {
-	if s.hls == nil {
+// erreur), puis libère le segmenteur (process + répertoire de travail). Retourne
+// true si ffmpeg s'est arrêté seul (la session doit alors être récoltée).
+func (s *session) run(ctx context.Context) bool {
+	seg := s.segmenter()
+	if seg == nil {
 		<-ctx.Done()
-		return
+		return false
 	}
 	select {
 	case <-ctx.Done():
-	case <-s.hls.done:
+		seg.close()
+		return false
+	case <-seg.done:
+		// Marquer la session inexploitable AVANT le nettoyage pour que
+		// Playlist/Segment/AttachIngest cessent immédiatement de servir un flux mort.
+		s.mu.Lock()
+		s.dead = true
+		s.mu.Unlock()
+		seg.close()
+		return true
 	}
-	s.hls.close()
+}
+
+// reap retire du registre une session dont le segmenteur est mort seul et notifie
+// ses abonnés SSE (fin de flux). La ligne DB reste 'live' jusqu'au stop du
+// diffuseur (réconciliée au boot, cf. ADR 013 §7). No-op si la session a déjà été
+// remplacée/retirée entre-temps.
+func (ls *LiveSessions) reap(streamID string, s *session) {
+	ls.mu.Lock()
+	if ls.byID[streamID] == s {
+		delete(ls.byID, streamID)
+		if s.streamKey != "" {
+			delete(ls.byKey, s.streamKey)
+		}
+	}
+	ls.mu.Unlock()
+	s.publish(SessionEvent{Type: "ended"})
+	s.closeSubscribers()
 }
 
 // Stop retire la session, publie l'événement "ended" (best-effort) à ses abonnés,
@@ -124,8 +174,8 @@ func (ls *LiveSessions) Stop(streamID string) {
 
 // AttachIngest réserve la session live identifiée par streamKey pour un unique
 // push audio, et retourne l'entrée où copier le flux + une fonction de
-// détachement. Erreurs : errNotLive (clé inconnue / flux pas en direct),
-// errSegmenterUnavailable, errIngestInProgress (un push est déjà en cours).
+// détachement. Erreurs : errNotLive (clé inconnue / flux pas en direct / segmenteur
+// mort), errSegmenterUnavailable, errIngestInProgress (un push est déjà en cours).
 func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error) {
 	ls.mu.Lock()
 	s, ok := ls.byKey[streamKey]
@@ -136,8 +186,8 @@ func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		// La session a été arrêtée entre la lecture de la map et ici.
+	if s.closed || s.dead {
+		// Session arrêtée (entre la lecture de la map et ici) ou segmenteur mort.
 		return nil, nil, errNotLive
 	}
 	if s.hls == nil {
@@ -157,15 +207,19 @@ func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error
 
 // Playlist retourne le chemin disque du manifeste .m3u8 du flux en direct
 // (identifié par son id public). ("", false) si le flux n'est pas en direct ou
-// n'a pas de segmenteur.
+// n'a pas de segmenteur exploitable.
 func (ls *LiveSessions) Playlist(streamID string) (string, bool) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
 	ls.mu.Unlock()
-	if !ok || s.hls == nil {
+	if !ok {
 		return "", false
 	}
-	return s.hls.playlistPath(), true
+	seg := s.segmenter()
+	if seg == nil {
+		return "", false
+	}
+	return seg.playlistPath(), true
 }
 
 // Segment retourne le chemin disque d'un segment .ts du flux en direct, après
@@ -174,10 +228,14 @@ func (ls *LiveSessions) Segment(streamID, name string) (string, bool) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
 	ls.mu.Unlock()
-	if !ok || s.hls == nil {
+	if !ok {
 		return "", false
 	}
-	return s.hls.segmentPath(name)
+	seg := s.segmenter()
+	if seg == nil {
+		return "", false
+	}
+	return seg.segmentPath(name)
 }
 
 // Subscribe abonne un client SSE aux événements du flux. Retourne le canal de
