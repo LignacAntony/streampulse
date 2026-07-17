@@ -480,8 +480,9 @@ paths:
         - Streaming
       operationId: listStreams
       summary: List public live streams (paginated).
-      security:
-        - bearerAuth: []
+      description: >-
+        Public endpoint: no authentication required. Guests can discover live
+        streams (US-04-01). Never exposes any secret (stream_key, source URL).
       parameters:
         - name: limit
           in: query
@@ -507,8 +508,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/StreamSummaryResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/streams/{id}:

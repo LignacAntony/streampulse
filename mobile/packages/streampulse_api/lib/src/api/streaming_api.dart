@@ -246,7 +246,7 @@ class StreamingApi {
   }
 
   /// List public live streams (paginated).
-  ///
+  /// Public endpoint: no authentication required. Guests can discover live streams (US-04-01). Never exposes any secret (stream_key, source URL).
   ///
   /// Parameters:
   /// * [limit]
@@ -274,12 +274,7 @@ class StreamingApi {
     final _options = Options(
       method: r'GET',
       headers: <String, dynamic>{...?headers},
-      extra: <String, dynamic>{
-        'secure': <Map<String, String>>[
-          {'type': 'http', 'scheme': 'bearer', 'name': 'bearerAuth'},
-        ],
-        ...?extra,
-      },
+      extra: <String, dynamic>{'secure': <Map<String, String>>[], ...?extra},
       validateStatus: validateStatus,
     );
 

@@ -124,12 +124,11 @@ func run() error {
 	mux.Handle("/api/admin/broadcaster-requests/{id}/approve", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Approve))))
 	mux.Handle("/api/admin/broadcaster-requests/{id}/reject", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Reject))))
 
-	// Flux : création réservée au broadcaster ; liste accessible à tout
-	// utilisateur authentifié (cf. ADR 013).
+	// Flux : création réservée au broadcaster ; liste des flux publics en direct
+	// accessible sans authentification (découverte en invité, US-04-01).
 	mux.Handle("POST /api/streams", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Create))))
-	mux.Handle("GET /api/streams", auth.RequireAuth(cfg.JWTSecret,
-		http.HandlerFunc(streamingHandler.List)))
+	mux.Handle("GET /api/streams", http.HandlerFunc(streamingHandler.List))
 	// Consultation/modification/suppression d'un flux : auth requise, la
 	// propriété est vérifiée dans le service (cf. ADR 013).
 	mux.Handle("GET /api/streams/{id}", auth.RequireAuth(cfg.JWTSecret,
