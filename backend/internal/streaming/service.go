@@ -172,9 +172,10 @@ type KeyGenerator interface {
 }
 
 // Sessions gère le cycle de vie des goroutines de diffusion (implémenté par
-// *LiveSessions). Le service enregistre/annule la session au start/stop.
+// *LiveSessions). Le service enregistre/annule la session au start/stop. La clé
+// de flux est fournie au start pour router l'ingest audio (cf. ADR 015).
 type Sessions interface {
-	Start(streamID string)
+	Start(streamID, streamKey string)
 	Stop(streamID string)
 }
 
@@ -276,7 +277,7 @@ func (s *Service) StartStream(ctx context.Context, id, requesterID string) (Stre
 		}
 		return Stream{}, err
 	}
-	s.sessions.Start(stream.ID)
+	s.sessions.Start(stream.ID, stream.StreamKey)
 	return stream, nil
 }
 

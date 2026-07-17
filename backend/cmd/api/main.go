@@ -146,6 +146,15 @@ func run() error {
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))
+	// Ingest du flux audio par le diffuseur (STR-70/71) : auth par stream_key dans
+	// le path (pas de JWT), le corps est un push audio continu segmenté en HLS.
+	mux.Handle("POST /api/streams/ingest/{stream_key}", http.HandlerFunc(streamingHandler.Ingest))
+	// Lecture HLS par l'auditeur (STR-70) : manifeste + segments, auth JWT. La
+	// visibilité (flux privé/absent → 404) est vérifiée dans le handler.
+	mux.Handle("GET /api/streams/{id}/playlist.m3u8", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Playlist)))
+	mux.Handle("GET /api/streams/{id}/segments/{segment}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Segment)))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

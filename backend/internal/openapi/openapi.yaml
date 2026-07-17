@@ -700,6 +700,121 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/streams/ingest/{stream_key}:
+    parameters:
+      - name: stream_key
+        in: path
+        required: true
+        description: The broadcaster's secret stream key (from stream_source_url).
+        schema:
+          type: string
+    post:
+      tags:
+        - Streaming
+      operationId: ingestStream
+      summary: Push a live audio stream (broadcaster ingest).
+      description: >-
+        Continuous AAC audio ingest for a live stream, authenticated by the
+        `stream_key` in the path (no JWT). The request body is a continuous audio
+        stream segmented into HLS by the backend (cf. ADR 015). The stream must be
+        live (started) for the push to be accepted.
+      requestBody:
+        required: true
+        content:
+          audio/aac:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Ingest completed (broadcaster disconnected).
+        "404":
+          description: No live stream for this key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: An ingest is already in progress for this stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/playlist.m3u8:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: streamPlaylist
+      summary: Get the live HLS media playlist (manifest).
+      description: >-
+        Returns the continuously-updated HLS media playlist (`.m3u8`) of a live
+        stream. Segment URIs are relative (`segments/…`). Requires the stream to
+        be live.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: HLS media playlist.
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stream is not live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/streams/{id}/segments/{segment}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: segment
+        in: path
+        required: true
+        description: Segment file name (e.g. seg_00001.ts).
+        schema:
+          type: string
+          pattern: '^seg_\d+\.ts$'
+    get:
+      tags:
+        - Streaming
+      operationId: streamSegment
+      summary: Get an HLS media segment (.ts).
+      description: >-
+        Returns an MPEG-TS audio segment referenced by the live playlist. Requires
+        the stream to be live.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: MPEG-TS segment.
+          content:
+            video/mp2t:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:

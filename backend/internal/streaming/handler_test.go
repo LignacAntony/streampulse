@@ -537,8 +537,8 @@ func (f *flushSignalRecorder) Flush() {
 }
 
 func TestHandler_Events_StreamsEndedThenCloses(t *testing.T) {
-	sessions := NewLiveSessions(context.Background())
-	sessions.Start("s1")
+	sessions := newTestSessions(context.Background())
+	sessions.Start("s1", "")
 	stub := &stubService{getOwner: true, getRet: Stream{ID: "s1", UserID: testUserID, IsPublic: true}}
 	h := NewHandler(stub, testIngestURL, sessions)
 

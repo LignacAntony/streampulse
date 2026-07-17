@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 FROM alpine:3 AS runner
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 

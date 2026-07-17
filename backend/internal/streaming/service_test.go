@@ -208,12 +208,16 @@ type fakeKeys struct {
 func (f fakeKeys) NewStreamKey() (string, error) { return f.key, f.err }
 
 type fakeSessions struct {
-	started []string
-	stopped []string
+	started     []string
+	startedKeys []string
+	stopped     []string
 }
 
-func (f *fakeSessions) Start(id string) { f.started = append(f.started, id) }
-func (f *fakeSessions) Stop(id string)  { f.stopped = append(f.stopped, id) }
+func (f *fakeSessions) Start(id, key string) {
+	f.started = append(f.started, id)
+	f.startedKeys = append(f.startedKeys, key)
+}
+func (f *fakeSessions) Stop(id string) { f.stopped = append(f.stopped, id) }
 
 func TestService_CreateStream_Success(t *testing.T) {
 	repo := &fakeRepo{ret: Stream{ID: "s1", Title: "Mon flux"}}

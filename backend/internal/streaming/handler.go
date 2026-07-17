@@ -2,7 +2,9 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -35,10 +37,14 @@ type StreamService interface {
 	StopStream(ctx context.Context, id, requesterID string) (Stream, error)
 }
 
-// StreamEvents fournit l'abonnement SSE aux événements d'un flux (implémenté par
-// *LiveSessions).
-type StreamEvents interface {
+// StreamSessions expose au handler les opérations sur les sessions live :
+// abonnement SSE (STR-85), ingest audio et service des fichiers HLS (STR-70).
+// *LiveSessions l'implémente. Le handler utilise l'ensemble de ces méthodes.
+type StreamSessions interface {
 	Subscribe(streamID string) (<-chan SessionEvent, func())
+	AttachIngest(streamKey string) (io.Writer, func(), error)
+	Playlist(streamID string) (string, bool)
+	Segment(streamID, name string) (string, bool)
 }
 
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
@@ -46,11 +52,11 @@ type StreamEvents interface {
 type Handler struct {
 	svc           StreamService
 	ingestBaseURL string
-	events        StreamEvents
+	sessions      StreamSessions
 }
 
-func NewHandler(svc StreamService, ingestBaseURL string, events StreamEvents) *Handler {
-	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"), events: events}
+func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions) *Handler {
+	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"), sessions: sessions}
 }
 
 // createStreamRequest : pointeurs pour distinguer « champ absent » de zéro.
@@ -363,7 +369,7 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, unsub := h.events.Subscribe(id)
+	ch, unsub := h.sessions.Subscribe(id)
 	if ch == nil {
 		httpjson.WriteError(w, r, apperror.Conflict("stream is not live"))
 		return
@@ -415,4 +421,97 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// Ingest gère POST /api/streams/ingest/{stream_key} : réception du flux audio du
+// diffuseur (STR-71). L'authentification se fait par le stream_key du path (pas de
+// JWT) ; le corps est un flux continu copié dans le segmenteur HLS de la session.
+func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("stream_key")
+
+	writer, release, err := h.sessions.AttachIngest(key)
+	if err != nil {
+		httpjson.WriteError(w, r, ingestError(err))
+		return
+	}
+	defer release()
+
+	// Push long : neutraliser les deadlines read/write posées par http.Server
+	// (ReadTimeout/WriteTimeout couperaient une diffusion de plusieurs minutes).
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	// Copie bloquante jusqu'à la fin du push (EOF = diffuseur déconnecté). On ne
+	// ferme PAS l'entrée du segmenteur : la session reste live (fenêtre de
+	// segments disponible) jusqu'au stop explicite.
+	if _, err := io.Copy(writer, r.Body); err != nil {
+		log.Printf("streaming: ingest copy (key tronquée %.8s…): %v", key, err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ingestError mappe les erreurs d'ingest vers un status HTTP.
+func ingestError(err error) error {
+	switch {
+	case errors.Is(err, errIngestInProgress):
+		return apperror.Conflict("ingest already in progress")
+	case errors.Is(err, errSegmenterUnavailable):
+		return apperror.Internal("hls segmenter unavailable", err)
+	default: // errNotLive : clé inconnue ou flux pas en direct (on ne divulgue pas la différence)
+		return apperror.NotFound("no live stream for this key")
+	}
+}
+
+// Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS à un
+// auditeur authentifié. Visibilité alignée sur GetStream (404 si absent/privé).
+func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	id := r.PathValue("id")
+
+	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	path, ok := h.sessions.Playlist(id)
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Conflict("stream is not live"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFile(w, r, path)
+}
+
+// Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts à un
+// auditeur authentifié. Le nom du segment est validé (anti path-traversal) dans
+// la couche session.
+func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	id := r.PathValue("id")
+
+	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	path, ok := h.sessions.Segment(id, r.PathValue("segment"))
+	if !ok {
+		httpjson.WriteError(w, r, apperror.NotFound("segment not found"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFile(w, r, path)
 }
