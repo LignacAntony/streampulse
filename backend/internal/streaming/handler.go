@@ -446,7 +446,8 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	// ferme PAS l'entrée du segmenteur : la session reste live (fenêtre de
 	// segments disponible) jusqu'au stop explicite.
 	if _, err := io.Copy(writer, r.Body); err != nil {
-		log.Printf("streaming: ingest copy (key tronquée %.8s…): %v", key, err)
+		// Ne jamais logger le stream_key (secret) : on ne trace que l'erreur.
+		log.Printf("streaming: ingest interrompu: %v", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -92,7 +92,7 @@ func (s *hlsSegmenter) input() io.Writer { return s.stdin }
 func (s *hlsSegmenter) playlistPath() string { return filepath.Join(s.dir, hlsPlaylistName) }
 
 // segmentPath retourne le chemin disque d'un segment après validation stricte du
-// nom (anti-traversal). (\"\", false) si le nom ne correspond pas au motif attendu.
+// nom (anti-traversal). ("", false) si le nom ne correspond pas au motif attendu.
 func (s *hlsSegmenter) segmentPath(name string) (string, bool) {
 	if !segmentNamePattern.MatchString(name) {
 		return "", false
