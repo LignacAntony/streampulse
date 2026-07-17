@@ -13,24 +13,42 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const String _homeLocation = '/home';
+
   final ScrollController _scrollController = ScrollController();
   late final StreamNotifier _notifier;
   late final AppLifecycleListener _lifecycleListener;
+  GoRouter? _router;
+  bool _appResumed = true;
 
   @override
   void initState() {
     super.initState();
     _notifier = context.read<StreamNotifier>();
     _scrollController.addListener(_onScroll);
-    _lifecycleListener = AppLifecycleListener(onStateChange: _onLifecycleChange);
+    _lifecycleListener = AppLifecycleListener(onStateChange: (state) {
+      _appResumed = state == AppLifecycleState.resumed;
+      _syncPolling();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifier.load();
-      _notifier.startPolling();
+      _syncPolling();
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (router != _router) {
+      _router?.routerDelegate.removeListener(_syncPolling);
+      _router = router..routerDelegate.addListener(_syncPolling);
+    }
+  }
+
+  @override
   void dispose() {
+    _router?.routerDelegate.removeListener(_syncPolling);
     _lifecycleListener.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
@@ -46,8 +64,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onLifecycleChange(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+  /// Ne poll que si l'app est au premier plan ET l'écran d'accueil est visible
+  /// (aucun autre onglet du shell sélectionné, aucune route poussée par-dessus).
+  void _syncPolling() {
+    final onHome =
+        _router?.routerDelegate.currentConfiguration.uri.path == _homeLocation;
+    if (_appResumed && onHome) {
       _notifier.startPolling();
     } else {
       _notifier.stopPolling();

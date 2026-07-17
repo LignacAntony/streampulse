@@ -16,6 +16,7 @@ class StreamNotifier extends ChangeNotifier {
   List<LiveStream> _streams = const [];
   bool _isLoading = false;
   bool _isLoadingMore = false;
+  bool _isRefreshing = false;
   bool _hasError = false;
   bool _hasMore = false;
   Timer? _timer;
@@ -40,7 +41,7 @@ class StreamNotifier extends ChangeNotifier {
   Future<void> refresh() => _refreshLoaded();
 
   Future<void> loadMore() async {
-    if (_isLoadingMore || !_hasMore) return;
+    if (_isLoadingMore || _isRefreshing || !_hasMore) return;
     _isLoadingMore = true;
     notifyListeners();
     try {
@@ -59,6 +60,8 @@ class StreamNotifier extends ChangeNotifier {
   }
 
   Future<void> _refreshLoaded() async {
+    if (_isLoadingMore) return;
+    _isRefreshing = true;
     final limit = _streams.length < pageSize ? pageSize : _streams.length;
     try {
       final page = await _repository.listLiveStreams(limit: limit, offset: 0);
@@ -68,6 +71,7 @@ class StreamNotifier extends ChangeNotifier {
     } catch (_) {
       _hasError = true;
     }
+    _isRefreshing = false;
     notifyListeners();
   }
 
