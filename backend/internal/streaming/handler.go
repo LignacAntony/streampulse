@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -436,6 +438,20 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
+	// Validation légère du Content-Type (après résolution de la clé pour préserver
+	// le 404 sur clé inconnue, avant io.Copy pour qu'aucun octet n'atteigne ffmpeg).
+	// Si présent, il doit être audio/* : coupe tôt un push manifestement non-audio
+	// (ex. curl --data-binary → application/x-www-form-urlencoded) qui ferait tourner
+	// ffmpeg dans le vide (le demuxer ADTS cherche des sync words sans jamais mourir).
+	// Un Content-Type absent reste accepté (clients bruts, cf. ADR 015).
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if mt, _, perr := mime.ParseMediaType(ct); perr != nil || !strings.HasPrefix(mt, "audio/") {
+			httpjson.WriteError(w, r, httpjson.StatusError(
+				http.StatusUnsupportedMediaType, "unsupported_media_type", "content-type must be audio/aac"))
+			return
+		}
+	}
+
 	// Push long : neutraliser les deadlines read/write posées par http.Server
 	// (ReadTimeout/WriteTimeout couperaient une diffusion de plusieurs minutes).
 	rc := http.NewResponseController(w)
@@ -504,6 +520,15 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, contentTy
 
 	path, ok := lookup(id)
 	if !ok {
+		httpjson.WriteError(w, r, unavailable)
+		return
+	}
+
+	// Le fichier peut ne pas exister encore (fenêtre entre le start et le premier
+	// segment, ou push dont ffmpeg n'a encore rien produit) ou avoir été retiré
+	// (fenêtre glissante) : renvoyer l'erreur JSON documentée plutôt que le
+	// `404 page not found` text/plain brut de http.ServeFile (hors contrat).
+	if _, err := os.Stat(path); err != nil {
 		httpjson.WriteError(w, r, unavailable)
 		return
 	}

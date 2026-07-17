@@ -740,6 +740,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: >-
+            Content-Type present but not audio/* (a non-audio push would spin the
+            HLS demuxer without producing segments). An absent Content-Type is
+            accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/streams/{id}/playlist.m3u8:
@@ -773,7 +782,9 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The stream is not live.
+          description: >-
+            The stream is not live, or its manifest is not ready yet (window
+            between start and the first segment).
           content:
             application/json:
               schema:

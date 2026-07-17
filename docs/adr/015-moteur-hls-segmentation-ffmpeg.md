@@ -110,6 +110,10 @@ est injectable dans `LiveSessions` (factory `newSeg`) pour des tests unitaires *
   reste live (fenêtre de segments disponible) jusqu'au `stop` explicite.
 - **Un seul push par flux** : un flag `ingesting` (sous mutex) rejette un 2e push concurrent → `409`.
   Segmenteur indisponible (ffmpeg absent) → `500`.
+- **Content-Type** : validation **légère** — si l'en-tête est présent, il doit être `audio/*`, sinon
+  `415` avant toute copie (un push non-audio ferait tourner le demuxer ADTS indéfiniment, sans
+  produire de segment ni tuer ffmpeg — donc ni `dead`/`reap`). Un Content-Type **absent** reste
+  accepté (clients bruts). Garde-fou UX, pas une frontière de sécurité (le type est falsifiable).
 - **Timeouts serveur** : le push est long ; le handler neutralise les `ReadTimeout`/`WriteTimeout`
   d'`http.Server` via `http.NewResponseController` (`SetReadDeadline`/`SetWriteDeadline` à zéro),
   sinon une diffusion de plusieurs minutes serait coupée.
@@ -135,6 +139,10 @@ Deux routes de lecture, servies depuis `<dir>` de la session (via `http.ServeFil
   segments ; si cela bloque la démo, un token de lecture court dans l'URL sera tracé comme suivi
   (hors périmètre STR-70).
 - **Anti-traversal** : `{name}` validé strictement (`^seg_\d+\.ts$`), jamais concaténé brut au path.
+- **Fichier absent** : session vivante mais fichier pas encore écrit (fenêtre start→1er segment, ou
+  push dont ffmpeg n'a rien produit) ou déjà retiré (fenêtre glissante) → un `os.Stat` renvoie
+  l'erreur JSON documentée (manifeste `409`, segment `404`) plutôt que le `404 page not found`
+  text/plain brut de `http.ServeFile` (hors contrat `httpjson`).
 
 ### 4. Câblage dans la session + arrêt
 

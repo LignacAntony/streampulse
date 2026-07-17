@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -576,5 +578,75 @@ func TestHandler_Events_StreamsEndedThenCloses(t *testing.T) {
 	}
 	if !strings.Contains(sw.Body.String(), "event: ended") {
 		t.Errorf("le flux SSE doit contenir l'event ended: %s", sw.Body.String())
+	}
+}
+
+func TestHandler_Ingest_RejectsNonAudioContentType(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("sid-415", "KEY415")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/streams/ingest/KEY415", strings.NewReader("garbage"))
+	req.SetPathValue("stream_key", "KEY415")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	h.Ingest(rec, req)
+
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("want 415 pour un content-type non-audio, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Ingest_AllowsAbsentContentType(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("sid-noct", "KEYNOCT")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/streams/ingest/KEYNOCT", strings.NewReader(""))
+	req.SetPathValue("stream_key", "KEYNOCT")
+	req.Header.Del("Content-Type") // absent -> accepté (lenient, cf. ADR 015)
+	rec := httptest.NewRecorder()
+
+	h.Ingest(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204 (content-type absent accepté), got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestHandler_Playlist_NotReadyReturnsJSON409 : session vivante mais manifeste pas
+// encore écrit sur disque -> 409 JSON (contrat) et non un 404 text/plain brut.
+func TestHandler_Playlist_NotReadyReturnsJSON409(t *testing.T) {
+	seg := fakeSegmenter(t)
+	if err := os.Remove(filepath.Join(seg.dir, hlsPlaylistName)); err != nil {
+		t.Fatalf("remove playlist: %v", err)
+	}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func() (*hlsSegmenter, error) { return seg, nil }
+	ls.Start("sid-nr", "KEYNR")
+	defer ls.StopAll()
+
+	stub := &stubService{getRet: Stream{ID: "sid-nr", UserID: testUserID, IsPublic: true}}
+	h := NewHandler(stub, testIngestURL, ls)
+
+	token, err := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/sid-nr/playlist.m3u8", nil)
+	req.SetPathValue("id", "sid-nr")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	auth.RequireAuth(testSecret, http.HandlerFunc(h.Playlist)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409 (manifeste pas encore écrit), got %d: %s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("l'erreur doit rester JSON, content-type=%q", ct)
 	}
 }
