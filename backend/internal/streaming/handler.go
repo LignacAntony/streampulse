@@ -2,9 +2,13 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,10 +39,14 @@ type StreamService interface {
 	StopStream(ctx context.Context, id, requesterID string) (Stream, error)
 }
 
-// StreamEvents fournit l'abonnement SSE aux événements d'un flux (implémenté par
-// *LiveSessions).
-type StreamEvents interface {
+// StreamSessions expose au handler les opérations sur les sessions live :
+// abonnement SSE (STR-85), ingest audio et service des fichiers HLS (STR-70).
+// *LiveSessions l'implémente. Le handler utilise l'ensemble de ces méthodes.
+type StreamSessions interface {
 	Subscribe(streamID string) (<-chan SessionEvent, func())
+	AttachIngest(streamKey string) (io.Writer, func(), error)
+	Playlist(streamID string) (string, bool)
+	Segment(streamID, name string) (string, bool)
 }
 
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
@@ -46,11 +54,11 @@ type StreamEvents interface {
 type Handler struct {
 	svc           StreamService
 	ingestBaseURL string
-	events        StreamEvents
+	sessions      StreamSessions
 }
 
-func NewHandler(svc StreamService, ingestBaseURL string, events StreamEvents) *Handler {
-	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"), events: events}
+func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions) *Handler {
+	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"), sessions: sessions}
 }
 
 // createStreamRequest : pointeurs pour distinguer « champ absent » de zéro.
@@ -363,7 +371,7 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, unsub := h.events.Subscribe(id)
+	ch, unsub := h.sessions.Subscribe(id)
 	if ch == nil {
 		httpjson.WriteError(w, r, apperror.Conflict("stream is not live"))
 		return
@@ -415,4 +423,117 @@ func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// Ingest gère POST /api/streams/ingest/{stream_key} : réception du flux audio du
+// diffuseur (STR-71). L'authentification se fait par le stream_key du path (pas de
+// JWT) ; le corps est un flux continu copié dans le segmenteur HLS de la session.
+func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("stream_key")
+
+	writer, release, err := h.sessions.AttachIngest(key)
+	if err != nil {
+		httpjson.WriteError(w, r, ingestError(err))
+		return
+	}
+	defer release()
+
+	// Validation légère du Content-Type (après résolution de la clé pour préserver
+	// le 404 sur clé inconnue, avant io.Copy pour qu'aucun octet n'atteigne ffmpeg).
+	// Si présent, il doit être audio/* : coupe tôt un push manifestement non-audio
+	// (ex. curl --data-binary → application/x-www-form-urlencoded) qui ferait tourner
+	// ffmpeg dans le vide (le demuxer ADTS cherche des sync words sans jamais mourir).
+	// Un Content-Type absent reste accepté (clients bruts, cf. ADR 015).
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if mt, _, perr := mime.ParseMediaType(ct); perr != nil || !strings.HasPrefix(mt, "audio/") {
+			httpjson.WriteError(w, r, httpjson.StatusError(
+				http.StatusUnsupportedMediaType, "unsupported_media_type", "content-type must be audio/aac"))
+			return
+		}
+	}
+
+	// Push long : neutraliser les deadlines read/write posées par http.Server
+	// (ReadTimeout/WriteTimeout couperaient une diffusion de plusieurs minutes).
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	// Copie bloquante jusqu'à la fin du push (EOF = diffuseur déconnecté). On ne
+	// ferme PAS l'entrée du segmenteur : la session reste live (fenêtre de
+	// segments disponible) jusqu'au stop explicite.
+	if _, err := io.Copy(writer, r.Body); err != nil {
+		// Push interrompu par une erreur : refléter l'échec plutôt qu'un 204
+		// trompeur (un broadcast avorté ≠ déconnexion propre). Ne jamais logger le
+		// stream_key (secret). Si le client est déjà parti, l'écriture est un no-op.
+		log.Printf("streaming: ingest interrompu: %v", err)
+		httpjson.WriteError(w, r, apperror.Internal("ingest interrupted", err))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ingestError mappe les erreurs d'ingest vers un status HTTP.
+func ingestError(err error) error {
+	switch {
+	case errors.Is(err, errIngestInProgress):
+		return apperror.Conflict("ingest already in progress")
+	case errors.Is(err, errSegmenterUnavailable):
+		return apperror.Internal("hls segmenter unavailable", err)
+	default: // errNotLive : clé inconnue ou flux pas en direct (on ne divulgue pas la différence)
+		return apperror.NotFound("no live stream for this key")
+	}
+}
+
+// Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS à un
+// auditeur authentifié. 409 si le flux n'est pas en direct.
+func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
+	h.serveHLSFile(w, r, "application/vnd.apple.mpegurl",
+		func(id string) (string, bool) { return h.sessions.Playlist(id) },
+		apperror.Conflict("stream is not live"))
+}
+
+// Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts à un
+// auditeur authentifié. Le nom du segment est validé (anti path-traversal) dans
+// la couche session ; nom invalide ou segment absent -> 404.
+func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
+	h.serveHLSFile(w, r, "video/mp2t",
+		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },
+		apperror.NotFound("segment not found"))
+}
+
+// serveHLSFile factorise le service d'un fichier HLS (manifeste ou segment) à un
+// auditeur authentifié : contrôle de visibilité (GetStream, 404 si absent/privé),
+// lookup de la session (unavailable si le flux n'est pas en direct), en-têtes puis
+// ServeFile. lookup renvoie le chemin disque et sa validité.
+func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, contentType string, lookup func(id string) (string, bool), unavailable error) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	id := r.PathValue("id")
+
+	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	path, ok := lookup(id)
+	if !ok {
+		httpjson.WriteError(w, r, unavailable)
+		return
+	}
+
+	// Le fichier peut ne pas exister encore (fenêtre entre le start et le premier
+	// segment, ou push dont ffmpeg n'a encore rien produit) ou avoir été retiré
+	// (fenêtre glissante) : renvoyer l'erreur JSON documentée plutôt que le
+	// `404 page not found` text/plain brut de http.ServeFile (hors contrat).
+	if _, err := os.Stat(path); err != nil {
+		httpjson.WriteError(w, r, unavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFile(w, r, path)
 }

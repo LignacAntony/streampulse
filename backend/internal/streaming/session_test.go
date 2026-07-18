@@ -7,13 +7,21 @@ import (
 	"time"
 )
 
+// newTestSessions construit un registre dont le segmenteur HLS est désactivé :
+// les tests de cycle de vie (SSE, goroutines) n'exercent pas ffmpeg.
+func newTestSessions(ctx context.Context) *LiveSessions {
+	ls := NewLiveSessions(ctx)
+	ls.newSeg = func() (*hlsSegmenter, error) { return nil, nil }
+	return ls
+}
+
 func TestLiveSessions_StartRegisters_StopRemoves(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
+	ls := newTestSessions(context.Background())
 
 	if ls.IsLive("s1") {
 		t.Fatal("aucune session ne devrait être active au départ")
 	}
-	ls.Start("s1")
+	ls.Start("s1", "")
 	if !ls.IsLive("s1") {
 		t.Fatal("s1 devrait être live après Start")
 	}
@@ -24,9 +32,9 @@ func TestLiveSessions_StartRegisters_StopRemoves(t *testing.T) {
 }
 
 func TestLiveSessions_StartIdempotent(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
-	ls.Start("s1")
-	ls.Start("s1") // ne doit pas créer de doublon ni paniquer
+	ls := newTestSessions(context.Background())
+	ls.Start("s1", "")
+	ls.Start("s1", "") // ne doit pas créer de doublon ni paniquer
 	if !ls.IsLive("s1") {
 		t.Fatal("s1 devrait être live")
 	}
@@ -34,8 +42,8 @@ func TestLiveSessions_StartIdempotent(t *testing.T) {
 }
 
 func TestLiveSessions_SubscribeReceivesEnded(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
-	ls.Start("s1")
+	ls := newTestSessions(context.Background())
+	ls.Start("s1", "")
 
 	ch, unsub := ls.Subscribe("s1")
 	if ch == nil {
@@ -55,7 +63,7 @@ func TestLiveSessions_SubscribeReceivesEnded(t *testing.T) {
 }
 
 func TestLiveSessions_SubscribeNoSession(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
+	ls := newTestSessions(context.Background())
 	ch, unsub := ls.Subscribe("inconnu")
 	if ch != nil || unsub != nil {
 		t.Fatal("Subscribe sur un flux non live devrait retourner (nil, nil)")
@@ -63,9 +71,9 @@ func TestLiveSessions_SubscribeNoSession(t *testing.T) {
 }
 
 func TestLiveSessions_StopAll(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
-	ls.Start("s1")
-	ls.Start("s2")
+	ls := newTestSessions(context.Background())
+	ls.Start("s1", "")
+	ls.Start("s2", "")
 
 	ls.StopAll()
 
@@ -75,8 +83,8 @@ func TestLiveSessions_StopAll(t *testing.T) {
 }
 
 func TestLiveSessions_SlowSubscriberStillCloses(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
-	ls.Start("s1")
+	ls := newTestSessions(context.Background())
+	ls.Start("s1", "")
 
 	ch, unsub := ls.Subscribe("s1")
 	if ch == nil {
@@ -101,8 +109,8 @@ func TestLiveSessions_SlowSubscriberStillCloses(t *testing.T) {
 }
 
 func TestLiveSessions_SubscribeAfterStop(t *testing.T) {
-	ls := NewLiveSessions(context.Background())
-	ls.Start("s1")
+	ls := newTestSessions(context.Background())
+	ls.Start("s1", "")
 	ls.Stop("s1")
 
 	ch, unsub := ls.Subscribe("s1")
@@ -116,8 +124,8 @@ func TestLiveSessions_SubscribeAfterStop(t *testing.T) {
 // abonnés) et qu'aucun abonné tardif ne reste ouvert sans être fermé.
 func TestLiveSessions_SubscribeStopRace(t *testing.T) {
 	for iter := 0; iter < 100; iter++ {
-		ls := NewLiveSessions(context.Background())
-		ls.Start("s1")
+		ls := newTestSessions(context.Background())
+		ls.Start("s1", "")
 
 		var wg sync.WaitGroup
 		wg.Add(2)

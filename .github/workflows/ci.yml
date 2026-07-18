@@ -53,6 +53,9 @@ jobs:
         working-directory: ./backend
         run: go mod download
 
+      - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Run tests
         working-directory: ./backend
         run: go test -v -race -coverprofile=coverage.txt ./...
