@@ -51,7 +51,11 @@ func newHLSSegmenter() (*hlsSegmenter, error) {
 		return nil, fmt.Errorf("hls: create work dir: %w", err)
 	}
 
-	cmd := exec.Command("ffmpeg",
+	// Arguments ffmpeg : uniquement des constantes et des chemins dérivés de `dir`
+	// (os.MkdirTemp, généré côté serveur). AUCUNE entrée diffuseur/auditeur ne
+	// transite par la ligne de commande — le stream_key est un lookup mémoire et
+	// l'audio arrive par stdin (pipe:0). Le G204 de gosec est donc un faux positif.
+	args := []string{
 		"-hide_banner", "-loglevel", "warning",
 		"-i", "pipe:0", // audio lu sur stdin
 		"-c:a", "copy", // remux AAC -> TS, pas de transcodage
@@ -63,8 +67,9 @@ func newHLSSegmenter() (*hlsSegmenter, error) {
 		"-hls_base_url", hlsSegmentPrefix, // les URI du manifeste pointent vers segments/…
 		"-hls_segment_filename", filepath.Join(dir, hlsSegmentPattern),
 		filepath.Join(dir, hlsPlaylistName),
-	)
-	cmd.Stderr = os.Stderr // warnings/erreurs ffmpeg vers les logs du conteneur
+	}
+	cmd := exec.Command("ffmpeg", args...) // #nosec G204 -- args 100% statiques/serveur (os.MkdirTemp), aucune entrée utilisateur
+	cmd.Stderr = os.Stderr                 // warnings/erreurs ffmpeg vers les logs du conteneur
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
