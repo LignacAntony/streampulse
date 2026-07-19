@@ -198,8 +198,8 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | PATCH | `/api/streams/{id}/stop` | `Handler.Stop` | Oui — rôle `broadcaster`, owner ; `live→ended` (409 si pas live) |
 | GET | `/api/streams/{id}/events` | `Handler.Events` | Oui (JWT) — flux **SSE**, event `ended` à l'arrêt (STR-77) |
 | POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio AAC segmenté en HLS (STR-70/71) |
-| GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | Oui (JWT) — manifeste HLS du direct (409 si pas live) (STR-70) |
-| GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | Oui (JWT) — segment `.ts` (nom validé anti-traversal) (STR-70) |
+| GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Non — public** (flux publics ; privé → 404) — manifeste HLS du direct, 409 si pas live/pas prêt (STR-108) |
+| GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Non — public** (flux publics ; privé → 404) — segment `.ts` (nom validé anti-traversal) (STR-108) |
 
 - Moteur HLS (STR-70) : le diffuseur pousse de l'AAC sur `ingest/{stream_key}` (auth par clé, 100 % mémoire) ; **ffmpeg** (`-c:a copy`) segmente en `.ts` de ~10 s + manifeste `.m3u8` glissant servi aux auditeurs. Un segmenteur par session live, tué + répertoire nettoyé à l'arrêt. Détails [ADR 015](docs/adr/015-moteur-hls-segmentation-ffmpeg.md).
 - Cycle de vie du direct (STR-77) : `start`/`stop` = endpoints dédiés (le PUT ne touche pas au statut) ; **un seul flux live par diffuseur** ; goroutines gérées par `LiveSessions` (context + mutex). Détails [ADR 013](docs/adr/013-domaine-streaming.md) §7.

@@ -650,3 +650,65 @@ func TestHandler_Playlist_NotReadyReturnsJSON409(t *testing.T) {
 		t.Fatalf("l'erreur doit rester JSON, content-type=%q", ct)
 	}
 }
+
+// TestHandler_Playlist_PublicNoAuth : lecture publique (STR-108) — un flux public
+// est servi SANS token ni RequireAuth.
+func TestHandler_Playlist_PublicNoAuth(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("pub", "KEYPUB")
+	defer ls.StopAll()
+	stub := &stubService{getRet: Stream{ID: "pub", UserID: "owner-uuid", IsPublic: true}}
+	h := NewHandler(stub, testIngestURL, ls)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/pub/playlist.m3u8", nil)
+	req.SetPathValue("id", "pub")
+	rec := httptest.NewRecorder()
+
+	h.Playlist(rec, req) // aucun token, aucun RequireAuth
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 (lecture publique), got %d: %s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/vnd.apple.mpegurl") {
+		t.Fatalf("content-type manifeste attendu, got %q", ct)
+	}
+}
+
+func TestHandler_Segment_PublicNoAuth(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("pub2", "KEYPUB2")
+	defer ls.StopAll()
+	stub := &stubService{getRet: Stream{ID: "pub2", UserID: "owner-uuid", IsPublic: true}}
+	h := NewHandler(stub, testIngestURL, ls)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/pub2/segments/seg_00000.ts", nil)
+	req.SetPathValue("id", "pub2")
+	req.SetPathValue("segment", "seg_00000.ts")
+	rec := httptest.NewRecorder()
+
+	h.Segment(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 (segment public), got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestHandler_Playlist_PrivateNoAuth_Returns404 : un anonyme sur un flux privé/absent
+// reçoit 404 (visibilité gérée par GetStream), jamais 401.
+func TestHandler_Playlist_PrivateNoAuth_Returns404(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("priv", "KEYPRIV")
+	defer ls.StopAll()
+	stub := &stubService{getErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL, ls)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/priv/playlist.m3u8", nil)
+	req.SetPathValue("id", "priv")
+	rec := httptest.NewRecorder()
+
+	h.Playlist(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404 (flux privé/absent, anonyme), got %d: %s", rec.Code, rec.Body)
+	}
+}

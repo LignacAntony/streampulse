@@ -134,10 +134,14 @@ Deux routes de lecture, servies depuis `<dir>` de la session (via `http.ServeFil
 - **Visibilité** : réutilise la logique de `GetStream` (flux privé d'un tiers / absent / archivé →
   `404`). `Cache-Control: no-cache` sur le manifeste **et** les segments (choix conservateur pour le
   MVP ; mettre les segments — immuables une fois écrits — en cache court reste une optimisation possible).
-- **Auth auditeur** : `RequireAuth` (JWT), cohérent avec les autres lectures. ⚠️ *caveat* connu :
-  certains players HLS natifs passent mal les en-têtes `Authorization` sur les sous-requêtes de
-  segments ; si cela bloque la démo, un token de lecture court dans l'URL sera tracé comme suivi
-  (hors périmètre STR-70).
+- **Auth auditeur — lecture PUBLIQUE** (révisé pour STR-108) : `playlist.m3u8` et `segments/{name}`
+  sont servis **sans authentification**. Motif : le player natif (just_audio → AVPlayer/ExoPlayer)
+  fait ses propres requêtes HTTP et **ne peut pas porter le `Bearer`** de façon fiable (surtout iOS
+  sur les sous-requêtes de segments), et le token d'accès (15 min) expirerait en cours d'écoute. La
+  visibilité est déléguée à `GetStream` : un anonyme (`requesterID = ""`) obtient les flux **publics**
+  et un **404** sur un flux privé (jamais propriétaire de `""`). Cohérent avec la découverte déjà
+  publique (STR-107) et le rôle `anonymous`. *Décision initiale (STR-70) : `RequireAuth` JWT —
+  remplacée ici.* La lecture d'un flux **privé** (owner authentifié) reste un suivi hors scope.
 - **Anti-traversal** : `{name}` validé strictement (`^seg_\d+\.ts$`), jamais concaténé brut au path.
 - **Fichier absent** : session vivante mais fichier pas encore écrit (fenêtre start→1er segment, ou
   push dont ffmpeg n'a rien produit) ou déjà retiré (fenêtre glissante) → un `os.Stat` renvoie

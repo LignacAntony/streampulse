@@ -502,15 +502,16 @@ func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveHLSFile factorise le service d'un fichier HLS (manifeste ou segment) à un
-// auditeur authentifié : contrôle de visibilité (GetStream, 404 si absent/privé),
-// lookup de la session (unavailable si le flux n'est pas en direct), en-têtes puis
-// ServeFile. lookup renvoie le chemin disque et sa validité.
+// auditeur : contrôle de visibilité (GetStream, 404 si absent/privé), lookup de la
+// session (unavailable si le flux n'est pas en direct), en-têtes puis ServeFile.
+// lookup renvoie le chemin disque et sa validité.
+//
+// Lecture PUBLIQUE (STR-108) : pas d'authentification requise — le player natif
+// (just_audio → AVPlayer/ExoPlayer) ne peut pas porter le Bearer. Un auditeur
+// anonyme a requesterID = "" ; la visibilité de GetStream sert alors les flux
+// publics et renvoie 404 pour un flux privé (jamais propriétaire de "").
 func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, contentType string, lookup func(id string) (string, bool), unavailable error) {
-	requesterID, ok := auth.UserIDFromContext(r.Context())
-	if !ok {
-		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
-		return
-	}
+	requesterID, _ := auth.UserIDFromContext(r.Context()) // "" si anonyme (pas de JWT)
 	id := r.PathValue("id")
 
 	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {

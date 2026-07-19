@@ -148,12 +148,12 @@ func run() error {
 	// Ingest du flux audio par le diffuseur (STR-70/71) : auth par stream_key dans
 	// le path (pas de JWT), le corps est un push audio continu segmenté en HLS.
 	mux.Handle("POST /api/streams/ingest/{stream_key}", http.HandlerFunc(streamingHandler.Ingest))
-	// Lecture HLS par l'auditeur (STR-70) : manifeste + segments, auth JWT. La
-	// visibilité (flux privé/absent → 404) est vérifiée dans le handler.
-	mux.Handle("GET /api/streams/{id}/playlist.m3u8", auth.RequireAuth(cfg.JWTSecret,
-		http.HandlerFunc(streamingHandler.Playlist)))
-	mux.Handle("GET /api/streams/{id}/segments/{segment}", auth.RequireAuth(cfg.JWTSecret,
-		http.HandlerFunc(streamingHandler.Segment)))
+	// Lecture HLS par l'auditeur (STR-108) : manifeste + segments, PUBLIQUE (pas de
+	// JWT) — le player natif just_audio ne peut pas porter le Bearer. La visibilité
+	// (flux privé/absent → 404) est vérifiée dans le handler ; seuls les flux publics
+	// sont servis à un anonyme.
+	mux.Handle("GET /api/streams/{id}/playlist.m3u8", http.HandlerFunc(streamingHandler.Playlist))
+	mux.Handle("GET /api/streams/{id}/segments/{segment}", http.HandlerFunc(streamingHandler.Segment))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {
