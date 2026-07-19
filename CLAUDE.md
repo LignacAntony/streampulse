@@ -18,6 +18,8 @@ go run ./cmd/api          # Run dev server
 go test ./...             # Run all tests
 go test ./path/to/pkg/... # Run a single package's tests
 go build -o bin/api ./cmd/api
+make loadtest             # Test de charge HLS 50 auditeurs (STR-90) — depuis la racine, requiert ffmpeg
+# Décision + run de référence : docs/adr/016-scalabilite-test-de-charge-et-limiteur-hls.md
 sqlc generate              # Regénérer le code SQL → Go après modif d'une query
 
 # Mobile (Flutter) — dans mobile/
@@ -198,8 +200,8 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | PATCH | `/api/streams/{id}/stop` | `Handler.Stop` | Oui — rôle `broadcaster`, owner ; `live→ended` (409 si pas live) |
 | GET | `/api/streams/{id}/events` | `Handler.Events` | Oui (JWT) — flux **SSE**, event `ended` à l'arrêt (STR-77) |
 | POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio AAC segmenté en HLS (STR-70/71) |
-| GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Public** (`OptionalAuth`) — flux publics servis à un anonyme, privé → 404 ; owner authentifié voit ses flux privés — manifeste HLS, 409 si pas live/pas prêt (STR-108) |
-| GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Public** (`OptionalAuth`) — idem playlist — segment `.ts` (nom validé anti-traversal) (STR-108) |
+| GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Public** (`OptionalAuth`) — flux publics servis à un anonyme, privé → 404 ; owner authentifié voit ses flux privés — manifeste HLS, 409 si pas live/pas prêt (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
+| GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Public** (`OptionalAuth`) — idem playlist — segment `.ts` (nom validé anti-traversal) (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
 
 - Moteur HLS (STR-70) : le diffuseur pousse de l'AAC sur `ingest/{stream_key}` (auth par clé, 100 % mémoire) ; **ffmpeg** (`-c:a copy`) segmente en `.ts` de ~10 s + manifeste `.m3u8` glissant servi aux auditeurs. Un segmenteur par session live, tué + répertoire nettoyé à l'arrêt. Détails [ADR 015](docs/adr/015-moteur-hls-segmentation-ffmpeg.md).
 - Cycle de vie du direct (STR-77) : `start`/`stop` = endpoints dédiés (le PUT ne touche pas au statut) ; **un seul flux live par diffuseur** ; goroutines gérées par `LiveSessions` (context + mutex). Détails [ADR 013](docs/adr/013-domaine-streaming.md) §7.
@@ -412,6 +414,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
+| `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
 
 ## Santé des services
 
@@ -474,7 +477,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `015-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `017-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

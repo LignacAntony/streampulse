@@ -152,10 +152,15 @@ func run() error {
 	// player natif just_audio ne peut pas porter le Bearer. Auth *optionnelle* : un
 	// anonyme obtient les flux publics (privé → 404 via GetStream) ; un propriétaire
 	// authentifié qui présente un token voit aussi ses propres flux privés.
+	// Limiteur de charge (STR-88) : budget partagé entre les deux routes, à
+	// l'extérieur de OptionalAuth pour rejeter sous surcharge avant tout traitement.
+	// L'ingest n'est pas concerné (un seul push par flux, déjà garanti par
+	// errIngestInProgress).
+	hlsLimit := streaming.NewMaxInFlight(cfg.HLSMaxConcurrent)
 	mux.Handle("GET /api/streams/{id}/playlist.m3u8",
-		auth.OptionalAuth(cfg.JWTSecret, http.HandlerFunc(streamingHandler.Playlist)))
+		hlsLimit(auth.OptionalAuth(cfg.JWTSecret, http.HandlerFunc(streamingHandler.Playlist))))
 	mux.Handle("GET /api/streams/{id}/segments/{segment}",
-		auth.OptionalAuth(cfg.JWTSecret, http.HandlerFunc(streamingHandler.Segment)))
+		hlsLimit(auth.OptionalAuth(cfg.JWTSecret, http.HandlerFunc(streamingHandler.Segment))))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {

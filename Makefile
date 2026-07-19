@@ -25,3 +25,7 @@ generate-openapi-client:
 	cd mobile/packages/streampulse_api && dart pub get && dart run build_runner build --delete-conflicting-outputs
 	dart format mobile/packages/streampulse_api/lib
 	rm -rf mobile/packages/streampulse_api/.dart_tool mobile/packages/streampulse_api/pubspec.lock
+
+.PHONY: loadtest
+loadtest:
+	cd backend && go test -tags loadtest -race -count=1 -run TestLoad -v -timeout 5m ./internal/streaming/loadtest/
