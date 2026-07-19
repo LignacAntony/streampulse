@@ -138,6 +138,26 @@ func writeInternalError(w http.ResponseWriter) error {
 	}})
 }
 
+// ingestPathPrefix marks the route whose last path segment is the secret
+// stream_key — it must never appear in logs.
+const ingestPathPrefix = "/api/streams/ingest/"
+
+// loggablePath returns a log-safe representation of the request path: the
+// route pattern (which holds placeholders, never path values) when the mux
+// populated it, otherwise the raw path with the stream_key segment redacted.
+func loggablePath(r *http.Request) string {
+	if p := r.Pattern; p != "" {
+		if _, after, ok := strings.Cut(p, " "); ok {
+			return after
+		}
+		return p
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, ingestPathPrefix); ok && rest != "" {
+		return ingestPathPrefix + "[redacted]"
+	}
+	return r.URL.Path
+}
+
 func logRequestError(r *http.Request, err error) {
 	if r == nil {
 		log.Printf("http: %v", err)
@@ -146,5 +166,5 @@ func logRequestError(r *http.Request, err error) {
 	sanitize := func(s string) string {
 		return strings.NewReplacer("\n", "", "\r", "").Replace(s)
 	}
-	log.Printf("http: %s %s %s: %v", r.Method, sanitize(r.URL.Path), sanitize(r.RemoteAddr), err) // #nosec G706 -- path and remoteAddr stripped of newlines by sanitize()
+	log.Printf("http: %s %s %s: %v", r.Method, sanitize(loggablePath(r)), sanitize(r.RemoteAddr), err) // #nosec G706 -- path and remoteAddr stripped of newlines by sanitize()
 }
