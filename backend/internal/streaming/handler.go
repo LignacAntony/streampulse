@@ -484,17 +484,18 @@ func ingestError(err error) error {
 	}
 }
 
-// Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS à un
-// auditeur authentifié. 409 si le flux n'est pas en direct.
+// Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS d'un
+// flux public (lecture publique, cf. serveHLSFile). 409 si le flux n'est pas en
+// direct ou si le manifeste n'est pas encore prêt.
 func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
 	h.serveHLSFile(w, r, "application/vnd.apple.mpegurl",
 		func(id string) (string, bool) { return h.sessions.Playlist(id) },
 		apperror.Conflict("stream is not live"))
 }
 
-// Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts à un
-// auditeur authentifié. Le nom du segment est validé (anti path-traversal) dans
-// la couche session ; nom invalide ou segment absent -> 404.
+// Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts d'un
+// flux public (lecture publique, cf. serveHLSFile). Le nom du segment est validé
+// (anti path-traversal) dans la couche session ; nom invalide ou segment absent -> 404.
 func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 	h.serveHLSFile(w, r, "video/mp2t",
 		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },

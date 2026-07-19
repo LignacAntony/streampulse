@@ -96,3 +96,64 @@ func TestRequireRole_Hierarchy(t *testing.T) {
 		})
 	}
 }
+
+func TestOptionalAuth_NoToken_Anonymous(t *testing.T) {
+	var id string
+	var present bool
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, present = UserIDFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil) // aucun header Authorization
+	rec := httptest.NewRecorder()
+	OptionalAuth(testSecret, next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 (anonyme laissé passer), got %d", rec.Code)
+	}
+	if present || id != "" {
+		t.Errorf("anonyme attendu, got id=%q present=%v", id, present)
+	}
+}
+
+func TestOptionalAuth_ValidToken_InjectsIdentity(t *testing.T) {
+	var id, role string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, _ = UserIDFromContext(r.Context())
+		role, _ = RoleFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken(t, "owner-1", "broadcaster", time.Minute))
+	rec := httptest.NewRecorder()
+	OptionalAuth(testSecret, next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	if id != "owner-1" || role != "broadcaster" {
+		t.Errorf("identité attendue {owner-1, broadcaster}, got {%s, %s}", id, role)
+	}
+}
+
+func TestOptionalAuth_InvalidToken_Anonymous(t *testing.T) {
+	var present bool
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, present = UserIDFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer not-a-valid-jwt")
+	rec := httptest.NewRecorder()
+	OptionalAuth(testSecret, next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 (token invalide -> anonyme, jamais 401), got %d", rec.Code)
+	}
+	if present {
+		t.Error("token invalide doit être traité comme anonyme (pas d'identité)")
+	}
+}

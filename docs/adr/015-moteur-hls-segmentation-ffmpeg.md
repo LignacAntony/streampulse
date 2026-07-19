@@ -1,8 +1,8 @@
 # ADR 015 — Moteur HLS : segmentation et manifeste via ffmpeg
 
 **Date** : 2026-07-13
-**Statut** : Accepté
-**Ticket** : [STR-70](https://linear.app/streampulse/issue/STR-70) (sous-issue [STR-71](https://linear.app/streampulse/issue/STR-71) — endpoint de réception)
+**Statut** : Accepté — **révisé le 2026-07-19 par [STR-108](https://linear.app/streampulse/issue/STR-108)** (lecture HLS auditeur : `RequireAuth` JWT → **lecture publique des flux publics**, cf. §3)
+**Ticket** : [STR-70](https://linear.app/streampulse/issue/STR-70) (sous-issue [STR-71](https://linear.app/streampulse/issue/STR-71) — endpoint de réception) · révision [STR-108](https://linear.app/streampulse/issue/STR-108)
 
 ---
 
@@ -134,14 +134,19 @@ Deux routes de lecture, servies depuis `<dir>` de la session (via `http.ServeFil
 - **Visibilité** : réutilise la logique de `GetStream` (flux privé d'un tiers / absent / archivé →
   `404`). `Cache-Control: no-cache` sur le manifeste **et** les segments (choix conservateur pour le
   MVP ; mettre les segments — immuables une fois écrits — en cache court reste une optimisation possible).
-- **Auth auditeur — lecture PUBLIQUE** (révisé pour STR-108) : `playlist.m3u8` et `segments/{name}`
-  sont servis **sans authentification**. Motif : le player natif (just_audio → AVPlayer/ExoPlayer)
-  fait ses propres requêtes HTTP et **ne peut pas porter le `Bearer`** de façon fiable (surtout iOS
-  sur les sous-requêtes de segments), et le token d'accès (15 min) expirerait en cours d'écoute. La
-  visibilité est déléguée à `GetStream` : un anonyme (`requesterID = ""`) obtient les flux **publics**
-  et un **404** sur un flux privé (jamais propriétaire de `""`). Cohérent avec la découverte déjà
-  publique (STR-107) et le rôle `anonymous`. *Décision initiale (STR-70) : `RequireAuth` JWT —
-  remplacée ici.* La lecture d'un flux **privé** (owner authentifié) reste un suivi hors scope.
+- **Auth auditeur — lecture PUBLIQUE, auth optionnelle** (révisé pour STR-108) : `playlist.m3u8` et
+  `segments/{name}` sont montés derrière `auth.OptionalAuth` (et non `RequireAuth`). Motif : le player
+  natif (just_audio → AVPlayer/ExoPlayer) fait ses propres requêtes HTTP et **ne peut pas porter le
+  `Bearer`** de façon fiable (surtout iOS sur les sous-requêtes de segments), et le token d'accès
+  (15 min) expirerait en cours d'écoute. `OptionalAuth` parse le Bearer **s'il est présent** (sinon
+  anonyme, jamais de 401). La visibilité est déléguée à `GetStream` :
+  - **anonyme** (`requesterID = ""`) → flux **publics** servis, **404** sur un flux privé (jamais
+    propriétaire de `""`) ;
+  - **propriétaire authentifié** (token présent) → voit aussi ses **propres flux privés** (pas de
+    régression vs le `RequireAuth` initial).
+
+  Cohérent avec la découverte déjà publique (STR-107) et le rôle `anonymous`. *Décision initiale
+  (STR-70) : `RequireAuth` JWT — remplacée par `OptionalAuth`.*
 - **Anti-traversal** : `{name}` validé strictement (`^seg_\d+\.ts$`), jamais concaténé brut au path.
 - **Fichier absent** : session vivante mais fichier pas encore écrit (fenêtre start→1er segment, ou
   push dont ffmpeg n'a rien produit) ou déjà retiré (fenêtre glissante) → un `os.Stat` renvoie

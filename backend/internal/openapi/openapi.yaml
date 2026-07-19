@@ -764,10 +764,11 @@ paths:
       operationId: streamPlaylist
       summary: Get the live HLS media playlist (manifest).
       description: >-
-        Public — no authentication (native HLS players cannot carry a Bearer
-        token). Returns the continuously-updated HLS media playlist (`.m3u8`) of a
-        live **public** stream. Segment URIs are relative (`segments/…`). A private
-        or absent stream returns 404.
+        Public — authentication is optional (native HLS players cannot carry a
+        Bearer token). Returns the continuously-updated HLS media playlist (`.m3u8`)
+        of a live **public** stream. Segment URIs are relative (`segments/…`). A
+        private or absent stream returns 404; an owner passing a valid Bearer may
+        also access their own private stream.
       responses:
         "200":
           description: HLS media playlist.
@@ -806,9 +807,10 @@ paths:
       operationId: streamSegment
       summary: Get an HLS media segment (.ts).
       description: >-
-        Public — no authentication. Returns an MPEG-TS audio segment referenced by
-        the live playlist of a **public** stream. A private or absent stream
-        returns 404.
+        Public — authentication is optional. Returns an MPEG-TS audio segment
+        referenced by the live playlist of a **public** stream. A private or absent
+        stream returns 404; an owner passing a valid Bearer may also access their
+        own private stream.
       responses:
         "200":
           description: MPEG-TS segment.

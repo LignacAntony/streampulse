@@ -333,6 +333,37 @@ func TestService_GetStream_PrivateNonOwner_NotFound(t *testing.T) {
 	}
 }
 
+// TestService_GetStream_Anonymous : un demandeur anonyme (requesterID = "") — cas
+// central de la lecture publique HLS (STR-108) — obtient les flux publics et un 404
+// sur les flux privés (jamais propriétaire de "").
+func TestService_GetStream_Anonymous(t *testing.T) {
+	t.Run("flux public servi", func(t *testing.T) {
+		repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: true}}
+		svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+		got, isOwner, err := svc.GetStream(context.Background(), "s1", "")
+		if err != nil {
+			t.Fatalf("flux public anonyme: erreur inattendue %v", err)
+		}
+		if isOwner {
+			t.Error("un anonyme ne doit jamais être propriétaire")
+		}
+		if got.ID != "s1" {
+			t.Errorf("stream = %+v, want id s1", got)
+		}
+	})
+
+	t.Run("flux privé -> 404", func(t *testing.T) {
+		repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
+		svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+		_, _, err := svc.GetStream(context.Background(), "s1", "")
+		if !apperror.IsCode(err, apperror.CodeNotFound) {
+			t.Fatalf("flux privé anonyme: code = %v, want not_found", err)
+		}
+	})
+}
+
 func TestService_UpdateStream_ValidationError(t *testing.T) {
 	repo := &fakeRepo{}
 	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
