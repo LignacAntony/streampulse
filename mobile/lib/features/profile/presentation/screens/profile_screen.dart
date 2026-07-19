@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
@@ -152,6 +153,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 12),
           _SettingsCard(profile: profile, runSave: _runSave),
+          if (profile.role == 'admin') ...[
+            const SizedBox(height: 28),
+            const _AdminCard(),
+          ],
           const SizedBox(height: 32),
           ConstrainedBox(
             constraints: const BoxConstraints.tightFor(
@@ -322,6 +327,34 @@ class _SettingsCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Tuile visible uniquement pour un profil `role == 'admin'` (cf. `_buildBody`).
+/// Ouvre `AdminUsersScreen` par `Navigator.push` : écran hors go_router, pas
+/// de route nommée (accessible uniquement depuis cette entrée).
+class _AdminCard extends StatelessWidget {
+  const _AdminCard();
+
+  void _openAdmin(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      child: ListTile(
+        key: const Key('profile_admin_tile'),
+        leading: Icon(Icons.admin_panel_settings, color: colors.primary),
+        title: const Text('Administration'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _openAdmin(context),
       ),
     );
   }
