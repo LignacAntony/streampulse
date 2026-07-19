@@ -7,7 +7,7 @@ WHERE (sqlc.arg(search)::text = '' OR email ILIKE '%' || sqlc.arg(search) || '%'
   AND (sqlc.arg(status_filter)::text = ''
        OR (sqlc.arg(status_filter) = 'active' AND is_active)
        OR (sqlc.arg(status_filter) = 'inactive' AND NOT is_active))
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
 -- name: AdminGetUser :one

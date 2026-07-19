@@ -13,6 +13,12 @@ const (
 	testTargetUserID  = "00000000-0000-0000-0000-000000000001" // cible : simple utilisateur
 	testTargetAdminID = "00000000-0000-0000-0000-000000000002" // cible : un autre admin actif
 	testUnknownID     = "00000000-0000-0000-0000-000000000dea" // cible absente de la map
+
+	// testFoldRequesterID / testFoldTargetIDUpper : même UUID que le requester,
+	// mais la cible est fournie en MAJUSCULES (cf. tests self-action insensibles
+	// à la casse — pgtype.UUID scanne les deux graphies vers les mêmes octets).
+	testFoldRequesterID   = "a1b2c3d4-0000-0000-0000-00000000000f"
+	testFoldTargetIDUpper = "A1B2C3D4-0000-0000-0000-00000000000F"
 )
 
 // fakeRepo est un Repository en mémoire (map indexée par ID) pour les tests du
@@ -249,5 +255,32 @@ func TestService_DeleteUser_UnknownUser(t *testing.T) {
 	}
 	if repo.deleteCalls != 0 {
 		t.Errorf("delete must not be called for an unknown user")
+	}
+}
+
+// 10. SetUserActive(target==requester) détecté malgré une casse différente de
+// l'UUID cible (pgtype.UUID scanne majuscules/minuscules vers les mêmes
+// octets) -> Conflict (self-action), sans appel repo.
+func TestService_SetUserActive_SelfAction_CaseInsensitive(t *testing.T) {
+	repo := seededRepo()
+	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), testFoldTargetIDUpper, testFoldRequesterID, false)
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("want conflict, got %v", err)
+	}
+	if repo.getUserCalls != 0 {
+		t.Errorf("repo must not be called on self-action")
+	}
+}
+
+// 11. DeleteUser(target==requester) détecté malgré une casse différente de
+// l'UUID cible -> Conflict (self-action), sans appel repo.
+func TestService_DeleteUser_SelfAction_CaseInsensitive(t *testing.T) {
+	repo := seededRepo()
+	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), testFoldTargetIDUpper, testFoldRequesterID)
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("want conflict, got %v", err)
+	}
+	if repo.getUserCalls != 0 {
+		t.Errorf("repo must not be called on self-action")
 	}
 }

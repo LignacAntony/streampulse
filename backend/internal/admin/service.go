@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -66,7 +67,7 @@ func (s *Service) ListUsers(ctx context.Context, in ListUsersInput) ([]AdminUser
 // SetUserActive active/désactive un compte. Un admin ne peut pas s'auto-modifier
 // (self-action), et on ne peut jamais désactiver le dernier admin actif restant.
 func (s *Service) SetUserActive(ctx context.Context, targetID, requesterID string, active bool) (AdminUser, error) {
-	if targetID == requesterID {
+	if strings.EqualFold(targetID, requesterID) {
 		return AdminUser{}, apperror.Conflict("cannot modify your own account")
 	}
 	target, err := s.repo.GetUser(ctx, targetID)
@@ -93,7 +94,7 @@ func (s *Service) SetUserActive(ctx context.Context, targetID, requesterID strin
 // cours du user AVANT de le supprimer (une session en mémoire ne doit jamais
 // survivre à la disparition de son propriétaire).
 func (s *Service) DeleteUser(ctx context.Context, targetID, requesterID string) error {
-	if targetID == requesterID {
+	if strings.EqualFold(targetID, requesterID) {
 		return apperror.Conflict("cannot delete your own account")
 	}
 	target, err := s.repo.GetUser(ctx, targetID)

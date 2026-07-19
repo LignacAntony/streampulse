@@ -71,7 +71,7 @@ WHERE ($1::text = '' OR email ILIKE '%' || $1 || '%' OR username ILIKE '%' || $1
   AND ($3::text = ''
        OR ($3 = 'active' AND is_active)
        OR ($3 = 'inactive' AND NOT is_active))
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT $5 OFFSET $4
 `
 
