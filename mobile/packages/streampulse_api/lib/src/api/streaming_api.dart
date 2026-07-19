@@ -633,7 +633,7 @@ class StreamingApi {
   }
 
   /// Get the live HLS media playlist (manifest).
-  /// Returns the continuously-updated HLS media playlist (&#x60;.m3u8&#x60;) of a live stream. Segment URIs are relative (&#x60;segments/…&#x60;). Requires the stream to be live.
+  /// Public — authentication is optional (native HLS players cannot carry a Bearer token). Returns the continuously-updated HLS media playlist (&#x60;.m3u8&#x60;) of a live **public** stream. Segment URIs are relative (&#x60;segments/…&#x60;). A private or absent stream returns 404; an owner passing a valid Bearer may also access their own private stream.
   ///
   /// Parameters:
   /// * [id]
@@ -664,12 +664,7 @@ class StreamingApi {
     final _options = Options(
       method: r'GET',
       headers: <String, dynamic>{...?headers},
-      extra: <String, dynamic>{
-        'secure': <Map<String, String>>[
-          {'type': 'http', 'scheme': 'bearer', 'name': 'bearerAuth'},
-        ],
-        ...?extra,
-      },
+      extra: <String, dynamic>{'secure': <Map<String, String>>[], ...?extra},
       validateStatus: validateStatus,
     );
 
@@ -711,7 +706,7 @@ class StreamingApi {
   }
 
   /// Get an HLS media segment (.ts).
-  /// Returns an MPEG-TS audio segment referenced by the live playlist. Requires the stream to be live.
+  /// Public — authentication is optional. Returns an MPEG-TS audio segment referenced by the live playlist of a **public** stream. A private or absent stream returns 404; an owner passing a valid Bearer may also access their own private stream.
   ///
   /// Parameters:
   /// * [id]
@@ -752,12 +747,7 @@ class StreamingApi {
       method: r'GET',
       responseType: ResponseType.bytes,
       headers: <String, dynamic>{...?headers},
-      extra: <String, dynamic>{
-        'secure': <Map<String, String>>[
-          {'type': 'http', 'scheme': 'bearer', 'name': 'bearerAuth'},
-        ],
-        ...?extra,
-      },
+      extra: <String, dynamic>{'secure': <Map<String, String>>[], ...?extra},
       validateStatus: validateStatus,
     );
 

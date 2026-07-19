@@ -484,17 +484,18 @@ func ingestError(err error) error {
 	}
 }
 
-// Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS à un
-// auditeur authentifié. 409 si le flux n'est pas en direct.
+// Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS d'un
+// flux public (lecture publique, cf. serveHLSFile). 409 si le flux n'est pas en
+// direct ou si le manifeste n'est pas encore prêt.
 func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
 	h.serveHLSFile(w, r, "application/vnd.apple.mpegurl",
 		func(id string) (string, bool) { return h.sessions.Playlist(id) },
 		apperror.Conflict("stream is not live"))
 }
 
-// Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts à un
-// auditeur authentifié. Le nom du segment est validé (anti path-traversal) dans
-// la couche session ; nom invalide ou segment absent -> 404.
+// Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts d'un
+// flux public (lecture publique, cf. serveHLSFile). Le nom du segment est validé
+// (anti path-traversal) dans la couche session ; nom invalide ou segment absent -> 404.
 func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 	h.serveHLSFile(w, r, "video/mp2t",
 		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },
@@ -502,15 +503,16 @@ func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveHLSFile factorise le service d'un fichier HLS (manifeste ou segment) à un
-// auditeur authentifié : contrôle de visibilité (GetStream, 404 si absent/privé),
-// lookup de la session (unavailable si le flux n'est pas en direct), en-têtes puis
-// ServeFile. lookup renvoie le chemin disque et sa validité.
+// auditeur : contrôle de visibilité (GetStream, 404 si absent/privé), lookup de la
+// session (unavailable si le flux n'est pas en direct), en-têtes puis ServeFile.
+// lookup renvoie le chemin disque et sa validité.
+//
+// Lecture PUBLIQUE (STR-108) : pas d'authentification requise — le player natif
+// (just_audio → AVPlayer/ExoPlayer) ne peut pas porter le Bearer. Un auditeur
+// anonyme a requesterID = "" ; la visibilité de GetStream sert alors les flux
+// publics et renvoie 404 pour un flux privé (jamais propriétaire de "").
 func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, contentType string, lookup func(id string) (string, bool), unavailable error) {
-	requesterID, ok := auth.UserIDFromContext(r.Context())
-	if !ok {
-		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
-		return
-	}
+	requesterID, _ := auth.UserIDFromContext(r.Context()) // "" si anonyme (pas de JWT)
 	id := r.PathValue("id")
 
 	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
