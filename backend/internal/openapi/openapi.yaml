@@ -16,6 +16,8 @@ tags:
     description: Current user profile endpoints.
   - name: Broadcaster
     description: Broadcaster role requests and admin review.
+  - name: Admin
+    description: Administrative user management endpoints (US-08-01).
 paths:
   /health:
     get:
@@ -442,6 +444,134 @@ paths:
           $ref: "#/components/responses/Conflict"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/users:
+    get:
+      tags:
+        - Admin
+      operationId: listAdminUsers
+      summary: List and search users (admin only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Free-text search on email or username.
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: false
+          description: Optional role filter.
+          schema:
+            type: string
+            enum: ["", user, broadcaster, admin]
+        - name: status
+          in: query
+          required: false
+          description: Optional activation status filter.
+          schema:
+            type: string
+            enum: ["", active, inactive]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated users matching the filters, with the total count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags:
+        - Admin
+      operationId: setAdminUserActive
+      summary: Activate or deactivate a user account (admin only).
+      description: >-
+        An admin cannot act on their own account, and the last remaining
+        active admin cannot be deactivated.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetUserActiveRequest"
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Admin
+      operationId: deleteAdminUser
+      summary: Permanently delete a user account (admin only).
+      description: >-
+        Hard delete. Any live stream owned by the user is stopped first
+        (STR-191). Same guards as the activation endpoint (self-action, last
+        active admin).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The user was deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/streams:
@@ -1405,3 +1535,59 @@ components:
           type: string
           format: date-time
           example: "2026-01-02T03:04:05Z"
+    AdminUserResponse:
+      type: object
+      required:
+        - id
+        - email
+        - username
+        - role
+        - is_active
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        username:
+          type: string
+          example: alice
+        role:
+          type: string
+          enum: [user, broadcaster, admin]
+          example: user
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+    AdminUserListResponse:
+      type: object
+      required:
+        - users
+        - total
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUserResponse"
+        total:
+          type: integer
+          format: int64
+          description: Total number of users matching the filters (for pagination).
+          example: 42
+    SetUserActiveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - is_active
+      properties:
+        is_active:
+          type: boolean
+          example: false

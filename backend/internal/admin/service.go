@@ -78,6 +78,9 @@ func (s *Service) SetUserActive(ctx context.Context, targetID, requesterID strin
 		if err != nil {
 			return AdminUser{}, err
 		}
+		// Garde non transactionnel : deux requêtes concurrentes visant deux admins
+		// différents peuvent théoriquement passer toutes deux le count — fenêtre
+		// minuscule, assumée à cette échelle (cf. ADR 017).
 		if n <= 1 {
 			return AdminUser{}, apperror.Conflict("cannot deactivate the last active admin")
 		}
@@ -102,6 +105,9 @@ func (s *Service) DeleteUser(ctx context.Context, targetID, requesterID string) 
 		if err != nil {
 			return err
 		}
+		// Garde non transactionnel : deux requêtes concurrentes visant deux admins
+		// différents peuvent théoriquement passer toutes deux le count — fenêtre
+		// minuscule, assumée à cette échelle (cf. ADR 017).
 		if n <= 1 {
 			return apperror.Conflict("cannot delete the last active admin")
 		}

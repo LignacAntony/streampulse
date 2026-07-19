@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LignacAntony/streampulse/internal/admin"
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/broadcaster"
 	"github.com/LignacAntony/streampulse/internal/config"
@@ -24,6 +25,11 @@ import (
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 	"github.com/LignacAntony/streampulse/internal/streaming"
 )
+
+// var _ vérifie à la compilation que *streaming.Service satisfait bien
+// admin.LiveStopper, l'interface étroite (ISP) que le service admin consomme
+// pour arrêter les lives d'un utilisateur supprimé (STR-191 Task 2).
+var _ admin.LiveStopper = (*streaming.Service)(nil)
 
 func main() {
 	if err := run(); err != nil {
@@ -93,6 +99,12 @@ func run() error {
 	broadcasterSvc := broadcaster.NewService(broadcasterRepo)
 	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
 
+	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
+	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression).
+	adminRepo := admin.NewRepository(pool)
+	adminSvc := admin.NewService(adminRepo, streamingSvc)
+	adminHandler := admin.NewHandler(adminSvc)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -123,6 +135,15 @@ func run() error {
 	mux.Handle("/api/admin/broadcaster-requests", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.List))))
 	mux.Handle("/api/admin/broadcaster-requests/{id}/approve", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Approve))))
 	mux.Handle("/api/admin/broadcaster-requests/{id}/reject", auth.RequireAuth(cfg.JWTSecret, auth.RequireRole("admin", http.HandlerFunc(broadcasterHandler.Reject))))
+
+	// Gestion des utilisateurs (US-08-01, STR-196) : recherche/liste, activation/
+	// désactivation, suppression définitive — réservé aux admins.
+	mux.Handle("GET /api/admin/users", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.List))))
+	mux.Handle("PATCH /api/admin/users/{id}", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.SetActive))))
+	mux.Handle("DELETE /api/admin/users/{id}", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Delete))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).

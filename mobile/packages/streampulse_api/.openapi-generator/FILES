@@ -4,6 +4,7 @@ README.md
 analysis_options.yaml
 build.yaml
 lib/src/api.dart
+lib/src/api/admin_api.dart
 lib/src/api/auth_api.dart
 lib/src/api/broadcaster_api.dart
 lib/src/api/health_api.dart
@@ -16,6 +17,8 @@ lib/src/auth/basic_auth.dart
 lib/src/auth/bearer_auth.dart
 lib/src/auth/oauth.dart
 lib/src/deserialize.dart
+lib/src/model/admin_user_list_response.dart
+lib/src/model/admin_user_response.dart
 lib/src/model/broadcaster_request_admin.dart
 lib/src/model/broadcaster_request_input.dart
 lib/src/model/broadcaster_request_list_response.dart
@@ -34,6 +37,7 @@ lib/src/model/refresh_request.dart
 lib/src/model/register_request.dart
 lib/src/model/reset_password_request.dart
 lib/src/model/review_request_input.dart
+lib/src/model/set_user_active_request.dart
 lib/src/model/stream_response.dart
 lib/src/model/stream_summary_response.dart
 lib/src/model/token_pair_response.dart
