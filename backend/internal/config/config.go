@@ -23,6 +23,7 @@ const (
 	defaultDBHost              = "localhost"
 	defaultDBPort              = "5432"
 	defaultStreamIngestBaseURL = "http://localhost:8080"
+	defaultHLSMaxConcurrent    = 256
 
 	minJWTSecretLen = 32
 )
@@ -56,6 +57,10 @@ type Config struct {
 	// (cf. ADR 013) : {StreamIngestBaseURL}/api/streams/ingest/{stream_key}.
 	StreamIngestBaseURL string `mapstructure:"STREAM_INGEST_BASE_URL"`
 
+	// HLSMaxConcurrent borne le nombre de requêtes HLS (playlist + segments)
+	// servies simultanément — STR-88. <= 0 désactive la borne.
+	HLSMaxConcurrent int `mapstructure:"HLS_MAX_CONCURRENT"`
+
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
 }
@@ -72,6 +77,7 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_HOST", defaultDBHost)
 	v.SetDefault("DB_PORT", defaultDBPort)
 	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
+	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -96,6 +102,7 @@ func Load() (*Config, error) {
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
 		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
+		"HLS_MAX_CONCURRENT",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
@@ -114,6 +121,15 @@ func Load() (*Config, error) {
 	// Viper ne le fait pas seul : os.Getenv retourne "" pour set vide ET pour
 	// absent, et viper privilégie cette chaîne vide sur SetDefault.
 	cfg.applyDefaultsForEmpty()
+
+	// HLSMaxConcurrent est un int : le weak-decode de viper a déjà transformé
+	// "" en 0 pendant l'Unmarshal ci-dessus, indiscernable d'un 0 explicite
+	// (= limiteur désactivé, cf. commentaire du champ). On revérifie donc la
+	// chaîne brute — via .env ou l'environnement OS — plutôt que le champ cfg
+	// déjà converti : seule une chaîne vide retombe sur le défaut.
+	if strings.TrimSpace(v.GetString("HLS_MAX_CONCURRENT")) == "" {
+		cfg.HLSMaxConcurrent = defaultHLSMaxConcurrent
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err

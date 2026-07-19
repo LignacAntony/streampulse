@@ -1,0 +1,35 @@
+name: Load Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  loadtest:
+    name: Test de charge HLS (STR-90)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+
+      - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Run load test
+        working-directory: ./backend
+        shell: bash
+        run: go test -tags loadtest -race -count=1 -run TestLoad -v -timeout 10m ./internal/streaming/loadtest/ 2>&1 | tee loadtest-report.txt
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-report
+          path: backend/loadtest-report.txt

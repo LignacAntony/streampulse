@@ -786,6 +786,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: >-
+            Server at listener capacity (HLS_MAX_CONCURRENT concurrent requests
+            reached). Retry after the delay given in the Retry-After header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/streams/{id}/segments/{segment}:
     parameters:
       - name: id
@@ -821,6 +829,14 @@ paths:
                 format: binary
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          description: >-
+            Server at listener capacity (HLS_MAX_CONCURRENT concurrent requests
+            reached). Retry after the delay given in the Retry-After header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   securitySchemes:
     bearerAuth:
