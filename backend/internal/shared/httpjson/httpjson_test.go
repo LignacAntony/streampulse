@@ -1,8 +1,10 @@
 package httpjson
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -80,6 +82,66 @@ func TestWriteError_MapsAppErrors(t *testing.T) {
 			}
 			if got.Error.Message != tt.wantError {
 				t.Fatalf("message: want %q, got %q", tt.wantError, got.Error.Message)
+			}
+		})
+	}
+}
+
+func TestWriteError_RedactsStreamKeyInLogs(t *testing.T) {
+	tests := []struct {
+		name      string
+		viaMux    bool
+		path      string
+		wantInLog string
+		notInLog  string
+	}{
+		{
+			name:      "ingest path is redacted without route pattern",
+			path:      "/api/streams/ingest/secret-key-123",
+			wantInLog: "/api/streams/ingest/[redacted]",
+			notInLog:  "secret-key-123",
+		},
+		{
+			name:      "route pattern is preferred when set",
+			viaMux:    true,
+			path:      "/api/streams/ingest/secret-key-123",
+			wantInLog: "/api/streams/ingest/{stream_key}",
+			notInLog:  "secret-key-123",
+		},
+		{
+			name:      "non-sensitive path is logged verbatim",
+			path:      "/api/auth/login",
+			wantInLog: "/api/auth/login",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			prev := log.Writer()
+			log.SetOutput(&buf)
+			t.Cleanup(func() { log.SetOutput(prev) })
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, tt.path, nil)
+			ingestErr := apperror.Internal("ingest interrupted", errors.New("unexpected EOF"))
+
+			if tt.viaMux {
+				mux := http.NewServeMux()
+				mux.Handle("POST /api/streams/ingest/{stream_key}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					WriteError(w, r, ingestErr)
+				}))
+				mux.ServeHTTP(rec, req)
+			} else {
+				WriteError(rec, req, ingestErr)
+			}
+
+			logged := buf.String()
+			if !strings.Contains(logged, tt.wantInLog) {
+				t.Fatalf("log: want %q in %q", tt.wantInLog, logged)
+			}
+			if tt.notInLog != "" && strings.Contains(logged, tt.notInLog) {
+				t.Fatalf("log: secret %q leaked in %q", tt.notInLog, logged)
 			}
 		})
 	}
