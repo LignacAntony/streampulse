@@ -32,6 +32,13 @@ class AdminUsersProvider extends ChangeNotifier {
 
   Timer? _debounce;
 
+  /// Jeton de génération anti out-of-order : incrémenté à chaque `load()`.
+  /// Une réponse (succès OU échec) dont le jeton capturé ne correspond plus
+  /// au jeton courant est obsolète — un chargement plus récent (autre filtre,
+  /// autre recherche) est parti entre-temps — et est ignorée au lieu
+  /// d'écraser l'état du chargement le plus récent.
+  int _loadGeneration = 0;
+
   List<AdminUser> get users => _users;
   int get total => _total;
   bool get loading => _loading;
@@ -47,7 +54,12 @@ class AdminUsersProvider extends ChangeNotifier {
   /// (Re)charge la première page avec les filtres/recherche courants.
   /// `reset: true` (défaut) vide la liste affichée avant le fetch (filtres,
   /// recherche) ; `reset: false` conserve l'ancienne liste pendant le fetch.
+  ///
+  /// Réentrant : si un autre `load()` part avant que celui-ci ne réponde
+  /// (deux filtres tapés vite), seul le PLUS RÉCENT écrit l'état — la
+  /// réponse la plus ancienne est jetée, même si elle arrive en dernier.
   Future<void> load({bool reset = true}) async {
+    final gen = ++_loadGeneration;
     if (reset) {
       _users = const [];
       _total = 0;
@@ -63,20 +75,29 @@ class AdminUsersProvider extends ChangeNotifier {
         limit: pageSize,
         offset: 0,
       );
+      if (gen != _loadGeneration) return; // résultat obsolète : ignoré
       _users = result.users;
       _total = result.total;
     } catch (e) {
+      if (gen != _loadGeneration) return; // échec obsolète : ignoré aussi
       _error = _messageFor(e);
     } finally {
-      _loading = false;
-      notifyListeners();
+      // Un load obsolète ne touche pas à `_loading` : le flag appartient au
+      // load le plus récent, qui le remettra à faux dans son propre finally.
+      if (gen == _loadGeneration) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Charge la page suivante (offset = nombre déjà chargé) et l'accumule.
   /// No-op si un chargement est déjà en cours ou si tout est déjà chargé.
+  /// Capture le jeton de génération : si un `load()` (filtre, recherche)
+  /// part pendant le vol, la page obsolète n'est pas accumulée.
   Future<void> loadMore() async {
     if (_loading || _loadingMore || !hasMore) return;
+    final gen = _loadGeneration;
     _loadingMore = true;
     notifyListeners();
     try {
@@ -87,12 +108,17 @@ class AdminUsersProvider extends ChangeNotifier {
         limit: pageSize,
         offset: _users.length,
       );
+      if (gen != _loadGeneration) return; // un load() est passé entre-temps
       _users = [..._users, ...result.users];
       _total = result.total;
       _error = null;
     } catch (e) {
+      if (gen != _loadGeneration) return;
       _error = _messageFor(e);
     } finally {
+      // Contrairement à `_loading`, `_loadingMore` n'appartient qu'à CE
+      // loadMore : toujours le réinitialiser, même sur résultat obsolète,
+      // sinon la pagination resterait bloquée (garde d'entrée ci-dessus).
       _loadingMore = false;
       notifyListeners();
     }

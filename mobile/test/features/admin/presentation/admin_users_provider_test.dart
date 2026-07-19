@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
@@ -37,7 +39,10 @@ class _FakeAdminRepository implements AdminRepository {
       : all = all ?? List.generate(5, (i) => _user('u$i'));
 
   final List<AdminUser> all;
-  final Object? listError;
+
+  /// Mutable : un test peut faire échouer le 1er appel puis annuler l'erreur
+  /// pour que le 2e réussisse (scénario « le réseau revient »).
+  Object? listError;
   final Object? mutationError;
 
   final List<_ListCall> calls = [];
@@ -88,6 +93,33 @@ class _FakeAdminRepository implements AdminRepository {
   }
 }
 
+/// Fake dont chaque `listUsers` reste en vol tant que le test n'a pas résolu
+/// son [Completer] : permet de contrôler l'ORDRE d'arrivée des réponses pour
+/// vérifier le comportement out-of-order (jeton de génération).
+class _CompleterAdminRepository implements AdminRepository {
+  final List<Completer<({List<AdminUser> users, int total})>> pending = [];
+
+  @override
+  Future<({List<AdminUser> users, int total})> listUsers({
+    String? search,
+    String? role,
+    String? status,
+    int limit = 20,
+    int offset = 0,
+  }) {
+    final completer = Completer<({List<AdminUser> users, int total})>();
+    pending.add(completer);
+    return completer.future;
+  }
+
+  @override
+  Future<AdminUser> setUserActive(String id, bool active) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> deleteUser(String id) => throw UnimplementedError();
+}
+
 void main() {
   group('AdminUsersProvider.load', () {
     test('succès : expose la liste, le total ; loading revient à faux', () async {
@@ -134,16 +166,20 @@ void main() {
       expect(provider.loading, isFalse);
     });
 
-    test('un load réussi après un échec réinitialise error', () async {
-      final failing = AdminUsersProvider(
-        _FakeAdminRepository(listError: const NetworkException()),
-      );
-      await failing.load();
-      expect(failing.error, isNotNull);
+    test('un load réussi après un échec réinitialise error (même provider)',
+        () async {
+      final repo = _FakeAdminRepository(listError: const NetworkException());
+      final provider = AdminUsersProvider(repo);
 
-      final ok = AdminUsersProvider(_FakeAdminRepository());
-      await ok.load();
-      expect(ok.error, isNull);
+      await provider.load();
+      expect(provider.error, isNotNull);
+      expect(provider.users, isEmpty);
+
+      repo.listError = null; // le réseau revient : le 2e appel réussit
+      await provider.load();
+
+      expect(provider.error, isNull);
+      expect(provider.users, hasLength(5));
     });
 
     test('reset: false conserve la liste affichée pendant le rechargement', () async {
@@ -216,6 +252,92 @@ void main() {
       final future = provider.setRoleFilter('admin');
       expect(provider.users, isEmpty);
       await future;
+    });
+  });
+
+  group('chargements concurrents (out-of-order)', () {
+    test(
+        'deux load entrelacés : le DERNIER gagne même si sa réponse arrive '
+        'en premier', () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      // Deux load() partent avant toute réponse (ex. setRoleFilter puis
+      // setStatusFilter tapés vite).
+      final first = provider.load();
+      final second = provider.load();
+      expect(repo.pending, hasLength(2));
+
+      // Le SECOND (le plus récent) répond en premier…
+      repo.pending[1].complete((users: [_user('fresh')], total: 1));
+      await second;
+      expect(provider.users.single.id, 'fresh');
+
+      // …puis la réponse OBSOLÈTE du premier arrive en dernier : elle ne
+      // doit pas écraser l'état du chargement le plus récent.
+      repo.pending[0].complete(
+        (users: List.generate(5, (i) => _user('stale$i')), total: 5),
+      );
+      await first;
+
+      expect(provider.users.single.id, 'fresh');
+      expect(provider.total, 1);
+      expect(provider.loading, isFalse);
+      expect(provider.error, isNull);
+    });
+
+    test('un échec obsolète n\'écrase pas le succès du load le plus récent',
+        () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      final first = provider.load();
+      final second = provider.load();
+
+      repo.pending[1].complete((users: [_user('fresh')], total: 1));
+      await second;
+
+      // L'échec du load obsolète arrive après le succès du plus récent :
+      // error doit rester null.
+      repo.pending[0].completeError(const NetworkException());
+      await first;
+
+      expect(provider.error, isNull);
+      expect(provider.users.single.id, 'fresh');
+      expect(provider.loading, isFalse);
+    });
+
+    test('une page loadMore obsolète (load parti entre-temps) est abandonnée',
+        () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      // Première page complète : hasMore vrai.
+      final initial = provider.load();
+      repo.pending[0].complete(
+        (users: List.generate(20, (i) => _user('u$i')), total: 45),
+      );
+      await initial;
+      expect(provider.hasMore, isTrue);
+
+      final more = provider.loadMore(); // page 2 en vol…
+      final reload = provider.load(); // …puis changement de filtre
+
+      // Le load (plus récent) répond d'abord.
+      repo.pending[2].complete((users: [_user('fresh')], total: 1));
+      await reload;
+
+      // La page 2 obsolète arrive ensuite : PAS accumulée.
+      repo.pending[1].complete(
+        (users: List.generate(20, (i) => _user('stale$i')), total: 45),
+      );
+      await more;
+
+      expect(provider.users.single.id, 'fresh');
+      expect(provider.total, 1);
+      expect(provider.loadingMore, isFalse);
+      // La pagination n'est pas bloquée par la page abandonnée.
+      expect(provider.hasMore, isFalse);
     });
   });
 
