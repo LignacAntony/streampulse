@@ -650,3 +650,95 @@ func TestHandler_Playlist_NotReadyReturnsJSON409(t *testing.T) {
 		t.Fatalf("l'erreur doit rester JSON, content-type=%q", ct)
 	}
 }
+
+// newLiveHandler construit un handler dont le flux `id` a une session live
+// (segmenteur simulé), avec le service stubbé fourni. La session est nettoyée en
+// fin de test.
+func newLiveHandler(t *testing.T, id string, svc StreamService) *Handler {
+	t.Helper()
+	ls := sessionsWithFakeSeg(t)
+	ls.Start(id, "KEY-"+id)
+	t.Cleanup(ls.StopAll)
+	return NewHandler(svc, testIngestURL, ls)
+}
+
+// TestHandler_Playlist_PublicNoAuth : lecture publique (STR-108) — le handler sert
+// un flux public sans identité dans le context (anonyme).
+func TestHandler_Playlist_PublicNoAuth(t *testing.T) {
+	h := newLiveHandler(t, "pub", &stubService{getRet: Stream{ID: "pub", UserID: "owner-uuid", IsPublic: true}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/pub/playlist.m3u8", nil)
+	req.SetPathValue("id", "pub")
+	rec := httptest.NewRecorder()
+
+	h.Playlist(rec, req) // aucune identité dans le context
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 (lecture publique), got %d: %s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/vnd.apple.mpegurl") {
+		t.Fatalf("content-type manifeste attendu, got %q", ct)
+	}
+}
+
+func TestHandler_Segment_PublicNoAuth(t *testing.T) {
+	h := newLiveHandler(t, "pub2", &stubService{getRet: Stream{ID: "pub2", UserID: "owner-uuid", IsPublic: true}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/pub2/segments/seg_00000.ts", nil)
+	req.SetPathValue("id", "pub2")
+	req.SetPathValue("segment", "seg_00000.ts")
+	rec := httptest.NewRecorder()
+
+	h.Segment(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 (segment public), got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestHandler_Playlist_PrivateNoAuth_Returns404 : un anonyme sur un flux privé/absent
+// reçoit 404 (visibilité gérée par GetStream), jamais 401. Aucune session live n'est
+// nécessaire : le handler sort sur GetStream avant le lookup de session.
+func TestHandler_Playlist_PrivateNoAuth_Returns404(t *testing.T) {
+	h := NewHandler(&stubService{getErr: apperror.NotFound("stream not found")}, testIngestURL, NewLiveSessions(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/priv/playlist.m3u8", nil)
+	req.SetPathValue("id", "priv")
+	rec := httptest.NewRecorder()
+
+	h.Playlist(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404 (flux privé/absent, anonyme), got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestHandler_Playlist_ViaOptionalAuth exerce la vraie chaîne middleware (comme
+// main.go) : anonyme sur flux public -> 200 ; propriétaire authentifié sur flux
+// privé -> 200 (préserve la lecture propriétaire — régression corrigée).
+func TestHandler_Playlist_ViaOptionalAuth(t *testing.T) {
+	// Anonyme (aucun header Authorization), flux public -> 200.
+	pub := newLiveHandler(t, "pubc", &stubService{getRet: Stream{ID: "pubc", UserID: testUserID, IsPublic: true}})
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/pubc/playlist.m3u8", nil)
+	req.SetPathValue("id", "pubc")
+	rec := httptest.NewRecorder()
+	auth.OptionalAuth(testSecret, http.HandlerFunc(pub.Playlist)).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("anonyme/flux public via OptionalAuth: want 200, got %d: %s", rec.Code, rec.Body)
+	}
+
+	// Propriétaire authentifié (token valide), flux privé -> 200.
+	owner := newLiveHandler(t, "prvc", &stubService{getRet: Stream{ID: "prvc", UserID: testUserID, IsPublic: false}, getOwner: true})
+	token, err := auth.GenerateAccessToken(testUserID, "broadcaster", testSecret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/api/streams/prvc/playlist.m3u8", nil)
+	req2.SetPathValue("id", "prvc")
+	req2.Header.Set("Authorization", "Bearer "+token)
+	rec2 := httptest.NewRecorder()
+	auth.OptionalAuth(testSecret, http.HandlerFunc(owner.Playlist)).ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("propriétaire/flux privé via OptionalAuth: want 200, got %d: %s", rec2.Code, rec2.Body)
+	}
+}
