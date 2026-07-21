@@ -79,6 +79,8 @@ class AdminUserResponse {
 }
 
 enum AdminUserResponseRoleEnum {
+  @JsonValue(r'anonymous')
+  anonymous(r'anonymous'),
   @JsonValue(r'user')
   user(r'user'),
   @JsonValue(r'broadcaster')

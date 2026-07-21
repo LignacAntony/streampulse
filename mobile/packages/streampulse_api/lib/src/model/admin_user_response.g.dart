@@ -52,6 +52,7 @@ Map<String, dynamic> _$AdminUserResponseToJson(AdminUserResponse instance) =>
     };
 
 const _$AdminUserResponseRoleEnumEnumMap = {
+  AdminUserResponseRoleEnum.anonymous: 'anonymous',
   AdminUserResponseRoleEnum.user: 'user',
   AdminUserResponseRoleEnum.broadcaster: 'broadcaster',
   AdminUserResponseRoleEnum.admin: 'admin',
