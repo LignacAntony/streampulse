@@ -167,6 +167,7 @@ type Repository interface {
 	AddFavorite(ctx context.Context, userID, streamID string) error
 	RemoveFavorite(ctx context.Context, userID, streamID string) error
 	ListFavorites(ctx context.Context, userID string) ([]Stream, error)
+	StopLiveStreamsByUser(ctx context.Context, userID string) ([]string, error)
 }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
@@ -339,4 +340,18 @@ func (s *Service) classifyTransitionFailure(ctx context.Context, id, requesterID
 // (à appeler au démarrage — cf. divergence DB/registre après un redémarrage).
 func (s *Service) ReconcileLiveStreams(ctx context.Context) (int64, error) {
 	return s.repo.EndOrphanLiveStreams(ctx)
+}
+
+// StopLiveForUser termine tous les lives d'un utilisateur (usage admin, STR-191) :
+// transition DB puis arrêt des sessions in-memory (ffmpeg tué, SSE "ended").
+// Sans contrôle de propriétaire : l'appelant (service admin) est déjà derrière RequireRole.
+func (s *Service) StopLiveForUser(ctx context.Context, userID string) error {
+	ids, err := s.repo.StopLiveStreamsByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		s.sessions.Stop(id)
+	}
+	return nil
 }

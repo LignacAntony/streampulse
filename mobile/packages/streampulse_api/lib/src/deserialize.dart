@@ -1,3 +1,5 @@
+import 'package:streampulse_api/src/model/admin_user_list_response.dart';
+import 'package:streampulse_api/src/model/admin_user_response.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_admin.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_input.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_list_response.dart';
@@ -16,6 +18,7 @@ import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
 import 'package:streampulse_api/src/model/reset_password_request.dart';
 import 'package:streampulse_api/src/model/review_request_input.dart';
+import 'package:streampulse_api/src/model/set_user_active_request.dart';
 import 'package:streampulse_api/src/model/stream_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 import 'package:streampulse_api/src/model/token_pair_response.dart';
@@ -44,6 +47,12 @@ ReturnType deserialize<ReturnType, BaseType>(
       return (valueString == 'true' || valueString == '1') as ReturnType;
     case 'double':
       return (value is double ? value : double.parse('$value')) as ReturnType;
+    case 'AdminUserListResponse':
+      return AdminUserListResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminUserResponse':
+      return AdminUserResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'BroadcasterRequestAdmin':
       return BroadcasterRequestAdmin.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -97,6 +106,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'ReviewRequestInput':
       return ReviewRequestInput.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'SetUserActiveRequest':
+      return SetUserActiveRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'StreamResponse':
       return StreamResponse.fromJson(value as Map<String, dynamic>)

@@ -7,6 +7,7 @@ import 'package:streampulse_api/src/auth/api_key_auth.dart';
 import 'package:streampulse_api/src/auth/basic_auth.dart';
 import 'package:streampulse_api/src/auth/bearer_auth.dart';
 import 'package:streampulse_api/src/auth/oauth.dart';
+import 'package:streampulse_api/src/api/admin_api.dart';
 import 'package:streampulse_api/src/api/auth_api.dart';
 import 'package:streampulse_api/src/api/broadcaster_api.dart';
 import 'package:streampulse_api/src/api/health_api.dart';
@@ -135,6 +136,12 @@ class StreampulseApi {
           .apiKeys
           .remove(name);
     }
+  }
+
+  /// Get AdminApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  AdminApi getAdminApi() {
+    return AdminApi(dio);
   }
 
   /// Get AuthApi instance, base route and serializer can be overridden by a given but be careful,

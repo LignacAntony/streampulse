@@ -77,3 +77,8 @@ RETURNING id::text AS id, user_id::text AS user_id, title, description, category
 UPDATE streams
 SET status = 'ended', ended_at = NOW(), updated_at = NOW()
 WHERE status = 'live' AND archived_at IS NULL;
+
+-- name: StopLiveStreamsByUser :many
+UPDATE streams SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE user_id = sqlc.arg(user_id)::uuid AND status = 'live'
+RETURNING id;

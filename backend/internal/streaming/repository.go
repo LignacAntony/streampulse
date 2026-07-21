@@ -254,6 +254,26 @@ func (r *pgRepository) ListFavorites(ctx context.Context, userID string) ([]Stre
 	return streams, nil
 }
 
+// StopLiveStreamsByUser termine tous les flux live d'un utilisateur (usage admin,
+// STR-191) et renvoie les ids arrêtés (pour que le service coupe leur session
+// in-memory). Un userID syntaxiquement invalide n'a par construction aucun flux
+// live associé : traité comme "aucun flux à arrêter" plutôt qu'une erreur.
+func (r *pgRepository) StopLiveStreamsByUser(ctx context.Context, userID string) ([]string, error) {
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return []string{}, nil
+	}
+	rows, err := r.q.StopLiveStreamsByUser(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("repo: stop live streams by user: %w", err)
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.String())
+	}
+	return ids, nil
+}
+
 // fullStream construit une entité Stream à partir des colonnes complètes d'une
 // ligne (mapping partagé par GetByID/Update/StartStream/StopStream).
 func fullStream(id, userID, title string, description, category pgtype.Text, status string, isPublic bool, streamKey string, startedAt, endedAt *time.Time, createdAt, updatedAt time.Time) Stream {

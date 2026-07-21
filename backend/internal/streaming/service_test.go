@@ -163,6 +163,10 @@ type fakeRepo struct {
 	removeFavErr    error
 	listFavRet      []Stream
 	listFavErr      error
+
+	gotStopLiveForUserID string
+	stopLiveForUserIDs   []string
+	stopLiveForUserErr   error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
@@ -226,6 +230,11 @@ func (f *fakeRepo) RemoveFavorite(_ context.Context, userID, streamID string) er
 func (f *fakeRepo) ListFavorites(_ context.Context, userID string) ([]Stream, error) {
 	f.favUserID = userID
 	return f.listFavRet, f.listFavErr
+}
+
+func (f *fakeRepo) StopLiveStreamsByUser(_ context.Context, userID string) ([]string, error) {
+	f.gotStopLiveForUserID = userID
+	return f.stopLiveForUserIDs, f.stopLiveForUserErr
 }
 
 type fakeKeys struct {
@@ -625,5 +634,56 @@ func TestService_ListFavorites(t *testing.T) {
 	}
 	if len(got) != 2 || repo.favUserID != "u1" {
 		t.Errorf("got = %+v, favUserID = %q", got, repo.favUserID)
+	}
+}
+
+// 1. StopLiveForUser avec des lives en cours : transition DB déjà faite par la
+// query (repo), puis chaque id renvoyé doit stopper sa session in-memory.
+func TestService_StopLiveForUser_StopsSessions(t *testing.T) {
+	repo := &fakeRepo{stopLiveForUserIDs: []string{"s1", "s2"}}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.StopLiveForUser(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if repo.gotStopLiveForUserID != "u1" {
+		t.Errorf("user_id transmis = %q, want u1", repo.gotStopLiveForUserID)
+	}
+	if len(sessions.stopped) != 2 || sessions.stopped[0] != "s1" || sessions.stopped[1] != "s2" {
+		t.Errorf("sessions arrêtées = %v, want [s1 s2]", sessions.stopped)
+	}
+}
+
+// 2. StopLiveForUser sur un utilisateur sans live : no-op, aucune session stoppée.
+func TestService_StopLiveForUser_NoLiveStreams_NoOp(t *testing.T) {
+	repo := &fakeRepo{stopLiveForUserIDs: nil}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.StopLiveForUser(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(sessions.stopped) != 0 {
+		t.Errorf("aucune session ne devrait être stoppée: %v", sessions.stopped)
+	}
+}
+
+// 3. StopLiveForUser : une erreur du repo est propagée et aucune session n'est
+// stoppée (la boucle sur les ids n'est jamais atteinte).
+func TestService_StopLiveForUser_RepoError_Propagates(t *testing.T) {
+	repoErr := errors.New("db unavailable")
+	repo := &fakeRepo{stopLiveForUserErr: repoErr}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.StopLiveForUser(context.Background(), "u1")
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("erreur non propagée: %v", err)
+	}
+	if len(sessions.stopped) != 0 {
+		t.Errorf("aucune session ne devrait être stoppée sur erreur repo: %v", sessions.stopped)
 	}
 }
