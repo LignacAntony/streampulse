@@ -3,13 +3,14 @@ package seeder
 import (
 	"context"
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5"
 )
 
 func seedPlaylists(ctx context.Context, tx pgx.Tx) error {
-	log.Println("seed playlists...")
+	log.Info().Msg("seed playlists...")
 
 	var user1ID string
 	err := tx.QueryRow(ctx,
@@ -36,7 +37,7 @@ func seedPlaylists(ctx context.Context, tx pgx.Tx) error {
 			return fmt.Errorf("récupération playlist: %w", err)
 		}
 	}
-	log.Println("  ✓ playlist \"My Favorites\"")
+	log.Info().Str("name", "My Favorites").Msg("seed: playlist")
 
 	// Collecter tous les IDs d'abord, puis fermer le curseur avant d'insérer
 	rows, err := tx.Query(ctx,
@@ -68,7 +69,7 @@ func seedPlaylists(ctx context.Context, tx pgx.Tx) error {
 			return fmt.Errorf("insert playlist_track pos %d: %w", position, err)
 		}
 	}
-	log.Printf("  ✓ %d tracks ajoutées à la playlist", len(trackIDs))
+	log.Info().Int("count", len(trackIDs)).Msg("seed: tracks ajoutées à la playlist")
 
 	return nil
 }

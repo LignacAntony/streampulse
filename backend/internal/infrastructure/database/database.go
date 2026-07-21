@@ -2,10 +2,11 @@ package database
 
 import (
 	"context"
-	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -16,7 +17,7 @@ import (
 func Connect(ctx context.Context) *pgx.Conn {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatal("DATABASE_URL non définie")
+		log.Fatal().Msg("DATABASE_URL non définie")
 	}
 
 	dbURL = strings.Replace(dbURL, "pgx5://", "postgres://", 1)
@@ -26,7 +27,7 @@ func Connect(ctx context.Context) *pgx.Conn {
 
 	conn, err := pgx.Connect(ctx, dbURL)
 	if err != nil {
-		log.Fatalf("connexion base de données: %v", err)
+		log.Fatal().Err(err).Msg("connexion base de données")
 	}
 
 	return conn

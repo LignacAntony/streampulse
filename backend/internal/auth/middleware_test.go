@@ -1,10 +1,17 @@
 package auth
 
 import (
+	"bytes"
+	"strings"
+
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+
+	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 )
 
 func makeToken(t *testing.T, userID, role string, offset time.Duration) string {
@@ -155,5 +162,34 @@ func TestOptionalAuth_InvalidToken_Anonymous(t *testing.T) {
 	}
 	if present {
 		t.Error("token invalide doit être traité comme anonyme (pas d'identité)")
+	}
+}
+
+func TestRequireAuth_RecordsUserIDInAccessLog(t *testing.T) {
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/me", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken(t, "user-7", "user", time.Minute))
+	httpmw.AccessLog(logger, RequireAuth(testSecret, okHandler)).
+		ServeHTTP(httptest.NewRecorder(), req)
+
+	if !strings.Contains(buf.String(), `"user_id":"user-7"`) {
+		t.Errorf("access log sans user_id après RequireAuth: %s", buf.String())
+	}
+}
+
+func TestOptionalAuth_RecordsUserIDInAccessLog(t *testing.T) {
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/1/playlist.m3u8", nil)
+	req.Header.Set("Authorization", "Bearer "+makeToken(t, "owner-9", "broadcaster", time.Minute))
+	httpmw.AccessLog(logger, OptionalAuth(testSecret, okHandler)).
+		ServeHTTP(httptest.NewRecorder(), req)
+
+	// Chemin HLS → debug ; logger de test sans niveau minimum, la ligne sort.
+	if !strings.Contains(buf.String(), `"user_id":"owner-9"`) {
+		t.Errorf("access log sans user_id après OptionalAuth: %s", buf.String())
 	}
 }

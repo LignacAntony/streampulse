@@ -2,12 +2,14 @@ package auth
 
 import (
 	"context"
-	"log"
 	"net/mail"
 	"regexp"
 	"strings"
 	"time"
+
 	"unicode/utf8"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 
@@ -215,7 +217,7 @@ func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) er
 	}
 
 	if err := s.repo.DeletePendingPasswordResetsByUser(ctx, uwh.ID); err != nil {
-		log.Printf("auth: delete pending password resets for user %s: %v", uwh.ID, err)
+		zerolog.Ctx(ctx).Warn().Err(err).Str("user_id", uwh.ID).Msg("auth: purge des resets de mot de passe en attente")
 	}
 
 	raw, hash, err := GenerateRefreshToken()
@@ -272,7 +274,7 @@ func (s *Service) DeleteAccount(ctx context.Context, in DeleteAccountInput) erro
 		return apperror.Internal("could not delete account", err)
 	}
 
-	log.Printf("auth: account deleted for user %s", in.UserID)
+	zerolog.Ctx(ctx).Info().Str("user_id", in.UserID).Msg("auth: compte supprimé")
 	return nil
 }
 

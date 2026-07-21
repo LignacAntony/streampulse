@@ -3,13 +3,14 @@ package seeder
 import (
 	"context"
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5"
 )
 
 func seedStreams(ctx context.Context, tx pgx.Tx) error {
-	log.Println("seed streams...")
+	log.Info().Msg("seed streams...")
 
 	var broadcasterID string
 	err := tx.QueryRow(ctx,
@@ -48,7 +49,7 @@ func seedStreams(ctx context.Context, tx pgx.Tx) error {
 		if err != nil {
 			return fmt.Errorf("insert stream %s: %w", s.title, err)
 		}
-		log.Printf("  ✓ stream \"%s\" (%s)", s.title, s.status)
+		log.Info().Str("title", s.title).Str("status", s.status).Msg("seed: stream")
 	}
 
 	return nil

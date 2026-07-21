@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -12,7 +13,7 @@ import (
 // Run exécute tous les seeders dans une transaction unique.
 // En cas d'erreur sur l'un d'eux, toute la transaction est rollbackée.
 func Run(ctx context.Context, conn *pgx.Conn) error {
-	log.Println("démarrage du seed...")
+	log.Info().Msg("démarrage du seed...")
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
@@ -20,7 +21,7 @@ func Run(ctx context.Context, conn *pgx.Conn) error {
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			log.Printf("rollback seed: %v", err)
+			log.Warn().Err(err).Msg("rollback seed")
 		}
 	}()
 
@@ -41,6 +42,6 @@ func Run(ctx context.Context, conn *pgx.Conn) error {
 		return fmt.Errorf("commit seed: %w", err)
 	}
 
-	log.Println("seed terminé avec succès")
+	log.Info().Msg("seed terminé avec succès")
 	return nil
 }

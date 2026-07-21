@@ -2,9 +2,11 @@ package broadcaster
 
 import (
 	"context"
-	"log"
 	"net/http"
+
 	"regexp"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -81,7 +83,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusCreated, req); err != nil {
-		log.Printf("broadcaster: encode create-request response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("broadcaster: encode create-request")
 	}
 }
 
@@ -104,7 +106,7 @@ func (h *Handler) GetMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, req); err != nil {
-		log.Printf("broadcaster: encode get-my-request response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("broadcaster: encode get-my-request")
 	}
 }
 
@@ -121,7 +123,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, map[string]any{"requests": requests}); err != nil {
-		log.Printf("broadcaster: encode list-requests response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("broadcaster: encode list-requests")
 	}
 }
 
@@ -175,6 +177,6 @@ func (h *Handler) review(w http.ResponseWriter, r *http.Request, approve bool) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, req); err != nil {
-		log.Printf("broadcaster: encode review-request response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("broadcaster: encode review-request")
 	}
 }
