@@ -23,6 +23,34 @@ func (q *Queries) AdminCountActiveAdmins(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const adminCountUsers = `-- name: AdminCountUsers :one
+SELECT COUNT(*)
+FROM users
+WHERE ($1::text = '' OR email ILIKE '%' || $1 || '%' ESCAPE '\' OR username ILIKE '%' || $1 || '%' ESCAPE '\')
+  AND ($2::text = '' OR role = $2)
+  AND ($3::text = ''
+       OR ($3 = 'active' AND is_active)
+       OR ($3 = 'inactive' AND NOT is_active))
+`
+
+type AdminCountUsersParams struct {
+	Search       string
+	RoleFilter   string
+	StatusFilter string
+}
+
+// Total de pagination indépendant de LIMIT/OFFSET (cf. revue PR #264 fix #2) :
+// COUNT(*) OVER() n'est porté que par les lignes renvoyées par AdminListUsers,
+// donc une page vide (offset au-delà du nombre de lignes filtrées) renvoyait
+// total=0 au lieu du vrai total de correspondances. Mêmes filtres que
+// AdminListUsers, sans LIMIT/OFFSET.
+func (q *Queries) AdminCountUsers(ctx context.Context, arg AdminCountUsersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountUsers, arg.Search, arg.RoleFilter, arg.StatusFilter)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const adminDeleteUser = `-- name: AdminDeleteUser :execrows
 DELETE FROM users WHERE id = $1::uuid
 `
@@ -63,10 +91,9 @@ func (q *Queries) AdminGetUser(ctx context.Context, userID pgtype.UUID) (AdminGe
 }
 
 const adminListUsers = `-- name: AdminListUsers :many
-SELECT id, email, username, role, is_active, created_at,
-       COUNT(*) OVER() AS total_count
+SELECT id, email, username, role, is_active, created_at
 FROM users
-WHERE ($1::text = '' OR email ILIKE '%' || $1 || '%' OR username ILIKE '%' || $1 || '%')
+WHERE ($1::text = '' OR email ILIKE '%' || $1 || '%' ESCAPE '\' OR username ILIKE '%' || $1 || '%' ESCAPE '\')
   AND ($2::text = '' OR role = $2)
   AND ($3::text = ''
        OR ($3 = 'active' AND is_active)
@@ -84,15 +111,18 @@ type AdminListUsersParams struct {
 }
 
 type AdminListUsersRow struct {
-	ID         pgtype.UUID
-	Email      string
-	Username   string
-	Role       string
-	IsActive   bool
-	CreatedAt  time.Time
-	TotalCount int64
+	ID        pgtype.UUID
+	Email     string
+	Username  string
+	Role      string
+	IsActive  bool
+	CreatedAt time.Time
 }
 
+// Le terme de recherche est échappé côté repository (escapeLikePattern) avant
+// d'arriver ici : '\' est le caractère d'échappement explicite (ESCAPE '\'),
+// pour que '_' et '%' tapés par l'utilisateur soient littéraux, pas des
+// jokers ILIKE (cf. revue PR #264 fix #4).
 func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error) {
 	rows, err := q.db.Query(ctx, adminListUsers,
 		arg.Search,
@@ -115,7 +145,6 @@ func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) 
 			&i.Role,
 			&i.IsActive,
 			&i.CreatedAt,
-			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}

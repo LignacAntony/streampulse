@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -282,5 +283,87 @@ func TestService_DeleteUser_SelfAction_CaseInsensitive(t *testing.T) {
 	}
 	if repo.getUserCalls != 0 {
 		t.Errorf("repo must not be called on self-action")
+	}
+}
+
+// 12. SetUserActive(target==requester) détecté même quand la cible est fournie
+// SANS TIRETS (32 caractères) alors que le requester est sous sa forme
+// canonique (36 caractères, comme le sub JWT) -> Conflict (self-action), sans
+// appel repo. Fix #1 revue PR #264 : strings.EqualFold seul ne détecte pas ce
+// cas (les deux chaînes diffèrent par autre chose que la casse), ce qui
+// laissait un admin contourner la garde en soumettant son propre id sous une
+// graphie différente.
+func TestService_SetUserActive_SelfAction_DashlessFormat(t *testing.T) {
+	repo := seededRepo()
+	dashless := strings.ReplaceAll(testFoldRequesterID, "-", "")
+	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), dashless, testFoldRequesterID, false)
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("want conflict, got %v", err)
+	}
+	if repo.getUserCalls != 0 {
+		t.Errorf("repo must not be called on self-action")
+	}
+}
+
+// 13. DeleteUser(target==requester) détecté même quand la cible est fournie
+// SANS TIRETS -> Conflict (self-action), sans appel repo. Même fix que 12.
+func TestService_DeleteUser_SelfAction_DashlessFormat(t *testing.T) {
+	repo := seededRepo()
+	dashless := strings.ReplaceAll(testFoldRequesterID, "-", "")
+	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), dashless, testFoldRequesterID)
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("want conflict, got %v", err)
+	}
+	if repo.getUserCalls != 0 {
+		t.Errorf("repo must not be called on self-action")
+	}
+}
+
+// 14. SetUserActive avec un targetID qui n'a pas la forme d'un UUID : la
+// comparaison normalisée échoue proprement (pas de panique), ce n'est pas
+// traité comme une self-action, et c'est GetUser qui traduit l'ID invalide en
+// NotFound (garde-fou pour normalizeUUID/sameUUID).
+func TestService_SetUserActive_MalformedTargetID_NotSelfAction(t *testing.T) {
+	repo := seededRepo()
+	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), "not-a-uuid", testRequesterID, false)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("want not_found (malformed id treated as unknown user, not self-action), got %v", err)
+	}
+}
+
+// 15. DeleteUser avec un targetID qui n'a pas la forme d'un UUID : même
+// garantie que 14.
+func TestService_DeleteUser_MalformedTargetID_NotSelfAction(t *testing.T) {
+	repo := seededRepo()
+	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), "not-a-uuid", testRequesterID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("want not_found (malformed id treated as unknown user, not self-action), got %v", err)
+	}
+}
+
+// 16. DeleteUser sur un admin actif alors qu'il reste 2 admins actifs -> la
+// garde dernier-admin-actif laisse passer, stopper puis delete appelés dans
+// l'ordre (comme le cas 7, mais en ciblant un admin). Fix #11 revue PR #264 :
+// seule la branche n=1 (conflit) était testée, cette branche passante avec une
+// cible admin n'était jamais couverte.
+func TestService_DeleteUser_ActiveAdmin_EnoughOtherAdmins(t *testing.T) {
+	var order []string
+	repo := seededRepo()
+	repo.order = &order
+	repo.activeAdminCount = 2
+	stopper := &fakeStopper{order: &order}
+
+	err := NewService(repo, stopper).DeleteUser(context.Background(), testTargetAdminID, testRequesterID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(order) != 2 || order[0] != "stopper.StopLiveForUser:"+testTargetAdminID || order[1] != "repo.DeleteUser:"+testTargetAdminID {
+		t.Fatalf("wrong order: %v", order)
+	}
+	if repo.deleteCalls != 1 {
+		t.Errorf("want 1 delete call, got %d", repo.deleteCalls)
+	}
+	if _, stillExists := repo.users[testTargetAdminID]; stillExists {
+		t.Errorf("admin should have been deleted from repo")
 	}
 }
