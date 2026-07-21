@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   trace de l'action, pas une propriété de l'admin. `CASCADE` l'aurait effacée avec son auteur, ce
   qui aurait vidé le journal exactement quand il devient le plus utile à relire (un admin supprimé
   pour abus de ses propres droits, par exemple).
-- Index unique sur `created_at DESC` (`idx_audit_logs_created_at`) : la seule lecture anticipée
+- Un seul index, sur `created_at DESC` (`idx_audit_logs_created_at`) : la seule lecture anticipée
   aujourd'hui est chronologique (pas d'écran de consultation dans ce ticket — la table existe pour
   tracer, pas encore pour être explorée depuis l'app).
 
@@ -188,7 +188,7 @@ aurait dû être renommée ou dupliquée dès la première action admin non lié
 ### Transaction unique stop + audit (cross-domaine)
 
 Garantirait qu'un audit est *toujours* écrit si le stop réussit. **Écarté** : `ForceStopStream`
-(domaine streaming) et `InsertAuditLog` (domaine admin) n'partagent aujourd'hui aucune connexion ni
+(domaine streaming) et `InsertAuditLog` (domaine admin) ne partagent aujourd'hui aucune connexion ni
 `pgx.Tx` commune — les fiabiliser dans une seule transaction cross-domaine casserait la séparation
 `internal/streaming` / `internal/admin` (ISP, §7) pour un bénéfice marginal : l'audit est une
 trace secondaire (§5), pas une contrainte d'intégrité métier. Le best-effort loggé est jugé
