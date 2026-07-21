@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../../admin/presentation/screens/admin_streams_screen.dart';
 import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
@@ -332,15 +333,23 @@ class _SettingsCard extends StatelessWidget {
   }
 }
 
-/// Tuile visible uniquement pour un profil `role == 'admin'` (cf. `_buildBody`).
-/// Ouvre `AdminUsersScreen` par `Navigator.push` : écran hors go_router, pas
-/// de route nommée (accessible uniquement depuis cette entrée).
+/// Tuiles visibles uniquement pour un profil `role == 'admin'` (cf.
+/// `_buildBody`). Deux entrées de navigation séparées par un `Divider`,
+/// chacune ouverte par `Navigator.push` (écrans hors go_router, pas de route
+/// nommée, accessibles uniquement depuis cette carte) : gestion des comptes
+/// utilisateurs (US-08-01) et supervision des flux en direct (US-08-02).
 class _AdminCard extends StatelessWidget {
   const _AdminCard();
 
-  void _openAdmin(BuildContext context) {
+  void _openUsers(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+    );
+  }
+
+  void _openStreams(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminStreamsScreen()),
     );
   }
 
@@ -349,12 +358,24 @@ class _AdminCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     return Card(
-      child: ListTile(
-        key: const Key('profile_admin_tile'),
-        leading: Icon(Icons.admin_panel_settings, color: colors.primary),
-        title: const Text('Administration'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => _openAdmin(context),
+      child: Column(
+        children: [
+          ListTile(
+            key: const Key('profile_admin_tile'),
+            leading: Icon(Icons.admin_panel_settings, color: colors.primary),
+            title: const Text('Gestion des utilisateurs'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openUsers(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('profile_admin_streams_tile'),
+            leading: Icon(Icons.podcasts, color: colors.primary),
+            title: const Text('Supervision des flux'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openStreams(context),
+          ),
+        ],
       ),
     );
   }
