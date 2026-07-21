@@ -40,3 +40,22 @@ SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = true;
 
 -- name: AdminDeleteUser :execrows
 DELETE FROM users WHERE id = sqlc.arg(user_id)::uuid;
+
+-- name: AdminListLiveStreams :many
+-- Liste de modération (STR-192) : TOUS les flux en direct, publics ET privés,
+-- avec l'identité du diffuseur. Tri stable (started_at puis id).
+SELECT s.id, s.title, s.is_public, s.started_at, s.user_id, u.username
+FROM streams s
+JOIN users u ON u.id = s.user_id
+WHERE s.status = 'live' AND s.archived_at IS NULL
+ORDER BY s.started_at DESC, s.id DESC
+LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
+
+-- name: AdminCountLiveStreams :one
+-- Total séparé (COUNT(*) OVER() renvoie 0 sur page vide — cf. review STR-191).
+SELECT COUNT(*) FROM streams s
+WHERE s.status = 'live' AND s.archived_at IS NULL;
+
+-- name: InsertAuditLog :exec
+INSERT INTO audit_logs (actor_id, action, target_type, target_id)
+VALUES (sqlc.arg(actor_id)::uuid, sqlc.arg(action), sqlc.arg(target_type), sqlc.arg(target_id)::uuid);

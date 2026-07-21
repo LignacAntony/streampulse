@@ -17,7 +17,9 @@ tags:
   - name: Broadcaster
     description: Broadcaster role requests and admin review.
   - name: Admin
-    description: Administrative user management endpoints (US-08-01).
+    description: >-
+      Administrative endpoints: user management (US-08-01) and live stream
+      supervision/moderation (STR-192).
 paths:
   /health:
     get:
@@ -564,6 +566,83 @@ paths:
       responses:
         "204":
           description: The user was deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/streams:
+    get:
+      tags:
+        - Admin
+      operationId: listAdminStreams
+      summary: List live streams for moderation (admin only).
+      description: >-
+        All streams currently live, public and private, with the
+        broadcaster's identity (STR-192). Unlike GET /api/streams, private
+        live streams are included and no ownership filtering applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated live streams, with the total count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStreamListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/streams/{id}/stop:
+    post:
+      tags:
+        - Admin
+      operationId: stopAdminStream
+      summary: Forcibly stop a live stream (admin only).
+      description: >-
+        Moderation action (STR-192): transitions the stream from live to
+        ended without ownership checks, then stops its in-memory session
+        (ffmpeg killed, "ended" SSE event published). Logged to the audit
+        trail on a best-effort basis (STR-198): a logging failure does not
+        fail the request.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The stream was stopped.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1603,3 +1682,50 @@ components:
         is_active:
           type: boolean
           example: false
+    AdminStreamResponse:
+      type: object
+      required:
+        - id
+        - title
+        - is_public
+        - started_at
+        - user_id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        title:
+          type: string
+          example: Morning Jazz Session
+        is_public:
+          type: boolean
+          example: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-01-02T03:04:05Z"
+        user_id:
+          type: string
+          format: uuid
+          example: 99999999-8888-7777-6666-555555555555
+        username:
+          type: string
+          example: alice
+    AdminStreamListResponse:
+      type: object
+      required:
+        - streams
+        - total
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminStreamResponse"
+        total:
+          type: integer
+          format: int64
+          description: Total number of live streams currently in the moderation list.
+          example: 3

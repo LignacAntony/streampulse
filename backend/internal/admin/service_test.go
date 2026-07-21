@@ -20,6 +20,9 @@ const (
 	// à la casse — pgtype.UUID scanne les deux graphies vers les mêmes octets).
 	testFoldRequesterID   = "a1b2c3d4-0000-0000-0000-00000000000f"
 	testFoldTargetIDUpper = "A1B2C3D4-0000-0000-0000-00000000000F"
+
+	// testStreamID : flux ciblé par les tests StopStream/ListLiveStreams (STR-192).
+	testStreamID = "00000000-0000-0000-0000-000000000042"
 )
 
 // fakeRepo est un Repository en mémoire (map indexée par ID) pour les tests du
@@ -38,8 +41,26 @@ type fakeRepo struct {
 
 	deleteCalls int
 
+	// listStreamsCalled/Limit/Offset : capture des paramètres transmis à
+	// ListLiveStreams (STR-192), même rôle que listCalled/listInput pour ListUsers.
+	listStreamsCalled int
+	listStreamsLimit  int32
+	listStreamsOffset int32
+	listStreams       []AdminStream
+	listStreamsTotal  int64
+
+	// auditCalls/gotAudit* : capture des paramètres transmis à InsertAuditLog
+	// (STR-192) ; auditErr simule un échec d'écriture du journal (cas best-effort).
+	auditCalls     int
+	auditErr       error
+	gotAuditActor  string
+	gotAuditAction string
+	gotAuditType   string
+	gotAuditTarget string
+
 	// order trace, dans l'ordre d'appel, les opérations effectuées par ce repo
-	// et par le fakeStopper partagé dans le même test (cf. cas 7 : stop avant delete).
+	// et par le fakeStopper/fakeModerator partagés dans le même test (cf. cas 7 :
+	// stop avant delete ; cas StopStream : moderator avant audit).
 	order *[]string
 }
 
@@ -81,6 +102,30 @@ func (f *fakeRepo) DeleteUser(_ context.Context, userID string) error {
 	return nil
 }
 
+// ListLiveStreams (STR-192) : miroir de ListUsers, capture limit/offset et
+// renvoie les valeurs préparées par le test.
+func (f *fakeRepo) ListLiveStreams(_ context.Context, limit, offset int32) ([]AdminStream, int64, error) {
+	f.listStreamsCalled++
+	f.listStreamsLimit = limit
+	f.listStreamsOffset = offset
+	return f.listStreams, f.listStreamsTotal, nil
+}
+
+// InsertAuditLog (STR-192) : capture les 4 paramètres et trace l'appel dans
+// order (cf. TestService_StopStream_OK_StopsThenAudits) ; auditErr simule un
+// échec d'écriture best-effort (cf. TestService_StopStream_AuditError_*).
+func (f *fakeRepo) InsertAuditLog(_ context.Context, actorID, action, targetType, targetID string) error {
+	f.auditCalls++
+	f.gotAuditActor = actorID
+	f.gotAuditAction = action
+	f.gotAuditType = targetType
+	f.gotAuditTarget = targetID
+	if f.order != nil {
+		*f.order = append(*f.order, "repo.InsertAuditLog:"+targetID)
+	}
+	return f.auditErr
+}
+
 // fakeStopper enregistre l'erreur à renvoyer (cas 8) et participe à la trace
 // d'ordre partagée avec fakeRepo (cas 7).
 type fakeStopper struct {
@@ -91,6 +136,26 @@ type fakeStopper struct {
 func (f *fakeStopper) StopLiveForUser(_ context.Context, userID string) error {
 	if f.order != nil {
 		*f.order = append(*f.order, "stopper.StopLiveForUser:"+userID)
+	}
+	return f.err
+}
+
+// fakeModerator est un StreamModerator en mémoire (STR-192) : err simule un
+// échec de ForceStopStream (ex. 409 flux pas live) ; order participe à la
+// trace partagée avec fakeRepo pour vérifier l'ordre moderator -> audit.
+type fakeModerator struct {
+	err   error
+	order *[]string
+
+	forceStopCalls int
+	gotStreamID    string
+}
+
+func (f *fakeModerator) ForceStopStream(_ context.Context, streamID string) error {
+	f.forceStopCalls++
+	f.gotStreamID = streamID
+	if f.order != nil {
+		*f.order = append(*f.order, "moderator.ForceStopStream:"+streamID)
 	}
 	return f.err
 }
@@ -117,7 +182,7 @@ func TestService_ListUsers_PassesFiltersAndReturnsTotal(t *testing.T) {
 	}
 	in := ListUsersInput{Search: "user", Role: "user", Status: "active", Limit: 20, Offset: 10}
 
-	users, total, err := NewService(repo, &fakeStopper{}).ListUsers(context.Background(), in)
+	users, total, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).ListUsers(context.Background(), in)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -138,7 +203,7 @@ func TestService_ListUsers_PassesFiltersAndReturnsTotal(t *testing.T) {
 // 2. SetUserActive(target==requester) -> Conflict (self-action), sans appel repo.
 func TestService_SetUserActive_SelfAction(t *testing.T) {
 	repo := seededRepo()
-	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), testRequesterID, testRequesterID, false)
+	_, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), testRequesterID, testRequesterID, false)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -153,7 +218,7 @@ func TestService_SetUserActive_LastActiveAdmin(t *testing.T) {
 	t.Run("dernier admin actif", func(t *testing.T) {
 		repo := seededRepo()
 		repo.activeAdminCount = 1
-		_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), testTargetAdminID, testRequesterID, false)
+		_, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), testTargetAdminID, testRequesterID, false)
 		if !apperror.IsCode(err, apperror.CodeConflict) {
 			t.Fatalf("want conflict, got %v", err)
 		}
@@ -162,7 +227,7 @@ func TestService_SetUserActive_LastActiveAdmin(t *testing.T) {
 	t.Run("un admin parmi deux actifs", func(t *testing.T) {
 		repo := seededRepo()
 		repo.activeAdminCount = 2
-		got, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), testTargetAdminID, testRequesterID, false)
+		got, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), testTargetAdminID, testRequesterID, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -176,7 +241,7 @@ func TestService_SetUserActive_LastActiveAdmin(t *testing.T) {
 // l'absence de ligne, ici simulée par l'absence dans la map).
 func TestService_SetUserActive_UnknownUser(t *testing.T) {
 	repo := seededRepo()
-	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), testUnknownID, testRequesterID, false)
+	_, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), testUnknownID, testRequesterID, false)
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
 		t.Fatalf("want not_found, got %v", err)
 	}
@@ -185,7 +250,7 @@ func TestService_SetUserActive_UnknownUser(t *testing.T) {
 // 5. DeleteUser(target==requester) -> Conflict (self-action), sans appel repo.
 func TestService_DeleteUser_SelfAction(t *testing.T) {
 	repo := seededRepo()
-	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), testRequesterID, testRequesterID)
+	err := NewService(repo, &fakeStopper{}, &fakeModerator{}).DeleteUser(context.Background(), testRequesterID, testRequesterID)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -198,7 +263,7 @@ func TestService_DeleteUser_SelfAction(t *testing.T) {
 func TestService_DeleteUser_LastActiveAdmin(t *testing.T) {
 	repo := seededRepo()
 	repo.activeAdminCount = 1
-	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), testTargetAdminID, testRequesterID)
+	err := NewService(repo, &fakeStopper{}, &fakeModerator{}).DeleteUser(context.Background(), testTargetAdminID, testRequesterID)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -215,7 +280,7 @@ func TestService_DeleteUser_StopsLiveBeforeDelete(t *testing.T) {
 	repo.order = &order
 	stopper := &fakeStopper{order: &order}
 
-	err := NewService(repo, stopper).DeleteUser(context.Background(), testTargetUserID, testRequesterID)
+	err := NewService(repo, stopper, &fakeModerator{}).DeleteUser(context.Background(), testTargetUserID, testRequesterID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +303,7 @@ func TestService_DeleteUser_StopperError_PropagatesAndSkipsDelete(t *testing.T) 
 	stopErr := errors.New("ffmpeg kill failed")
 	stopper := &fakeStopper{err: stopErr}
 
-	err := NewService(repo, stopper).DeleteUser(context.Background(), testTargetUserID, testRequesterID)
+	err := NewService(repo, stopper, &fakeModerator{}).DeleteUser(context.Background(), testTargetUserID, testRequesterID)
 	if !errors.Is(err, stopErr) {
 		t.Fatalf("stopper error not propagated: %v", err)
 	}
@@ -250,7 +315,7 @@ func TestService_DeleteUser_StopperError_PropagatesAndSkipsDelete(t *testing.T) 
 // 9. DeleteUser sur un utilisateur inconnu -> NotFound (0 ligne), delete jamais appelé.
 func TestService_DeleteUser_UnknownUser(t *testing.T) {
 	repo := seededRepo()
-	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), testUnknownID, testRequesterID)
+	err := NewService(repo, &fakeStopper{}, &fakeModerator{}).DeleteUser(context.Background(), testUnknownID, testRequesterID)
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
 		t.Fatalf("want not_found, got %v", err)
 	}
@@ -264,7 +329,7 @@ func TestService_DeleteUser_UnknownUser(t *testing.T) {
 // octets) -> Conflict (self-action), sans appel repo.
 func TestService_SetUserActive_SelfAction_CaseInsensitive(t *testing.T) {
 	repo := seededRepo()
-	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), testFoldTargetIDUpper, testFoldRequesterID, false)
+	_, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), testFoldTargetIDUpper, testFoldRequesterID, false)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -277,7 +342,7 @@ func TestService_SetUserActive_SelfAction_CaseInsensitive(t *testing.T) {
 // l'UUID cible -> Conflict (self-action), sans appel repo.
 func TestService_DeleteUser_SelfAction_CaseInsensitive(t *testing.T) {
 	repo := seededRepo()
-	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), testFoldTargetIDUpper, testFoldRequesterID)
+	err := NewService(repo, &fakeStopper{}, &fakeModerator{}).DeleteUser(context.Background(), testFoldTargetIDUpper, testFoldRequesterID)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -296,7 +361,7 @@ func TestService_DeleteUser_SelfAction_CaseInsensitive(t *testing.T) {
 func TestService_SetUserActive_SelfAction_DashlessFormat(t *testing.T) {
 	repo := seededRepo()
 	dashless := strings.ReplaceAll(testFoldRequesterID, "-", "")
-	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), dashless, testFoldRequesterID, false)
+	_, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), dashless, testFoldRequesterID, false)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -310,7 +375,7 @@ func TestService_SetUserActive_SelfAction_DashlessFormat(t *testing.T) {
 func TestService_DeleteUser_SelfAction_DashlessFormat(t *testing.T) {
 	repo := seededRepo()
 	dashless := strings.ReplaceAll(testFoldRequesterID, "-", "")
-	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), dashless, testFoldRequesterID)
+	err := NewService(repo, &fakeStopper{}, &fakeModerator{}).DeleteUser(context.Background(), dashless, testFoldRequesterID)
 	if !apperror.IsCode(err, apperror.CodeConflict) {
 		t.Fatalf("want conflict, got %v", err)
 	}
@@ -325,7 +390,7 @@ func TestService_DeleteUser_SelfAction_DashlessFormat(t *testing.T) {
 // NotFound (garde-fou pour normalizeUUID/sameUUID).
 func TestService_SetUserActive_MalformedTargetID_NotSelfAction(t *testing.T) {
 	repo := seededRepo()
-	_, err := NewService(repo, &fakeStopper{}).SetUserActive(context.Background(), "not-a-uuid", testRequesterID, false)
+	_, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).SetUserActive(context.Background(), "not-a-uuid", testRequesterID, false)
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
 		t.Fatalf("want not_found (malformed id treated as unknown user, not self-action), got %v", err)
 	}
@@ -335,7 +400,7 @@ func TestService_SetUserActive_MalformedTargetID_NotSelfAction(t *testing.T) {
 // garantie que 14.
 func TestService_DeleteUser_MalformedTargetID_NotSelfAction(t *testing.T) {
 	repo := seededRepo()
-	err := NewService(repo, &fakeStopper{}).DeleteUser(context.Background(), "not-a-uuid", testRequesterID)
+	err := NewService(repo, &fakeStopper{}, &fakeModerator{}).DeleteUser(context.Background(), "not-a-uuid", testRequesterID)
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
 		t.Fatalf("want not_found (malformed id treated as unknown user, not self-action), got %v", err)
 	}
@@ -353,7 +418,7 @@ func TestService_DeleteUser_ActiveAdmin_EnoughOtherAdmins(t *testing.T) {
 	repo.activeAdminCount = 2
 	stopper := &fakeStopper{order: &order}
 
-	err := NewService(repo, stopper).DeleteUser(context.Background(), testTargetAdminID, testRequesterID)
+	err := NewService(repo, stopper, &fakeModerator{}).DeleteUser(context.Background(), testTargetAdminID, testRequesterID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -365,5 +430,93 @@ func TestService_DeleteUser_ActiveAdmin_EnoughOtherAdmins(t *testing.T) {
 	}
 	if _, stillExists := repo.users[testTargetAdminID]; stillExists {
 		t.Errorf("admin should have been deleted from repo")
+	}
+}
+
+// 17. StopStream OK -> moderator.ForceStopStream appelé PUIS
+// repo.InsertAuditLog(actorID, "stream.stopped", "stream", streamID), dans cet
+// ordre (trace partagée, même pattern que le cas 7 DeleteUser/stopper+repo).
+func TestService_StopStream_OK_StopsThenAudits(t *testing.T) {
+	var order []string
+	repo := &fakeRepo{order: &order}
+	moderator := &fakeModerator{order: &order}
+
+	err := NewService(repo, &fakeStopper{}, moderator).StopStream(context.Background(), testStreamID, testRequesterID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(order) != 2 || order[0] != "moderator.ForceStopStream:"+testStreamID || order[1] != "repo.InsertAuditLog:"+testStreamID {
+		t.Fatalf("wrong order: %v", order)
+	}
+	if repo.auditCalls != 1 {
+		t.Fatalf("want 1 audit call, got %d", repo.auditCalls)
+	}
+	if repo.gotAuditActor != testRequesterID || repo.gotAuditAction != "stream.stopped" || repo.gotAuditType != "stream" || repo.gotAuditTarget != testStreamID {
+		t.Errorf("audit params = (%q, %q, %q, %q), want (%q, %q, %q, %q)",
+			repo.gotAuditActor, repo.gotAuditAction, repo.gotAuditType, repo.gotAuditTarget,
+			testRequesterID, "stream.stopped", "stream", testStreamID)
+	}
+}
+
+// 18. StopStream : le moderator échoue (ex. 409 flux pas live) -> l'erreur est
+// propagée telle quelle et AUCUN audit n'est inséré (on ne journalise pas une
+// interruption qui n'a pas eu lieu).
+func TestService_StopStream_ModeratorError_PropagatesAndSkipsAudit(t *testing.T) {
+	repo := &fakeRepo{}
+	stopErr := apperror.Conflict("stream is not live")
+	moderator := &fakeModerator{err: stopErr}
+
+	err := NewService(repo, &fakeStopper{}, moderator).StopStream(context.Background(), testStreamID, testRequesterID)
+	if !errors.Is(err, stopErr) {
+		t.Fatalf("moderator error not propagated: %v", err)
+	}
+	if repo.auditCalls != 0 {
+		t.Errorf("audit must not be inserted when the moderator fails, got %d calls", repo.auditCalls)
+	}
+}
+
+// 19. StopStream : l'interruption réussit mais l'écriture de l'audit échoue ->
+// StopStream renvoie quand même nil (best-effort : l'action critique a eu
+// lieu, un échec du journal ne doit pas faire échouer la requête admin).
+func TestService_StopStream_AuditError_StillReturnsNil(t *testing.T) {
+	repo := &fakeRepo{auditErr: errors.New("db unreachable")}
+	moderator := &fakeModerator{}
+
+	err := NewService(repo, &fakeStopper{}, moderator).StopStream(context.Background(), testStreamID, testRequesterID)
+	if err != nil {
+		t.Fatalf("audit failure must be swallowed (best-effort), got: %v", err)
+	}
+	if moderator.forceStopCalls != 1 {
+		t.Errorf("want 1 call to moderator, got %d", moderator.forceStopCalls)
+	}
+	if repo.auditCalls != 1 {
+		t.Errorf("want 1 (failed) audit attempt, got %d", repo.auditCalls)
+	}
+}
+
+// 20. ListLiveStreams délègue au repo et renvoie le total (même contrat que
+// ListUsers, cas 1).
+func TestService_ListLiveStreams_DelegatesAndReturnsTotal(t *testing.T) {
+	repo := &fakeRepo{
+		listStreams:      []AdminStream{{ID: testStreamID, Title: "Morning Jazz", IsPublic: true, UserID: testTargetUserID, Username: "user1"}},
+		listStreamsTotal: 7,
+	}
+
+	streams, total, err := NewService(repo, &fakeStopper{}, &fakeModerator{}).ListLiveStreams(context.Background(), 20, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.listStreamsCalled != 1 {
+		t.Fatalf("want 1 call to repo.ListLiveStreams, got %d", repo.listStreamsCalled)
+	}
+	if repo.listStreamsLimit != 20 || repo.listStreamsOffset != 10 {
+		t.Errorf("limit/offset not passed through: got (%d, %d)", repo.listStreamsLimit, repo.listStreamsOffset)
+	}
+	if total != 7 {
+		t.Errorf("total not returned: got %d", total)
+	}
+	if len(streams) != 1 || streams[0].ID != testStreamID {
+		t.Errorf("streams not returned: %+v", streams)
 	}
 }

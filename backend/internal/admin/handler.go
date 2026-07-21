@@ -31,6 +31,8 @@ type AdminService interface {
 	ListUsers(ctx context.Context, in ListUsersInput) ([]AdminUser, int64, error)
 	SetUserActive(ctx context.Context, targetID, requesterID string, active bool) (AdminUser, error)
 	DeleteUser(ctx context.Context, targetID, requesterID string) error
+	ListLiveStreams(ctx context.Context, limit, offset int32) ([]AdminStream, int64, error)
+	StopStream(ctx context.Context, streamID, actorID string) error
 }
 
 // Handler expose le domaine admin en HTTP (US-08-01). Les routes sont montées
@@ -140,6 +142,62 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.DeleteUser(r.Context(), r.PathValue("id"), requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// listStreamsResponse est l'enveloppe de pagination de GET /api/admin/streams.
+type listStreamsResponse struct {
+	Streams []AdminStream `json:"streams"`
+	Total   int64         `json:"total"`
+}
+
+// ListStreams gère GET /api/admin/streams : liste de modération paginée (tous
+// les flux en direct, publics et privés). Mêmes bornes de pagination que List
+// (users) : limit défaut 20 / max 100, offset borné [0, MaxInt32].
+func (h *Handler) ListStreams(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultListLimit)
+	if limit < 1 {
+		limit = defaultListLimit
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 1<<31-1 {
+		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
+	}
+
+	streams, total, err := h.svc.ListLiveStreams(r.Context(), int32(limit), int32(offset))
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	if streams == nil {
+		streams = []AdminStream{}
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, listStreamsResponse{Streams: streams, Total: total}); err != nil {
+		log.Printf("admin: encode list streams response: %v", err)
+	}
+}
+
+// StopStream gère POST /api/admin/streams/{id}/stop : interruption d'un flux
+// en direct par un modérateur (audit journalisé côté service, best-effort).
+func (h *Handler) StopStream(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	if err := h.svc.StopStream(r.Context(), r.PathValue("id"), actorID); err != nil {
 		httpjson.WriteError(w, r, err)
 		return
 	}

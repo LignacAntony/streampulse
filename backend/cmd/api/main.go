@@ -31,6 +31,11 @@ import (
 // pour arrêter les lives d'un utilisateur supprimé (STR-191 Task 2).
 var _ admin.LiveStopper = (*streaming.Service)(nil)
 
+// var _ vérifie à la compilation que *streaming.Service satisfait bien
+// admin.StreamModerator, l'interface étroite (ISP) que le service admin
+// consomme pour interrompre un flux lors d'une action de modération (STR-192).
+var _ admin.StreamModerator = (*streaming.Service)(nil)
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatalf("%v", err)
@@ -100,9 +105,10 @@ func run() error {
 	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
 
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
-	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression).
+	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
+	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
 	adminRepo := admin.NewRepository(pool)
-	adminSvc := admin.NewService(adminRepo, streamingSvc)
+	adminSvc := admin.NewService(adminRepo, streamingSvc, streamingSvc)
 	adminHandler := admin.NewHandler(adminSvc)
 
 	// 5. Démarrer le serveur HTTP
@@ -144,6 +150,14 @@ func run() error {
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.SetActive))))
 	mux.Handle("DELETE /api/admin/users/{id}", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Delete))))
+
+	// Supervision et interruption des flux actifs par un administrateur
+	// (STR-192) : liste de modération (tous les live, publics et privés) et
+	// stop audité (journal best-effort côté service).
+	mux.Handle("GET /api/admin/streams", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListStreams))))
+	mux.Handle("POST /api/admin/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.StopStream))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).
