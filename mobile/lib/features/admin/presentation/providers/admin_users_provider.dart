@@ -33,17 +33,35 @@ class AdminUsersProvider extends ChangeNotifier {
 
   Timer? _debounce;
 
-  /// Jeton de génération anti out-of-order : incrémenté à chaque `load()`,
-  /// et aussi après chaque mutation locale réussie de `_users`/`_total`
-  /// (`toggleActive`, `delete`). Une réponse `load`/`loadMore` (succès OU
-  /// échec) dont le jeton capturé ne correspond plus au jeton courant est
-  /// obsolète — soit un chargement plus récent est parti entre-temps (autre
-  /// filtre, autre recherche), soit une mutation a changé `_users` sous ses
-  /// pieds — et elle est ignorée au lieu d'écraser l'état le plus récent
-  /// (cf. `toggleActive`/`delete` : sans ce bump, une page `loadMore` déjà en
-  /// vol au moment d'un `delete` pourrait ressusciter la ligne supprimée et
-  /// désynchroniser `_total`).
+  /// Jeton de génération anti out-of-order : incrémenté UNIQUEMENT par
+  /// `load()`. Une réponse `load`/`loadMore` (succès OU échec) dont le jeton
+  /// capturé ne correspond plus au jeton courant signale qu'un chargement
+  /// plus récent est parti entre-temps (autre filtre, autre recherche) — et
+  /// elle est ignorée au lieu d'écraser l'état le plus récent.
+  ///
+  /// Ne PAS le faire avancer depuis `toggleActive`/`delete` (cf. `_listVersion`
+  /// ci-dessous) : le `finally` de `load()` ne remet `_loading` à faux QUE si
+  /// `gen == _loadGeneration` (invariant load-vs-load uniquement) — une
+  /// mutation qui avancerait ce jeton pendant qu'un `load()` est en vol lui
+  /// ferait croire qu'un chargement plus récent l'a remplacé, et son
+  /// `finally` ne réinitialiserait plus jamais `_loading` (spinner figé,
+  /// silencieusement, jusqu'au prochain `load()` qui réussit sans
+  /// concurrence — régression détectée en revue, cf. tests "pas de spinner
+  /// figé").
   int _loadGeneration = 0;
+
+  /// Compteur de version de la liste locale : incrémenté après chaque
+  /// mutation réussie de `_users`/`_total` (`toggleActive`, `delete`).
+  /// Sert UNIQUEMENT à `loadMore`, en complément de `_loadGeneration` : une
+  /// page déjà en vol au moment d'une mutation a capturé un offset
+  /// (`_users.length`) et une base d'accumulation (`[..._users, ...]`) qui
+  /// deviennent invalides dès que `_users` change sous ses pieds (ligne
+  /// supprimée/mise à jour) — sans ce compteur, la page obsolète
+  /// ressusciterait la ligne supprimée et désynchroniserait `_total`.
+  /// Volontairement séparé de `_loadGeneration` : un `load()` recharge tout
+  /// depuis zéro et n'a rien à protéger contre une mutation concurrente, il
+  /// ne doit donc PAS être invalidé par elle (contrairement à `loadMore`).
+  int _listVersion = 0;
 
   List<AdminUser> get users => _users;
   int get total => _total;
@@ -104,11 +122,14 @@ class AdminUsersProvider extends ChangeNotifier {
 
   /// Charge la page suivante (offset = nombre déjà chargé) et l'accumule.
   /// No-op si un chargement est déjà en cours ou si tout est déjà chargé.
-  /// Capture le jeton de génération : si un `load()` (filtre, recherche)
-  /// part pendant le vol, la page obsolète n'est pas accumulée.
+  /// Capture les DEUX compteurs : si un `load()` (filtre, recherche) part
+  /// pendant le vol (`_loadGeneration`), OU si `toggleActive`/`delete` mute
+  /// `_users` pendant le vol (`_listVersion`), l'offset/l'accumulation
+  /// capturés ne sont plus valides et la page obsolète n'est pas appliquée.
   Future<void> loadMore() async {
     if (_loading || _loadingMore || !hasMore) return;
     final gen = _loadGeneration;
+    final listVersion = _listVersion;
     _loadingMore = true;
     notifyListeners();
     try {
@@ -119,12 +140,14 @@ class AdminUsersProvider extends ChangeNotifier {
         limit: pageSize,
         offset: _users.length,
       );
-      if (gen != _loadGeneration) return; // un load() est passé entre-temps
+      // Obsolète si un load() est passé entre-temps OU si une mutation
+      // (toggleActive/delete) a changé `_users` sous le vol de cette page.
+      if (gen != _loadGeneration || listVersion != _listVersion) return;
       _users = [..._users, ...result.users];
       _total = result.total;
       _clearError();
     } catch (e) {
-      if (gen != _loadGeneration) return;
+      if (gen != _loadGeneration || listVersion != _listVersion) return;
       _setError(e);
     } finally {
       // Contrairement à `_loading`, `_loadingMore` n'appartient qu'à CE
@@ -165,27 +188,28 @@ class AdminUsersProvider extends ChangeNotifier {
   /// bien confirmé la mutation, mais il n'y a rien à mettre à jour
   /// localement. L'appelant (l'écran) s'appuie sur ce retour pour ne pas
   /// afficher de toast succès sur un no-op. Retourne `true` si la liste a
-  /// bien été mise à jour, auquel cas le jeton de génération est avancé pour
-  /// invalider toute réponse `load`/`loadMore` en vol désormais obsolète.
+  /// bien été mise à jour, auquel cas `_listVersion` est avancé pour
+  /// invalider tout `loadMore` en vol désormais obsolète (PAS `load` : cf.
+  /// doc de `_loadGeneration`/`_listVersion`).
   Future<bool> toggleActive(AdminUser user) async {
     final updated = await _repository.setUserActive(user.id, !user.isActive);
     final index = _users.indexWhere((u) => u.id == user.id);
     if (index == -1) return false;
     _users = List.of(_users)..[index] = updated;
-    _loadGeneration++;
+    _listVersion++;
     notifyListeners();
     return true;
   }
 
   /// Supprime [user] et le retire de la liste locale après succès. Les
   /// erreurs (409 self-action / dernier admin) sont relayées à l'appelant.
-  /// Avance le jeton de génération après la mutation locale, pour la même
-  /// raison que `toggleActive` (invalider un `loadMore` en vol obsolète).
+  /// Avance `_listVersion` après la mutation locale, pour la même raison que
+  /// `toggleActive` (invalider un `loadMore` en vol obsolète — PAS `load`).
   Future<void> delete(AdminUser user) async {
     await _repository.deleteUser(user.id);
     _users = _users.where((u) => u.id != user.id).toList();
     if (_total > 0) _total -= 1;
-    _loadGeneration++;
+    _listVersion++;
     notifyListeners();
   }
 

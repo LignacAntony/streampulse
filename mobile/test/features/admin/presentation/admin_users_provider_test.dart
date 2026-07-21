@@ -348,7 +348,7 @@ void main() {
     });
   });
 
-  group('mutations concurrentes (jeton de génération)', () {
+  group('mutations concurrentes (isolation load / loadMore)', () {
     test(
         'delete() pendant un loadMore en vol invalide la page obsolète '
         '(pas de doublon, total cohérent)', () async {
@@ -374,8 +374,8 @@ void main() {
       expect(provider.users.any((u) => u.id == 'u0'), isFalse);
       expect(provider.total, 99);
 
-      // La page 2 (obsolète) se résout enfin : sans le jeton de génération,
-      // elle ré-accumulerait par-dessus (`[..._users, ...result.users]`),
+      // La page 2 (obsolète) se résout enfin : sans le compteur de version de
+      // liste, elle ré-accumulerait par-dessus (`[..._users, ...result.users]`),
       // ressuscitant u0 et écrasant total à 100. Avec le fix, elle doit être
       // intégralement ignorée.
       repo.pending[1].complete(
@@ -414,6 +414,72 @@ void main() {
 
       expect(provider.users, hasLength(20)); // pas 40 : page ignorée
       expect(provider.loadingMore, isFalse);
+    });
+
+    test(
+        'delete() résolu pendant qu\'un load() est en vol : loading revient '
+        'à false (pas de spinner figé — régression du fix ci-dessus)',
+        () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      // Premier load, complet : peuple la liste avec u0 (utilisateur réel,
+      // visible, que l'on va supprimer ci-dessous).
+      final firstLoad = provider.load();
+      repo.pending[0].complete((users: [_user('u0')], total: 1));
+      await firstLoad;
+      expect(provider.users, hasLength(1));
+
+      // Un second load part (ex. une recherche tapée juste après avoir lancé
+      // une suppression) — `reset: false` pour que u0 reste visible pendant
+      // que ce load est en vol, comme un rechargement en tâche de fond.
+      final loadFuture = provider.load(reset: false);
+      expect(provider.loading, isTrue);
+      expect(repo.pending, hasLength(2));
+
+      // La suppression de u0 (déjà lancée avant la recherche, cf. scénario du
+      // ticket) se résout AVANT la réponse de ce second load. `delete` ne
+      // doit PAS invalider ce `load()` : seul `loadMore` a besoin d'être
+      // protégé contre une mutation de `_users` pendant son vol (son offset
+      // capturé serait faussé) — un `load()` recharge tout depuis zéro, il
+      // n'a rien à protéger.
+      await provider.delete(_user('u0'));
+
+      repo.pending[1].complete(
+        (users: List.generate(5, (i) => _user('x$i')), total: 5),
+      );
+      await loadFuture;
+
+      expect(provider.loading, isFalse);
+      expect(provider.users, hasLength(5)); // la réponse du load reste valide
+    });
+
+    test(
+        'toggleActive() résolu pendant qu\'un load() est en vol : loading '
+        'revient à false (pas de spinner figé)', () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      // Premier load, complet : peuple la liste avec u0 (utilisateur réel
+      // que l'on va basculer ci-dessous — un toggle sur un id absent est un
+      // no-op qui ne bump aucun compteur, cf. fix #8 : il faut un VRAI match
+      // pour reproduire la régression).
+      final firstLoad = provider.load();
+      repo.pending[0].complete((users: [_user('u0')], total: 1));
+      await firstLoad;
+
+      final loadFuture = provider.load(reset: false);
+      expect(provider.loading, isTrue);
+
+      await provider.toggleActive(_user('u0'));
+
+      repo.pending[1].complete(
+        (users: List.generate(5, (i) => _user('x$i')), total: 5),
+      );
+      await loadFuture;
+
+      expect(provider.loading, isFalse);
+      expect(provider.users, hasLength(5));
     });
   });
 
