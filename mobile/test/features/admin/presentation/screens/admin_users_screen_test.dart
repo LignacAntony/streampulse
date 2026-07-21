@@ -10,11 +10,21 @@ import 'package:streampulse/features/admin/presentation/providers/admin_users_pr
 import 'package:streampulse/features/admin/presentation/screens/admin_users_screen.dart';
 
 class _FakeAdminRepository implements AdminRepository {
-  _FakeAdminRepository({List<AdminUser>? all, this.mutationError})
-      : all = all ?? _defaultUsers();
+  _FakeAdminRepository({
+    List<AdminUser>? all,
+    this.mutationError,
+    this.nextListError,
+  }) : all = all ?? _defaultUsers();
 
   final List<AdminUser> all;
   final Object? mutationError;
+
+  /// Si non nul, le PROCHAIN appel à `listUsers` échoue avec cette exception
+  /// puis se réinitialise à `null` (usage unique). Permet de faire échouer
+  /// spécifiquement le chargement initial (liste vide, vue plein écran) OU
+  /// un `loadMore` ultérieur (liste déjà peuplée, toast attendu) selon le
+  /// moment où le champ est renseigné.
+  Object? nextListError;
 
   int setActiveCalls = 0;
   int deleteCalls = 0;
@@ -30,6 +40,11 @@ class _FakeAdminRepository implements AdminRepository {
     int limit = 20,
     int offset = 0,
   }) async {
+    if (nextListError != null) {
+      final error = nextListError!;
+      nextListError = null;
+      throw error;
+    }
     lastSearch = search;
     lastRole = role;
     lastStatus = status;
@@ -372,5 +387,85 @@ void main() {
       toastification.dismissAll(delayForAnimation: false);
       await tester.pump(const Duration(milliseconds: 700));
     });
+
+    testWidgets(
+      'échec réseau au premier chargement affiche l\'icône wifi_off',
+      (tester) async {
+        final repo = _FakeAdminRepository(
+          nextListError: const NetworkException(),
+        );
+        await tester.pumpWidget(_buildHarness(repo));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Pas de connexion réseau'), findsOneWidget);
+        expect(find.byIcon(Icons.wifi_off_outlined), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'échec serveur au premier chargement affiche une icône neutre '
+      '(pas wifi_off)',
+      (tester) async {
+        final repo = _FakeAdminRepository(
+          nextListError: const ServerException(),
+        );
+        await tester.pumpWidget(_buildHarness(repo));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Impossible de charger les utilisateurs'),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.wifi_off_outlined), findsNothing);
+        expect(find.byIcon(Icons.error_outline), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'échec de loadMore (page suivante) affiche un toast d\'erreur sans '
+      'remplacer la liste déjà affichée',
+      (tester) async {
+        final many = List.generate(
+          25,
+          (i) => AdminUser(
+            id: '$i',
+            email: 'user$i@example.com',
+            username: 'user$i',
+            role: 'user',
+            isActive: true,
+            createdAt: DateTime.utc(2026, 1, 1),
+          ),
+        );
+        final repo = _FakeAdminRepository(all: many);
+        await tester.pumpWidget(_buildHarness(repo));
+        await tester.pumpAndSettle();
+
+        // Le chargement initial (page 1) a réussi ; on arme l'échec du
+        // PROCHAIN appel — celui déclenché par le loadMore du scroll ci-dessous.
+        repo.nextListError = const ServerException();
+
+        final scrollableFinder = find.descendant(
+          of: find.byKey(const Key('admin_users_list')),
+          matching: find.byType(Scrollable),
+        );
+        final scrollableState =
+            tester.state<ScrollableState>(scrollableFinder);
+        scrollableState.position.jumpTo(
+          scrollableState.position.maxScrollExtent,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Impossible de charger les utilisateurs'),
+          findsOneWidget,
+        );
+        // La liste reste affichée (pas de bascule vers la vue d'erreur plein
+        // écran) : le toast est désormais le seul signal de l'échec.
+        expect(find.byKey(const Key('admin_users_list')), findsOneWidget);
+
+        toastification.dismissAll(delayForAnimation: false);
+        await tester.pump(const Duration(milliseconds: 700));
+      },
+    );
   });
 }

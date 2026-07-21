@@ -65,7 +65,24 @@ class _AdminUsersBodyState extends State<_AdminUsersBody> {
     if (!provider.hasMore || provider.loadingMore) return;
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - 200) {
-      provider.loadMore();
+      _onLoadMore();
+    }
+  }
+
+  /// Charge la page suivante et affiche un toast d'erreur en cas d'échec.
+  ///
+  /// `provider.error` n'est rendu en vue plein écran que lorsque la liste
+  /// est vide (cf. `_buildList`) : un échec de `loadMore` (page ≥ 2) laisse
+  /// la liste déjà affichée non vide, donc invisible sans ce toast — seul
+  /// point d'appel de `loadMore` (scroll auto + bouton « Charger plus »),
+  /// comme `_onToggle`/`_onDelete` le font déjà pour leurs propres erreurs.
+  Future<void> _onLoadMore() async {
+    final provider = context.read<AdminUsersProvider>();
+    await provider.loadMore();
+    if (!mounted) return;
+    final error = provider.error;
+    if (error != null) {
+      showAuthErrorToast(context, error);
     }
   }
 
@@ -87,12 +104,17 @@ class _AdminUsersBodyState extends State<_AdminUsersBody> {
     }
 
     try {
-      await provider.toggleActive(user);
+      final changed = await provider.toggleActive(user);
       if (!mounted) return;
-      showAuthSuccessToast(
-        context,
-        user.isActive ? 'Compte désactivé' : 'Compte activé',
-      );
+      // `changed` est faux sur un no-op (utilisateur déjà retiré de la liste
+      // entre-temps) : le backend a confirmé la mutation, mais il n'y a rien
+      // de nouveau à annoncer ici — pas de toast succès trompeur.
+      if (changed) {
+        showAuthSuccessToast(
+          context,
+          user.isActive ? 'Compte désactivé' : 'Compte activé',
+        );
+      }
     } on ConflictException catch (e) {
       if (!mounted) return;
       showAuthErrorToast(context, e.message);
@@ -196,7 +218,11 @@ class _AdminUsersBodyState extends State<_AdminUsersBody> {
 
     if (provider.error != null && provider.users.isEmpty) {
       return _MessageView(
-        icon: Icons.wifi_off_outlined,
+        // Icône adaptée au type d'erreur : une icône réseau sur une panne
+        // serveur (ou autre) serait trompeuse pour l'utilisateur.
+        icon: provider.isNetworkError
+            ? Icons.wifi_off_outlined
+            : Icons.error_outline,
         message: provider.error!,
         actionLabel: 'Réessayer',
         onAction: () => context.read<AdminUsersProvider>().load(),
@@ -221,7 +247,7 @@ class _AdminUsersBodyState extends State<_AdminUsersBody> {
           final user = provider.users[index];
           return _UserTile(user: user, onToggle: _onToggle, onDelete: _onDelete);
         }
-        return _ListFooter(provider: provider);
+        return _ListFooter(provider: provider, onLoadMore: _onLoadMore);
       },
     );
   }
@@ -398,9 +424,10 @@ String _roleLabel(String role) {
 }
 
 class _ListFooter extends StatelessWidget {
-  const _ListFooter({required this.provider});
+  const _ListFooter({required this.provider, required this.onLoadMore});
 
   final AdminUsersProvider provider;
+  final VoidCallback onLoadMore;
 
   @override
   Widget build(BuildContext context) {
@@ -414,7 +441,7 @@ class _ListFooter extends StatelessWidget {
       return Center(
         child: OutlinedButton(
           key: const Key('admin_users_load_more_button'),
-          onPressed: provider.loadMore,
+          onPressed: onLoadMore,
           child: const Text('Charger plus'),
         ),
       );

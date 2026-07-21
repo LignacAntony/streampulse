@@ -75,7 +75,9 @@ class _FakeAdminRepository implements AdminRepository {
   Future<AdminUser> setUserActive(String id, bool active) async {
     setActiveCalls++;
     if (mutationError != null) throw mutationError!;
-    final user = all.firstWhere((u) => u.id == id);
+    // `orElse` : le backend peut confirmer la mutation pour un id qui n'est
+    // plus (ou jamais été) dans `all` — le test du no-op (#8) simule ce cas.
+    final user = all.firstWhere((u) => u.id == id, orElse: () => _user(id));
     return AdminUser(
       id: user.id,
       email: user.email,
@@ -96,6 +98,11 @@ class _FakeAdminRepository implements AdminRepository {
 /// Fake dont chaque `listUsers` reste en vol tant que le test n'a pas résolu
 /// son [Completer] : permet de contrôler l'ORDRE d'arrivée des réponses pour
 /// vérifier le comportement out-of-order (jeton de génération).
+///
+/// `setUserActive`/`deleteUser` résolvent immédiatement (contrairement à
+/// `listUsers`) : ils simulent une mutation concurrente (autre onglet, autre
+/// admin) qui se termine PENDANT qu'un `loadMore` reste en vol, sans avoir
+/// besoin de contrôler leur propre timing.
 class _CompleterAdminRepository implements AdminRepository {
   final List<Completer<({List<AdminUser> users, int total})>> pending = [];
 
@@ -113,11 +120,11 @@ class _CompleterAdminRepository implements AdminRepository {
   }
 
   @override
-  Future<AdminUser> setUserActive(String id, bool active) =>
-      throw UnimplementedError();
+  Future<AdminUser> setUserActive(String id, bool active) async =>
+      _user(id, isActive: active);
 
   @override
-  Future<void> deleteUser(String id) => throw UnimplementedError();
+  Future<void> deleteUser(String id) async {}
 }
 
 void main() {
@@ -341,6 +348,75 @@ void main() {
     });
   });
 
+  group('mutations concurrentes (jeton de génération)', () {
+    test(
+        'delete() pendant un loadMore en vol invalide la page obsolète '
+        '(pas de doublon, total cohérent)', () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      final initial = provider.load();
+      repo.pending[0].complete(
+        (users: List.generate(20, (i) => _user('u$i')), total: 100),
+      );
+      await initial;
+      expect(provider.users, hasLength(20));
+      expect(provider.total, 100);
+      expect(provider.hasMore, isTrue);
+
+      final more = provider.loadMore(); // offset 20, reste en vol (pending[1])
+      expect(repo.pending, hasLength(2));
+
+      // Suppression concurrente de u0 (autre admin/onglet) pendant que la
+      // page 2 est en vol : décrémente total et retire u0 immédiatement.
+      await provider.delete(_user('u0'));
+      expect(provider.users, hasLength(19));
+      expect(provider.users.any((u) => u.id == 'u0'), isFalse);
+      expect(provider.total, 99);
+
+      // La page 2 (obsolète) se résout enfin : sans le jeton de génération,
+      // elle ré-accumulerait par-dessus (`[..._users, ...result.users]`),
+      // ressuscitant u0 et écrasant total à 100. Avec le fix, elle doit être
+      // intégralement ignorée.
+      repo.pending[1].complete(
+        (users: List.generate(20, (i) => _user('u${i + 20}')), total: 100),
+      );
+      await more;
+
+      expect(provider.users, hasLength(19));
+      expect(provider.users.any((u) => u.id == 'u0'), isFalse);
+      expect(provider.total, 99);
+      expect(provider.loadingMore, isFalse);
+    });
+
+    test(
+        'toggleActive() pendant un loadMore en vol invalide la page obsolète',
+        () async {
+      final repo = _CompleterAdminRepository();
+      final provider = AdminUsersProvider(repo);
+
+      final initial = provider.load();
+      repo.pending[0].complete(
+        (users: List.generate(20, (i) => _user('u$i')), total: 100),
+      );
+      await initial;
+
+      final more = provider.loadMore(); // offset 20, reste en vol (pending[1])
+      expect(repo.pending, hasLength(2));
+
+      await provider.toggleActive(_user('u0'));
+
+      // Page 2 obsolète : ignorée, comme pour delete() ci-dessus.
+      repo.pending[1].complete(
+        (users: List.generate(20, (i) => _user('u${i + 20}')), total: 100),
+      );
+      await more;
+
+      expect(provider.users, hasLength(20)); // pas 40 : page ignorée
+      expect(provider.loadingMore, isFalse);
+    });
+  });
+
   group('AdminUsersProvider.loadMore', () {
     test('accumule les pages tant que users.length < total', () async {
       final repo = _FakeAdminRepository(
@@ -443,19 +519,43 @@ void main() {
   });
 
   group('AdminUsersProvider.toggleActive', () {
-    test('succès : remplace l\'utilisateur dans la liste locale', () async {
+    test('succès : remplace l\'utilisateur dans la liste locale, retourne true',
+        () async {
       final repo = _FakeAdminRepository();
       final provider = AdminUsersProvider(repo);
       await provider.load();
       final target = provider.users.first;
       expect(target.isActive, isTrue);
 
-      await provider.toggleActive(target);
+      final changed = await provider.toggleActive(target);
 
+      expect(changed, isTrue);
       expect(repo.setActiveCalls, 1);
       final updated = provider.users.firstWhere((u) => u.id == target.id);
       expect(updated.isActive, isFalse);
       expect(provider.users, hasLength(5));
+    });
+
+    test(
+        'utilisateur déjà absent de la liste locale : no-op silencieux, '
+        'retourne false, ne notifie pas', () async {
+      final repo = _FakeAdminRepository();
+      final provider = AdminUsersProvider(repo);
+      await provider.load();
+      final usersBefore = provider.users;
+
+      var notified = false;
+      provider.addListener(() => notified = true);
+
+      // Le backend confirme la mutation (`setUserActive` réussit), mais
+      // l'utilisateur n'est plus dans `_users` (retiré entre-temps, ex. par
+      // un autre admin) : l'appelant ne doit pas afficher de toast succès.
+      final changed = await provider.toggleActive(_user('does-not-exist'));
+
+      expect(changed, isFalse);
+      expect(repo.setActiveCalls, 1);
+      expect(notified, isFalse);
+      expect(provider.users, same(usersBefore));
     });
 
     test('409 : relance l\'exception sans modifier la liste locale', () async {
