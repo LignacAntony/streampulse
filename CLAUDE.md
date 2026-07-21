@@ -212,6 +212,8 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 
 Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
 utilisateurs : domaine `internal/admin/` ([ADR 017](docs/adr/017-tableau-de-bord-admin-gestion-utilisateurs.md)).
+Supervision et interruption des flux actifs : même domaine `internal/admin/`
+([ADR 018](docs/adr/018-supervision-admin-des-flux-et-journal-daudit.md)).
 Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/adr/014-demande-activation-role-diffuseur.md)).
 
 | Méthode | Route | Handler | Auth requise |
@@ -219,6 +221,8 @@ Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/ad
 | GET | `/api/admin/users` | `admin.Handler.List` | Oui — rôle admin — recherche/filtres/pagination, réponse `{users, total}` |
 | PATCH | `/api/admin/users/{id}` | `admin.Handler.SetActive` | Oui — rôle admin — active/désactive (`is_active`) ; 409 self-action, 409 dernier admin actif |
 | DELETE | `/api/admin/users/{id}` | `admin.Handler.Delete` | Oui — rôle admin — hard delete (cascade), stoppe d'abord les lives du user ; mêmes 409 |
+| GET | `/api/admin/streams` | `admin.Handler.ListStreams` | Oui — rôle admin — liste de modération paginée (tous les live, publics et privés, avec l'identité du diffuseur), réponse `{streams, total}` |
+| POST | `/api/admin/streams/{id}/stop` | `admin.Handler.StopStream` | Oui — rôle admin — interruption immédiate (`live→ended`, sans contrôle de propriétaire) + entrée `audit_logs` best-effort ; 204/404/409 |
 | GET | `/api/admin/broadcaster-requests` | `broadcaster.Handler.List` | Oui — rôle admin — liste les demandes (filtre `?status=`) |
 | POST | `/api/admin/broadcaster-requests/{id}/approve` | `broadcaster.Handler.Approve` | Oui — rôle admin — valide + promeut l'utilisateur |
 | POST | `/api/admin/broadcaster-requests/{id}/reject` | `broadcaster.Handler.Reject` | Oui — rôle admin — refuse + `review_note` |
@@ -492,7 +496,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `018-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `019-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
