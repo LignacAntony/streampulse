@@ -273,6 +273,32 @@ func (q *Queries) StartStream(ctx context.Context, arg StartStreamParams) (Start
 	return i, err
 }
 
+const stopLiveStreamsByUser = `-- name: StopLiveStreamsByUser :many
+UPDATE streams SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE user_id = $1::uuid AND status = 'live'
+RETURNING id
+`
+
+func (q *Queries) StopLiveStreamsByUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, stopLiveStreamsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const stopStream = `-- name: StopStream :one
 UPDATE streams
 SET status = 'ended', ended_at = NOW(), updated_at = NOW()

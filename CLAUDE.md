@@ -208,6 +208,21 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 - Titre **non unique** (contrainte retirée en `000015`) : pas de 409 sur le titre.
 - `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
 
+### Routes admin existantes
+
+Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
+utilisateurs : domaine `internal/admin/` ([ADR 017](docs/adr/017-tableau-de-bord-admin-gestion-utilisateurs.md)).
+Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/adr/014-demande-activation-role-diffuseur.md)).
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| GET | `/api/admin/users` | `admin.Handler.List` | Oui — rôle admin — recherche/filtres/pagination, réponse `{users, total}` |
+| PATCH | `/api/admin/users/{id}` | `admin.Handler.SetActive` | Oui — rôle admin — active/désactive (`is_active`) ; 409 self-action, 409 dernier admin actif |
+| DELETE | `/api/admin/users/{id}` | `admin.Handler.Delete` | Oui — rôle admin — hard delete (cascade), stoppe d'abord les lives du user ; mêmes 409 |
+| GET | `/api/admin/broadcaster-requests` | `broadcaster.Handler.List` | Oui — rôle admin — liste les demandes (filtre `?status=`) |
+| POST | `/api/admin/broadcaster-requests/{id}/approve` | `broadcaster.Handler.Approve` | Oui — rôle admin — valide + promeut l'utilisateur |
+| POST | `/api/admin/broadcaster-requests/{id}/reject` | `broadcaster.Handler.Reject` | Oui — rôle admin — refuse + `review_note` |
+
 ### Documentation OpenAPI
 
 La spec OpenAPI est la **source de vérité** du contrat HTTP (cf. [ADR 012](docs/adr/012-openapi-source-de-verite.md)).
@@ -477,7 +492,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `017-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `018-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

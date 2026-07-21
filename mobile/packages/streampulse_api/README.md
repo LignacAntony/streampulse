@@ -48,13 +48,13 @@ Please follow the [installation procedure](#installation--usage) and then run th
 import 'package:streampulse_api/streampulse_api.dart';
 
 
-final api = StreampulseApi().getAuthApi();
-final DeleteAccountRequest deleteAccountRequest = ; // DeleteAccountRequest | 
+final api = StreampulseApi().getAdminApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
 
 try {
-    api.deleteAccount(deleteAccountRequest);
+    api.deleteAdminUser(id);
 } on DioException catch (e) {
-    print("Exception when calling AuthApi->deleteAccount: $e\n");
+    print("Exception when calling AdminApi->deleteAdminUser: $e\n");
 }
 
 ```
@@ -65,6 +65,9 @@ All URIs are relative to *http://localhost*
 
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
+[*AdminApi*](doc/AdminApi.md) | [**deleteAdminUser**](doc/AdminApi.md#deleteadminuser) | **DELETE** /api/admin/users/{id} | Permanently delete a user account (admin only).
+[*AdminApi*](doc/AdminApi.md) | [**listAdminUsers**](doc/AdminApi.md#listadminusers) | **GET** /api/admin/users | List and search users (admin only).
+[*AdminApi*](doc/AdminApi.md) | [**setAdminUserActive**](doc/AdminApi.md#setadminuseractive) | **PATCH** /api/admin/users/{id} | Activate or deactivate a user account (admin only).
 [*AuthApi*](doc/AuthApi.md) | [**deleteAccount**](doc/AuthApi.md#deleteaccount) | **DELETE** /api/auth/me | Permanently delete the authenticated user&#39;s account (GDPR art. 17).
 [*AuthApi*](doc/AuthApi.md) | [**forgotPassword**](doc/AuthApi.md#forgotpassword) | **POST** /api/auth/forgot-password | Request a password reset email.
 [*AuthApi*](doc/AuthApi.md) | [**login**](doc/AuthApi.md#login) | **POST** /api/auth/login | Authenticate a user and issue tokens.
@@ -96,6 +99,8 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AdminUserListResponse](doc/AdminUserListResponse.md)
+ - [AdminUserResponse](doc/AdminUserResponse.md)
  - [BroadcasterRequestAdmin](doc/BroadcasterRequestAdmin.md)
  - [BroadcasterRequestInput](doc/BroadcasterRequestInput.md)
  - [BroadcasterRequestListResponse](doc/BroadcasterRequestListResponse.md)
@@ -114,6 +119,7 @@ Class | Method | HTTP request | Description
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
  - [ReviewRequestInput](doc/ReviewRequestInput.md)
+ - [SetUserActiveRequest](doc/SetUserActiveRequest.md)
  - [StreamResponse](doc/StreamResponse.md)
  - [StreamSummaryResponse](doc/StreamSummaryResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
