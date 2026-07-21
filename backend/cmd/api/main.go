@@ -142,6 +142,17 @@ func run() error {
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Start))))
 	mux.Handle("PATCH /api/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Stop))))
+	// Favoris (US-04-05) : ajout/retrait d'un flux et liste « mes favoris ».
+	// Action de niveau utilisateur : RequireAuth seul (pas de rôle diffuseur).
+	// Ajout en PUT (idempotent) et non POST : un POST /api/streams/{id}/favorite
+	// entrerait structurellement en conflit avec POST /api/streams/ingest/{stream_key}
+	// dans le ServeMux (le chemin /api/streams/ingest/favorite matcherait les deux).
+	mux.Handle("PUT /api/streams/{id}/favorite", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.AddFavorite)))
+	mux.Handle("DELETE /api/streams/{id}/favorite", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.RemoveFavorite)))
+	mux.Handle("GET /api/users/me/favorites", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.ListFavorites)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

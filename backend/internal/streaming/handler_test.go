@@ -46,6 +46,11 @@ type stubService struct {
 	startErr error
 	stopRet  Stream
 	stopErr  error
+
+	addFavErr    error
+	removeFavErr error
+	listFavRet   []Stream
+	listFavErr   error
 }
 
 func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
@@ -89,6 +94,23 @@ func (s *stubService) StopStream(_ context.Context, id, requesterID string) (Str
 	s.gotID = id
 	s.gotRequester = requesterID
 	return s.stopRet, s.stopErr
+}
+
+func (s *stubService) AddFavorite(_ context.Context, streamID, requesterID string) error {
+	s.gotID = streamID
+	s.gotRequester = requesterID
+	return s.addFavErr
+}
+
+func (s *stubService) RemoveFavorite(_ context.Context, streamID, requesterID string) error {
+	s.gotID = streamID
+	s.gotRequester = requesterID
+	return s.removeFavErr
+}
+
+func (s *stubService) ListFavorites(_ context.Context, requesterID string) ([]Stream, error) {
+	s.gotRequester = requesterID
+	return s.listFavRet, s.listFavErr
 }
 
 // doCreate exécute la requête à travers la chaîne réelle RequireAuth + RequireRole(broadcaster).
@@ -740,5 +762,98 @@ func TestHandler_Playlist_ViaOptionalAuth(t *testing.T) {
 	auth.OptionalAuth(testSecret, http.HandlerFunc(owner.Playlist)).ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("propriétaire/flux privé via OptionalAuth: want 200, got %d: %s", rec2.Code, rec2.Body)
+	}
+}
+
+func TestHandler_AddFavorite_NoContent(t *testing.T) {
+	stub := &stubService{}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPut, "s1", "", http.HandlerFunc(h.AddFavorite), true)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotID != "s1" || stub.gotRequester != testUserID {
+		t.Errorf("service reçu (id=%q, requester=%q)", stub.gotID, stub.gotRequester)
+	}
+}
+
+func TestHandler_AddFavorite_NotVisible_NotFound(t *testing.T) {
+	stub := &stubService{addFavErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPut, "s1", "", http.HandlerFunc(h.AddFavorite), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_AddFavorite_Unauthenticated(t *testing.T) {
+	stub := &stubService{}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPut, "s1", "", http.HandlerFunc(h.AddFavorite), false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_RemoveFavorite_NoContent(t *testing.T) {
+	stub := &stubService{}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodDelete, "s1", "", http.HandlerFunc(h.RemoveFavorite), true)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotID != "s1" || stub.gotRequester != testUserID {
+		t.Errorf("service reçu (id=%q, requester=%q)", stub.gotID, stub.gotRequester)
+	}
+}
+
+func TestHandler_ListFavorites_OK(t *testing.T) {
+	stub := &stubService{listFavRet: []Stream{
+		{ID: "s1", UserID: "u9", Title: "Flux A", Status: StatusLive, IsPublic: true, StreamKey: "SECRET"},
+		{ID: "s2", UserID: testUserID, Title: "Flux B", Status: StatusIdle, IsPublic: false},
+	}}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/me/favorites", nil)
+	token, err := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testSecret, http.HandlerFunc(h.ListFavorites)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotRequester != testUserID {
+		t.Errorf("requester = %q, want %q", stub.gotRequester, testUserID)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"id":"s1"`) || !strings.Contains(body, `"id":"s2"`) {
+		t.Errorf("body manque des flux: %s", body)
+	}
+	if strings.Contains(body, "stream_key") || strings.Contains(body, "SECRET") {
+		t.Errorf("la liste des favoris ne doit jamais exposer de secret: %s", body)
+	}
+}
+
+func TestHandler_ListFavorites_Unauthenticated(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/me/favorites", nil)
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testSecret, http.HandlerFunc(h.ListFavorites)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
 	}
 }

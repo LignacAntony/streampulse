@@ -81,11 +81,14 @@ Class | Method | HTTP request | Description
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
 [*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
+[*StreamingApi*](doc/StreamingApi.md) | [**addFavorite**](doc/StreamingApi.md#addfavorite) | **PUT** /api/streams/{id}/favorite | Add a stream to the authenticated user&#39;s favorites.
 [*StreamingApi*](doc/StreamingApi.md) | [**createStream**](doc/StreamingApi.md#createstream) | **POST** /api/streams | Create and configure a new live stream (broadcaster only).
 [*StreamingApi*](doc/StreamingApi.md) | [**deleteStream**](doc/StreamingApi.md#deletestream) | **DELETE** /api/streams/{id} | Delete (archive) a stream (owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**getStream**](doc/StreamingApi.md#getstream) | **GET** /api/streams/{id} | Get a stream by id.
 [*StreamingApi*](doc/StreamingApi.md) | [**ingestStream**](doc/StreamingApi.md#ingeststream) | **POST** /api/streams/ingest/{stream_key} | Push a live audio stream (broadcaster ingest).
+[*StreamingApi*](doc/StreamingApi.md) | [**listMyFavorites**](doc/StreamingApi.md#listmyfavorites) | **GET** /api/users/me/favorites | List the authenticated user&#39;s favorite streams.
 [*StreamingApi*](doc/StreamingApi.md) | [**listStreams**](doc/StreamingApi.md#liststreams) | **GET** /api/streams | List public live streams (paginated).
+[*StreamingApi*](doc/StreamingApi.md) | [**removeFavorite**](doc/StreamingApi.md#removefavorite) | **DELETE** /api/streams/{id}/favorite | Remove a stream from the authenticated user&#39;s favorites.
 [*StreamingApi*](doc/StreamingApi.md) | [**startStream**](doc/StreamingApi.md#startstream) | **PATCH** /api/streams/{id}/start | Start a stream — go live (broadcaster owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**stopStream**](doc/StreamingApi.md#stopstream) | **PATCH** /api/streams/{id}/stop | Stop a live stream — end it (broadcaster owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**streamEvents**](doc/StreamingApi.md#streamevents) | **GET** /api/streams/{id}/events | Subscribe to a live stream&#39;s events (SSE).
