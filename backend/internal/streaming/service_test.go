@@ -158,6 +158,10 @@ type fakeRepo struct {
 	gotStopLiveForUserID string
 	stopLiveForUserIDs   []string
 	stopLiveForUserErr   error
+
+	gotForceStopID string
+	forceStopRet   string
+	forceStopErr   error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
@@ -207,6 +211,11 @@ func (f *fakeRepo) EndOrphanLiveStreams(_ context.Context) (int64, error) {
 func (f *fakeRepo) StopLiveStreamsByUser(_ context.Context, userID string) ([]string, error) {
 	f.gotStopLiveForUserID = userID
 	return f.stopLiveForUserIDs, f.stopLiveForUserErr
+}
+
+func (f *fakeRepo) ForceStopLiveStream(_ context.Context, id string) (string, error) {
+	f.gotForceStopID = id
+	return f.forceStopRet, f.forceStopErr
 }
 
 type fakeKeys struct {
@@ -575,5 +584,73 @@ func TestService_StopLiveForUser_RepoError_Propagates(t *testing.T) {
 	}
 	if len(sessions.stopped) != 0 {
 		t.Errorf("aucune session ne devrait être stoppée sur erreur repo: %v", sessions.stopped)
+	}
+}
+
+// a. ForceStopStream sur un flux live : transition effectuée puis sessions.Stop
+// appelé avec l'id renvoyé par le repo (STR-192, interruption admin).
+func TestService_ForceStopStream_Success(t *testing.T) {
+	repo := &fakeRepo{forceStopRet: "s1"}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.ForceStopStream(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if repo.gotForceStopID != "s1" {
+		t.Errorf("id transmis au repo = %q, want s1", repo.gotForceStopID)
+	}
+	if len(sessions.stopped) != 1 || sessions.stopped[0] != "s1" {
+		t.Errorf("session non arrêtée: %v", sessions.stopped)
+	}
+}
+
+// b. ForceStopStream sur un flux existant mais pas live : Conflict, aucune
+// session stoppée (pas de contrôle de propriétaire ici, contrairement à StopStream).
+func TestService_ForceStopStream_NotLive_Conflict(t *testing.T) {
+	repo := &fakeRepo{forceStopErr: errNoRowAffected, getRet: Stream{ID: "s1", Status: StatusIdle}}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.ForceStopStream(context.Background(), "s1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict", err)
+	}
+	if len(sessions.stopped) != 0 {
+		t.Errorf("aucune session ne devrait être arrêtée: %v", sessions.stopped)
+	}
+}
+
+// c. ForceStopStream sur un flux absent (ou archivé) : NotFound, aucune session
+// stoppée.
+func TestService_ForceStopStream_Absent_NotFound(t *testing.T) {
+	repo := &fakeRepo{forceStopErr: errNoRowAffected, getErr: apperror.NotFound("stream not found")}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.ForceStopStream(context.Background(), "s1")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not_found", err)
+	}
+	if len(sessions.stopped) != 0 {
+		t.Errorf("aucune session ne devrait être arrêtée: %v", sessions.stopped)
+	}
+}
+
+// d. ForceStopStream : une erreur du repo autre que errNoRowAffected est
+// propagée telle quelle, sans arrêt de session.
+func TestService_ForceStopStream_RepoError_Propagates(t *testing.T) {
+	repoErr := errors.New("db unavailable")
+	repo := &fakeRepo{forceStopErr: repoErr}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	err := svc.ForceStopStream(context.Background(), "s1")
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("erreur non propagée: %v", err)
+	}
+	if len(sessions.stopped) != 0 {
+		t.Errorf("aucune session ne devrait être arrêtée sur erreur repo: %v", sessions.stopped)
 	}
 }
