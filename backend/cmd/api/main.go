@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 
 	"github.com/LignacAntony/streampulse/internal/admin"
@@ -131,10 +133,9 @@ func run() error {
 		}
 	})
 
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		w.WriteHeader(http.StatusOK)
-	})
+	// Métriques Prometheus (STR-165, ADR 019) — registre par défaut : inclut
+	// les collectors Go (go_goroutines, go_memstats_*) + ceux du middleware.
+	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.HandleFunc("/api/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/auth/login", authHandler.Login)
@@ -214,10 +215,11 @@ func run() error {
 		mux.Handle("/swagger/", openapi.SwaggerHandler())
 	}
 
-	// Access log au plus près du mux : les préflights OPTIONS absorbés par
-	// CORS ne sont pas loggés (zéro valeur), tout le reste l'est (STR-169).
+	// Access log et métriques au plus près du mux : les préflights OPTIONS
+	// absorbés par CORS ne sont ni loggés ni comptés (STR-169, STR-165).
 	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(),
-		httpmw.AccessLog(logger, mux))
+		httpmw.AccessLog(logger,
+			httpmw.Metrics(prometheus.DefaultRegisterer, mux)))
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),

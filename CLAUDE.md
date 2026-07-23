@@ -174,6 +174,13 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 - **Jamais** `log.Printf`/`fmt.Println` (STR-170). Path loggable : `httpjson.LoggablePath` (masque le `stream_key`).
 - Requête Loki type : `{service="api"} | json | level="error"` (Grafana → Explore).
 
+### Métriques Prometheus (STR-165, ADR 019)
+
+- Middleware `httpmw.Metrics(reg, mux)` (séparé d'`AccessLog`) : `http_requests_total{method,path,status}` + `http_request_duration_seconds{method,path}`.
+- Le label `path` = pattern du routeur via `mux.Handler(r)` (aucune table à synchroniser) ; hors table → `{other}` ; méthodes hors allowlist → `other` ; routes longue durée (SSE, ingest) comptées mais exclues de l'histogramme de latence.
+- `/metrics` n'est **pas** exposé publiquement : bloqué par Caddy en prod (403), scrape interne uniquement.
+- Dashboards provisionnés (non éditables en UI) : `docker/grafana/provisioning/dashboards/` — la vérité vit dans git.
+
 ### Patterns à respecter
 
 - **ISP** : le handler déclare des interfaces étroites (`Registrar`, `Authenticator`, `TokenRefresher`) — chacune couvre exactement ce dont le handler a besoin. `*Service` les satisfait toutes.
@@ -396,6 +403,7 @@ Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont co
 | `prometheus` | `prom/prometheus:latest` | Métriques | 9090 | 9090 |
 | `loki` | `grafana/loki:latest` | Logs | 3100 | — |
 | `alloy` | `grafana/alloy:latest` | Collecte logs Docker → Loki (ADR 018) | 12345 | — |
+| `node_exporter` | `prom/node-exporter:latest` | Métriques machine pour Prometheus (ADR 019) | 9100 | — |
 | `tempo` | `grafana/tempo:latest` | Traces (OTLP) | 3200, 4317, 4318 | — |
 | `grafana` | `grafana/grafana:latest` | Visualisation | 3000 | 3000 |
 
