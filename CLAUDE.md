@@ -176,8 +176,9 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 
 ### Métriques Prometheus (STR-165, ADR 019)
 
-- Middleware `httpmw.Metrics` (séparé d'`AccessLog`) : `http_requests_total{method,path,status}` + `http_request_duration_seconds{method,path}`.
-- **Toute nouvelle route dans `main.go` doit être ajoutée à `normalizePath`** (`internal/shared/httpmw/metricspath.go`) — sinon elle est agrégée dans `{other}`. `TestNormalizePath` fait foi.
+- Middleware `httpmw.Metrics(reg, mux)` (séparé d'`AccessLog`) : `http_requests_total{method,path,status}` + `http_request_duration_seconds{method,path}`.
+- Le label `path` = pattern du routeur via `mux.Handler(r)` (aucune table à synchroniser) ; hors table → `{other}` ; méthodes hors allowlist → `other` ; routes longue durée (SSE, ingest) comptées mais exclues de l'histogramme de latence.
+- `/metrics` n'est **pas** exposé publiquement : bloqué par Caddy en prod (403), scrape interne uniquement.
 - Dashboards provisionnés (non éditables en UI) : `docker/grafana/provisioning/dashboards/` — la vérité vit dans git.
 
 ### Patterns à respecter

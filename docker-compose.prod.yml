@@ -41,7 +41,10 @@ services:
     networks:
       - streampulse-net
     ports:
-      - "${API_PORT:-8080}:8080"
+      # Bind loopback uniquement : tout le trafic public passe par Caddy (443).
+      # Un bind 0.0.0.0 contournerait ufw (iptables Docker) et exposerait
+      # /metrics et l'API en clair sur le port 8080 (revue PR #268).
+      - "127.0.0.1:${API_PORT:-8080}:8080"
     environment:
       GO_ENV: ${GO_ENV}
       DB_HOST: postgres
@@ -144,6 +147,7 @@ services:
       - /:/host:ro,rslave
     command:
       - --path.rootfs=/host
+    # Image distroless (pas de shell ni wget) — healthcheck via service_started
     restart: unless-stopped
 
   # ──────────────────────────────────────────

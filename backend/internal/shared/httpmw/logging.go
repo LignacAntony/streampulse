@@ -81,7 +81,7 @@ func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWrite
 // debug. Niveau selon status : 5xx=error, 4xx=warn, sinon info.
 func AccessLog(logger zerolog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+		if skipObservability(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -142,6 +142,7 @@ services:
     # rslave sur `/`. Sans lui, node_exporter lit /proc du kernel de la VM —
     # CPU/RAM corrects pour développer le panel Infra. Le compose prod (Linux)
     # monte le vrai rootfs (docker-compose.prod.yml, ADR 019).
+    # Image distroless (pas de shell ni wget) — healthcheck via service_started
     restart: unless-stopped
 
   # ──────────────────────────────────────────
