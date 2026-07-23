@@ -186,7 +186,7 @@ func (h *Handler) ListStreams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, listStreamsResponse{Streams: streams, Total: total}); err != nil {
-		log.Printf("admin: encode list streams response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode list streams")
 	}
 }
 
