@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/LignacAntony/streampulse/internal/config"
@@ -36,6 +37,11 @@ func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	poolCfg.MaxConnLifetime = poolMaxConnLife
 	poolCfg.MaxConnIdleTime = poolMaxConnIdle
 	poolCfg.HealthCheckPeriod = poolHealthCheck
+
+	// Un span par requête SQL, enfant du span HTTP via le ctx (STR-164,
+	// ADR 020). Sans TracerProvider global (OTEL désactivé), coût quasi nul.
+	// Le texte SQL est tracé sans ses arguments (queries sqlc paramétrées).
+	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer()
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

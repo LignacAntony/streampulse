@@ -181,6 +181,13 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 - `/metrics` n'est **pas** exposé publiquement : bloqué par Caddy en prod (403), scrape interne uniquement.
 - Dashboards provisionnés (non éditables en UI) : `docker/grafana/provisioning/dashboards/` — la vérité vit dans git.
 
+### Traces OpenTelemetry (STR-164, ADR 020)
+
+- `observability.NewTracer(ctx, cfg)` : OTLP/HTTP vers Tempo, noop si `OTEL_EXPORTER_OTLP_ENDPOINT` vide (`go run` local). Shutdown flush déféré dans `main.go`.
+- Chaîne middleware : `CORS(Tracing(mux, AccessLog(logger, Metrics(reg, mux))))` — spans nommés par pattern de route, `/health`+`/metrics` non tracés.
+- SQL : `otelpgx` sur le pool (`pool.go`) — un span par query, sans les arguments.
+- Logs corrélés : `trace_id`/`span_id` ajoutés par `AccessLog` quand un span est actif → bouton TraceID dans Grafana (Loki `derivedFields`).
+
 ### Patterns à respecter
 
 - **ISP** : le handler déclare des interfaces étroites (`Registrar`, `Authenticator`, `TokenRefresher`) — chacune couvre exactement ce dont le handler a besoin. `*Service` les satisfait toutes.
@@ -453,6 +460,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
 | `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
 | `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint OTLP/HTTP Tempo pour les traces (vide = tracing désactivé) — ADR 020 | `http://tempo:4318` |
 
 ## Santé des services
 

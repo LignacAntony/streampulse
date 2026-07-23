@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
 )
@@ -89,7 +90,16 @@ func AccessLog(logger zerolog.Logger, next http.Handler) http.Handler {
 		reqID := requestID(r)
 		w.Header().Set(requestIDHeader, reqID)
 
-		reqLogger := logger.With().Str("request_id", reqID).Logger()
+		logCtx := logger.With().Str("request_id", reqID)
+		// otelhttp est posé au-dessus de ce middleware (ADR 020) : si un span
+		// est actif, trace_id/span_id corrèlent chaque log à sa trace Tempo
+		// (derivedFields Loki → bouton "TraceID" dans Grafana).
+		if sc := trace.SpanContextFromContext(r.Context()); sc.HasTraceID() {
+			logCtx = logCtx.
+				Str("trace_id", sc.TraceID().String()).
+				Str("span_id", sc.SpanID().String())
+		}
+		reqLogger := logCtx.Logger()
 		recorder := &userRecorder{}
 		ctx := reqLogger.WithContext(r.Context())
 		ctx = context.WithValue(ctx, userRecorderKey{}, recorder)
