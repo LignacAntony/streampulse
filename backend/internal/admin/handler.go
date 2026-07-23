@@ -66,27 +66,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultListLimit)
-	if limit < 1 {
-		limit = defaultListLimit
-	}
-	if limit > maxListLimit {
-		limit = maxListLimit
-	}
-	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > 1<<31-1 {
-		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
-	}
+	limit, offset := clampPagination(r)
 
 	users, total, err := h.svc.ListUsers(r.Context(), ListUsersInput{
 		Search: r.URL.Query().Get("search"),
 		Role:   role,
 		Status: status,
-		Limit:  int32(limit),
-		Offset: int32(offset),
+		Limit:  limit,
+		Offset: offset,
 	})
 	if err != nil {
 		httpjson.WriteError(w, r, err)
@@ -161,22 +148,9 @@ type listStreamsResponse struct {
 // les flux en direct, publics et privés). Mêmes bornes de pagination que List
 // (users) : limit défaut 20 / max 100, offset borné [0, MaxInt32].
 func (h *Handler) ListStreams(w http.ResponseWriter, r *http.Request) {
-	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultListLimit)
-	if limit < 1 {
-		limit = defaultListLimit
-	}
-	if limit > maxListLimit {
-		limit = maxListLimit
-	}
-	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > 1<<31-1 {
-		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
-	}
+	limit, offset := clampPagination(r)
 
-	streams, total, err := h.svc.ListLiveStreams(r.Context(), int32(limit), int32(offset))
+	streams, total, err := h.svc.ListLiveStreams(r.Context(), limit, offset)
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
@@ -205,6 +179,28 @@ func (h *Handler) StopStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// clampPagination lit et borne les paramètres `limit`/`offset` d'une requête de
+// liste admin : limit dans [1, maxListLimit] (défaut defaultListLimit), offset
+// dans [0, MaxInt32] (borne haute pour éviter un OFFSET négatif après le cast
+// int32 → 500). Partagée par les endpoints paginés du domaine (List, ListStreams).
+func clampPagination(r *http.Request) (limit, offset int32) {
+	l := parseIntDefault(r.URL.Query().Get("limit"), defaultListLimit)
+	if l < 1 {
+		l = defaultListLimit
+	}
+	if l > maxListLimit {
+		l = maxListLimit
+	}
+	o := parseIntDefault(r.URL.Query().Get("offset"), 0)
+	if o < 0 {
+		o = 0
+	}
+	if o > 1<<31-1 {
+		o = 1<<31 - 1
+	}
+	return int32(l), int32(o)
 }
 
 // parseIntDefault recopiée depuis streaming.parseIntDefault : la fonction est
