@@ -1,0 +1,48 @@
+// Collecte des logs des conteneurs Docker vers Loki (STR-171, ADR 018).
+//
+// Chaîne : discovery.docker (liste les conteneurs via le socket, lecture
+// seule) → discovery.relabel (labels Loki à faible cardinalité) →
+// loki.source.docker (suit les flux stdout/stderr) → loki.write (push).
+//
+// L'API émet du JSON structuré sur stdout (STR-163) : Loki stocke la ligne
+// brute, le parsing se fait à la requête (`| json`) dans Grafana Explore.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "compose_services" {
+	targets = discovery.docker.containers.targets
+
+	// Ignore les conteneurs hors Docker Compose (machine de dev partagée).
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = ""
+		action        = "drop"
+	}
+
+	// service = nom du service compose (api, postgres, grafana, …) —
+	// le label de requête principal dans Loki : {service="api"}.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+
+	// project = nom du projet compose (utile si plusieurs stacks cohabitent).
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "project"
+	}
+}
+
+loki.source.docker "compose_services" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.compose_services.output
+	forward_to = [loki.write.streampulse.receiver]
+}
+
+loki.write "streampulse" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

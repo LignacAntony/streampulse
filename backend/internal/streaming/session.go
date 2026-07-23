@@ -3,8 +3,9 @@ package streaming
 import (
 	"context"
 	"io"
-	"log"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 // SessionEvent est un événement poussé aux abonnés SSE d'un flux en direct.
@@ -91,7 +92,7 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 	// fonctionnent. En pratique ffmpeg est présent dans l'image, ADR 015).
 	seg, err := ls.newSeg()
 	if err != nil {
-		log.Printf("streaming: segmenteur HLS indisponible pour %s: %v", streamID, err)
+		log.Error().Err(err).Str("stream_id", streamID).Msg("streaming: segmenteur HLS indisponible")
 		seg = nil
 	}
 

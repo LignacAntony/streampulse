@@ -60,6 +60,9 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       STREAM_INGEST_BASE_URL: ${STREAM_INGEST_BASE_URL:-http://localhost:8080}
+      # LOG_PRETTY volontairement absent : en conteneur la sortie doit rester
+      # du JSON pour la collecte Loki (STR-172, ADR 018).
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +127,27 @@ services:
       - ./docker/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
     command: -config.file=/etc/loki/local-config.yaml
     # Image distroless (pas de shell ni wget) — healthcheck via service_started
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Collecte des logs Docker → Loki — Alloy
+  # (successeur de Promtail, EOL mars 2026 — cf. ADR 018)
+  # ──────────────────────────────────────────
+  alloy:
+    image: grafana/alloy:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Lecture seule du socket Docker : découverte des conteneurs + flux de logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    depends_on:
+      loki:
+        condition: service_started
     restart: unless-stopped
 
   # ──────────────────────────────────────────

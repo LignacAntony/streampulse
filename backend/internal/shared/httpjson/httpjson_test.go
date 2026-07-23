@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"net/http/httptest"
+
 	"strings"
 	"testing"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
@@ -118,12 +120,11 @@ func TestWriteError_RedactsStreamKeyInLogs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			prev := log.Writer()
-			log.SetOutput(&buf)
-			t.Cleanup(func() { log.SetOutput(prev) })
+			logger := zerolog.New(&buf)
 
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, tt.path, nil)
+			req = req.WithContext(logger.WithContext(req.Context()))
 			ingestErr := apperror.Internal("ingest interrupted", errors.New("unexpected EOF"))
 
 			if tt.viaMux {

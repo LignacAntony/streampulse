@@ -2,8 +2,9 @@ package migrator
 
 import (
 	"errors"
-	"log"
 	"os"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -15,26 +16,26 @@ import (
 func Run() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatal("DATABASE_URL non définie")
+		log.Fatal().Msg("DATABASE_URL non définie")
 	}
 
 	m, err := migrate.New("file://migrations", dbURL)
 	if err != nil {
-		log.Fatalf("migrate init: %v", err)
+		log.Fatal().Err(err).Msg("migrate init")
 	}
 	defer func() {
 		srcErr, dbErr := m.Close()
 		if srcErr != nil {
-			log.Printf("migrate close source: %v", srcErr)
+			log.Warn().Err(srcErr).Msg("migrate: fermeture de la source")
 		}
 		if dbErr != nil {
-			log.Printf("migrate close db: %v", dbErr)
+			log.Warn().Err(dbErr).Msg("migrate: fermeture de la connexion")
 		}
 	}()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		log.Fatalf("migrate up: %v", err)
+		log.Fatal().Err(err).Msg("migrate up")
 	}
 
-	log.Println("migrations appliquées avec succès")
+	log.Info().Msg("migrations appliquées avec succès")
 }
