@@ -2,9 +2,11 @@ package admin
 
 import (
 	"context"
-	"log"
 	"net/http"
+
 	"strconv"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -95,7 +97,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, listUsersResponse{Users: users, Total: total}); err != nil {
-		log.Printf("admin: encode list response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode list")
 	}
 }
 
@@ -129,7 +131,7 @@ func (h *Handler) SetActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, user); err != nil {
-		log.Printf("admin: encode set-active response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode set-active")
 	}
 }
 

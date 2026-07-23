@@ -166,6 +166,14 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 
 **Ne jamais éditer `internal/*/db/*.go`** — ils sont écrasés à chaque `sqlc generate`.
 
+### Logs structurés (STR-163, ADR 018)
+
+- Logger racine : `observability.New(cfg, os.Stdout)` (zerolog, JSON), posé en global dans `main.go`.
+- Dans un handler/service avec `ctx` : `zerolog.Ctx(ctx).Info().Str("k", "v").Msg("...")` — corrélé `request_id` par le middleware `httpmw.AccessLog`.
+- Sans contexte HTTP (migrator, seeder, boot) : global `github.com/rs/zerolog/log`.
+- **Jamais** `log.Printf`/`fmt.Println` (STR-170). Path loggable : `httpjson.LoggablePath` (masque le `stream_key`).
+- Requête Loki type : `{service="api"} | json | level="error"` (Grafana → Explore).
+
 ### Patterns à respecter
 
 - **ISP** : le handler déclare des interfaces étroites (`Registrar`, `Authenticator`, `TokenRefresher`) — chacune couvre exactement ce dont le handler a besoin. `*Service` les satisfait toutes.
@@ -387,6 +395,7 @@ Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont co
 | `mailpit` | `axllent/mailpit:latest` | Email de test (dev) | 1025 (SMTP), 8025 (UI) | 1025, 8025 |
 | `prometheus` | `prom/prometheus:latest` | Métriques | 9090 | 9090 |
 | `loki` | `grafana/loki:latest` | Logs | 3100 | — |
+| `alloy` | `grafana/alloy:latest` | Collecte logs Docker → Loki (ADR 018) | 12345 | — |
 | `tempo` | `grafana/tempo:latest` | Traces (OTLP) | 3200, 4317, 4318 | — |
 | `grafana` | `grafana/grafana:latest` | Visualisation | 3000 | 3000 |
 
@@ -434,6 +443,8 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
+| `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
+| `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
 
 ## Santé des services
 
