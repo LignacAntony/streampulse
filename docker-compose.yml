@@ -130,6 +130,21 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────
+  # Métriques machine — node_exporter (STR-165, ADR 019)
+  # En dev sous Docker Desktop : mesure la VM Linux, pas l'hôte macOS —
+  # suffisant pour tester le panel Infra ; vraies métriques sur le VPS.
+  # ──────────────────────────────────────────
+  node_exporter:
+    image: prom/node-exporter:latest
+    networks:
+      - streampulse-net
+    # Pas de bind rootfs ici : Docker Desktop (macOS) refuse la propagation
+    # rslave sur `/`. Sans lui, node_exporter lit /proc du kernel de la VM —
+    # CPU/RAM corrects pour développer le panel Infra. Le compose prod (Linux)
+    # monte le vrai rootfs (docker-compose.prod.yml, ADR 019).
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
   # Collecte des logs Docker → Loki — Alloy
   # (successeur de Promtail, EOL mars 2026 — cf. ADR 018)
   # ──────────────────────────────────────────

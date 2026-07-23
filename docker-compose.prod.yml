@@ -134,6 +134,19 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────
+  # Métriques machine — node_exporter (STR-165, ADR 019)
+  # ──────────────────────────────────────────
+  node_exporter:
+    image: prom/node-exporter:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
   # Collecte des logs Docker → Loki — Alloy
   # (successeur de Promtail, EOL mars 2026 — cf. ADR 018)
   # ──────────────────────────────────────────
