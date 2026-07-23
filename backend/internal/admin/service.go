@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -32,11 +33,30 @@ type ListUsersInput struct {
 	Offset int32
 }
 
+// AdminStream est la vue d'un flux en direct telle qu'exposée à un admin pour
+// la modération (STR-192) : identité du diffuseur incluse (jointure users),
+// secrets (stream_key, stream_source_url) absents — un modérateur n'a jamais
+// besoin de pousser de l'audio sur le flux d'un autre.
+type AdminStream struct {
+	ID        string     `json:"id"`
+	Title     string     `json:"title"`
+	IsPublic  bool       `json:"is_public"`
+	StartedAt *time.Time `json:"started_at"`
+	UserID    string     `json:"user_id"`
+	Username  string     `json:"username"`
+}
+
 // LiveStopper arrête tous les lives en cours d'un utilisateur. Implémentée par
 // streaming.Service (STR-191 Task 2) ; interface étroite (ISP) pour ne pas
 // coupler le domaine admin au domaine streaming.
 type LiveStopper interface {
 	StopLiveForUser(ctx context.Context, userID string) error
+}
+
+// StreamModerator expose au domaine admin l'interruption d'un flux par un
+// modérateur. Implémentée par streaming.Service (ISP, même logique que LiveStopper).
+type StreamModerator interface {
+	ForceStopStream(ctx context.Context, streamID string) error
 }
 
 // Repository est le miroir des requêtes SQL du domaine admin (queries/admin.sql).
@@ -46,15 +66,18 @@ type Repository interface {
 	SetUserActive(ctx context.Context, userID string, active bool) (AdminUser, error)
 	CountActiveAdmins(ctx context.Context) (int64, error)
 	DeleteUser(ctx context.Context, userID string) error
+	ListLiveStreams(ctx context.Context, limit, offset int32) ([]AdminStream, int64, error)
+	InsertAuditLog(ctx context.Context, actorID, action, targetType, targetID string) error
 }
 
 type Service struct {
-	repo    Repository
-	stopper LiveStopper
+	repo      Repository
+	stopper   LiveStopper
+	moderator StreamModerator
 }
 
-func NewService(repo Repository, stopper LiveStopper) *Service {
-	return &Service{repo: repo, stopper: stopper}
+func NewService(repo Repository, stopper LiveStopper, moderator StreamModerator) *Service {
+	return &Service{repo: repo, stopper: stopper, moderator: moderator}
 }
 
 // ListUsers délègue entièrement au repository : filtres et pagination sont
@@ -90,6 +113,24 @@ func (s *Service) DeleteUser(ctx context.Context, targetID, requesterID string) 
 		return err
 	}
 	return s.repo.DeleteUser(ctx, targetID)
+}
+
+// ListLiveStreams retourne la liste de modération (tous les live) + total.
+func (s *Service) ListLiveStreams(ctx context.Context, limit, offset int32) ([]AdminStream, int64, error) {
+	return s.repo.ListLiveStreams(ctx, limit, offset)
+}
+
+// StopStream interrompt un flux (modération) puis journalise l'action.
+// L'audit est best-effort : l'interruption est l'action critique, un échec
+// d'écriture du journal est loggé sans faire échouer la requête.
+func (s *Service) StopStream(ctx context.Context, streamID, actorID string) error {
+	if err := s.moderator.ForceStopStream(ctx, streamID); err != nil {
+		return err
+	}
+	if err := s.repo.InsertAuditLog(ctx, actorID, "stream.stopped", "stream", streamID); err != nil {
+		log.Printf("admin: audit stream.stopped %s par %s non journalisé: %v", streamID, actorID, err)
+	}
+	return nil
 }
 
 // guardMutableAdmin factorise les gardes partagées par SetUserActive et

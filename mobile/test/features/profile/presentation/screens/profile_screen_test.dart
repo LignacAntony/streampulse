@@ -129,28 +129,36 @@ Widget _buildHarness(UserProfile profile) {
 }
 
 void main() {
-  group('ProfileScreen — tuile Administration', () {
-    testWidgets('absente pour un profil non-admin', (tester) async {
+  group('ProfileScreen — tuiles Administration', () {
+    testWidgets('les deux tuiles admin sont absentes pour un profil non-admin',
+        (tester) async {
       await tester.pumpWidget(_buildHarness(_profile(role: 'user')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('profile_admin_tile')), findsNothing);
-      expect(find.text('Administration'), findsNothing);
+      expect(find.byKey(const Key('profile_admin_streams_tile')), findsNothing);
+      expect(find.text('Gestion des utilisateurs'), findsNothing);
+      expect(find.text('Supervision des flux'), findsNothing);
     });
 
-    testWidgets('absente pour un profil diffuseur', (tester) async {
+    testWidgets('les deux tuiles admin sont absentes pour un profil diffuseur',
+        (tester) async {
       await tester.pumpWidget(_buildHarness(_profile(role: 'broadcaster')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('profile_admin_tile')), findsNothing);
+      expect(find.byKey(const Key('profile_admin_streams_tile')), findsNothing);
     });
 
-    testWidgets('visible pour un profil admin', (tester) async {
+    testWidgets('les deux tuiles admin sont visibles pour un profil admin',
+        (tester) async {
       await tester.pumpWidget(_buildHarness(_profile(role: 'admin')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('profile_admin_tile')), findsOneWidget);
-      expect(find.text('Administration'), findsOneWidget);
+      expect(find.text('Gestion des utilisateurs'), findsOneWidget);
+      expect(find.byKey(const Key('profile_admin_streams_tile')), findsOneWidget);
+      expect(find.text('Supervision des flux'), findsOneWidget);
     });
   });
 }

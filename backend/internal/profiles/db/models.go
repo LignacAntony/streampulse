@@ -10,6 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuditLog struct {
+	ID         pgtype.UUID
+	ActorID    pgtype.UUID
+	Action     string
+	TargetType string
+	TargetID   pgtype.UUID
+	CreatedAt  time.Time
+}
+
 type BroadcasterRequest struct {
 	ID         pgtype.UUID
 	UserID     pgtype.UUID

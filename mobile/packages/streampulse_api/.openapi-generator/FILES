@@ -17,6 +17,8 @@ lib/src/auth/basic_auth.dart
 lib/src/auth/bearer_auth.dart
 lib/src/auth/oauth.dart
 lib/src/deserialize.dart
+lib/src/model/admin_stream_list_response.dart
+lib/src/model/admin_stream_response.dart
 lib/src/model/admin_user_list_response.dart
 lib/src/model/admin_user_response.dart
 lib/src/model/broadcaster_request_admin.dart

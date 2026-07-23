@@ -66,8 +66,10 @@ All URIs are relative to *http://localhost*
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 [*AdminApi*](doc/AdminApi.md) | [**deleteAdminUser**](doc/AdminApi.md#deleteadminuser) | **DELETE** /api/admin/users/{id} | Permanently delete a user account (admin only).
+[*AdminApi*](doc/AdminApi.md) | [**listAdminStreams**](doc/AdminApi.md#listadminstreams) | **GET** /api/admin/streams | List live streams for moderation (admin only).
 [*AdminApi*](doc/AdminApi.md) | [**listAdminUsers**](doc/AdminApi.md#listadminusers) | **GET** /api/admin/users | List and search users (admin only).
 [*AdminApi*](doc/AdminApi.md) | [**setAdminUserActive**](doc/AdminApi.md#setadminuseractive) | **PATCH** /api/admin/users/{id} | Activate or deactivate a user account (admin only).
+[*AdminApi*](doc/AdminApi.md) | [**stopAdminStream**](doc/AdminApi.md#stopadminstream) | **POST** /api/admin/streams/{id}/stop | Forcibly stop a live stream (admin only).
 [*AuthApi*](doc/AuthApi.md) | [**deleteAccount**](doc/AuthApi.md#deleteaccount) | **DELETE** /api/auth/me | Permanently delete the authenticated user&#39;s account (GDPR art. 17).
 [*AuthApi*](doc/AuthApi.md) | [**forgotPassword**](doc/AuthApi.md#forgotpassword) | **POST** /api/auth/forgot-password | Request a password reset email.
 [*AuthApi*](doc/AuthApi.md) | [**login**](doc/AuthApi.md#login) | **POST** /api/auth/login | Authenticate a user and issue tokens.
@@ -99,6 +101,8 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AdminStreamListResponse](doc/AdminStreamListResponse.md)
+ - [AdminStreamResponse](doc/AdminStreamResponse.md)
  - [AdminUserListResponse](doc/AdminUserListResponse.md)
  - [AdminUserResponse](doc/AdminUserResponse.md)
  - [BroadcasterRequestAdmin](doc/BroadcasterRequestAdmin.md)

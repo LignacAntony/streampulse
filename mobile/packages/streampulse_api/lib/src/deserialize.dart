@@ -1,3 +1,5 @@
+import 'package:streampulse_api/src/model/admin_stream_list_response.dart';
+import 'package:streampulse_api/src/model/admin_stream_response.dart';
 import 'package:streampulse_api/src/model/admin_user_list_response.dart';
 import 'package:streampulse_api/src/model/admin_user_response.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_admin.dart';
@@ -47,6 +49,12 @@ ReturnType deserialize<ReturnType, BaseType>(
       return (valueString == 'true' || valueString == '1') as ReturnType;
     case 'double':
       return (value is double ? value : double.parse('$value')) as ReturnType;
+    case 'AdminStreamListResponse':
+      return AdminStreamListResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminStreamResponse':
+      return AdminStreamResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'AdminUserListResponse':
       return AdminUserListResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;

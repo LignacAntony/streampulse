@@ -23,6 +23,19 @@ func (q *Queries) AdminCountActiveAdmins(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const adminCountLiveStreams = `-- name: AdminCountLiveStreams :one
+SELECT COUNT(*) FROM streams s
+WHERE s.status = 'live' AND s.archived_at IS NULL
+`
+
+// Total séparé (COUNT(*) OVER() renvoie 0 sur page vide — cf. review STR-191).
+func (q *Queries) AdminCountLiveStreams(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountLiveStreams)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const adminCountUsers = `-- name: AdminCountUsers :one
 SELECT COUNT(*)
 FROM users
@@ -88,6 +101,58 @@ func (q *Queries) AdminGetUser(ctx context.Context, userID pgtype.UUID) (AdminGe
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const adminListLiveStreams = `-- name: AdminListLiveStreams :many
+SELECT s.id, s.title, s.is_public, s.started_at, s.user_id, u.username
+FROM streams s
+JOIN users u ON u.id = s.user_id
+WHERE s.status = 'live' AND s.archived_at IS NULL
+ORDER BY s.started_at DESC, s.id DESC
+LIMIT $2 OFFSET $1
+`
+
+type AdminListLiveStreamsParams struct {
+	Off int32
+	Lim int32
+}
+
+type AdminListLiveStreamsRow struct {
+	ID        pgtype.UUID
+	Title     string
+	IsPublic  bool
+	StartedAt pgtype.Timestamptz
+	UserID    pgtype.UUID
+	Username  string
+}
+
+// Liste de modération (STR-192) : TOUS les flux en direct, publics ET privés,
+// avec l'identité du diffuseur. Tri stable (started_at puis id).
+func (q *Queries) AdminListLiveStreams(ctx context.Context, arg AdminListLiveStreamsParams) ([]AdminListLiveStreamsRow, error) {
+	rows, err := q.db.Query(ctx, adminListLiveStreams, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListLiveStreamsRow
+	for rows.Next() {
+		var i AdminListLiveStreamsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.IsPublic,
+			&i.StartedAt,
+			&i.UserID,
+			&i.Username,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const adminListUsers = `-- name: AdminListUsers :many
@@ -188,4 +253,26 @@ func (q *Queries) AdminSetUserActive(ctx context.Context, arg AdminSetUserActive
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const insertAuditLog = `-- name: InsertAuditLog :exec
+INSERT INTO audit_logs (actor_id, action, target_type, target_id)
+VALUES ($1::uuid, $2, $3, $4::uuid)
+`
+
+type InsertAuditLogParams struct {
+	ActorID    pgtype.UUID
+	Action     string
+	TargetType string
+	TargetID   pgtype.UUID
+}
+
+func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.ActorID,
+		arg.Action,
+		arg.TargetType,
+		arg.TargetID,
+	)
+	return err
 }
