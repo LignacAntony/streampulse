@@ -1,0 +1,103 @@
+# Règles d'alerte provisionnées (STR-167 / STR-189, ADR 021).
+# Évaluation chaque minute, déclenchement après 5 minutes au-dessus du seuil
+# (`for: 5m`). Datasource : uid `prometheus` (provisionnée ADR 001).
+#
+# Format : chaque règle porte une requête A (PromQL) et une condition C
+# (threshold) — le modèle « classic condition » simple de Grafana alerting.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: streampulse-critiques
+    folder: StreamPulse
+    interval: 1m
+    rules:
+      - uid: alerte-taux-5xx
+        title: Taux d'erreurs HTTP 5xx > 5%
+        condition: C
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Plus de 5% des requêtes HTTP échouent en 5xx sur 5 minutes."
+          description: "Vérifier les logs {service=\"api\"} | json | level=\"error\" dans Loki, puis remonter à la trace via le TraceID."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0)) / sum(rate(http_requests_total[5m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+        noDataState: OK
+        execErrState: Error
+
+      - uid: alerte-cpu-machine
+        title: CPU machine > 90%
+        condition: C
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CPU au-dessus de 90% depuis 5 minutes (node_exporter)."
+          description: "Vérifier le dashboard Infrastructure (goroutines, heap) et les flux HLS actifs."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.9] }
+        noDataState: NoData
+        execErrState: Error
+
+      - uid: alerte-goroutines
+        title: Goroutines API > 200
+        condition: C
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Plus de 200 goroutines depuis 5 minutes — fuite probable (baseline ~15, pic légitime 50 auditeurs < 100)."
+          description: "Comparer avec streams/auditeurs actifs ; pprof si la croissance est monotone (STR-89)."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: go_goroutines{job="api"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [200] }
+        noDataState: NoData
+        execErrState: Error
