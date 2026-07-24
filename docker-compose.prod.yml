@@ -68,6 +68,8 @@ services:
       # LOG_PRETTY volontairement absent : en conteneur la sortie doit rester
       # du JSON pour la collecte Loki (STR-163, ADR 018).
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Export des traces vers Tempo (STR-164, ADR 020). Vide = tracing off.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
     depends_on:
       postgres:
         condition: service_healthy
