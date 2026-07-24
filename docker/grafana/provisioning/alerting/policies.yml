@@ -1,0 +1,12 @@
+# Politique de notification racine (STR-167, ADR 021) : toutes les alertes
+# vers le contact point email. group_by service/alertname évite un email par
+# série ; repeat_interval 4h limite le bruit d'une alerte qui reste firing.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: equipe-streampulse
+    group_by: ["alertname", "grafana_folder"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
