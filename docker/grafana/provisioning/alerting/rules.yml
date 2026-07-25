@@ -19,14 +19,14 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "Plus de 5% des requêtes HTTP échouent en 5xx sur 5 minutes."
-          description: "Vérifier les logs {service=\"api\"} | json | level=\"error\" dans Loki, puis remonter à la trace via le TraceID."
+          summary: "Plus de 5% des requêtes HTTP échouent en 5xx sur 5 minutes (trafic significatif)."
+          description: "Le ratio n'est évalué qu'au-dessus de 0,1 req/s (~30 requêtes sur 5 min) : en dessous, une erreur isolée donnerait un ratio trompeur. Vérifier les logs {service=\"api\"} | json | level=\"error\" dans Loki, puis remonter à la trace via le TraceID."
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
             datasourceUid: prometheus
             model:
-              expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0)) / sum(rate(http_requests_total[5m]))
+              expr: ((sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0)) / sum(rate(http_requests_total[5m]))) and (sum(rate(http_requests_total[5m])) > 0.1)
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200
@@ -100,4 +100,34 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [200] }
         noDataState: NoData
+        execErrState: Error
+
+      - uid: alerte-api-injoignable
+        title: API injoignable
+        condition: C
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus ne parvient plus à scraper l'API depuis 2 minutes."
+          description: "Panne totale ou conteneur arrêté : la règle sur le taux de 5xx ne peut pas la détecter (plus aucune requête n'est comptée). Vérifier `docker compose ps` et les logs du service api."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: up{job="api"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        noDataState: Alerting
         execErrState: Error

@@ -26,9 +26,22 @@ est en lecture seule sur ces objets.
 
 | Règle | Expression | Seuil |
 |---|---|---|
-| Taux 5xx | `(sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0)) / sum(rate(...))` | > 5 % (ticket) |
+| Taux 5xx | ratio 5xx/total **`and sum(rate(http_requests_total[5m])) > 0.1`** | > 5 % (ticket) |
 | CPU machine | `1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))` | > 90 % (ticket) |
 | Goroutines API | `go_goroutines{job="api"}` | > 200 |
+| API injoignable | `up{job="api"}` | < 1, `for: 2m` |
+
+**Plancher de trafic** (ajouté en revue) : le ratio seul déclenche à 100 % dès
+qu'une unique requête échoue sur une fenêtre creuse. La condition n'est évaluée
+qu'au-dessus de 0,1 req/s (~30 requêtes sur 5 min), volume à partir duquel 5 %
+est statistiquement parlant.
+
+**Panne totale** (ajoutée en revue) : si l'API tombe, plus aucune requête n'est
+comptée — la série devient stale, le ratio 5xx repasse en `NoData` et la règle
+reste verte pendant l'indisponibilité. `up{job="api"} == 0` couvre ce cas que le
+ratio ne peut structurellement pas détecter ; `for: 2m` (un redémarrage de
+déploiement prend ~30 s) et `noDataState: Alerting` (la cible qui disparaît de
+Prometheus est elle-même un incident).
 
 Le seuil goroutines n'était pas fixé par le ticket : baseline ~15 au repos, pic
 légitime < 100 avec 50 auditeurs (STR-90) — 200 = marge ×4 sous la fuite franche.
@@ -66,4 +79,9 @@ route de test ni seuil trafiqué.
 - STR-166 (panel Live Streaming) pourra alerter sur ses métriques custom dans le
   même groupe.
 - En prod, les emails partent dès que les `SMTP_*` du `.env` VPS sont renseignés —
-  aucune action Grafana manuelle.
+  aucune action Grafana manuelle. **Limite connue** (relevée en revue) :
+  `GF_SMTP_ENABLED` vaut `true` sans condition ; avec un `SMTP_HOST` vide, Grafana
+  considère le SMTP actif et échoue à l'envoi en ne loggant que côté serveur — les
+  alertes se déclenchent sans notifier. Un gating conditionnel est peu commode en
+  Compose : la contrainte est donc documentée dans le runbook de déploiement, avec
+  un test du contact point en vérification post-déploiement obligatoire.

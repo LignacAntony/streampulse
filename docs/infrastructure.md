@@ -364,11 +364,16 @@ donc la procédure ci-dessous, **une seule fois**, après le merge.
 | Job de scrape `node` | `docker/prometheus/prometheus.yml` | #268 |
 | Dashboards API / Infrastructure | `docker/grafana/provisioning/dashboards/` | #268 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` sur l'api | `docker-compose.prod.yml` | #269 |
-| `GF_SMTP_*` sur Grafana + règles d'alerte + dashboard Logs | `docker-compose.prod.yml`, `docker/grafana/provisioning/` | #270 |
+| `GF_SMTP_*` sur Grafana + règles d'alerte + dashboard Logs | `docker-compose.prod.yml`, `docker/grafana/provisioning/` | #271 |
 
-Aucune nouvelle variable n'est **requise** dans le `.env` du VPS : `LOG_LEVEL`,
-`OTEL_EXPORTER_OTLP_ENDPOINT` et les `GF_SMTP_*` ont des défauts fonctionnels. Les
-alertes par email partent dès que les `SMTP_*` existants sont renseignés.
+Aucune nouvelle variable n'est **requise** dans le `.env` du VPS : `LOG_LEVEL` et
+`OTEL_EXPORTER_OTLP_ENDPOINT` ont des défauts fonctionnels.
+
+> ⚠️ **`SMTP_HOST` doit être renseigné pour que les alertes soient notifiées.**
+> Grafana démarre avec `GF_SMTP_ENABLED=true` ; si `SMTP_HOST` est vide, l'hôte
+> devient `:587`, l'envoi échoue et l'erreur ne sort que dans les logs Grafana —
+> les alertes se déclenchent mais **aucun email ne part**. Vérification obligatoire
+> après déploiement (ci-dessous).
 
 #### Procédure
 
@@ -425,9 +430,17 @@ ssh deploy@<VPS_HOST> "cd /opt/streampulse && docker compose ps"
 ```
 
 Puis dans Grafana : les dashboards **API Backend**, **Infrastructure** et
-**Logs & Erreurs** doivent apparaître dans le dossier StreamPulse, les 3 règles
+**Logs & Erreurs** doivent apparaître dans le dossier StreamPulse, les 4 règles
 d'alerte dans **Alerting → Alert rules**, et une requête `{service="api"}` dans
 Explore → Loki doit remonter les logs JSON de l'API (preuve qu'Alloy collecte).
+
+**Vérifier que les notifications partent** (l'échec SMTP est silencieux côté
+alerting) : Grafana → **Alerting → Contact points** → `equipe-streampulse` →
+**Test**. Un email doit arriver sur l'adresse configurée. En cas d'échec :
+
+```bash
+ssh deploy@<VPS_HOST> "cd /opt/streampulse && docker compose logs grafana | grep -i smtp"
+```
 
 ### Tester le build Docker localement avant de push
 
