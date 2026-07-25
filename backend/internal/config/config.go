@@ -24,9 +24,17 @@ const (
 	defaultDBPort              = "5432"
 	defaultStreamIngestBaseURL = "http://localhost:8080"
 	defaultHLSMaxConcurrent    = 256
+	defaultLogLevel            = "info"
 
 	minJWTSecretLen = 32
 )
+
+// validLogLevels énumère les niveaux acceptés pour LOG_LEVEL
+// (alignés sur zerolog.ParseLevel).
+var validLogLevels = map[string]bool{
+	"trace": true, "debug": true, "info": true,
+	"warn": true, "error": true, "fatal": true, "panic": true,
+}
 
 // Config représente la configuration complète de l'API StreamPulse.
 //
@@ -63,6 +71,13 @@ type Config struct {
 
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
+
+	// LogLevel : niveau minimal des logs (trace|debug|info|warn|error|fatal|panic).
+	LogLevel string `mapstructure:"LOG_LEVEL"`
+
+	// LogPretty : sortie console lisible (dev local hors Docker uniquement) —
+	// en conteneur la sortie doit rester du JSON pour la collecte Loki (STR-172).
+	LogPretty bool `mapstructure:"LOG_PRETTY"`
 }
 
 // Load lit la configuration depuis l'environnement et la valide.
@@ -78,6 +93,8 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_PORT", defaultDBPort)
 	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
 	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
+	v.SetDefault("LOG_LEVEL", defaultLogLevel)
+	v.SetDefault("LOG_PRETTY", false)
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -102,7 +119,7 @@ func Load() (*Config, error) {
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
 		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
-		"HLS_MAX_CONCURRENT",
+		"HLS_MAX_CONCURRENT", "LOG_LEVEL", "LOG_PRETTY",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
@@ -159,6 +176,10 @@ func (c *Config) applyDefaultsForEmpty() {
 	}
 	if c.StreamIngestBaseURL == "" {
 		c.StreamIngestBaseURL = defaultStreamIngestBaseURL
+	}
+	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))
+	if c.LogLevel == "" {
+		c.LogLevel = defaultLogLevel
 	}
 }
 
@@ -217,6 +238,10 @@ func (c *Config) validate() error {
 
 	if len(c.JWTSecret) < minJWTSecretLen {
 		return fmt.Errorf("config: JWT_SECRET must be at least %d characters", minJWTSecretLen)
+	}
+
+	if !validLogLevels[c.LogLevel] {
+		return fmt.Errorf("config: LOG_LEVEL invalide %q (attendu: trace|debug|info|warn|error|fatal|panic)", c.LogLevel)
 	}
 
 	return nil

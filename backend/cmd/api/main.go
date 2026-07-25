@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
 
 	"github.com/LignacAntony/streampulse/internal/admin"
 	"github.com/LignacAntony/streampulse/internal/auth"
@@ -20,6 +23,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/migrator"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
+	"github.com/LignacAntony/streampulse/internal/observability"
 	"github.com/LignacAntony/streampulse/internal/openapi"
 	"github.com/LignacAntony/streampulse/internal/profiles"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
@@ -31,9 +35,16 @@ import (
 // pour arrêter les lives d'un utilisateur supprimé (STR-191 Task 2).
 var _ admin.LiveStopper = (*streaming.Service)(nil)
 
+// var _ vérifie à la compilation que *streaming.Service satisfait bien
+// admin.StreamModerator, l'interface étroite (ISP) que le service admin
+// consomme pour interrompre un flux lors d'une action de modération (STR-192).
+var _ admin.StreamModerator = (*streaming.Service)(nil)
+
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf("%v", err)
+		// Avant config.Load le logger applicatif n'existe pas encore : le
+		// global zerolog émet du JSON sur stderr, collectable par Loki.
+		log.Fatal().Err(err).Msg("échec du démarrage")
 	}
 }
 
@@ -46,6 +57,12 @@ func run() error {
 		return fmt.Errorf("config: %w", err)
 	}
 
+	// Logger racine (STR-163, ADR 018) : JSON structuré sur stdout, posé en
+	// global — les call sites sans *http.Request loggent via zerolog/log,
+	// les handlers via zerolog.Ctx(r.Context()) (corrélation request_id).
+	logger := observability.New(cfg, os.Stdout)
+	log.Logger = logger
+
 	// 1. Appliquer les migrations
 	migrator.Run()
 
@@ -54,12 +71,12 @@ func run() error {
 		conn := database.Connect(ctx)
 		if err := seeder.Run(ctx, conn); err != nil {
 			if cerr := conn.Close(ctx); cerr != nil {
-				log.Printf("db close: %v", cerr)
+				log.Warn().Err(cerr).Msg("fermeture connexion db")
 			}
 			return fmt.Errorf("seed: %w", err)
 		}
 		if cerr := conn.Close(ctx); cerr != nil {
-			log.Printf("db close: %v", cerr)
+			log.Warn().Err(cerr).Msg("fermeture connexion db")
 		}
 	}
 
@@ -92,7 +109,7 @@ func run() error {
 	if n, err := streamingSvc.ReconcileLiveStreams(ctx); err != nil {
 		return fmt.Errorf("reconcile live streams: %w", err)
 	} else if n > 0 {
-		log.Printf("réconciliation: %d flux live orphelin(s) terminé(s)", n)
+		log.Info().Int64("count", n).Msg("réconciliation: flux live orphelins terminés")
 	}
 
 	broadcasterRepo := broadcaster.NewRepository(pool)
@@ -100,9 +117,10 @@ func run() error {
 	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
 
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
-	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression).
+	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
+	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
 	adminRepo := admin.NewRepository(pool)
-	adminSvc := admin.NewService(adminRepo, streamingSvc)
+	adminSvc := admin.NewService(adminRepo, streamingSvc, streamingSvc)
 	adminHandler := admin.NewHandler(adminSvc)
 
 	// 5. Démarrer le serveur HTTP
@@ -115,10 +133,9 @@ func run() error {
 		}
 	})
 
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		w.WriteHeader(http.StatusOK)
-	})
+	// Métriques Prometheus (STR-165, ADR 019) — registre par défaut : inclut
+	// les collectors Go (go_goroutines, go_memstats_*) + ceux du middleware.
+	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.HandleFunc("/api/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/auth/login", authHandler.Login)
@@ -144,6 +161,14 @@ func run() error {
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.SetActive))))
 	mux.Handle("DELETE /api/admin/users/{id}", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Delete))))
+
+	// Supervision et interruption des flux actifs par un administrateur
+	// (STR-192) : liste de modération (tous les live, publics et privés) et
+	// stop audité (journal best-effort côté service).
+	mux.Handle("GET /api/admin/streams", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListStreams))))
+	mux.Handle("POST /api/admin/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.StopStream))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).
@@ -201,7 +226,11 @@ func run() error {
 		mux.Handle("/swagger/", openapi.SwaggerHandler())
 	}
 
-	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(), mux)
+	// Access log et métriques au plus près du mux : les préflights OPTIONS
+	// absorbés par CORS ne sont ni loggés ni comptés (STR-169, STR-165).
+	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(),
+		httpmw.AccessLog(logger,
+			httpmw.Metrics(prometheus.DefaultRegisterer, mux)))
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
@@ -213,7 +242,7 @@ func run() error {
 
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Printf("API StreamPulse démarrée sur %s (env=%s)", cfg.HTTPAddr(), cfg.GoEnv)
+		log.Info().Str("addr", cfg.HTTPAddr()).Str("environment", cfg.GoEnv).Msg("API StreamPulse démarrée")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}
@@ -226,7 +255,7 @@ func run() error {
 		return fmt.Errorf("serveur http: %w", err)
 	case <-ctx.Done(): // SIGINT / SIGTERM
 	}
-	log.Println("arrêt en cours…")
+	log.Info().Msg("arrêt en cours…")
 
 	// StopAll d'abord : ferme les canaux SSE pour débloquer les handlers en vol
 	// (srv.Shutdown n'annule pas les contextes de requête). Shutdown draine ensuite

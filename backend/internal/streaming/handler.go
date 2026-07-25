@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
+
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -136,7 +138,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusCreated, h.toResponse(stream, true)); err != nil {
-		log.Printf("streaming: encode create response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode create")
 	}
 }
 
@@ -221,7 +223,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toSummary(s))
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
-		log.Printf("streaming: encode list response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode list")
 	}
 }
 
@@ -269,7 +271,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, isOwner)); err != nil {
-		log.Printf("streaming: encode get response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode get")
 	}
 }
 
@@ -300,7 +302,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
-		log.Printf("streaming: encode update response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode update")
 	}
 }
 
@@ -335,7 +337,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
-		log.Printf("streaming: encode start response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode start")
 	}
 }
 
@@ -354,7 +356,7 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
-		log.Printf("streaming: encode stop response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode stop")
 	}
 }
 
@@ -520,7 +522,7 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		// Push interrompu par une erreur : refléter l'échec plutôt qu'un 204
 		// trompeur (un broadcast avorté ≠ déconnexion propre). Ne jamais logger le
 		// stream_key (secret). Si le client est déjà parti, l'écriture est un no-op.
-		log.Printf("streaming: ingest interrompu: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: ingest interrompu")
 		httpjson.WriteError(w, r, apperror.Internal("ingest interrupted", err))
 		return
 	}

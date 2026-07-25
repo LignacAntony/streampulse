@@ -3,8 +3,9 @@ package email
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/smtp"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/config"
 )
@@ -44,8 +45,10 @@ func (m *SMTPMailer) SendPasswordResetEmail(_ context.Context, to, rawToken stri
 
 type LogMailer struct{}
 
-func (l *LogMailer) SendPasswordResetEmail(_ context.Context, to, rawToken string) error {
-	log.Printf("[email:dev] password-reset to=%s token=%s", to, rawToken)
+func (l *LogMailer) SendPasswordResetEmail(ctx context.Context, to, rawToken string) error {
+	// Mode dev uniquement (SMTP_HOST vide) : le token est volontairement
+	// loggé pour permettre le workflow de reset sans serveur mail.
+	zerolog.Ctx(ctx).Info().Str("to", to).Str("token", rawToken).Msg("email dev: password-reset")
 	return nil
 }
 

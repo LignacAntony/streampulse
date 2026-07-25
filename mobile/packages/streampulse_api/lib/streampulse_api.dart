@@ -16,6 +16,8 @@ export 'package:streampulse_api/src/api/metrics_api.dart';
 export 'package:streampulse_api/src/api/profile_api.dart';
 export 'package:streampulse_api/src/api/streaming_api.dart';
 
+export 'package:streampulse_api/src/model/admin_stream_list_response.dart';
+export 'package:streampulse_api/src/model/admin_stream_response.dart';
 export 'package:streampulse_api/src/model/admin_user_list_response.dart';
 export 'package:streampulse_api/src/model/admin_user_response.dart';
 export 'package:streampulse_api/src/model/broadcaster_request_admin.dart';

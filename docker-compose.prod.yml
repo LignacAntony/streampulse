@@ -41,7 +41,10 @@ services:
     networks:
       - streampulse-net
     ports:
-      - "${API_PORT:-8080}:8080"
+      # Bind loopback uniquement : tout le trafic public passe par Caddy (443).
+      # Un bind 0.0.0.0 contournerait ufw (iptables Docker) et exposerait
+      # /metrics et l'API en clair sur le port 8080 (revue PR #268).
+      - "127.0.0.1:${API_PORT:-8080}:8080"
     environment:
       GO_ENV: ${GO_ENV}
       DB_HOST: postgres
@@ -62,6 +65,9 @@ services:
       # cette variable, le backend retombe sur http://localhost:8080 (config.go),
       # inutilisable en prod où l'API est exposée via Caddy sur le domaine public.
       STREAM_INGEST_BASE_URL: ${STREAM_INGEST_BASE_URL:-https://api.streampulse.win}
+      # LOG_PRETTY volontairement absent : en conteneur la sortie doit rester
+      # du JSON pour la collecte Loki (STR-163, ADR 018).
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,6 +134,41 @@ services:
     volumes:
       - ./docker/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
     command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Métriques machine — node_exporter (STR-165, ADR 019)
+  # ──────────────────────────────────────────
+  node_exporter:
+    image: prom/node-exporter:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+    # Image distroless (pas de shell ni wget) — healthcheck via service_started
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Collecte des logs Docker → Loki — Alloy
+  # (successeur de Promtail, EOL mars 2026 — cf. ADR 018)
+  # ──────────────────────────────────────────
+  alloy:
+    image: grafana/alloy:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Lecture seule du socket Docker : découverte des conteneurs + flux de logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    depends_on:
+      loki:
+        condition: service_started
     restart: unless-stopped
 
   # ──────────────────────────────────────────

@@ -3,13 +3,14 @@ package seeder
 import (
 	"context"
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5"
 )
 
 func seedTracks(ctx context.Context, tx pgx.Tx) error {
-	log.Println("seed tracks...")
+	log.Info().Msg("seed tracks...")
 
 	var user1ID string
 	err := tx.QueryRow(ctx,
@@ -42,7 +43,7 @@ func seedTracks(ctx context.Context, tx pgx.Tx) error {
 		if err != nil {
 			return fmt.Errorf("insert track %s: %w", t.title, err)
 		}
-		log.Printf("  ✓ track \"%s\" — %s", t.title, t.artist)
+		log.Info().Str("title", t.title).Str("artist", t.artist).Msg("seed: track")
 	}
 
 	return nil

@@ -7,6 +7,7 @@ import (
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
+	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 )
 
 type contextKey int
@@ -40,6 +41,7 @@ func RequireAuth(jwtSecret string, next http.Handler) http.Handler {
 			return
 		}
 
+		httpmw.RecordUserID(r.Context(), claims.UserID)
 		ctx := context.WithValue(r.Context(), contextKeyUserID, claims.UserID)
 		ctx = context.WithValue(ctx, contextKeyRole, claims.Role)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -64,6 +66,7 @@ func OptionalAuth(jwtSecret string, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r) // token invalide -> anonyme (route publique)
 			return
 		}
+		httpmw.RecordUserID(r.Context(), claims.UserID)
 		ctx := context.WithValue(r.Context(), contextKeyUserID, claims.UserID)
 		ctx = context.WithValue(ctx, contextKeyRole, claims.Role)
 		next.ServeHTTP(w, r.WithContext(ctx))

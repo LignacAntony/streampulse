@@ -168,6 +168,7 @@ type Repository interface {
 	RemoveFavorite(ctx context.Context, userID, streamID string) error
 	ListFavorites(ctx context.Context, userID string) ([]Stream, error)
 	StopLiveStreamsByUser(ctx context.Context, userID string) ([]string, error)
+	ForceStopLiveStream(ctx context.Context, id string) (string, error)
 }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
@@ -353,5 +354,25 @@ func (s *Service) StopLiveForUser(ctx context.Context, userID string) error {
 	for _, id := range ids {
 		s.sessions.Stop(id)
 	}
+	return nil
+}
+
+// ForceStopStream interrompt un flux en direct (modération admin, STR-192) :
+// transition live -> ended SANS contrôle de propriétaire, puis arrêt de la
+// session in-memory (ffmpeg tué, event SSE "ended" publié aux auditeurs).
+// 404 si le flux est absent/archivé, 409 s'il n'est pas en direct.
+func (s *Service) ForceStopStream(ctx context.Context, streamID string) error {
+	id, err := s.repo.ForceStopLiveStream(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, errNoRowAffected) {
+			// Pas de requesterID ici : absent/archivé -> 404, sinon 409.
+			if _, err := s.repo.GetByID(ctx, streamID); err != nil {
+				return err // NotFound
+			}
+			return apperror.Conflict("stream is not live")
+		}
+		return err
+	}
+	s.sessions.Stop(id)
 	return nil
 }

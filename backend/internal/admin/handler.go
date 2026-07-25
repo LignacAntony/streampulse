@@ -2,9 +2,11 @@ package admin
 
 import (
 	"context"
-	"log"
 	"net/http"
+
 	"strconv"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -31,6 +33,8 @@ type AdminService interface {
 	ListUsers(ctx context.Context, in ListUsersInput) ([]AdminUser, int64, error)
 	SetUserActive(ctx context.Context, targetID, requesterID string, active bool) (AdminUser, error)
 	DeleteUser(ctx context.Context, targetID, requesterID string) error
+	ListLiveStreams(ctx context.Context, limit, offset int32) ([]AdminStream, int64, error)
+	StopStream(ctx context.Context, streamID, actorID string) error
 }
 
 // Handler expose le domaine admin en HTTP (US-08-01). Les routes sont montées
@@ -62,27 +66,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseIntDefault(r.URL.Query().Get("limit"), defaultListLimit)
-	if limit < 1 {
-		limit = defaultListLimit
-	}
-	if limit > maxListLimit {
-		limit = maxListLimit
-	}
-	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > 1<<31-1 {
-		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
-	}
+	limit, offset := clampPagination(r)
 
 	users, total, err := h.svc.ListUsers(r.Context(), ListUsersInput{
 		Search: r.URL.Query().Get("search"),
 		Role:   role,
 		Status: status,
-		Limit:  int32(limit),
-		Offset: int32(offset),
+		Limit:  limit,
+		Offset: offset,
 	})
 	if err != nil {
 		httpjson.WriteError(w, r, err)
@@ -93,7 +84,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, listUsersResponse{Users: users, Total: total}); err != nil {
-		log.Printf("admin: encode list response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode list")
 	}
 }
 
@@ -127,7 +118,7 @@ func (h *Handler) SetActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, user); err != nil {
-		log.Printf("admin: encode set-active response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode set-active")
 	}
 }
 
@@ -145,6 +136,71 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// listStreamsResponse est l'enveloppe de pagination de GET /api/admin/streams.
+type listStreamsResponse struct {
+	Streams []AdminStream `json:"streams"`
+	Total   int64         `json:"total"`
+}
+
+// ListStreams gère GET /api/admin/streams : liste de modération paginée (tous
+// les flux en direct, publics et privés). Mêmes bornes de pagination que List
+// (users) : limit défaut 20 / max 100, offset borné [0, MaxInt32].
+func (h *Handler) ListStreams(w http.ResponseWriter, r *http.Request) {
+	limit, offset := clampPagination(r)
+
+	streams, total, err := h.svc.ListLiveStreams(r.Context(), limit, offset)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	if streams == nil {
+		streams = []AdminStream{}
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, listStreamsResponse{Streams: streams, Total: total}); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode list streams")
+	}
+}
+
+// StopStream gère POST /api/admin/streams/{id}/stop : interruption d'un flux
+// en direct par un modérateur (audit journalisé côté service, best-effort).
+func (h *Handler) StopStream(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	if err := h.svc.StopStream(r.Context(), r.PathValue("id"), actorID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// clampPagination lit et borne les paramètres `limit`/`offset` d'une requête de
+// liste admin : limit dans [1, maxListLimit] (défaut defaultListLimit), offset
+// dans [0, MaxInt32] (borne haute pour éviter un OFFSET négatif après le cast
+// int32 → 500). Partagée par les endpoints paginés du domaine (List, ListStreams).
+func clampPagination(r *http.Request) (limit, offset int32) {
+	l := parseIntDefault(r.URL.Query().Get("limit"), defaultListLimit)
+	if l < 1 {
+		l = defaultListLimit
+	}
+	if l > maxListLimit {
+		l = maxListLimit
+	}
+	o := parseIntDefault(r.URL.Query().Get("offset"), 0)
+	if o < 0 {
+		o = 0
+	}
+	if o > 1<<31-1 {
+		o = 1<<31 - 1
+	}
+	return int32(l), int32(o)
 }
 
 // parseIntDefault recopiée depuis streaming.parseIntDefault : la fonction est

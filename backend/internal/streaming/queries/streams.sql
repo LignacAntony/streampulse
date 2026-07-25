@@ -82,3 +82,11 @@ WHERE status = 'live' AND archived_at IS NULL;
 UPDATE streams SET status = 'ended', ended_at = NOW(), updated_at = NOW()
 WHERE user_id = sqlc.arg(user_id)::uuid AND status = 'live'
 RETURNING id;
+
+-- name: ForceStopLiveStream :one
+-- Interruption par un admin (STR-192) : live -> ended SANS contrôle de
+-- propriétaire. L'appelant est derrière RequireRole("admin").
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE id = sqlc.arg(id)::uuid AND status = 'live' AND archived_at IS NULL
+RETURNING id::text AS id;

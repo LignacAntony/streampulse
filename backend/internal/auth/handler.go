@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"log"
 	"net/http"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
@@ -112,7 +113,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusCreated, user); err != nil {
-		log.Printf("auth: encode response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode response")
 	}
 }
 
@@ -136,7 +137,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, pair); err != nil {
-		log.Printf("auth: encode login response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode login")
 	}
 }
 
@@ -165,7 +166,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, pair); err != nil {
-		log.Printf("auth: encode refresh response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode refresh")
 	}
 }
 
@@ -216,7 +217,7 @@ func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if err := httpjson.Write(w, http.StatusOK, map[string]string{
 		"message": "if this email is registered, you will receive a password reset link shortly",
 	}); err != nil {
-		log.Printf("auth: encode forgot-password response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode forgot-password")
 	}
 }
 
@@ -241,7 +242,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	if err := httpjson.Write(w, http.StatusOK, map[string]string{
 		"message": "password updated successfully",
 	}); err != nil {
-		log.Printf("auth: encode reset-password response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode reset-password")
 	}
 }
 

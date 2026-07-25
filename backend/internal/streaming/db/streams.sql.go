@@ -116,6 +116,22 @@ func (q *Queries) EndOrphanLiveStreams(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const forceStopLiveStream = `-- name: ForceStopLiveStream :one
+UPDATE streams
+SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+WHERE id = $1::uuid AND status = 'live' AND archived_at IS NULL
+RETURNING id::text AS id
+`
+
+// Interruption par un admin (STR-192) : live -> ended SANS contrôle de
+// propriétaire. L'appelant est derrière RequireRole("admin").
+func (q *Queries) ForceStopLiveStream(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, forceStopLiveStream, id)
+	var id_2 string
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const getStreamByID = `-- name: GetStreamByID :one
 SELECT id::text AS id, user_id::text AS user_id, title, description, category,
        status, is_public, stream_key, started_at, ended_at, created_at, updated_at

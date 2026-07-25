@@ -274,6 +274,25 @@ func (r *pgRepository) StopLiveStreamsByUser(ctx context.Context, userID string)
 	return ids, nil
 }
 
+// ForceStopLiveStream termine un flux live sans contrôle de propriétaire (usage
+// admin, STR-192) et renvoie son id (pour que le service coupe sa session
+// in-memory). 0 ligne affectée (absent/archivé/pas live) -> errNoRowAffected,
+// même pattern que StopStream.
+func (r *pgRepository) ForceStopLiveStream(ctx context.Context, id string) (string, error) {
+	uid, ok := parseUUID(id)
+	if !ok {
+		return "", errNoRowAffected
+	}
+	gotID, err := r.q.ForceStopLiveStream(ctx, uid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", errNoRowAffected
+		}
+		return "", fmt.Errorf("repo: force stop live stream: %w", err)
+	}
+	return gotID, nil
+}
+
 // fullStream construit une entité Stream à partir des colonnes complètes d'une
 // ligne (mapping partagé par GetByID/Update/StartStream/StopStream).
 func fullStream(id, userID, title string, description, category pgtype.Text, status string, isPublic bool, streamKey string, startedAt, endedAt *time.Time, createdAt, updatedAt time.Time) Stream {

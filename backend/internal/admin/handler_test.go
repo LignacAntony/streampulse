@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	testHandlerSecret = "test-secret-which-is-at-least-32-bytes!!"
-	testAdminID       = "00000000-0000-0000-0000-0000000000ad"
-	testHandlerUserID = "00000000-0000-0000-0000-000000000001"
+	testHandlerSecret   = "test-secret-which-is-at-least-32-bytes!!"
+	testAdminID         = "00000000-0000-0000-0000-0000000000ad"
+	testHandlerUserID   = "00000000-0000-0000-0000-000000000001"
+	testHandlerStreamID = "00000000-0000-0000-0000-000000000042"
 )
 
 // stubAdminService est un AdminService stub (pas de logique, juste des valeurs
@@ -35,6 +36,16 @@ type stubAdminService struct {
 	deleteErr          error
 	gotDeleteTarget    string
 	gotDeleteRequester string
+
+	listStreams          []AdminStream
+	listStreamsTotal     int64
+	listStreamsErr       error
+	gotListStreamsLimit  int32
+	gotListStreamsOffset int32
+
+	stopStreamErr      error
+	gotStopStreamID    string
+	gotStopStreamActor string
 }
 
 func (s *stubAdminService) ListUsers(_ context.Context, in ListUsersInput) ([]AdminUser, int64, error) {
@@ -53,6 +64,18 @@ func (s *stubAdminService) DeleteUser(_ context.Context, targetID, requesterID s
 	s.gotDeleteTarget = targetID
 	s.gotDeleteRequester = requesterID
 	return s.deleteErr
+}
+
+func (s *stubAdminService) ListLiveStreams(_ context.Context, limit, offset int32) ([]AdminStream, int64, error) {
+	s.gotListStreamsLimit = limit
+	s.gotListStreamsOffset = offset
+	return s.listStreams, s.listStreamsTotal, s.listStreamsErr
+}
+
+func (s *stubAdminService) StopStream(_ context.Context, streamID, actorID string) error {
+	s.gotStopStreamID = streamID
+	s.gotStopStreamActor = actorID
+	return s.stopStreamErr
 }
 
 // doList exécute GET /api/admin/users via RequireAuth + RequireRole(admin), comme
@@ -295,6 +318,154 @@ func TestHandler_Delete_NotFound(t *testing.T) {
 func TestHandler_Delete_RequiresToken(t *testing.T) {
 	h := NewHandler(&stubAdminService{})
 	rec := doDelete(t, h, testHandlerUserID, false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// doListStreams exécute GET /api/admin/streams via RequireAuth + RequireRole(admin),
+// comme le câblage réel (main.go). Même pattern que doList.
+func doListStreams(t *testing.T, h *Handler, query string, role string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/streams"+query, nil)
+	token, err := auth.GenerateAccessToken(testAdminID, role, testHandlerSecret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testHandlerSecret, auth.RequireRole("admin", http.HandlerFunc(h.ListStreams))).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandler_ListStreams_OK(t *testing.T) {
+	stub := &stubAdminService{
+		listStreams:      []AdminStream{{ID: testHandlerStreamID, Title: "Morning Jazz", IsPublic: true, UserID: testHandlerUserID, Username: "user1"}},
+		listStreamsTotal: 1,
+	}
+	h := NewHandler(stub)
+
+	rec := doListStreams(t, h, "", "admin")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"total":1`) || !strings.Contains(body, `"title":"Morning Jazz"`) {
+		t.Errorf("body incomplet: %s", body)
+	}
+}
+
+func TestHandler_ListStreams_EmptyStreamsIsEmptyArrayNotNull(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+	rec := doListStreams(t, h, "", "admin")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"streams":[]`) {
+		t.Errorf(`liste vide devrait sérialiser "streams":[] et non null: %s`, rec.Body)
+	}
+}
+
+func TestHandler_ListStreams_PaginationClamp(t *testing.T) {
+	stub := &stubAdminService{}
+	h := NewHandler(stub)
+
+	doListStreams(t, h, "?limit=1000&offset=-5", "admin")
+	if stub.gotListStreamsLimit != maxListLimit {
+		t.Errorf("limit = %d, want clamp à %d", stub.gotListStreamsLimit, maxListLimit)
+	}
+	if stub.gotListStreamsOffset != 0 {
+		t.Errorf("offset = %d, want 0", stub.gotListStreamsOffset)
+	}
+
+	doListStreams(t, h, "", "admin")
+	if stub.gotListStreamsLimit != defaultListLimit {
+		t.Errorf("limit par défaut = %d, want %d", stub.gotListStreamsLimit, defaultListLimit)
+	}
+}
+
+func TestHandler_ListStreams_ForbiddenForNonAdmin(t *testing.T) {
+	stub := &stubAdminService{}
+	h := NewHandler(stub)
+
+	rec := doListStreams(t, h, "", "user")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_ListStreams_RequiresToken(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/streams", nil)
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testHandlerSecret, auth.RequireRole("admin", http.HandlerFunc(h.ListStreams))).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// doStopStream exécute POST /api/admin/streams/{id}/stop via RequireAuth (le
+// rôle admin est vérifié au niveau du câblage réel, pas re-testé ici : cf. doListStreams).
+func doStopStream(t *testing.T, h *Handler, id string, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/streams/"+id+"/stop", nil)
+	req.SetPathValue("id", id)
+	if withToken {
+		token, err := auth.GenerateAccessToken(testAdminID, "admin", testHandlerSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testHandlerSecret, http.HandlerFunc(h.StopStream)).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandler_StopStream_NoContent(t *testing.T) {
+	stub := &stubAdminService{}
+	h := NewHandler(stub)
+
+	rec := doStopStream(t, h, testHandlerStreamID, true)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotStopStreamID != testHandlerStreamID || stub.gotStopStreamActor != testAdminID {
+		t.Errorf("params transmis = (%q, %q)", stub.gotStopStreamID, stub.gotStopStreamActor)
+	}
+}
+
+func TestHandler_StopStream_Conflict(t *testing.T) {
+	stub := &stubAdminService{stopStreamErr: apperror.Conflict("stream is not live")}
+	h := NewHandler(stub)
+
+	rec := doStopStream(t, h, testHandlerStreamID, true)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_StopStream_NotFound(t *testing.T) {
+	stub := &stubAdminService{stopStreamErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub)
+
+	rec := doStopStream(t, h, "unknown", true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_StopStream_RequiresToken(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+	rec := doStopStream(t, h, testHandlerStreamID, false)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)

@@ -211,3 +211,60 @@ func TestConfig_IsDev_IsProd(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_Logging(t *testing.T) {
+	t.Run("défauts", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.LogLevel != "info" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+		}
+		if cfg.LogPretty {
+			t.Error("LogPretty = true, want false par défaut")
+		}
+	})
+
+	t.Run("valeurs explicites", func(t *testing.T) {
+		vars := validVars()
+		vars["LOG_LEVEL"] = "DEBUG"
+		vars["LOG_PRETTY"] = "true"
+		setEnv(t, vars)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.LogLevel != "debug" {
+			t.Errorf("LogLevel = %q, want %q (normalisé en minuscules)", cfg.LogLevel, "debug")
+		}
+		if !cfg.LogPretty {
+			t.Error("LogPretty = false, want true")
+		}
+	})
+
+	t.Run("LOG_LEVEL vide retombe sur le défaut", func(t *testing.T) {
+		vars := validVars()
+		vars["LOG_LEVEL"] = ""
+		setEnv(t, vars)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.LogLevel != "info" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+		}
+	})
+
+	t.Run("LOG_LEVEL invalide rejeté", func(t *testing.T) {
+		vars := validVars()
+		vars["LOG_LEVEL"] = "verbose"
+		setEnv(t, vars)
+		if _, err := Load(); err == nil {
+			t.Fatal("Load() = nil error, want erreur pour LOG_LEVEL invalide")
+		} else if !strings.Contains(err.Error(), "LOG_LEVEL") {
+			t.Errorf("erreur %q ne mentionne pas LOG_LEVEL", err)
+		}
+	})
+}

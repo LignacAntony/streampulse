@@ -166,6 +166,21 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 
 **Ne jamais éditer `internal/*/db/*.go`** — ils sont écrasés à chaque `sqlc generate`.
 
+### Logs structurés (STR-163, ADR 018)
+
+- Logger racine : `observability.New(cfg, os.Stdout)` (zerolog, JSON), posé en global dans `main.go`.
+- Dans un handler/service avec `ctx` : `zerolog.Ctx(ctx).Info().Str("k", "v").Msg("...")` — corrélé `request_id` par le middleware `httpmw.AccessLog`.
+- Sans contexte HTTP (migrator, seeder, boot) : global `github.com/rs/zerolog/log`.
+- **Jamais** `log.Printf`/`fmt.Println` (STR-170). Path loggable : `httpjson.LoggablePath` (masque le `stream_key`).
+- Requête Loki type : `{service="api"} | json | level="error"` (Grafana → Explore).
+
+### Métriques Prometheus (STR-165, ADR 019)
+
+- Middleware `httpmw.Metrics(reg, mux)` (séparé d'`AccessLog`) : `http_requests_total{method,path,status}` + `http_request_duration_seconds{method,path}`.
+- Le label `path` = pattern du routeur via `mux.Handler(r)` (aucune table à synchroniser) ; hors table → `{other}` ; méthodes hors allowlist → `other` ; routes longue durée (SSE, ingest) comptées mais exclues de l'histogramme de latence.
+- `/metrics` n'est **pas** exposé publiquement : bloqué par Caddy en prod (403), scrape interne uniquement.
+- Dashboards provisionnés (non éditables en UI) : `docker/grafana/provisioning/dashboards/` — la vérité vit dans git.
+
 ### Patterns à respecter
 
 - **ISP** : le handler déclare des interfaces étroites (`Registrar`, `Authenticator`, `TokenRefresher`) — chacune couvre exactement ce dont le handler a besoin. `*Service` les satisfait toutes.
@@ -215,6 +230,8 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 
 Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
 utilisateurs : domaine `internal/admin/` ([ADR 017](docs/adr/017-tableau-de-bord-admin-gestion-utilisateurs.md)).
+Supervision et interruption des flux actifs : même domaine `internal/admin/`
+([ADR 018](docs/adr/018-supervision-admin-des-flux-et-journal-daudit.md)).
 Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/adr/014-demande-activation-role-diffuseur.md)).
 
 | Méthode | Route | Handler | Auth requise |
@@ -222,6 +239,8 @@ Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/ad
 | GET | `/api/admin/users` | `admin.Handler.List` | Oui — rôle admin — recherche/filtres/pagination, réponse `{users, total}` |
 | PATCH | `/api/admin/users/{id}` | `admin.Handler.SetActive` | Oui — rôle admin — active/désactive (`is_active`) ; 409 self-action, 409 dernier admin actif |
 | DELETE | `/api/admin/users/{id}` | `admin.Handler.Delete` | Oui — rôle admin — hard delete (cascade), stoppe d'abord les lives du user ; mêmes 409 |
+| GET | `/api/admin/streams` | `admin.Handler.ListStreams` | Oui — rôle admin — liste de modération paginée (tous les live, publics et privés, avec l'identité du diffuseur), réponse `{streams, total}` |
+| POST | `/api/admin/streams/{id}/stop` | `admin.Handler.StopStream` | Oui — rôle admin — interruption immédiate (`live→ended`, sans contrôle de propriétaire) + entrée `audit_logs` best-effort ; 204/404/409 |
 | GET | `/api/admin/broadcaster-requests` | `broadcaster.Handler.List` | Oui — rôle admin — liste les demandes (filtre `?status=`) |
 | POST | `/api/admin/broadcaster-requests/{id}/approve` | `broadcaster.Handler.Approve` | Oui — rôle admin — valide + promeut l'utilisateur |
 | POST | `/api/admin/broadcaster-requests/{id}/reject` | `broadcaster.Handler.Reject` | Oui — rôle admin — refuse + `review_note` |
@@ -386,6 +405,8 @@ Réseau interne : `streampulse-net` (bridge Docker). Tous les services y sont co
 | `mailpit` | `axllent/mailpit:latest` | Email de test (dev) | 1025 (SMTP), 8025 (UI) | 1025, 8025 |
 | `prometheus` | `prom/prometheus:latest` | Métriques | 9090 | 9090 |
 | `loki` | `grafana/loki:latest` | Logs | 3100 | — |
+| `alloy` | `grafana/alloy:latest` | Collecte logs Docker → Loki (ADR 018) | 12345 | — |
+| `node_exporter` | `prom/node-exporter:latest` | Métriques machine pour Prometheus (ADR 019) | 9100 | — |
 | `tempo` | `grafana/tempo:latest` | Traces (OTLP) | 3200, 4317, 4318 | — |
 | `grafana` | `grafana/grafana:latest` | Visualisation | 3000 | 3000 |
 
@@ -433,6 +454,8 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
+| `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
+| `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
 
 ## Santé des services
 
@@ -495,7 +518,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `018-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `019-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
