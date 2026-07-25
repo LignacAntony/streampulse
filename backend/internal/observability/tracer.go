@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -27,15 +28,19 @@ func NewTracer(ctx context.Context, cfg *config.Config) (func(context.Context) e
 		return func(context.Context) error { return nil }, nil
 	}
 
-	// otlptracehttp attend host:port sans schéma ; l'option Insecure reflète
-	// le http:// interne (streampulse-net, jamais exposé).
-	endpoint := strings.TrimPrefix(strings.TrimPrefix(cfg.OTELExporterOTLPEndpoint, "https://"), "http://")
-	opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(endpoint)}
-	if !strings.HasPrefix(cfg.OTELExporterOTLPEndpoint, "https://") {
-		opts = append(opts, otlptracehttp.WithInsecure())
+	// OTEL_EXPORTER_OTLP_ENDPOINT est la variable *générique* de la spec OTLP :
+	// la valeur est une base à laquelle le chemin /v1/traces s'ajoute. On la
+	// normalise nous-mêmes (slash final, préfixe de chemin d'un reverse proxy)
+	// puis on passe l'URL complète à WithEndpointURL, qui en déduit aussi le
+	// TLS — WithEndpoint attendait un host:port nu et cassait silencieusement
+	// dès qu'un chemin traînait (revue PR #269).
+	base, err := url.Parse(cfg.OTELExporterOTLPEndpoint)
+	if err != nil || base.Host == "" {
+		return nil, fmt.Errorf("observability: OTEL_EXPORTER_OTLP_ENDPOINT invalide %q", cfg.OTELExporterOTLPEndpoint)
 	}
+	base.Path = strings.TrimSuffix(base.Path, "/") + "/v1/traces"
 
-	exporter, err := otlptracehttp.New(ctx, opts...)
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(base.String()))
 	if err != nil {
 		return nil, fmt.Errorf("observability: exporteur OTLP: %w", err)
 	}

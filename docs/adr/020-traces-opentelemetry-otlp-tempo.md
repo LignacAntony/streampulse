@@ -18,7 +18,12 @@ dans les logs.
 
 ### 1. Export OTLP/HTTP (pas gRPC)
 
-`otlptracehttp` vers `tempo:4318`. Un seul service émetteur sur un réseau Docker
+`otlptracehttp` vers `tempo:4318`. `OTEL_EXPORTER_OTLP_ENDPOINT` est la variable
+*générique* de la spec OTLP : sa valeur est une **base** à laquelle `/v1/traces` est
+ajouté. L'URL est normalisée via `net/url` (slash final, préfixe de chemin d'un
+reverse proxy) puis passée à `WithEndpointURL`, qui en déduit aussi le TLS ; une URL
+invalide fait échouer le démarrage plutôt que de désactiver l'export en silence
+(revue de PR). Un seul service émetteur sur un réseau Docker
 interne : le streaming et la compression de gRPC n'apporteraient rien, et l'arbre de
 dépendances reste léger. `OTEL_EXPORTER_OTLP_ENDPOINT` **vide → provider noop** :
 aucun bruit réseau en `go run` local ; le compose (dev et prod) pointe Tempo.
@@ -30,6 +35,17 @@ Trafic modeste, Tempo en stockage local : tout échantillonner simplifie le debu
 d'environnement si le volume l'exigeait. `/health` et `/metrics` ne sont pas tracés
 (filtre `skipObservability`, partagé avec logs et métriques) ; le HLS **reste tracé**
 — traces courtes, chemin chaud où une latence anormale mérite une trace consultable.
+
+**Routes de longue durée** (révisé en revue de PR) : le push d'ingest
+(`/api/streams/ingest/{stream_key}`) n'est **pas** tracé — la connexion du diffuseur
+tient des heures et le handler ne touche jamais la base (`AttachIngest` est 100 %
+mémoire, ADR 015) : le span n'aurait aucun enfant à corréler et ne serait exporté
+qu'à la fin de la diffusion. Le **SSE** (`/api/streams/{id}/events`) reste tracé
+malgré sa durée : il appelle `GetStream` avant de streamer, et sans span serveur
+cette requête SQL deviendrait une trace racine orpheline. Son span racine n'arrive
+dans Tempo qu'à la déconnexion, mais les enfants sont exportés dès qu'ils se
+terminent (`BatchSpanProcessor.OnEnd` est appelé par span, pas par trace) : la trace
+reste exploitable pendant la session.
 
 ### 3. Spans HTTP : `httpmw.Tracing` (otelhttp) au-dessus d'AccessLog
 
@@ -48,7 +64,15 @@ Le ticket évoquait « otelgorm ou sqlx » — le projet est sur pgx/v5 + sqlc.
 `pool.go`) : un span par requête SQL, enfant du span HTTP via le `ctx` qui descend
 déjà des handlers aux repositories. Le texte SQL est tracé **sans les arguments**
 (queries sqlc paramétrées — pas de données personnelles dans les traces). La
-connexion legacy du seeder n'est pas instrumentée.
+connexion legacy du seeder n'est pas instrumentée (elle passe par `pgx.Conn`, pas
+par le pool).
+
+**Limite connue** (relevée en revue) : une requête SQL émise hors contexte HTTP
+produit un span racine sans parent. Le périmètre réel est réduit —
+`ReconcileLiveStreams` au démarrage (une requête, une fois par process) ; les
+goroutines de session (`session.go`) ne touchent pas la base, et les actions admin
+(`StopLiveForUser`) héritent du contexte HTTP de leur handler. À revoir si des jobs
+de fond périodiques apparaissent : un sampler dédié éviterait d'exporter ces racines.
 
 ### 5. Resource et corrélation
 
