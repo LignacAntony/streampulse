@@ -335,13 +335,99 @@ Aller dans **Settings → Secrets and variables → Actions → New repository s
 # 1. Vérifier le statut du workflow dans l'UI GitHub
 #    → onglet "Actions" du dépôt, workflow "CD"
 
-# 2. Sur le VPS, vérifier que l'API répond
-curl -s -o /dev/null -w "%{http_code}" http://<VPS_HOST>:8080/health
+# 2. Vérifier que l'API répond, via Caddy (HTTPS)
+curl -s -o /dev/null -w "%{http_code}" https://api.streampulse.win/health
 # Attendu : 200
+# NB : http://<VPS_HOST>:8080/health ne répond plus depuis l'ADR 019 —
+# le port de l'API est bindé sur 127.0.0.1, tout passe par Caddy.
 
 # 3. Vérifier que l'image fraîchement déployée est bien en cours d'exécution
 ssh deploy@<VPS_HOST> "docker compose -f /opt/streampulse/docker-compose.yml ps api"
 ```
+
+### Mise à jour manuelle du VPS (compose et configs)
+
+**Le workflow CD ne déploie que l'image de l'API** (`docker compose pull api` +
+`up -d --no-deps api`). Il ne synchronise **ni** `docker-compose.prod.yml`, **ni** le
+dossier `docker/` : ces fichiers ont été copiés à la main sur le VPS lors de
+l'installation. Toute PR qui ajoute un service ou modifie une config d'infra exige
+donc la procédure ci-dessous, **une seule fois**, après le merge.
+
+#### Changements d'infra en attente de déploiement (épic Observabilité)
+
+| Changement | Fichier | PR |
+|---|---|---|
+| Service `alloy` (collecte des logs Docker → Loki) | `docker-compose.prod.yml`, `docker/alloy/config.alloy` | #265 |
+| Service `node_exporter` (métriques machine) | `docker-compose.prod.yml` | #268 |
+| Port de l'API bindé sur `127.0.0.1` | `docker-compose.prod.yml` | #268 |
+| `/metrics` bloqué publiquement (403) | `docker/caddy/Caddyfile` | #268 |
+| Job de scrape `node` | `docker/prometheus/prometheus.yml` | #268 |
+| Dashboards API / Infrastructure | `docker/grafana/provisioning/dashboards/` | #268 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` sur l'api | `docker-compose.prod.yml` | #269 |
+| `GF_SMTP_*` sur Grafana + règles d'alerte + dashboard Logs | `docker-compose.prod.yml`, `docker/grafana/provisioning/` | #270 |
+
+Aucune nouvelle variable n'est **requise** dans le `.env` du VPS : `LOG_LEVEL`,
+`OTEL_EXPORTER_OTLP_ENDPOINT` et les `GF_SMTP_*` ont des défauts fonctionnels. Les
+alertes par email partent dès que les `SMTP_*` existants sont renseignés.
+
+#### Procédure
+
+Les deux copies transfèrent l'**état final du dépôt** : une seule exécution rattrape
+toutes les PR listées ci-dessus, inutile de les rejouer une par une. À lancer depuis
+la racine du dépôt, sur `main` à jour, une fois toute la pile mergée.
+
+```bash
+# 1. Copier les configs (alloy, caddy, prometheus, grafana) — depuis le poste local
+rsync -av docker/ deploy@<VPS_HOST>:/opt/streampulse/docker/
+```
+
+```bash
+# 2. Copier le compose de production (il se nomme docker-compose.yml sur le VPS)
+scp docker-compose.prod.yml deploy@<VPS_HOST>:/opt/streampulse/docker-compose.yml
+```
+
+```bash
+# 3. Se connecter au VPS
+ssh deploy@<VPS_HOST>
+```
+
+```bash
+# 4. Sur le VPS — récupérer les images des nouveaux services
+cd /opt/streampulse && docker compose pull
+```
+
+```bash
+# 5. Sur le VPS — créer/mettre à jour les conteneurs selon le nouveau compose
+docker compose up -d
+```
+
+```bash
+# 6. Sur le VPS — recharger la configuration de Caddy (blocage de /metrics)
+docker compose restart caddy
+```
+
+#### Vérifications
+
+```bash
+# /metrics n'est plus public (403 attendu)
+curl -s -o /dev/null -w "%{http_code}\n" https://api.streampulse.win/metrics
+```
+
+```bash
+# L'API répond toujours (200 attendu)
+curl -s -o /dev/null -w "%{http_code}\n" https://api.streampulse.win/health
+```
+
+```bash
+# Tous les services tournent (api, postgres, caddy, prometheus, loki, alloy,
+# node_exporter, tempo, grafana)
+ssh deploy@<VPS_HOST> "cd /opt/streampulse && docker compose ps"
+```
+
+Puis dans Grafana : les dashboards **API Backend**, **Infrastructure** et
+**Logs & Erreurs** doivent apparaître dans le dossier StreamPulse, les 3 règles
+d'alerte dans **Alerting → Alert rules**, et une requête `{service="api"}` dans
+Explore → Loki doit remonter les logs JSON de l'API (preuve qu'Alloy collecte).
 
 ### Tester le build Docker localement avant de push
 
