@@ -32,10 +32,21 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
 
   Future<void> _toggleFavorite() async {
     final controller = context.read<FavoritesController>();
+    // Arrivée par deep-link : on n'a pas les métadonnées du flux, on ajoute
+    // donc un placeholder ('Flux' / statut inconnu) pour l'update optimiste.
+    final isPlaceholder = widget.stream == null;
+    final wasFavorited = controller.isFavorited(widget.streamId);
     final favorite = widget.stream ??
         LiveStream(id: widget.streamId, title: 'Flux', startedAt: null);
     try {
       await controller.toggle(favorite);
+      // Si l'action était un AJOUT avec placeholder, la section « Favoris »
+      // afficherait une tuile fantôme ('Flux' / '—') jusqu'au prochain load.
+      // On recharge depuis le serveur pour la remplacer par les vraies
+      // métadonnées du flux (retrait ou métadonnées déjà connues : inutile).
+      if (isPlaceholder && !wasFavorited) {
+        await controller.load();
+      }
     } on AuthException catch (_) {
       if (!mounted) return;
       showAuthErrorToast(

@@ -408,7 +408,7 @@ func (h *Handler) ListFavorites(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toSummary(s))
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
-		log.Printf("streaming: encode favorites response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode favorites")
 	}
 }
 

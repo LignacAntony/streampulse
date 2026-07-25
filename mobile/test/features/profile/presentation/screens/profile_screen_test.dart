@@ -14,6 +14,9 @@ import 'package:streampulse/features/profile/domain/entities/user_profile.dart';
 import 'package:streampulse/features/profile/domain/repositories/profile_repository.dart';
 import 'package:streampulse/features/profile/presentation/providers/profile_controller.dart';
 import 'package:streampulse/features/profile/presentation/screens/profile_screen.dart';
+import 'package:streampulse/features/streams/domain/entities/live_stream.dart';
+import 'package:streampulse/features/streams/domain/repositories/stream_repository.dart';
+import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 
 /// `ProfileScreen` ne dépend, hors `ProfileController`, que de ces deux
 /// repositories (bouton déconnexion / suppression de compte + reset du
@@ -57,6 +60,27 @@ class _FakeBroadcasterRepository implements BroadcasterRepository {
   @override
   Future<BroadcasterRequest> requestBroadcaster({String message = ''}) async =>
       throw UnimplementedError();
+}
+
+/// Repository minimal pour `FavoritesController` : le logout appelle
+/// `FavoritesController.reset()` (aucun appel réseau), ce fake n'a donc rien à
+/// renvoyer.
+class _FakeStreamRepository implements StreamRepository {
+  @override
+  Future<List<LiveStream>> listFavorites() async => const [];
+
+  @override
+  Future<void> addFavorite(String streamId) async {}
+
+  @override
+  Future<void> removeFavorite(String streamId) async {}
+
+  @override
+  Future<List<LiveStream>> listLiveStreams({
+    int limit = 20,
+    int offset = 0,
+  }) async =>
+      const [];
 }
 
 class _FakeProfileRepository implements ProfileRepository {
@@ -120,6 +144,9 @@ Widget _buildHarness(UserProfile profile) {
       Provider<AuthRepository>.value(value: _FakeAuthRepository()),
       ChangeNotifierProvider<BroadcasterController>(
         create: (_) => BroadcasterController(_FakeBroadcasterRepository()),
+      ),
+      ChangeNotifierProvider<FavoritesController>(
+        create: (_) => FavoritesController(_FakeStreamRepository()),
       ),
     ],
     child: ToastificationWrapper(

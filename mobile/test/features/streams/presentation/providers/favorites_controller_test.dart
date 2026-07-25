@@ -97,4 +97,37 @@ void main() {
       expect(controller.isFavorited('x'), isFalse);
     });
   });
+
+  group('FavoritesController.reset', () {
+    test('vide ids + liste et notifie', () async {
+      final controller = FavoritesController(
+        _FakeRepository(favorites: [_stream('a'), _stream('b')]),
+      );
+      await controller.ensureLoaded();
+      expect(controller.favorites, hasLength(2));
+
+      var notified = false;
+      controller.addListener(() => notified = true);
+      controller.reset();
+
+      expect(controller.isFavorited('a'), isFalse);
+      expect(controller.favorites, isEmpty);
+      expect(notified, isTrue);
+    });
+
+    test('remet _loaded à faux : ensureLoaded recharge le compte suivant',
+        () async {
+      final repo = _FakeRepository(favorites: [_stream('a')]);
+      final controller = FavoritesController(repo);
+      await controller.ensureLoaded();
+
+      // Après reset (logout), la liste du compte suivant remplace l'ancienne.
+      controller.reset();
+      repo.favorites = [_stream('z')];
+      await controller.ensureLoaded();
+
+      expect(controller.isFavorited('a'), isFalse);
+      expect(controller.isFavorited('z'), isTrue);
+    });
+  });
 }

@@ -24,6 +24,20 @@ class FavoritesController extends ChangeNotifier {
 
   bool isFavorited(String streamId) => _favoritedIds.contains(streamId);
 
+  /// Réinitialise l'état des favoris (à appeler au logout) : sans ça, la
+  /// section « Favoris » de l'accueil conserverait les favoris du compte
+  /// déconnecté (cœur plein compris), et un nouveau login en hériterait car
+  /// `ensureLoaded` serait un no-op (`_loaded == true`). Remettre `_loaded` à
+  /// faux force le rechargement de la liste du prochain compte connecté.
+  /// Même pattern que `BroadcasterController.reset()`.
+  void reset() {
+    _favoritedIds.clear();
+    _favorites = const [];
+    _loaded = false;
+    _isLoading = false;
+    notifyListeners();
+  }
+
   /// Charge la liste des favoris une seule fois (peuple ids + liste). Silencieux
   /// en cas d'échec (ex. invité non connecté) : le bouton reste « non favori ».
   Future<void> ensureLoaded() async {
