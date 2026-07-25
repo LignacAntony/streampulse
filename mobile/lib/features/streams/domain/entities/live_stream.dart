@@ -6,6 +6,7 @@ class LiveStream {
     this.description,
     this.category,
     this.listenerCount,
+    this.status,
   });
 
   final String id;
@@ -14,6 +15,11 @@ class LiveStream {
   final String? description;
   final String? category;
   final int? listenerCount;
+
+  /// Statut du flux : 'idle', 'live' ou 'ended' (null si non renseigné).
+  final String? status;
+
+  bool get isLive => status == 'live';
 
   Duration? liveDurationAt(DateTime now) {
     final start = startedAt;

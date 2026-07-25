@@ -39,6 +39,9 @@ type StreamService interface {
 	ArchiveStream(ctx context.Context, id, requesterID string) error
 	StartStream(ctx context.Context, id, requesterID string) (Stream, error)
 	StopStream(ctx context.Context, id, requesterID string) (Stream, error)
+	AddFavorite(ctx context.Context, streamID, requesterID string) error
+	RemoveFavorite(ctx context.Context, streamID, requesterID string) error
+	ListFavorites(ctx context.Context, requesterID string) ([]Stream, error)
 }
 
 // StreamSessions expose au handler les opérations sur les sessions live :
@@ -354,6 +357,58 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode stop")
+	}
+}
+
+// AddFavorite gère POST /api/streams/{id}/favorite : ajoute le flux aux favoris
+// du demandeur (US-04-05). Idempotent → 204. Un flux non visible renvoie 404.
+func (h *Handler) AddFavorite(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.AddFavorite(r.Context(), r.PathValue("id"), requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RemoveFavorite gère DELETE /api/streams/{id}/favorite : retire le flux des
+// favoris du demandeur. Idempotent → 204.
+func (h *Handler) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.RemoveFavorite(r.Context(), r.PathValue("id"), requesterID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListFavorites gère GET /api/users/me/favorites : liste des flux favoris du
+// demandeur (vue publique sans secret), triée par date d'ajout décroissante.
+func (h *Handler) ListFavorites(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	streams, err := h.svc.ListFavorites(r.Context(), requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	out := make([]streamSummaryResponse, 0, len(streams))
+	for _, s := range streams {
+		out = append(out, toSummary(s))
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode favorites")
 	}
 }
 

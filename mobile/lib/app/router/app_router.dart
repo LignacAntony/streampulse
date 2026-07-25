@@ -11,6 +11,7 @@ import '../../features/broadcaster/presentation/screens/broadcaster_request_scre
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/streams/domain/entities/live_stream.dart';
+import '../../features/streams/presentation/screens/discover_screen.dart';
 import '../../features/streams/presentation/screens/stream_player_screen.dart';
 import '../shell/main_shell.dart';
 import '../shell/placeholder_screen.dart';
@@ -113,10 +114,7 @@ GoRouter createAppRouter(SecureStorage storage) {
             routes: [
               GoRoute(
                 path: '/discover',
-                builder: (context, state) => const PlaceholderScreen(
-                  title: 'Découvrir',
-                  icon: Icons.explore_outlined,
-                ),
+                builder: (context, state) => const DiscoverScreen(),
               ),
             ],
           ),

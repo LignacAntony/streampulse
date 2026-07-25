@@ -155,6 +155,15 @@ type fakeRepo struct {
 	orphanEnded int64
 	orphanErr   error
 
+	addFavCalled    bool
+	removeFavCalled bool
+	favUserID       string
+	favStreamID     string
+	addFavErr       error
+	removeFavErr    error
+	listFavRet      []Stream
+	listFavErr      error
+
 	gotStopLiveForUserID string
 	stopLiveForUserIDs   []string
 	stopLiveForUserErr   error
@@ -206,6 +215,25 @@ func (f *fakeRepo) StopStream(_ context.Context, id, _ string) (Stream, error) {
 
 func (f *fakeRepo) EndOrphanLiveStreams(_ context.Context) (int64, error) {
 	return f.orphanEnded, f.orphanErr
+}
+
+func (f *fakeRepo) AddFavorite(_ context.Context, userID, streamID string) error {
+	f.addFavCalled = true
+	f.favUserID = userID
+	f.favStreamID = streamID
+	return f.addFavErr
+}
+
+func (f *fakeRepo) RemoveFavorite(_ context.Context, userID, streamID string) error {
+	f.removeFavCalled = true
+	f.favUserID = userID
+	f.favStreamID = streamID
+	return f.removeFavErr
+}
+
+func (f *fakeRepo) ListFavorites(_ context.Context, userID string) ([]Stream, error) {
+	f.favUserID = userID
+	return f.listFavRet, f.listFavErr
 }
 
 func (f *fakeRepo) StopLiveStreamsByUser(_ context.Context, userID string) ([]string, error) {
@@ -533,6 +561,88 @@ func TestService_ReconcileLiveStreams(t *testing.T) {
 	}
 	if n != 3 {
 		t.Errorf("n = %d, want 3", n)
+	}
+}
+
+func TestService_AddFavorite_PublicOK(t *testing.T) {
+	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: true}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	if err := svc.AddFavorite(context.Background(), "s1", "u2"); err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if !repo.addFavCalled {
+		t.Error("repo.AddFavorite devrait être appelé")
+	}
+	if repo.favUserID != "u2" || repo.favStreamID != "s1" {
+		t.Errorf("args = (%q, %q), want (u2, s1)", repo.favUserID, repo.favStreamID)
+	}
+}
+
+func TestService_AddFavorite_OwnPrivateOK(t *testing.T) {
+	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	if err := svc.AddFavorite(context.Background(), "s1", "u1"); err != nil {
+		t.Fatalf("le propriétaire peut favoriser son flux privé: %v", err)
+	}
+	if !repo.addFavCalled {
+		t.Error("repo.AddFavorite devrait être appelé")
+	}
+}
+
+func TestService_AddFavorite_PrivateThirdParty_NotFound(t *testing.T) {
+	repo := &fakeRepo{getRet: Stream{ID: "s1", UserID: "u1", IsPublic: false}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	err := svc.AddFavorite(context.Background(), "s1", "u2")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not_found", err)
+	}
+	if repo.addFavCalled {
+		t.Error("repo.AddFavorite ne doit pas être appelé sur flux non visible")
+	}
+}
+
+func TestService_AddFavorite_UnknownStream_NotFound(t *testing.T) {
+	repo := &fakeRepo{getErr: apperror.NotFound("stream not found")}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	err := svc.AddFavorite(context.Background(), "s1", "u2")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not_found", err)
+	}
+	if repo.addFavCalled {
+		t.Error("repo.AddFavorite ne doit pas être appelé pour un flux inexistant")
+	}
+}
+
+func TestService_RemoveFavorite_NoVisibilityCheck(t *testing.T) {
+	// Le retrait est idempotent et ne vérifie pas la visibilité (pas de GetStream).
+	repo := &fakeRepo{}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	if err := svc.RemoveFavorite(context.Background(), "s1", "u2"); err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if !repo.removeFavCalled {
+		t.Error("repo.RemoveFavorite devrait être appelé")
+	}
+	if repo.favUserID != "u2" || repo.favStreamID != "s1" {
+		t.Errorf("args = (%q, %q), want (u2, s1)", repo.favUserID, repo.favStreamID)
+	}
+}
+
+func TestService_ListFavorites(t *testing.T) {
+	repo := &fakeRepo{listFavRet: []Stream{{ID: "s1"}, {ID: "s2"}}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	got, err := svc.ListFavorites(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(got) != 2 || repo.favUserID != "u1" {
+		t.Errorf("got = %+v, favUserID = %q", got, repo.favUserID)
 	}
 }
 

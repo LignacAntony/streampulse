@@ -190,6 +190,70 @@ func (r *pgRepository) EndOrphanLiveStreams(ctx context.Context) (int64, error) 
 	return n, nil
 }
 
+// AddFavorite ajoute le flux aux favoris de l'utilisateur (idempotent via
+// ON CONFLICT DO NOTHING). La visibilité du flux est déjà vérifiée par le
+// service (GetStream) en amont ; la contrainte FK protège d'une insertion
+// orpheline en cas de course (flux supprimé entre-temps → NotFound).
+func (r *pgRepository) AddFavorite(ctx context.Context, userID, streamID string) error {
+	sid, ok := parseUUID(streamID)
+	if !ok {
+		return apperror.NotFound("stream not found")
+	}
+	err := r.q.AddFavorite(ctx, streamingdb.AddFavoriteParams{
+		UserID:   uuidParam(userID),
+		StreamID: sid,
+	})
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return apperror.NotFound("stream not found")
+		}
+		return fmt.Errorf("repo: add favorite: %w", err)
+	}
+	return nil
+}
+
+// RemoveFavorite retire le flux des favoris (idempotent : aucun effet si absent
+// ou si l'id est mal formé).
+func (r *pgRepository) RemoveFavorite(ctx context.Context, userID, streamID string) error {
+	sid, ok := parseUUID(streamID)
+	if !ok {
+		return nil
+	}
+	if err := r.q.RemoveFavorite(ctx, streamingdb.RemoveFavoriteParams{
+		UserID:   uuidParam(userID),
+		StreamID: sid,
+	}); err != nil {
+		return fmt.Errorf("repo: remove favorite: %w", err)
+	}
+	return nil
+}
+
+// ListFavorites retourne les flux favoris de l'utilisateur, encore visibles et
+// non archivés, triés par date d'ajout décroissante (sans stream_key).
+func (r *pgRepository) ListFavorites(ctx context.Context, userID string) ([]Stream, error) {
+	rows, err := r.q.ListFavoritesByUser(ctx, uuidParam(userID))
+	if err != nil {
+		return nil, fmt.Errorf("repo: list favorites: %w", err)
+	}
+	streams := make([]Stream, 0, len(rows))
+	for _, row := range rows {
+		streams = append(streams, Stream{
+			ID:          row.ID,
+			UserID:      row.UserID,
+			Title:       row.Title,
+			Description: textValue(row.Description),
+			Category:    textValue(row.Category),
+			Status:      row.Status,
+			IsPublic:    row.IsPublic,
+			StartedAt:   row.StartedAt,
+			EndedAt:     row.EndedAt,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+		})
+	}
+	return streams, nil
+}
+
 // StopLiveStreamsByUser termine tous les flux live d'un utilisateur (usage admin,
 // STR-191) et renvoie les ids arrêtés (pour que le service coupe leur session
 // in-memory). Un userID syntaxiquement invalide n'a par construction aucun flux

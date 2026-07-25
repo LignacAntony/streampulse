@@ -906,6 +906,77 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/favorite:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags:
+        - Streaming
+      operationId: addFavorite
+      summary: Add a stream to the authenticated user's favorites.
+      description: >-
+        Adds the stream to the user's favorites (US-04-05). Idempotent (PUT):
+        adding an already-favorited stream succeeds. A stream that is not visible
+        to the requester (private and owned by someone else, archived, or
+        unknown) returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream is in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Streaming
+      operationId: removeFavorite
+      summary: Remove a stream from the authenticated user's favorites.
+      description: >-
+        Removes the stream from the user's favorites. Idempotent: removing a
+        stream that is not in the favorites succeeds.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream is no longer in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/users/me/favorites:
+    get:
+      tags:
+        - Streaming
+      operationId: listMyFavorites
+      summary: List the authenticated user's favorite streams.
+      description: >-
+        Returns the user's favorite streams (all statuses), still visible and not
+        archived, ordered by favorite date descending. Never exposes any secret
+        (stream_key, source URL).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's favorite streams (without any secret).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/streams/ingest/{stream_key}:
     parameters:
       - name: stream_key

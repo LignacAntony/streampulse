@@ -21,6 +21,8 @@ import '../features/profile/presentation/providers/profile_controller.dart';
 import '../features/streams/data/datasources/stream_remote_data_source.dart';
 import '../features/streams/data/repositories/stream_repository_impl.dart';
 import '../features/streams/domain/repositories/stream_repository.dart';
+import '../features/streams/presentation/providers/discover_notifier.dart';
+import '../features/streams/presentation/providers/favorites_controller.dart';
 import '../features/streams/presentation/providers/stream_notifier.dart';
 
 /// Conteneur racine d'injection de dépendances (remplace `ProviderScope`).
@@ -96,6 +98,12 @@ class StreamPulseApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<StreamNotifier>(
           create: (ctx) => StreamNotifier(ctx.read<StreamRepository>()),
+        ),
+        ChangeNotifierProvider<FavoritesController>(
+          create: (ctx) => FavoritesController(ctx.read<StreamRepository>()),
+        ),
+        ChangeNotifierProvider<DiscoverNotifier>(
+          create: (ctx) => DiscoverNotifier(ctx.read<StreamRepository>()),
         ),
       ],
       child: child,

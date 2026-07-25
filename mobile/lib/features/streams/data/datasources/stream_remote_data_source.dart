@@ -19,4 +19,29 @@ class StreamRemoteDataSource {
       throw mapDioException(e);
     }
   }
+
+  Future<List<StreamSummaryResponse>> listFavorites() async {
+    try {
+      final response = await _api.listMyFavorites();
+      return response.data ?? const [];
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> addFavorite(String streamId) async {
+    try {
+      await _api.addFavorite(id: streamId);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> removeFavorite(String streamId) async {
+    try {
+      await _api.removeFavorite(id: streamId);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
 }

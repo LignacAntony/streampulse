@@ -16,4 +16,17 @@ class StreamRepositoryImpl implements StreamRepository {
     final dtos = await _remote.listLive(limit: limit, offset: offset);
     return dtos.map((dto) => dto.toEntity()).toList();
   }
+
+  @override
+  Future<List<LiveStream>> listFavorites() async {
+    final dtos = await _remote.listFavorites();
+    return dtos.map((dto) => dto.toEntity()).toList();
+  }
+
+  @override
+  Future<void> addFavorite(String streamId) => _remote.addFavorite(streamId);
+
+  @override
+  Future<void> removeFavorite(String streamId) =>
+      _remote.removeFavorite(streamId);
 }

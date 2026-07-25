@@ -164,6 +164,9 @@ type Repository interface {
 	StartStream(ctx context.Context, id, userID string) (Stream, error)
 	StopStream(ctx context.Context, id, userID string) (Stream, error)
 	EndOrphanLiveStreams(ctx context.Context) (int64, error)
+	AddFavorite(ctx context.Context, userID, streamID string) error
+	RemoveFavorite(ctx context.Context, userID, streamID string) error
+	ListFavorites(ctx context.Context, userID string) ([]Stream, error)
 	StopLiveStreamsByUser(ctx context.Context, userID string) ([]string, error)
 	ForceStopLiveStream(ctx context.Context, id string) (string, error)
 }
@@ -234,6 +237,29 @@ func (s *Service) GetStream(ctx context.Context, id, requesterID string) (Stream
 		return Stream{}, false, apperror.NotFound("stream not found")
 	}
 	return stream, isOwner, nil
+}
+
+// AddFavorite ajoute le flux aux favoris du demandeur. On réutilise GetStream
+// pour ne favoriser qu'un flux visible : un flux inexistant, archivé ou privé
+// appartenant à un tiers renvoie 404 (sans divulguer son existence). L'opération
+// est idempotente (un favori déjà présent ne lève pas d'erreur).
+func (s *Service) AddFavorite(ctx context.Context, streamID, requesterID string) error {
+	if _, _, err := s.GetStream(ctx, streamID, requesterID); err != nil {
+		return err
+	}
+	return s.repo.AddFavorite(ctx, requesterID, streamID)
+}
+
+// RemoveFavorite retire le flux des favoris du demandeur. Idempotent : aucune
+// erreur si le flux n'était pas en favori (pas de vérification de visibilité).
+func (s *Service) RemoveFavorite(ctx context.Context, streamID, requesterID string) error {
+	return s.repo.RemoveFavorite(ctx, requesterID, streamID)
+}
+
+// ListFavorites retourne les flux favoris du demandeur, encore visibles et non
+// archivés, triés par date d'ajout décroissante.
+func (s *Service) ListFavorites(ctx context.Context, requesterID string) ([]Stream, error) {
+	return s.repo.ListFavorites(ctx, requesterID)
 }
 
 // UpdateStream valide puis met à jour le flux du propriétaire (404 si absent,

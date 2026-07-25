@@ -30,6 +30,12 @@ type BroadcasterRequest struct {
 	UpdatedAt  time.Time
 }
 
+type Favorite struct {
+	UserID    pgtype.UUID
+	StreamID  pgtype.UUID
+	CreatedAt time.Time
+}
+
 type PasswordResetToken struct {
 	ID        pgtype.UUID
 	UserID    pgtype.UUID

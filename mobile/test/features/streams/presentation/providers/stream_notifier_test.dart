@@ -23,6 +23,15 @@ class _FakeRepository implements StreamRepository {
     if (error != null) throw error!;
     return result;
   }
+
+  @override
+  Future<List<LiveStream>> listFavorites() async => const [];
+
+  @override
+  Future<void> addFavorite(String streamId) async {}
+
+  @override
+  Future<void> removeFavorite(String streamId) async {}
 }
 
 class _PagingRepository implements StreamRepository {
@@ -36,6 +45,15 @@ class _PagingRepository implements StreamRepository {
     final end = (offset + limit).clamp(0, total);
     return [for (var i = offset; i < end; i++) _stream('$i')];
   }
+
+  @override
+  Future<List<LiveStream>> listFavorites() async => const [];
+
+  @override
+  Future<void> addFavorite(String streamId) async {}
+
+  @override
+  Future<void> removeFavorite(String streamId) async {}
 }
 
 void main() {
