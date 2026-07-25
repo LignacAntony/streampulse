@@ -268,3 +268,29 @@ func TestLoad_Logging(t *testing.T) {
 		}
 	})
 }
+
+func TestLoad_OTELEndpoint(t *testing.T) {
+	t.Run("défaut vide (tracing désactivé)", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.OTELExporterOTLPEndpoint != "" {
+			t.Errorf("OTELExporterOTLPEndpoint = %q, want vide par défaut", cfg.OTELExporterOTLPEndpoint)
+		}
+	})
+
+	t.Run("valeur explicite", func(t *testing.T) {
+		vars := validVars()
+		vars["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://tempo:4318"
+		setEnv(t, vars)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.OTELExporterOTLPEndpoint != "http://tempo:4318" {
+			t.Errorf("OTELExporterOTLPEndpoint = %q", cfg.OTELExporterOTLPEndpoint)
+		}
+	})
+}

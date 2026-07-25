@@ -63,6 +63,20 @@ func run() error {
 	logger := observability.New(cfg, os.Stdout)
 	log.Logger = logger
 
+	// Tracing OTEL (STR-164, ADR 020) : export OTLP/HTTP vers Tempo, noop si
+	// OTEL_EXPORTER_OTLP_ENDPOINT est vide (go run local).
+	shutdownTracer, err := observability.NewTracer(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("tracer: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracer(flushCtx); err != nil {
+			log.Warn().Err(err).Msg("arrêt du tracer OTEL")
+		}
+	}()
+
 	// 1. Appliquer les migrations
 	migrator.Run()
 
@@ -215,11 +229,14 @@ func run() error {
 		mux.Handle("/swagger/", openapi.SwaggerHandler())
 	}
 
-	// Access log et métriques au plus près du mux : les préflights OPTIONS
-	// absorbés par CORS ne sont ni loggés ni comptés (STR-169, STR-165).
+	// Chaîne d'observabilité (ADR 018/019/020), de l'extérieur vers le mux :
+	// CORS → Tracing (span racine) → AccessLog (logs corrélés trace_id) →
+	// Metrics. Les préflights OPTIONS absorbés par CORS ne sont ni tracés,
+	// ni loggés, ni comptés.
 	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(),
-		httpmw.AccessLog(logger,
-			httpmw.Metrics(prometheus.DefaultRegisterer, mux)))
+		httpmw.Tracing(mux,
+			httpmw.AccessLog(logger,
+				httpmw.Metrics(prometheus.DefaultRegisterer, mux))))
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),

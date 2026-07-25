@@ -78,6 +78,10 @@ type Config struct {
 	// LogPretty : sortie console lisible (dev local hors Docker uniquement) —
 	// en conteneur la sortie doit rester du JSON pour la collecte Loki (STR-172).
 	LogPretty bool `mapstructure:"LOG_PRETTY"`
+
+	// OTELExporterOTLPEndpoint : endpoint OTLP/HTTP de Tempo (ADR 020).
+	// Vide = tracing désactivé (provider noop) — cas du `go run` local.
+	OTELExporterOTLPEndpoint string `mapstructure:"OTEL_EXPORTER_OTLP_ENDPOINT"`
 }
 
 // Load lit la configuration depuis l'environnement et la valide.
@@ -120,6 +124,7 @@ func Load() (*Config, error) {
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
 		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
 		"HLS_MAX_CONCURRENT", "LOG_LEVEL", "LOG_PRETTY",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)

@@ -2,6 +2,7 @@ package httpmw
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 var requestIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -274,5 +276,44 @@ func TestAccessLog_PreservesFlusher(t *testing.T) {
 
 	if !isFlusher {
 		t.Error("le ResponseWriter wrappé doit rester un http.Flusher (SSE STR-77)")
+	}
+}
+
+func TestAccessLog_TraceIDWhenSpanActive(t *testing.T) {
+	tp := sdktrace.NewTracerProvider() // recording, sans exporteur
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	var handlerTraceID string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		zerolog.Ctx(r.Context()).Info().Msg("depuis le handler")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf)
+
+	// Simule otelhttp posé au-dessus d'AccessLog : le span vit déjà dans le ctx.
+	ctx, span := tp.Tracer("test").Start(context.Background(), "GET /api/streams")
+	handlerTraceID = span.SpanContext().TraceID().String()
+	req := httptest.NewRequest(http.MethodGet, "/api/streams", nil).WithContext(ctx)
+
+	AccessLog(logger, handler).ServeHTTP(httptest.NewRecorder(), req)
+	span.End()
+
+	out := buf.String()
+	if c := strings.Count(out, `"trace_id":"`+handlerTraceID+`"`); c != 2 {
+		t.Errorf("trace_id %s attendu dans la ligne handler ET l'access log (2 occurrences), got %d — sortie: %s", handlerTraceID, c, out)
+	}
+}
+
+func TestAccessLog_NoTraceIDWithoutSpan(t *testing.T) {
+	var buf bytes.Buffer
+	logger := zerolog.New(&buf)
+	req := httptest.NewRequest(http.MethodGet, "/api/streams", nil)
+
+	AccessLog(logger, statusHandler(http.StatusOK)).ServeHTTP(httptest.NewRecorder(), req)
+
+	if strings.Contains(buf.String(), "trace_id") {
+		t.Errorf("pas de span actif → pas de champ trace_id, sortie: %s", buf.String())
 	}
 }
