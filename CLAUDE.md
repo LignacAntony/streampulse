@@ -188,6 +188,12 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 - SQL : `otelpgx` sur le pool (`pool.go`) — un span par query, sans les arguments.
 - Logs corrélés : `trace_id`/`span_id` ajoutés par `AccessLog` quand un span est actif → bouton TraceID dans Grafana (Loki `derivedFields`).
 
+### Alertes Grafana (STR-167, ADR 021)
+
+- Provisionnées as-code : `docker/grafana/provisioning/alerting/` (contact point email, policy, règles 5xx>5%/CPU>90%/goroutines>200, `for: 5m`).
+- Dev : les emails d'alerte partent dans Mailpit (http://localhost:8025). Prod : relay `SMTP_*` du `.env`.
+- Dashboard « Logs & Erreurs » : variables `$level` et `$trace_id`, dernières erreurs cliquables vers Tempo.
+
 ### Patterns à respecter
 
 - **ISP** : le handler déclare des interfaces étroites (`Registrar`, `Authenticator`, `TokenRefresher`) — chacune couvre exactement ce dont le handler a besoin. `*Service` les satisfait toutes.

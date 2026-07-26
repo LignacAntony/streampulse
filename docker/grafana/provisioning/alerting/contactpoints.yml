@@ -1,0 +1,15 @@
+# Contact points provisionnés (STR-167, ADR 021) — la vérité vit dans git.
+# En dev, Grafana envoie via Mailpit (GF_SMTP_HOST=mailpit:1025) : les emails
+# d'alerte sont visibles sur http://localhost:8025. En prod, GF_SMTP_* pointe
+# le relay SMTP réel (mêmes variables que l'API).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: equipe-streampulse
+    receivers:
+      - uid: email-equipe
+        type: email
+        settings:
+          addresses: admin@streampulse.dev
+          singleEmail: true

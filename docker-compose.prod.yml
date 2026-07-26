@@ -200,6 +200,12 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Alertes par email (STR-167, ADR 021) : même relay SMTP que l'API.
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT:-587}
+      GF_SMTP_USER: ${SMTP_USERNAME:-}
+      GF_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM:-noreply@streampulse.com}
     depends_on:
       prometheus:
         condition: service_healthy
