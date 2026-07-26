@@ -60,10 +60,27 @@ type Handler struct {
 	svc           StreamService
 	ingestBaseURL string
 	sessions      StreamSessions
+	metrics       MetricsRecorder // jamais nil : noopRecorder par défaut (STR-166)
 }
 
 func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions) *Handler {
-	return &Handler{svc: svc, ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"), sessions: sessions}
+	return &Handler{
+		svc:           svc,
+		ingestBaseURL: strings.TrimRight(ingestBaseURL, "/"),
+		sessions:      sessions,
+		metrics:       noopRecorder{},
+	}
+}
+
+// SetMetrics injecte le collecteur de métriques métier (STR-166, ADR 022).
+// Setter plutôt que paramètre de constructeur : l'observabilité est optionnelle
+// (le domaine tourne sans), et le pattern est le même que LiveSessions.SetMetrics.
+// Appelé une fois au démarrage, avant que le serveur n'accepte des requêtes.
+func (h *Handler) SetMetrics(rec MetricsRecorder) {
+	if rec == nil {
+		rec = noopRecorder{}
+	}
+	h.metrics = rec
 }
 
 // createStreamRequest : pointeurs pour distinguer « champ absent » de zéro.
@@ -545,7 +562,7 @@ func ingestError(err error) error {
 // flux public (lecture publique, cf. serveHLSFile). 409 si le flux n'est pas en
 // direct ou si le manifeste n'est pas encore prêt.
 func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
-	h.serveHLSFile(w, r, "application/vnd.apple.mpegurl",
+	h.serveHLSFile(w, r, HLSKindPlaylist, "application/vnd.apple.mpegurl",
 		func(id string) (string, bool) { return h.sessions.Playlist(id) },
 		apperror.Conflict("stream is not live"))
 }
@@ -554,7 +571,7 @@ func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
 // flux public (lecture publique, cf. serveHLSFile). Le nom du segment est validé
 // (anti path-traversal) dans la couche session ; nom invalide ou segment absent -> 404.
 func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
-	h.serveHLSFile(w, r, "video/mp2t",
+	h.serveHLSFile(w, r, HLSKindSegment, "video/mp2t",
 		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },
 		apperror.NotFound("segment not found"))
 }
@@ -568,9 +585,16 @@ func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 // (just_audio → AVPlayer/ExoPlayer) ne peut pas porter le Bearer. Un auditeur
 // anonyme a requesterID = "" ; la visibilité de GetStream sert alors les flux
 // publics et renvoie 404 pour un flux privé (jamais propriétaire de "").
-func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, contentType string, lookup func(id string) (string, bool), unavailable error) {
+func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, contentType string, lookup func(id string) (string, bool), unavailable error) {
 	requesterID, _ := auth.UserIDFromContext(r.Context()) // "" si anonyme (pas de JWT)
 	id := r.PathValue("id")
+
+	// Chaque lecture HLS alimente les métriques par flux (STR-166, ADR 022) :
+	// l'estimation du nombre d'auditeurs dérive du débit de requêtes de
+	// playlist, le taux d'erreurs .ts du status rendu à l'auditeur.
+	sr := &hlsStatusRecorder{ResponseWriter: w}
+	w = sr
+	defer func() { h.metrics.RecordHLSRequest(id, kind, sr.statusText()) }()
 
 	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
 		httpjson.WriteError(w, r, err)

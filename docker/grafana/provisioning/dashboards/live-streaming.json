@@ -1,0 +1,107 @@
+{
+  "uid": "streampulse-live",
+  "title": "StreamPulse — Live Streaming",
+  "tags": ["streampulse", "live", "str-166"],
+  "schemaVersion": 39,
+  "editable": false,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Flux en direct",
+      "description": "Lu à chaque scrape depuis le registre de sessions : reflète l'état réel, pas un compteur incrémenté.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "streampulse_live_streams_active" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Auditeurs (estimé, total)",
+      "description": "HLS est sans connexion persistante : le nombre d'auditeurs est estimé à partir du débit de requêtes de playlist, chaque client en demandant une par segment (~10 s). Voir ADR 022.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "round(sum(rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Latence HLS p95",
+      "description": "Temps de service des manifestes et segments (histogramme HTTP, ADR 019).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path=~\"/api/streams/\\\\{id\\\\}/(playlist.m3u8|segments/\\\\{segment\\\\})\"}[5m])))" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Taux d'erreurs segments .ts",
+      "description": "Part des requêtes de segments qui n'aboutissent pas (404 fenêtre glissante, 503 capacité atteinte, 5xx).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 4, "x": 12, "y": 0 },
+      "targets": [
+        { "refId": "A", "expr": "(sum(rate(streampulse_hls_requests_total{kind=\"segment\",status!=\"200\"}[5m])) or vector(0)) / clamp_min(sum(rate(streampulse_hls_requests_total{kind=\"segment\"}[5m])), 0.001)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.02 }, { "color": "red", "value": 0.1 } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Auditeurs estimés par flux",
+      "description": "rate(playlist) × durée cible de segment, par stream_id. Les séries disparaissent à l'arrêt du flux.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "refId": "A", "expr": "round(sum by (stream_id) (rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)", "legendFormat": "{{stream_id}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Requêtes HLS par seconde (playlist / segment)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (kind) (rate(streampulse_hls_requests_total[5m]))", "legendFormat": "{{kind}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Erreurs HLS par seconde et par status",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate(streampulse_hls_requests_total{status!=\"200\"}[5m]))", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    }
+  ]
+}

@@ -45,21 +45,50 @@ type LiveSessions struct {
 	base   context.Context
 	newSeg func() (*hlsSegmenter, error) // injectable (tests sans ffmpeg)
 
-	mu    sync.Mutex
-	byID  map[string]*session // id public -> session (SSE, lecture HLS, stop)
-	byKey map[string]*session // stream_key secret -> session (ingest)
-	wg    sync.WaitGroup
+	mu      sync.Mutex
+	byID    map[string]*session // id public -> session (SSE, lecture HLS, stop)
+	byKey   map[string]*session // stream_key secret -> session (ingest)
+	wg      sync.WaitGroup
+	metrics MetricsRecorder // jamais nil : noopRecorder par défaut (STR-166)
 }
 
 // NewLiveSessions construit le registre. base est le context de cycle de vie du
 // serveur : son annulation (shutdown) propage l'arrêt à toutes les sessions.
 func NewLiveSessions(base context.Context) *LiveSessions {
 	return &LiveSessions{
-		base:   base,
-		newSeg: newHLSSegmenter,
-		byID:   make(map[string]*session),
-		byKey:  make(map[string]*session),
+		base:    base,
+		newSeg:  newHLSSegmenter,
+		byID:    make(map[string]*session),
+		byKey:   make(map[string]*session),
+		metrics: noopRecorder{},
 	}
+}
+
+// SetMetrics injecte le collecteur de métriques métier (STR-166). Appelé
+// une fois au démarrage, avant que le serveur HTTP n'accepte des requêtes.
+func (ls *LiveSessions) SetMetrics(rec MetricsRecorder) {
+	if rec == nil {
+		rec = noopRecorder{}
+	}
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.metrics = rec
+}
+
+// ActiveCount retourne le nombre de sessions live en cours. Lu à chaque
+// scrape Prometheus via un GaugeFunc : la gauge dérive de l'état réel du
+// registre, elle ne peut pas diverger (ADR 022).
+func (ls *LiveSessions) ActiveCount() int {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return len(ls.byID)
+}
+
+// recorder retourne le collecteur courant sous verrou.
+func (ls *LiveSessions) recorder() MetricsRecorder {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return ls.metrics
 }
 
 // Start enregistre une session pour streamID (indexée aussi par streamKey pour
@@ -148,6 +177,7 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 		}
 	}
 	ls.mu.Unlock()
+	ls.recorder().ForgetStream(streamID)
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
 }
@@ -168,6 +198,7 @@ func (ls *LiveSessions) Stop(streamID string) {
 	if !ok {
 		return
 	}
+	ls.recorder().ForgetStream(streamID)
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
 	s.cancel()
@@ -289,7 +320,9 @@ func (ls *LiveSessions) StopAll() {
 	ls.byKey = make(map[string]*session)
 	ls.mu.Unlock()
 
-	for _, s := range sessions {
+	rec := ls.recorder()
+	for id, s := range sessions {
+		rec.ForgetStream(id)
 		s.closeSubscribers()
 		s.cancel()
 	}
