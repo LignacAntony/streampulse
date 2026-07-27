@@ -5,8 +5,32 @@ import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/features/streams/domain/entities/live_stream.dart';
 import 'package:streampulse/features/streams/domain/repositories/stream_repository.dart';
+import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 import 'package:streampulse/features/streams/presentation/screens/stream_player_screen.dart';
+
+/// Contrôleur de lecture fake (sans just_audio) : le player n'est pas testé ici,
+/// on isole la logique de favoris. État inerte (idle), méthodes no-op.
+class _FakePlaybackController extends PlaybackController {
+  @override
+  PlaybackStatus get status => PlaybackStatus.idle;
+  @override
+  bool get isPlaying => false;
+  @override
+  bool get isBusy => false;
+  @override
+  bool get hasError => false;
+  @override
+  bool get isEnded => false;
+  @override
+  double get volume => 1;
+  @override
+  Future<void> load(String streamId) async {}
+  @override
+  Future<void> togglePlayPause() async {}
+  @override
+  Future<void> setVolume(double value) async {}
+}
 
 /// Flux « réel » tel que renvoyé par le serveur (métadonnées complètes),
 /// par opposition au placeholder créé en arrivée deep-link.
@@ -66,7 +90,11 @@ Widget _harness({
     value: controller,
     child: ToastificationWrapper(
       child: MaterialApp(
-        home: StreamPlayerScreen(streamId: streamId, stream: stream),
+        home: StreamPlayerScreen(
+          streamId: streamId,
+          stream: stream,
+          controller: _FakePlaybackController(),
+        ),
       ),
     ),
   );
