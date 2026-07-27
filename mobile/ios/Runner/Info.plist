@@ -66,6 +66,11 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>StreamPulse utilise le microphone pour diffuser des flux audio en direct.</string>
 	<key>UILaunchStoryboardName</key>
