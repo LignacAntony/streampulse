@@ -57,6 +57,9 @@ type Stream struct {
 	EndedAt     *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// BroadcasterUsername : nom du diffuseur, renseigné seulement pour la liste
+	// publique (ListPublicLive) ; vide ailleurs.
+	BroadcasterUsername string
 }
 
 // CreateStreamInput porte les champs fournis par le diffuseur à la création.

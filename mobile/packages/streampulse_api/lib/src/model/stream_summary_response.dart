@@ -33,6 +33,8 @@ class StreamSummaryResponse {
     required this.startedAt,
 
     required this.createdAt,
+
+    required this.broadcasterUsername,
   });
 
   @JsonKey(name: r'id', required: true, includeIfNull: false)
@@ -62,6 +64,10 @@ class StreamSummaryResponse {
   @JsonKey(name: r'created_at', required: true, includeIfNull: false)
   final DateTime createdAt;
 
+  /// Username of the broadcaster (display name in the listener UI).
+  @JsonKey(name: r'broadcaster_username', required: true, includeIfNull: false)
+  final String broadcasterUsername;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -74,7 +80,8 @@ class StreamSummaryResponse {
           other.status == status &&
           other.isPublic == isPublic &&
           other.startedAt == startedAt &&
-          other.createdAt == createdAt;
+          other.createdAt == createdAt &&
+          other.broadcasterUsername == broadcasterUsername;
 
   @override
   int get hashCode =>
@@ -86,7 +93,8 @@ class StreamSummaryResponse {
       status.hashCode +
       isPublic.hashCode +
       (startedAt == null ? 0 : startedAt.hashCode) +
-      createdAt.hashCode;
+      createdAt.hashCode +
+      broadcasterUsername.hashCode;
 
   factory StreamSummaryResponse.fromJson(Map<String, dynamic> json) =>
       _$StreamSummaryResponseFromJson(json);

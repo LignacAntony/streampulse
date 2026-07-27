@@ -170,28 +170,30 @@ func (h *Handler) toResponse(s Stream, includeSecrets bool) streamResponse {
 // streamSummaryResponse est la vue publique d'un flux : aucun secret
 // (stream_key, stream_source_url) n'y figure.
 type streamSummaryResponse struct {
-	ID          string     `json:"id"`
-	UserID      string     `json:"user_id"`
-	Title       string     `json:"title"`
-	Description *string    `json:"description"`
-	Category    *string    `json:"category"`
-	Status      string     `json:"status"`
-	IsPublic    bool       `json:"is_public"`
-	StartedAt   *time.Time `json:"started_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID                  string     `json:"id"`
+	UserID              string     `json:"user_id"`
+	Title               string     `json:"title"`
+	Description         *string    `json:"description"`
+	Category            *string    `json:"category"`
+	Status              string     `json:"status"`
+	IsPublic            bool       `json:"is_public"`
+	StartedAt           *time.Time `json:"started_at"`
+	CreatedAt           time.Time  `json:"created_at"`
+	BroadcasterUsername string     `json:"broadcaster_username"`
 }
 
 func toSummary(s Stream) streamSummaryResponse {
 	return streamSummaryResponse{
-		ID:          s.ID,
-		UserID:      s.UserID,
-		Title:       s.Title,
-		Description: s.Description,
-		Category:    s.Category,
-		Status:      s.Status,
-		IsPublic:    s.IsPublic,
-		StartedAt:   s.StartedAt,
-		CreatedAt:   s.CreatedAt,
+		ID:                  s.ID,
+		UserID:              s.UserID,
+		Title:               s.Title,
+		Description:         s.Description,
+		Category:            s.Category,
+		Status:              s.Status,
+		IsPublic:            s.IsPublic,
+		StartedAt:           s.StartedAt,
+		CreatedAt:           s.CreatedAt,
+		BroadcasterUsername: s.BroadcasterUsername,
 	}
 }
 

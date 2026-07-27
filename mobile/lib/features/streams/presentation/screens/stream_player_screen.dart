@@ -81,7 +81,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final title = widget.stream?.title ?? 'Flux';
-    final subtitle = widget.stream?.category;
+    final subtitle = widget.stream?.broadcasterName; // nom du diffuseur (design)
     final listeners = widget.stream?.listenerCount;
     final isFavorited =
         context.watch<FavoritesController>().isFavorited(widget.streamId);
@@ -232,27 +232,18 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     );
   }
 
-  /// Ligne d'état : chargement, erreur (flux indisponible / terminé), ou LIVE.
+  /// Ligne d'état : reconnexion (STR-118), chargement, erreur (flux indisponible
+  /// / terminé), ou lecture/pause.
   Widget _statusLine(ColorScheme colors, TextTheme text) {
+    if (_audio.isReconnecting) {
+      return _busyLine(colors, text, 'Reconnexion…');
+    }
     if (_audio.isBusy) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary),
-          ),
-          const SizedBox(width: 10),
-          Text('Chargement…',
-              style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
-        ],
-      );
+      return _busyLine(colors, text, 'Chargement…');
     }
     if (_audio.hasError || _audio.isEnded) {
-      final msg = _audio.isEnded
-          ? 'Le direct est terminé'
-          : 'Lecture indisponible';
+      final msg =
+          _audio.isEnded ? 'Le direct est terminé' : 'Flux indisponible';
       return Text(
         msg,
         textAlign: TextAlign.center,
@@ -262,6 +253,23 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     return Text(
       _audio.isPlaying ? 'À l’écoute' : 'En pause',
       style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+    );
+  }
+
+  Widget _busyLine(ColorScheme colors, TextTheme text, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 14,
+          height: 14,
+          child:
+              CircularProgressIndicator(strokeWidth: 2, color: colors.primary),
+        ),
+        const SizedBox(width: 10),
+        Text(label,
+            style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
+      ],
     );
   }
 
@@ -305,7 +313,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
 
   Widget _playPauseButton(ColorScheme colors) {
     final Widget icon;
-    if (_audio.isBusy) {
+    if (_audio.isBusy || _audio.isReconnecting) {
       icon = SizedBox(
         width: 28,
         height: 28,

@@ -70,17 +70,18 @@ func (r *pgRepository) ListPublicLive(ctx context.Context, limit, offset int32) 
 	streams := make([]Stream, 0, len(rows))
 	for _, row := range rows {
 		streams = append(streams, Stream{
-			ID:          row.ID,
-			UserID:      row.UserID,
-			Title:       row.Title,
-			Description: textValue(row.Description),
-			Category:    textValue(row.Category),
-			Status:      row.Status,
-			IsPublic:    row.IsPublic,
-			StartedAt:   row.StartedAt,
-			EndedAt:     row.EndedAt,
-			CreatedAt:   row.CreatedAt,
-			UpdatedAt:   row.UpdatedAt,
+			ID:                  row.ID,
+			UserID:              row.UserID,
+			Title:               row.Title,
+			Description:         textValue(row.Description),
+			Category:            textValue(row.Category),
+			Status:              row.Status,
+			IsPublic:            row.IsPublic,
+			StartedAt:           row.StartedAt,
+			EndedAt:             row.EndedAt,
+			CreatedAt:           row.CreatedAt,
+			UpdatedAt:           row.UpdatedAt,
+			BroadcasterUsername: row.BroadcasterUsername,
 		})
 	}
 	return streams, nil

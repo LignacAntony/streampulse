@@ -9,6 +9,7 @@ extension StreamSummaryResponseMapper on StreamSummaryResponse {
         startedAt: startedAt,
         description: description,
         category: category,
+        broadcasterName: broadcasterUsername,
         listenerCount: null,
         status: status.value,
       );
