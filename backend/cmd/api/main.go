@@ -117,6 +117,14 @@ func run() error {
 	streamingSvc := streaming.NewService(streamingRepo, streamingKeys, streamingSessions)
 	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL, streamingSessions)
 
+	// Métriques métier du streaming (STR-166, ADR 022) : le domaine reçoit
+	// l'implémentation Prometheus via son interface étroite, et la gauge des
+	// directs lit l'état réel du registre de sessions à chaque scrape.
+	streamingMetrics := observability.NewStreamingMetrics(prometheus.DefaultRegisterer)
+	streamingSessions.SetMetrics(streamingMetrics)
+	streamingHandler.SetMetrics(streamingMetrics)
+	observability.RegisterLiveStreamsGauge(prometheus.DefaultRegisterer, streamingSessions.ActiveCount)
+
 	// Réconciliation : les sessions LiveSessions sont en mémoire et reparties
 	// vides ; on termine les flux restés 'live' en base (orphelins d'un précédent
 	// process) pour éviter une divergence DB/registre.

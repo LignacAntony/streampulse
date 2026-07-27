@@ -181,6 +181,13 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 - `/metrics` n'est **pas** exposé publiquement : bloqué par Caddy en prod (403), scrape interne uniquement.
 - Dashboards provisionnés (non éditables en UI) : `docker/grafana/provisioning/dashboards/` — la vérité vit dans git.
 
+### Métriques métier du streaming (STR-166, ADR 022)
+
+- Le domaine déclare `streaming.MetricsRecorder` (ISP) ; l'implémentation Prometheus vit dans `observability.NewStreamingMetrics` et est injectée dans `main.go` via `SetMetrics` (sessions + handler).
+- `streampulse_hls_requests_total{stream_id,kind,status}` : seule famille portant un `stream_id` — les séries sont **supprimées à l'arrêt du flux** (`ForgetStream` sur `Stop`/`reap`/`StopAll`), sans quoi la cardinalité croîtrait à chaque diffusion.
+- `streampulse_live_streams_active` : `GaugeFunc` branché sur `LiveSessions.ActiveCount()` — lit l'état réel à chaque scrape, aucune dérive possible.
+- Auditeurs = **estimation** `rate(playlist) × durée de segment` (HLS est sans connexion persistante) ; latence et erreurs viennent des métriques HTTP de l'ADR 019.
+
 ### Traces OpenTelemetry (STR-164, ADR 020)
 
 - `observability.NewTracer(ctx, cfg)` : OTLP/HTTP vers Tempo, noop si `OTEL_EXPORTER_OTLP_ENDPOINT` vide (`go run` local). Shutdown flush déféré dans `main.go`.
