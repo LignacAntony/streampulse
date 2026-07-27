@@ -51,11 +51,23 @@ comptage exact ne se justifierait que pour de la facturation ou des quotas.
 ### 3. Cardinalité de `stream_id` : bornée par l'oubli, pas par l'absence
 
 Le « par flux » du ticket impose un label à valeurs non bornées dans l'absolu.
-La croissance est contenue en supprimant les séries d'un flux à son arrêt
-(`ForgetStream` → `DeletePartialMatch`), sur **tous** les chemins de sortie :
-`Stop` (arrêt explicite), `reap` (ffmpeg meurt seul) et `StopAll` (arrêt du
-serveur). La cardinalité *active* suit donc le nombre de directs simultanés —
-une poignée de séries — et le label reste cantonné à cette seule famille.
+Trois garde-fous, dont deux ajoutés en revue de PR :
+
+1. **Seuls les flux réellement en direct sont comptés** : l'enregistrement
+   n'a lieu qu'après un lookup de session réussi. Compter plus tôt laisserait
+   n'importe quel client créer une série permanente par identifiant inventé
+   (`GET /api/streams/<uuid aléatoire>/playlist.m3u8`) — aucune session n'ayant
+   existé, aucun `ForgetStream` ne serait jamais appelé : cardinalité illimitée
+   et DoS mémoire.
+2. **Les séries sont supprimées à l'arrêt** (`ForgetStream` →
+   `DeletePartialMatch`) sur **tous** les chemins de sortie : `Stop` (arrêt
+   explicite), `reap` (ffmpeg meurt seul), `StopAll` (arrêt du serveur).
+3. **Un délai de drain** (30 s) rejoue la suppression : une requête encore en
+   vol au moment de l'arrêt enregistre sa métrique juste après `ForgetStream`
+   et ressusciterait sinon une série orpheline.
+
+La cardinalité *active* suit donc le nombre de directs simultanés — une
+poignée de séries — et le label reste cantonné à cette seule famille.
 
 ### 4. Architecture : interface étroite pour les événements, GaugeFunc pour l'état
 
@@ -77,7 +89,20 @@ une poignée de séries — et le label reste cantonné à cette seule famille.
 `http.ServeFile` écrit l'en-tête lui-même : le handler ne connaîtrait pas le
 code rendu. Un `hlsStatusRecorder` (même principe que le `statusRecorder` des
 middlewares) le capture pour le label `status`, ce qui rend le taux d'erreurs
-`.ts` fidèle — 404 de fenêtre glissante et 503 de capacité (STR-88) inclus.
+`.ts` fidèle aux 404 de fenêtre glissante.
+
+Deux précisions issues de la revue :
+
+- **Les 503 de capacité n'y figurent pas.** Le limiteur `HLS_MAX_CONCURRENT`
+  (STR-88) enveloppe le handler et répond avant lui : `serveHLSFile` ne
+  s'exécute pas. Ces rejets sont de toute façon *globaux* (une limite d'in-flight
+  totale, pas par flux) et se lisent dans les métriques HTTP de l'ADR 019 — le
+  dashboard leur consacre un panel dédié plutôt que de les faire remonter
+  artificiellement dans une série par flux.
+- **206 et 304 ne sont pas des erreurs.** `http.ServeFile` répond `206 Partial
+  Content` aux requêtes `Range` (courantes chez AVPlayer/ExoPlayer) et `304 Not
+  Modified` aux requêtes conditionnelles : le taux d'erreurs ne retient que
+  `4xx|5xx`, sinon un flux parfaitement sain afficherait un taux d'erreurs élevé.
 
 ## Conséquences
 

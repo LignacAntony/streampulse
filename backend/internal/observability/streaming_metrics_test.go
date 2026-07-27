@@ -3,6 +3,7 @@ package observability
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -96,5 +97,31 @@ func trimFloat(f float64) string {
 	default:
 		t := int(f)
 		return string(rune('0' + t))
+	}
+}
+
+func TestStreamingMetrics_ForgetStreamDrainsInFlightRequests(t *testing.T) {
+	// Une requête déjà en cours de service quand le flux s'arrête enregistre
+	// sa métrique APRÈS ForgetStream : sans délai de drain, elle recréerait
+	// une série que plus aucun arrêt ne viendrait nettoyer (revue PR #272).
+	reg := prometheus.NewRegistry()
+	m := NewStreamingMetrics(reg)
+	m.drainDelay = 60 * time.Millisecond
+
+	m.RecordHLSRequest("stream-a", "playlist", "200")
+	m.ForgetStream("stream-a")
+
+	// Requête en vol, terminée juste après l'arrêt.
+	m.RecordHLSRequest("stream-a", "segment", "200")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if testutil.CollectAndCount(m.requests) == 0 {
+			return // séries drainées, y compris celle de la requête en vol
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("séries encore présentes après le drain: %d", testutil.CollectAndCount(m.requests))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

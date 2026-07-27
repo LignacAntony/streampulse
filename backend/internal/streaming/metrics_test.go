@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
 // stubRecorder capture les appels du domaine vers l'infra métriques.
@@ -135,5 +137,75 @@ func TestHandler_RecordsHLSRequests(t *testing.T) {
 	// Le segment absent alimente le taux d'erreurs .ts du dashboard.
 	if !strings.HasPrefix(got[1], "sid|segment|") || strings.HasSuffix(got[1], "|200") {
 		t.Errorf("segment absent compté %q, want sid|segment|<4xx/5xx>", got[1])
+	}
+}
+
+func TestHandler_DoesNotRecordUnknownStreams(t *testing.T) {
+	// Un client anonyme peut marteler /api/streams/<uuid aléatoire>/playlist.m3u8 :
+	// si chaque id inventé créait une série, aucune ForgetStream ne la
+	// nettoierait jamais (aucune session n'a existé) → cardinalité illimitée,
+	// donc DoS mémoire sur Prometheus et l'API (revue PR #272).
+	rec := &stubRecorder{}
+	ls := sessionsWithFakeSeg(t)
+	ls.SetMetrics(rec)
+	h := NewHandler(&stubService{getErr: apperror.NotFound("stream not found")}, testIngestURL, ls)
+	h.SetMetrics(rec)
+
+	for _, id := range []string{"id-invente-1", "id-invente-2", "id-invente-3"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/streams/"+id+"/playlist.m3u8", nil)
+		req.SetPathValue("id", id)
+		h.Playlist(httptest.NewRecorder(), req)
+	}
+
+	rec.mu.Lock()
+	got := append([]string(nil), rec.requests...)
+	rec.mu.Unlock()
+	if len(got) != 0 {
+		t.Fatalf("des flux inexistants ont été comptés: %v", got)
+	}
+}
+
+func TestHandler_DoesNotRecordStreamsThatAreNotLive(t *testing.T) {
+	// Flux visible en base mais sans session : aucune série ne doit naître,
+	// elle ne serait jamais nettoyée non plus.
+	rec := &stubRecorder{}
+	ls := sessionsWithFakeSeg(t) // aucun Start
+	ls.SetMetrics(rec)
+	h := NewHandler(&stubService{getRet: Stream{ID: "idle", UserID: "owner", IsPublic: true}}, testIngestURL, ls)
+	h.SetMetrics(rec)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/idle/playlist.m3u8", nil)
+	req.SetPathValue("id", "idle")
+	h.Playlist(httptest.NewRecorder(), req)
+
+	rec.mu.Lock()
+	got := append([]string(nil), rec.requests...)
+	rec.mu.Unlock()
+	if len(got) != 0 {
+		t.Fatalf("un flux non live a été compté: %v", got)
+	}
+}
+
+func TestHandler_RecordsErrorsOfLiveStreams(t *testing.T) {
+	// En revanche, une erreur survenue sur un flux BIEN live doit être
+	// comptée : c'est le taux d'erreurs .ts du dashboard (fenêtre glissante).
+	rec := &stubRecorder{}
+	ls := sessionsWithFakeSeg(t)
+	ls.SetMetrics(rec)
+	ls.Start("live", "KEY-live")
+	t.Cleanup(ls.StopAll)
+	h := NewHandler(&stubService{getRet: Stream{ID: "live", UserID: "owner", IsPublic: true}}, testIngestURL, ls)
+	h.SetMetrics(rec)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/live/segments/seg_00042.ts", nil)
+	req.SetPathValue("id", "live")
+	req.SetPathValue("segment", "seg_00042.ts")
+	h.Segment(httptest.NewRecorder(), req)
+
+	rec.mu.Lock()
+	got := append([]string(nil), rec.requests...)
+	rec.mu.Unlock()
+	if len(got) != 1 || !strings.HasPrefix(got[0], "live|segment|4") {
+		t.Fatalf("erreur d'un flux live = %v, want [live|segment|404]", got)
 	}
 }

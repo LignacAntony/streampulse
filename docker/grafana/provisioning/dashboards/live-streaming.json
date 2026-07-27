@@ -1,11 +1,18 @@
 {
   "uid": "streampulse-live",
   "title": "StreamPulse — Live Streaming",
-  "tags": ["streampulse", "live", "str-166"],
+  "tags": [
+    "streampulse",
+    "live",
+    "str-166"
+  ],
   "schemaVersion": 39,
   "editable": false,
   "timezone": "browser",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "refresh": "15s",
   "panels": [
     {
@@ -13,15 +20,38 @@
       "type": "stat",
       "title": "Flux en direct",
       "description": "Lu à chaque scrape depuis le registre de sessions : reflète l'état réel, pas un compteur incrémenté.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
-        { "refId": "A", "expr": "streampulse_live_streams_active" }
+        {
+          "refId": "A",
+          "expr": "streampulse_live_streams_active"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null }, { "color": "green", "value": 1 } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -31,40 +61,101 @@
       "type": "stat",
       "title": "Auditeurs (estimé, total)",
       "description": "HLS est sans connexion persistante : le nombre d'auditeurs est estimé à partir du débit de requêtes de playlist, chaque client en demandant une par segment (~10 s). Voir ADR 022.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
       "targets": [
-        { "refId": "A", "expr": "round(sum(rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)" }
+        {
+          "refId": "A",
+          "expr": "round(sum(rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Latence HLS p95",
       "description": "Temps de service des manifestes et segments (histogramme HTTP, ADR 019).",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 0 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path=~\"/api/streams/\\\\{id\\\\}/(playlist.m3u8|segments/\\\\{segment\\\\})\"}[5m])))" }
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path=~\"/api/streams/\\\\{id\\\\}/(playlist.m3u8|segments/\\\\{segment\\\\})\"}[5m])))"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      }
     },
     {
       "id": 4,
       "type": "stat",
       "title": "Taux d'erreurs segments .ts",
-      "description": "Part des requêtes de segments qui n'aboutissent pas (404 fenêtre glissante, 503 capacité atteinte, 5xx).",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 12, "y": 0 },
+      "description": "Part des requêtes de segments en échec (4xx/5xx). 206 Partial Content (requêtes Range des players) et 304 Not Modified sont des réponses normales, exclues du numérateur.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
-        { "refId": "A", "expr": "(sum(rate(streampulse_hls_requests_total{kind=\"segment\",status!=\"200\"}[5m])) or vector(0)) / clamp_min(sum(rate(streampulse_hls_requests_total{kind=\"segment\"}[5m])), 0.001)" }
+        {
+          "refId": "A",
+          "expr": "(sum(rate(streampulse_hls_requests_total{kind=\"segment\",status=~\"4..|5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(streampulse_hls_requests_total{kind=\"segment\"}[5m])), 0.001)"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
           "decimals": 2,
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.02 }, { "color": "red", "value": 0.1 } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.02
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -74,34 +165,115 @@
       "type": "timeseries",
       "title": "Auditeurs estimés par flux",
       "description": "rate(playlist) × durée cible de segment, par stream_id. Les séries disparaissent à l'arrêt du flux.",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
       "targets": [
-        { "refId": "A", "expr": "round(sum by (stream_id) (rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)", "legendFormat": "{{stream_id}}" }
+        {
+          "refId": "A",
+          "expr": "round(sum by (stream_id) (rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)",
+          "legendFormat": "{{stream_id}}"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Requêtes HLS par seconde (playlist / segment)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (kind) (rate(streampulse_hls_requests_total[5m]))", "legendFormat": "{{kind}}" }
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (rate(streampulse_hls_requests_total[5m]))",
+          "legendFormat": "{{kind}}"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Erreurs HLS par seconde et par status",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
+      "title": "Erreurs HLS par seconde et par status (4xx/5xx)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (status) (rate(streampulse_hls_requests_total{status!=\"200\"}[5m]))", "legendFormat": "{{status}}" }
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(streampulse_hls_requests_total{status=~\"4..|5..\"}[5m]))",
+          "legendFormat": "{{status}}"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Rejets de capacité HLS (503)",
+      "description": "Le limiteur HLS_MAX_CONCURRENT (STR-88) répond avant le handler : ces rejets ne portent pas de stream_id et se lisent dans les métriques HTTP (ADR 019). Un plateau non nul signale une capacité atteinte.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (path) (rate(http_requests_total{path=~\"/api/streams/\\\\{id\\\\}/(playlist.m3u8|segments/\\\\{segment\\\\})\",status=\"503\"}[5m]))",
+          "legendFormat": "{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     }
   ]
 }

@@ -589,13 +589,6 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, con
 	requesterID, _ := auth.UserIDFromContext(r.Context()) // "" si anonyme (pas de JWT)
 	id := r.PathValue("id")
 
-	// Chaque lecture HLS alimente les métriques par flux (STR-166, ADR 022) :
-	// l'estimation du nombre d'auditeurs dérive du débit de requêtes de
-	// playlist, le taux d'erreurs .ts du status rendu à l'auditeur.
-	sr := &hlsStatusRecorder{ResponseWriter: w}
-	w = sr
-	defer func() { h.metrics.RecordHLSRequest(id, kind, sr.statusText()) }()
-
 	if _, _, err := h.svc.GetStream(r.Context(), id, requesterID); err != nil {
 		httpjson.WriteError(w, r, err)
 		return
@@ -606,6 +599,18 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, con
 		httpjson.WriteError(w, r, unavailable)
 		return
 	}
+
+	// À partir d'ici seulement, le flux a une session vivante : ses séries
+	// seront nettoyées par ForgetStream à l'arrêt. Compter plus tôt laisserait
+	// un client créer une série permanente par identifiant inventé — cardinalité
+	// illimitée et DoS mémoire (revue PR #272).
+	//
+	// Les métriques par flux alimentent l'estimation d'auditeurs (débit de
+	// requêtes de playlist) et le taux d'erreurs .ts, d'où la capture du status
+	// réellement rendu — http.ServeFile écrit l'en-tête lui-même.
+	sr := &hlsStatusRecorder{ResponseWriter: w}
+	w = sr
+	defer func() { h.metrics.RecordHLSRequest(id, kind, sr.statusText()) }()
 
 	// Le fichier peut ne pas exister encore (fenêtre entre le start et le premier
 	// segment, ou push dont ffmpeg n'a encore rien produit) ou avoir été retiré
