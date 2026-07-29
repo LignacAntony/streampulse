@@ -22,7 +22,7 @@ class ApiConstants {
   // Streams
   static const String streams = '/api/streams';
 
-  /// URL du manifeste HLS d'un flux (lecture publique, ADR 022). Passée telle
+  /// URL du manifeste HLS d'un flux (lecture publique, ADR 023). Passée telle
   /// quelle au player natif via `AudioSource.uri` — sans en-tête d'auth.
   static String hlsPlaylist(String streamId) =>
       '$baseUrl/api/streams/$streamId/playlist.m3u8';

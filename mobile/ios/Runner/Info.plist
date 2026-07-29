@@ -66,6 +66,10 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Autorise le HTTP en clair vers le réseau local (localhost / LAN) en dev :
+	     l'API et le flux HLS tournent sur http://<ip-locale>:8080 sans TLS.
+	     N'ouvre PAS l'HTTP arbitraire vers Internet (NSAllowsArbitraryLoads reste
+	     absent) ; en prod l'API est servie en HTTPS (api.streampulse.win). -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

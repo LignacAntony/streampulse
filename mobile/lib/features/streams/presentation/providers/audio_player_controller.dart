@@ -37,14 +37,21 @@ abstract class PlaybackController extends ChangeNotifier {
   Future<void> setVolume(double value);
 }
 
-/// Contrôleur du lecteur audio HLS (STR-116/118, cf. [ADR 022]). Enveloppe un
+/// Sonde l'état d'un flux à partir de son manifeste HLS **public** : renvoie
+/// `true` si le direct est terminé (manifeste 404/409), `false` sinon (200 ou
+/// erreur réseau indéterminée). Injectée dans [AudioPlayerController] pour
+/// distinguer « le direct est terminé » d'une simple coupure réseau (STR-118).
+typedef StreamEndedProbe = Future<bool> Function(String streamId);
+
+/// Contrôleur du lecteur audio HLS (STR-116/118, cf. [ADR 023]). Enveloppe un
 /// [AudioPlayer] just_audio branché sur le manifeste **public** d'un flux et
 /// expose un état simple + play/pause/volume. Gère les erreurs (STR-118) par une
 /// **reconnexion automatique bornée** (perte réseau) puis un état d'erreur clair
 /// (flux indisponible). Scopé à l'écran player : appeler [dispose] à la sortie.
 class AudioPlayerController extends PlaybackController {
-  AudioPlayerController({AudioPlayer? player})
-      : _player = player ?? AudioPlayer() {
+  AudioPlayerController({AudioPlayer? player, StreamEndedProbe? isStreamEnded})
+      : _player = player ?? AudioPlayer(),
+        _isStreamEnded = isStreamEnded {
     _stateSub = _player.playerStateStream.listen(_onPlayerState);
     // Les erreurs de lecture (perte réseau, flux terminé → manifeste 404/409)
     // arrivent via le flux d'événements, pas via playerStateStream.
@@ -58,12 +65,15 @@ class AudioPlayerController extends PlaybackController {
   static const int _maxAutoRetries = 3;
 
   final AudioPlayer _player;
+  final StreamEndedProbe? _isStreamEnded;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<PlaybackEvent>? _eventSub;
   Timer? _retryTimer;
 
   String? _streamId;
   int _retryCount = 0;
+  bool _recovering = false;
+  bool _disposed = false;
   PlaybackStatus _status = PlaybackStatus.idle;
   double _volume = 1;
   Object? _error;
@@ -97,6 +107,7 @@ class AudioPlayerController extends PlaybackController {
   /// (Re)démarre effectivement la lecture du flux — partagé par [load], le
   /// retry automatique et [retry] (manuel). Ne touche pas au compteur.
   Future<void> _start(String streamId) async {
+    if (_disposed) return;
     _retryTimer?.cancel();
     _error = null;
     _setStatus(PlaybackStatus.loading);
@@ -104,6 +115,7 @@ class AudioPlayerController extends PlaybackController {
       await _player.setAudioSource(
         AudioSource.uri(Uri.parse(ApiConstants.hlsPlaylist(streamId))),
       );
+      if (_disposed) return;
       await _player.setVolume(_volume);
       await _player.play();
     } catch (e) {
@@ -167,33 +179,63 @@ class AudioPlayerController extends PlaybackController {
     }
   }
 
-  /// Échec de lecture : tente une reconnexion automatique avec backoff (perte
-  /// réseau), sinon bascule en erreur définitive (flux indisponible). STR-118.
+  /// Échec de lecture : déclenche la reprise (au plus une à la fois). STR-118.
   void _fail(Object e) {
+    if (_disposed) return;
     _error = e;
     if (kDebugMode) {
       debugPrint('AudioPlayerController: erreur de lecture: $e');
     }
-    final id = _streamId;
-    if (id != null && _retryCount < _maxAutoRetries) {
-      _retryCount++;
-      _setStatus(PlaybackStatus.reconnecting);
-      final delay = Duration(seconds: 1 << (_retryCount - 1)); // 1, 2, 4 s
-      _retryTimer?.cancel();
-      _retryTimer = Timer(delay, () => _start(id));
-    } else {
-      _setStatus(PlaybackStatus.error);
+    _recover();
+  }
+
+  /// Décide de la suite après un échec : d'abord distinguer une **fin de direct**
+  /// (manifeste 404/409) d'une coupure réseau via la sonde, puis, si le flux est
+  /// toujours là, tenter une **reconnexion automatique bornée** avec backoff
+  /// (perte réseau), sinon basculer en erreur définitive (flux indisponible).
+  Future<void> _recover() async {
+    if (_recovering) return; // une seule reprise à la fois (échecs en rafale)
+    _recovering = true;
+    try {
+      final id = _streamId;
+      if (id == null) {
+        _setStatus(PlaybackStatus.error);
+        return;
+      }
+      // Fin de direct : le manifeste n'est plus servi (404/409) → pas de retry.
+      final probe = _isStreamEnded;
+      if (probe != null && await probe(id)) {
+        if (_disposed) return;
+        _setStatus(PlaybackStatus.ended);
+        return;
+      }
+      if (_disposed) return;
+      // Coupure réseau : reconnexion automatique bornée avec backoff (1, 2, 4 s).
+      if (_retryCount < _maxAutoRetries) {
+        _retryCount++;
+        _setStatus(PlaybackStatus.reconnecting);
+        final delay = Duration(seconds: 1 << (_retryCount - 1));
+        _retryTimer?.cancel();
+        _retryTimer = Timer(delay, () {
+          if (!_disposed) _start(id);
+        });
+      } else {
+        _setStatus(PlaybackStatus.error);
+      }
+    } finally {
+      _recovering = false;
     }
   }
 
   void _setStatus(PlaybackStatus status) {
-    if (_status == status) return;
+    if (_disposed || _status == status) return;
     _status = status;
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _retryTimer?.cancel();
     _stateSub?.cancel();
     _eventSub?.cancel();

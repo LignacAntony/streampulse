@@ -4,10 +4,11 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/live_stream.dart';
+import '../../domain/repositories/stream_repository.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
 
-/// Lecteur audio HLS plein écran (STR-108/117, cf. ADR 022). L'audio est piloté
+/// Lecteur audio HLS plein écran (STR-108/117, cf. ADR 023). L'audio est piloté
 /// par un [AudioPlayerController] scopé à cet écran (créé/détruit ici).
 class StreamPlayerScreen extends StatefulWidget {
   const StreamPlayerScreen({
@@ -36,7 +37,14 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   void initState() {
     super.initState();
     _ownsController = widget.controller == null;
-    _audio = widget.controller ?? AudioPlayerController();
+    // La sonde du manifeste public permet au lecteur de distinguer une fin de
+    // direct (404/409) d'une coupure réseau (STR-118). Injectée via le repo —
+    // uniquement quand l'écran crée le vrai contrôleur (les widget tests en
+    // injectent un fake et ne fournissent pas de StreamRepository).
+    _audio = widget.controller ??
+        AudioPlayerController(
+          isStreamEnded: context.read<StreamRepository>().isStreamEnded,
+        );
     // Démarre la lecture du flux (autoplay). L'état des favoris est chargé pour
     // afficher le bon état initial du cœur.
     _audio.load(widget.streamId);
@@ -109,7 +117,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                         style: text.headlineSmall
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                      if (subtitle != null) ...[
+                      if (subtitle != null && subtitle.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           subtitle,
@@ -150,7 +158,14 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
             tooltip: 'Réduire',
           ),
           const Spacer(),
-          _liveBadge(colors),
+          // Le badge « EN DIRECT » disparaît quand le flux est terminé ou en
+          // erreur (il ne se rebuild pas avec le reste du header → listenable).
+          ListenableBuilder(
+            listenable: _audio,
+            builder: (context, _) => (_audio.isEnded || _audio.hasError)
+                ? const SizedBox.shrink()
+                : _liveBadge(colors),
+          ),
           const Spacer(),
           IconButton(
             onPressed: () {}, // menu contextuel : hors périmètre STR-108

@@ -32,6 +32,9 @@ class _FakeRepository implements StreamRepository {
 
   @override
   Future<void> removeFavorite(String streamId) async {}
+
+  @override
+  Future<bool> isStreamEnded(String streamId) async => false;
 }
 
 class _PagingRepository implements StreamRepository {
@@ -54,6 +57,9 @@ class _PagingRepository implements StreamRepository {
 
   @override
   Future<void> removeFavorite(String streamId) async {}
+
+  @override
+  Future<bool> isStreamEnded(String streamId) async => false;
 }
 
 void main() {
