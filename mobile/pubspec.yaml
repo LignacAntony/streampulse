@@ -46,6 +46,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # Contrôle du temps virtuel dans les tests (timers de backoff — STR-118)
+  fake_async: ^1.3.1
+
   # Génération de code
   build_runner: ^2.4.9
   freezed: ^2.5.2

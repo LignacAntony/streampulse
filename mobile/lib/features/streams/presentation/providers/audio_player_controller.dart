@@ -156,10 +156,14 @@ class AudioPlayerController extends PlaybackController {
   }
 
   void _onPlayerState(PlayerState state) {
-    // Pendant l'attente d'une reconnexion ou en erreur définitive, on n'écrase
-    // pas l'état applicatif avec un état résiduel de l'ancien player.
+    // États applicatifs terminaux/transitoires : on n'écrase pas avec un état
+    // résiduel du player. `ended` en fait partie car _recover() est asynchrone
+    // (attente de la sonde HTTP) et le player peut émettre un `idle` juste après
+    // que la sonde a posé `ended` — sans ce garde, « Le direct est terminé »
+    // régresserait en « En pause » (course, non systématique).
     if (_status == PlaybackStatus.reconnecting ||
-        _status == PlaybackStatus.error) {
+        _status == PlaybackStatus.error ||
+        _status == PlaybackStatus.ended) {
       return;
     }
     switch (state.processingState) {
