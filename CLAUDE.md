@@ -539,7 +539,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `019-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `025-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
