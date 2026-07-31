@@ -1,7 +1,7 @@
 # ADR 024 — Tableau de bord diffuseur : lancer et arrêter un flux
 
 **Date** : 2026-07-30
-**Statut** : Accepté (phase 1 livrée, phase 2 à venir)
+**Statut** : Accepté
 **Ticket** : [STR-153](https://linear.app/streampulse/issue/STR-153) (sous-issues [STR-155](https://linear.app/streampulse/issue/STR-155), [STR-157](https://linear.app/streampulse/issue/STR-157), [STR-159](https://linear.app/streampulse/issue/STR-159))
 
 ---
@@ -130,15 +130,17 @@ tableau de bord.
 ## Livraison en deux phases
 
 La [PR #273](https://github.com/LignacAntony/streampulse/pull/273) (STR-108, lecteur audio HLS)
-était en revue au démarrage de ce travail et modifie `internal/streaming/`, `openapi.yaml` et le
-client Dart généré — exactement les fichiers dont l'endpoint `/api/users/me/streams` a besoin.
+était en revue au démarrage de ce travail et modifiait `internal/streaming/`, `openapi.yaml` et le
+client Dart généré — exactement les fichiers dont l'endpoint `/api/users/me/streams` a besoin. Le
+travail a donc été découpé pour n'entrer en conflit avec aucun d'eux :
 
-- **Phase 1 (cette PR)** : domaine, `BroadcastNotifier`, `SseClient`, écrans et tests. Aucun
-  fichier partagé avec #273. Le repository est un palier temporaire
-  (`PendingBroadcastRepository`) : la liste renvoie vide, les mutations échouent explicitement
-  plutôt que de simuler un succès.
-- **Phase 2 (après merge de #273)** : query `ListStreamsByOwner`, handler, route,
-  `openapi.yaml`, régénération du client Dart, et couche `data/` réelle. Suppression du palier.
+- **Phase 1** : domaine, `BroadcastNotifier`, `SseClient`, écrans et tests, sans un seul fichier
+  partagé avec #273. Le repository était un palier temporaire (`PendingBroadcastRepository`) :
+  liste vide, mutations en échec explicite plutôt qu'un faux succès.
+- **Phase 2** (après le merge de #273) : query `ListStreamsByOwner`, handler `ListMine`, route,
+  `openapi.yaml`, régénération du client Dart, couche `data/` réelle, suppression du palier.
+
+Les deux phases sont livrées.
 
 ## Alternatives écartées
 

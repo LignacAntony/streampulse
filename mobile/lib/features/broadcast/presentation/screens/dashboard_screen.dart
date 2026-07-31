@@ -6,11 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
+import '../../../../core/network/dio_client.dart';
 import '../../../../core/network/sse_client.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
-import '../../data/repositories/pending_broadcast_repository.dart';
+import '../../data/datasources/broadcast_remote_data_source.dart';
+import '../../data/repositories/broadcast_repository_impl.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
 import '../providers/broadcast_notifier.dart';
@@ -23,9 +25,13 @@ import 'create_stream_sheet.dart';
 /// diffuseur pousse son audio vers `stream_source_url` avec l'encodeur de son
 /// choix (ffmpeg, BUTT, Mixxx). Cf. STR-156 pour le push mobile.
 ///
-/// [repository] et [sse] sont injectables pour les tests ; en production, le
-/// repository est le palier temporaire [PendingBroadcastRepository] tant que
-/// la phase 2 (endpoint `GET /api/users/me/streams`) n'est pas livrée.
+/// [repository] et [sse] sont injectables pour les tests ; en production ils
+/// sont construits depuis [DioClient] et [SecureStorage].
+///
+/// `ChangeNotifierProvider` local plutôt que câblage dans `app_providers.dart`
+/// (même choix qu'`AdminStreamsScreen`) : l'état du dashboard n'a aucun usage
+/// hors de cet onglet, et le laisser local garantit que la souscription SSE
+/// meurt avec l'écran.
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key, this.repository, this.sse});
 
@@ -36,7 +42,10 @@ class DashboardScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<BroadcastNotifier>(
       create: (ctx) => BroadcastNotifier(
-        repository ?? const PendingBroadcastRepository(),
+        repository ??
+            BroadcastRepositoryImpl(
+              BroadcastRemoteDataSource(ctx.read<DioClient>().streamingApi),
+            ),
         sse: sse ?? SseClient(ctx.read<SecureStorage>()),
       ),
       child: const _DashboardBody(),
