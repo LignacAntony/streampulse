@@ -29,4 +29,8 @@ class StreamRepositoryImpl implements StreamRepository {
   @override
   Future<void> removeFavorite(String streamId) =>
       _remote.removeFavorite(streamId);
+
+  @override
+  Future<bool> isStreamEnded(String streamId) =>
+      _remote.isStreamEnded(streamId);
 }

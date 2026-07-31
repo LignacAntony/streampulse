@@ -44,4 +44,18 @@ class StreamRemoteDataSource {
       throw mapDioException(e);
     }
   }
+
+  /// Sonde le manifeste HLS **public** du flux pour déterminer s'il est terminé.
+  /// 200 → toujours en direct (`false`) ; 404/409 → le manifeste n'est plus
+  /// servi, le direct est terminé (`true`) ; toute autre issue (réseau, 5xx…) →
+  /// indéterminé (`false`), on laisse la reconnexion réseau opérer (STR-118).
+  Future<bool> isStreamEnded(String streamId) async {
+    try {
+      await _api.streamPlaylist(id: streamId);
+      return false;
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      return code == 404 || code == 409;
+    }
+  }
 }

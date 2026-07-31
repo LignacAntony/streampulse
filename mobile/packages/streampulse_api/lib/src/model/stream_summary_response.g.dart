@@ -24,6 +24,7 @@ StreamSummaryResponse _$StreamSummaryResponseFromJson(
         'is_public',
         'started_at',
         'created_at',
+        'broadcaster_username',
       ],
     );
     final val = StreamSummaryResponse(
@@ -45,6 +46,10 @@ StreamSummaryResponse _$StreamSummaryResponseFromJson(
         'created_at',
         (v) => DateTime.parse(v as String),
       ),
+      broadcasterUsername: $checkedConvert(
+        'broadcaster_username',
+        (v) => v as String,
+      ),
     );
     return val;
   },
@@ -53,6 +58,7 @@ StreamSummaryResponse _$StreamSummaryResponseFromJson(
     'isPublic': 'is_public',
     'startedAt': 'started_at',
     'createdAt': 'created_at',
+    'broadcasterUsername': 'broadcaster_username',
   },
 );
 
@@ -68,6 +74,7 @@ Map<String, dynamic> _$StreamSummaryResponseToJson(
   'is_public': instance.isPublic,
   'started_at': instance.startedAt?.toIso8601String(),
   'created_at': instance.createdAt.toIso8601String(),
+  'broadcaster_username': instance.broadcasterUsername,
 };
 
 const _$StreamSummaryResponseStatusEnumEnumMap = {

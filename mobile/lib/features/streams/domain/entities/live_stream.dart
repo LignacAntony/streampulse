@@ -5,6 +5,7 @@ class LiveStream {
     required this.startedAt,
     this.description,
     this.category,
+    this.broadcasterName,
     this.listenerCount,
     this.status,
   });
@@ -14,6 +15,9 @@ class LiveStream {
   final DateTime? startedAt;
   final String? description;
   final String? category;
+
+  /// Nom (username) du diffuseur, affiché sous le titre côté auditeur.
+  final String? broadcasterName;
   final int? listenerCount;
 
   /// Statut du flux : 'idle', 'live' ou 'ended' (null si non renseigné).

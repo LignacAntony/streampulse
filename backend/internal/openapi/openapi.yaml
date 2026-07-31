@@ -1598,6 +1598,7 @@ components:
         - is_public
         - started_at
         - created_at
+        - broadcaster_username
       properties:
         id:
           type: string
@@ -1625,6 +1626,9 @@ components:
         created_at:
           type: string
           format: date-time
+        broadcaster_username:
+          type: string
+          description: Username of the broadcaster (display name in the listener UI).
     StreamResponse:
       type: object
       required:

@@ -175,11 +175,13 @@ func (q *Queries) GetStreamByID(ctx context.Context, id pgtype.UUID) (GetStreamB
 }
 
 const listPublicLiveStreams = `-- name: ListPublicLiveStreams :many
-SELECT id::text AS id, user_id::text AS user_id, title, description, category,
-       status, is_public, started_at, ended_at, created_at, updated_at
-FROM streams
-WHERE is_public = true AND status = 'live' AND archived_at IS NULL
-ORDER BY started_at DESC NULLS LAST, created_at DESC
+SELECT s.id::text AS id, s.user_id::text AS user_id, s.title, s.description, s.category,
+       s.status, s.is_public, s.started_at, s.ended_at, s.created_at, s.updated_at,
+       u.username AS broadcaster_username
+FROM streams s
+JOIN users u ON u.id = s.user_id
+WHERE s.is_public = true AND s.status = 'live' AND s.archived_at IS NULL
+ORDER BY s.started_at DESC NULLS LAST, s.created_at DESC
 LIMIT $2 OFFSET $1
 `
 
@@ -189,20 +191,22 @@ type ListPublicLiveStreamsParams struct {
 }
 
 type ListPublicLiveStreamsRow struct {
-	ID          string
-	UserID      string
-	Title       string
-	Description pgtype.Text
-	Category    pgtype.Text
-	Status      string
-	IsPublic    bool
-	StartedAt   *time.Time
-	EndedAt     *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                  string
+	UserID              string
+	Title               string
+	Description         pgtype.Text
+	Category            pgtype.Text
+	Status              string
+	IsPublic            bool
+	StartedAt           *time.Time
+	EndedAt             *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	BroadcasterUsername string
 }
 
 // Flux publics en direct, non archivés. Le stream_key n'est jamais exposé ici.
+// JOIN users pour exposer le username du diffuseur (affiché côté auditeur).
 func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveStreamsParams) ([]ListPublicLiveStreamsRow, error) {
 	rows, err := q.db.Query(ctx, listPublicLiveStreams, arg.Off, arg.Lim)
 	if err != nil {
@@ -224,6 +228,7 @@ func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveS
 			&i.EndedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BroadcasterUsername,
 		); err != nil {
 			return nil, err
 		}

@@ -5,8 +5,39 @@ import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/features/streams/domain/entities/live_stream.dart';
 import 'package:streampulse/features/streams/domain/repositories/stream_repository.dart';
+import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 import 'package:streampulse/features/streams/presentation/screens/stream_player_screen.dart';
+
+/// Contrôleur de lecture fake (sans just_audio) : pilotable par [status] pour
+/// tester le rendu des états (STR-118), méthodes no-op.
+class _FakePlaybackController extends PlaybackController {
+  _FakePlaybackController([this._status = PlaybackStatus.idle]);
+
+  final PlaybackStatus _status;
+
+  @override
+  PlaybackStatus get status => _status;
+  @override
+  bool get isPlaying => _status == PlaybackStatus.playing;
+  @override
+  bool get isBusy =>
+      _status == PlaybackStatus.loading || _status == PlaybackStatus.buffering;
+  @override
+  bool get isReconnecting => _status == PlaybackStatus.reconnecting;
+  @override
+  bool get hasError => _status == PlaybackStatus.error;
+  @override
+  bool get isEnded => _status == PlaybackStatus.ended;
+  @override
+  double get volume => 1;
+  @override
+  Future<void> load(String streamId) async {}
+  @override
+  Future<void> togglePlayPause() async {}
+  @override
+  Future<void> setVolume(double value) async {}
+}
 
 /// Flux « réel » tel que renvoyé par le serveur (métadonnées complètes),
 /// par opposition au placeholder créé en arrivée deep-link.
@@ -54,6 +85,9 @@ class _FakeStreamRepository implements StreamRepository {
     int offset = 0,
   }) async =>
       const [];
+
+  @override
+  Future<bool> isStreamEnded(String streamId) async => false;
 }
 
 Widget _harness({
@@ -61,12 +95,17 @@ Widget _harness({
   LiveStream? stream,
   required _FakeStreamRepository repo,
   required FavoritesController controller,
+  PlaybackStatus playbackStatus = PlaybackStatus.idle,
 }) {
   return ChangeNotifierProvider<FavoritesController>.value(
     value: controller,
     child: ToastificationWrapper(
       child: MaterialApp(
-        home: StreamPlayerScreen(streamId: streamId, stream: stream),
+        home: StreamPlayerScreen(
+          streamId: streamId,
+          stream: stream,
+          controller: _FakePlaybackController(playbackStatus),
+        ),
       ),
     ),
   );
@@ -133,6 +172,49 @@ void main() {
 
       expect(repo.removed, ['s1']);
       expect(repo.listFavoritesCalls, 1); // aucune réconciliation sur un retrait
+    });
+  });
+
+  group('StreamPlayerScreen — états de lecture (STR-118)', () {
+    testWidgets('reconnexion : affiche « Reconnexion… »', (tester) async {
+      final repo = _FakeStreamRepository();
+      await tester.pumpWidget(_harness(
+        streamId: 's1',
+        repo: repo,
+        controller: FavoritesController(repo),
+        playbackStatus: PlaybackStatus.reconnecting,
+      ));
+      await tester.pump();
+
+      expect(find.text('Reconnexion…'), findsOneWidget);
+    });
+
+    testWidgets('erreur : « Flux indisponible » + bouton réessayer',
+        (tester) async {
+      final repo = _FakeStreamRepository();
+      await tester.pumpWidget(_harness(
+        streamId: 's1',
+        repo: repo,
+        controller: FavoritesController(repo),
+        playbackStatus: PlaybackStatus.error,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Flux indisponible'), findsOneWidget);
+      expect(find.byIcon(Icons.replay), findsOneWidget); // le play devient « réessayer »
+    });
+
+    testWidgets('flux terminé : « Le direct est terminé »', (tester) async {
+      final repo = _FakeStreamRepository();
+      await tester.pumpWidget(_harness(
+        streamId: 's1',
+        repo: repo,
+        controller: FavoritesController(repo),
+        playbackStatus: PlaybackStatus.ended,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Le direct est terminé'), findsOneWidget);
     });
   });
 }

@@ -81,6 +81,9 @@ class _FakeStreamRepository implements StreamRepository {
     int offset = 0,
   }) async =>
       const [];
+
+  @override
+  Future<bool> isStreamEnded(String streamId) async => false;
 }
 
 class _FakeProfileRepository implements ProfileRepository {

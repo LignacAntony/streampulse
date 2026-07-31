@@ -31,9 +31,11 @@ func (q *Queries) AddFavorite(ctx context.Context, arg AddFavoriteParams) error 
 
 const listFavoritesByUser = `-- name: ListFavoritesByUser :many
 SELECT s.id::text AS id, s.user_id::text AS user_id, s.title, s.description, s.category,
-       s.status, s.is_public, s.started_at, s.ended_at, s.created_at, s.updated_at
+       s.status, s.is_public, s.started_at, s.ended_at, s.created_at, s.updated_at,
+       u.username AS broadcaster_username
 FROM favorites f
 JOIN streams s ON s.id = f.stream_id
+JOIN users u ON u.id = s.user_id
 WHERE f.user_id = $1::uuid
   AND s.archived_at IS NULL
   AND (s.is_public = true OR s.user_id = $1::uuid)
@@ -41,17 +43,18 @@ ORDER BY f.created_at DESC
 `
 
 type ListFavoritesByUserRow struct {
-	ID          string
-	UserID      string
-	Title       string
-	Description pgtype.Text
-	Category    pgtype.Text
-	Status      string
-	IsPublic    bool
-	StartedAt   *time.Time
-	EndedAt     *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                  string
+	UserID              string
+	Title               string
+	Description         pgtype.Text
+	Category            pgtype.Text
+	Status              string
+	IsPublic            bool
+	StartedAt           *time.Time
+	EndedAt             *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	BroadcasterUsername string
 }
 
 // Flux favoris de l'utilisateur, tous statuts, non archivés. On ne renvoie que
@@ -79,6 +82,7 @@ func (q *Queries) ListFavoritesByUser(ctx context.Context, userID pgtype.UUID) (
 			&i.EndedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BroadcasterUsername,
 		); err != nil {
 			return nil, err
 		}

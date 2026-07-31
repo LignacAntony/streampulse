@@ -36,6 +36,9 @@ class _FakeRepository implements StreamRepository {
   @override
   Future<List<LiveStream>> listLiveStreams({int limit = 20, int offset = 0}) async =>
       const [];
+
+  @override
+  Future<bool> isStreamEnded(String streamId) async => false;
 }
 
 void main() {

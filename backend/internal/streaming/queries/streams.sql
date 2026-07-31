@@ -14,11 +14,14 @@ RETURNING id::text AS id, user_id::text AS user_id, title, description, category
 
 -- name: ListPublicLiveStreams :many
 -- Flux publics en direct, non archivés. Le stream_key n'est jamais exposé ici.
-SELECT id::text AS id, user_id::text AS user_id, title, description, category,
-       status, is_public, started_at, ended_at, created_at, updated_at
-FROM streams
-WHERE is_public = true AND status = 'live' AND archived_at IS NULL
-ORDER BY started_at DESC NULLS LAST, created_at DESC
+-- JOIN users pour exposer le username du diffuseur (affiché côté auditeur).
+SELECT s.id::text AS id, s.user_id::text AS user_id, s.title, s.description, s.category,
+       s.status, s.is_public, s.started_at, s.ended_at, s.created_at, s.updated_at,
+       u.username AS broadcaster_username
+FROM streams s
+JOIN users u ON u.id = s.user_id
+WHERE s.is_public = true AND s.status = 'live' AND s.archived_at IS NULL
+ORDER BY s.started_at DESC NULLS LAST, s.created_at DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
 -- name: GetStreamByID :one
