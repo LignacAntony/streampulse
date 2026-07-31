@@ -51,6 +51,8 @@ type stubService struct {
 	removeFavErr error
 	listFavRet   []Stream
 	listFavErr   error
+	listMineRet  []Stream
+	listMineErr  error
 }
 
 func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
@@ -111,6 +113,11 @@ func (s *stubService) RemoveFavorite(_ context.Context, streamID, requesterID st
 func (s *stubService) ListFavorites(_ context.Context, requesterID string) ([]Stream, error) {
 	s.gotRequester = requesterID
 	return s.listFavRet, s.listFavErr
+}
+
+func (s *stubService) ListMyStreams(_ context.Context, requesterID string) ([]Stream, error) {
+	s.gotRequester = requesterID
+	return s.listMineRet, s.listMineErr
 }
 
 // doCreate exécute la requête à travers la chaîne réelle RequireAuth + RequireRole(broadcaster).
@@ -844,6 +851,76 @@ func TestHandler_ListFavorites_OK(t *testing.T) {
 	if strings.Contains(body, "stream_key") || strings.Contains(body, "SECRET") {
 		t.Errorf("la liste des favoris ne doit jamais exposer de secret: %s", body)
 	}
+}
+
+func TestHandler_ListMine_OK(t *testing.T) {
+	stub := &stubService{listMineRet: []Stream{
+		{ID: "s1", UserID: testUserID, Title: "En direct", Status: StatusLive, IsPublic: true, StreamKey: "SECRET1"},
+		{ID: "s2", UserID: testUserID, Title: "Prêt", Status: StatusIdle, IsPublic: false, StreamKey: "SECRET2"},
+	}}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doListMine(t, h, true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotRequester != testUserID {
+		t.Errorf("requester = %q, want %q", stub.gotRequester, testUserID)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"id":"s1"`) || !strings.Contains(body, `"id":"s2"`) {
+		t.Errorf("body manque des flux: %s", body)
+	}
+	// Contrairement à toutes les autres listes, celle-ci DOIT porter les secrets :
+	// c'est ce qui permet au diffuseur de configurer son encodeur.
+	if !strings.Contains(body, `"stream_key":"SECRET1"`) {
+		t.Errorf("le propriétaire doit recevoir sa stream_key: %s", body)
+	}
+	if !strings.Contains(body, testIngestURL+"/api/streams/ingest/SECRET2") {
+		t.Errorf("le propriétaire doit recevoir son stream_source_url: %s", body)
+	}
+}
+
+func TestHandler_ListMine_EmptyIsArrayNotNull(t *testing.T) {
+	// Un non-diffuseur (ou un diffuseur sans flux) reçoit [] et non null : le
+	// client n'a aucun cas particulier à traiter (ADR 024).
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doListMine(t, h, true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "[]" {
+		t.Errorf("body = %q, want %q", got, "[]")
+	}
+}
+
+func TestHandler_ListMine_Unauthenticated(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doListMine(t, h, false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// doListMine exécute GET /api/users/me/streams à travers RequireAuth réel.
+func doListMine(t *testing.T, h *Handler, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/users/me/streams", nil)
+	if withToken {
+		token, err := auth.GenerateAccessToken(testUserID, "broadcaster", testSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testSecret, http.HandlerFunc(h.ListMine)).ServeHTTP(rec, req)
+	return rec
 }
 
 func TestHandler_ListFavorites_Unauthenticated(t *testing.T) {

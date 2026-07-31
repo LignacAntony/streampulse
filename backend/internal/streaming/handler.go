@@ -42,6 +42,7 @@ type StreamService interface {
 	AddFavorite(ctx context.Context, streamID, requesterID string) error
 	RemoveFavorite(ctx context.Context, streamID, requesterID string) error
 	ListFavorites(ctx context.Context, requesterID string) ([]Stream, error)
+	ListMyStreams(ctx context.Context, requesterID string) ([]Stream, error)
 }
 
 // StreamSessions expose au handler les opérations sur les sessions live :
@@ -428,6 +429,33 @@ func (h *Handler) ListFavorites(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode favorites")
+	}
+}
+
+// ListMine gère GET /api/users/me/streams : les flux du diffuseur connecté,
+// tous statuts, pour son tableau de bord (STR-153).
+//
+// Seule route de liste qui renvoie `stream_key` et `stream_source_url` : la
+// requête filtre sur l'identité du porteur du JWT, il n'existe donc aucun
+// chemin par lequel un tiers recevrait le secret d'un autre. Un utilisateur
+// sans flux — ou sans le rôle diffuseur — reçoit `[]`, pas un 403.
+func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	streams, err := h.svc.ListMyStreams(r.Context(), requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	out := make([]streamResponse, 0, len(streams))
+	for _, s := range streams {
+		out = append(out, h.toResponse(s, true))
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode my streams")
 	}
 }
 

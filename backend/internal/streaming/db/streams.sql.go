@@ -240,6 +240,66 @@ func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveS
 	return items, nil
 }
 
+const listStreamsByOwner = `-- name: ListStreamsByOwner :many
+SELECT id::text AS id, user_id::text AS user_id, title, description, category,
+       status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+FROM streams
+WHERE user_id = $1::uuid AND archived_at IS NULL
+ORDER BY created_at DESC
+`
+
+type ListStreamsByOwnerRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StreamKey   string
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Flux d'un diffuseur pour son tableau de bord (STR-153) : tous statuts
+// (idle/live/ended), archivés exclus. Contrairement à ListPublicLiveStreams, le
+// stream_key EST sélectionné : le filtre sur user_id garantit que l'appelant est
+// le propriétaire, seul destinataire légitime de ce secret.
+func (q *Queries) ListStreamsByOwner(ctx context.Context, userID pgtype.UUID) ([]ListStreamsByOwnerRow, error) {
+	rows, err := q.db.Query(ctx, listStreamsByOwner, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStreamsByOwnerRow
+	for rows.Next() {
+		var i ListStreamsByOwnerRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Title,
+			&i.Description,
+			&i.Category,
+			&i.Status,
+			&i.IsPublic,
+			&i.StreamKey,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const startStream = `-- name: StartStream :one
 UPDATE streams AS s
 SET status = 'live', started_at = NOW(), updated_at = NOW()

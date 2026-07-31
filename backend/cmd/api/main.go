@@ -221,6 +221,10 @@ func run() error {
 		http.HandlerFunc(streamingHandler.RemoveFavorite)))
 	mux.Handle("GET /api/users/me/favorites", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.ListFavorites)))
+	// Tableau de bord diffuseur (STR-153) : pas de RequireRole("broadcaster") —
+	// un non-diffuseur ne possède aucun flux et reçoit [] (cf. ADR 024).
+	mux.Handle("GET /api/users/me/streams", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.ListMine)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))
