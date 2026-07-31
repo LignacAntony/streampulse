@@ -358,6 +358,65 @@ void main() {
       await notifier.load();
 
       expect(notifier.hasLiveStream, isTrue);
+      notifier.dispose();
+    });
+  });
+
+  group('BroadcastNotifier — repli par polling (plateformes sans streaming)', () {
+    test('un direct sans connecteur SSE déclenche un rafraîchissement périodique',
+        () async {
+      // Cas de Flutter web : l'adaptateur navigateur de Dio ne sait pas
+      // streamer, on ne branche donc aucun SSE et on interroge l'API.
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+      final callsAfterLoad = repository.listCalls;
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(repository.listCalls, greaterThan(callsAfterLoad));
+      notifier.dispose();
+    });
+
+    test('aucun polling tant qu\'aucun flux n\'est en direct', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final notifier = BroadcastNotifier(
+        repository,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+      final callsAfterLoad = repository.listCalls;
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(repository.listCalls, callsAfterLoad);
+      notifier.dispose();
+    });
+
+    test('le polling s\'arrête en arrière-plan', () async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+
+      notifier.setActive(false);
+      final callsAfterPause = repository.listCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(repository.listCalls, callsAfterPause);
+      notifier.dispose();
     });
   });
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -46,7 +47,11 @@ class DashboardScreen extends StatelessWidget {
             BroadcastRepositoryImpl(
               BroadcastRemoteDataSource(ctx.read<DioClient>().streamingApi),
             ),
-        sse: sse ?? SseClient(ctx.read<SecureStorage>()),
+        // Pas de SSE sur le web : l'adaptateur navigateur de Dio ne supporte
+        // pas `ResponseType.stream`, la requête échoue immédiatement
+        // (`net::ERR_FAILED`) et la relancer n'y changerait rien. Le notifier
+        // bascule alors sur un rafraîchissement périodique.
+        sse: sse ?? (kIsWeb ? null : SseClient(ctx.read<SecureStorage>())),
       ),
       child: const _DashboardBody(),
     );
@@ -150,10 +155,18 @@ class _DashboardBodyState extends State<_DashboardBody>
       if (!mounted) return;
       showAuthSuccessToast(context, 'Vous êtes en direct');
     } on ConflictException {
-      // Course entre deux appareils : l'état local était périmé, on recharge
-      // pour repartir de la vérité serveur plutôt que d'afficher un échec sec.
+      // Le backend renvoie 409 pour deux raisons distinctes — « un autre flux
+      // est déjà en direct » et « ce flux n'est pas au repos ». On tranche sur
+      // l'état local plutôt qu'en analysant la prose anglaise du serveur.
       if (!mounted) return;
-      showAuthErrorToast(context, 'Un autre flux est déjà en direct');
+      showAuthErrorToast(
+        context,
+        notifier.hasLiveStream
+            ? 'Un autre flux est déjà en direct'
+            : "Ce flux n'est plus démarrable",
+      );
+      // L'état local était périmé : on repart de la vérité serveur plutôt que
+      // de laisser l'écran mentir.
       await notifier.refresh();
     } on NetworkException {
       if (!mounted) return;
@@ -416,28 +429,39 @@ class _StreamCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: stream.isLive
-                  ? FilledButton.tonalIcon(
-                      key: Key('dashboard_stop_button_${stream.id}'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: colors.errorContainer,
-                        foregroundColor: colors.onErrorContainer,
+            // Un flux terminé n'a aucune action : le backend n'autorise que la
+            // transition idle -> live, un bouton « Démarrer » ne pourrait que
+            // renvoyer un 409.
+            if (stream.isEnded)
+              Text(
+                'Diffusion terminée. Créez un nouveau flux pour rediffuser.',
+                style: text.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: stream.isLive
+                    ? FilledButton.tonalIcon(
+                        key: Key('dashboard_stop_button_${stream.id}'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: colors.errorContainer,
+                          foregroundColor: colors.onErrorContainer,
+                        ),
+                        onPressed: mutating ? null : onStop,
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: const Text('Arrêter la diffusion'),
+                      )
+                    : FilledButton.icon(
+                        key: Key('dashboard_start_button_${stream.id}'),
+                        onPressed:
+                            mutating || blockedByOtherLive ? null : onStart,
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: const Text('Démarrer la diffusion'),
                       ),
-                      onPressed: mutating ? null : onStop,
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: const Text('Arrêter la diffusion'),
-                    )
-                  : FilledButton.icon(
-                      key: Key('dashboard_start_button_${stream.id}'),
-                      onPressed:
-                          mutating || blockedByOtherLive ? null : onStart,
-                      icon: const Icon(Icons.play_circle_outline),
-                      label: const Text('Démarrer la diffusion'),
-                    ),
-            ),
-            if (blockedByOtherLive && !stream.isLive) ...[
+              ),
+            if (blockedByOtherLive && stream.isIdle) ...[
               const SizedBox(height: 6),
               Text(
                 'Un autre flux est en direct',
@@ -533,8 +557,12 @@ class _IngestUrlRowState extends State<_IngestUrlRow> {
                   _revealed
                       ? widget.sourceUrl
                       : maskIngestUrl(widget.sourceUrl),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  // Révélée, l'URL doit être lisible en entier : la tronquer
+                  // rendrait le bouton « révéler » inutile. Masquée, deux
+                  // lignes suffisent et gardent la carte compacte.
+                  maxLines: _revealed ? null : 2,
+                  overflow:
+                      _revealed ? TextOverflow.visible : TextOverflow.ellipsis,
                   style: text.bodySmall,
                 ),
               ],

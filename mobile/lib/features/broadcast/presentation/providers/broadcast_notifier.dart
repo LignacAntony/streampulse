@@ -29,14 +29,20 @@ class BroadcastNotifier extends ChangeNotifier {
     this._repository, {
     SseConnector? sse,
     Duration Function(int attempt)? backoff,
+    Duration pollInterval = const Duration(seconds: 15),
   })  : _sse = sse,
-        _backoff = backoff ?? _defaultBackoff;
+        _backoff = backoff ?? _defaultBackoff,
+        _pollInterval = pollInterval;
 
   final BroadcastRepository _repository;
 
-  /// Null en test unitaire pur : le notifier fonctionne alors sans temps réel.
+  /// Null quand la plateforme ne sait pas maintenir un flux HTTP ouvert — c'est
+  /// le cas de Flutter web, dont l'adaptateur Dio ne supporte pas
+  /// `ResponseType.stream`. Le notifier bascule alors sur un rafraîchissement
+  /// périodique (cf. [_startPolling]) plutôt que d'échouer en boucle.
   final SseConnector? _sse;
   final Duration Function(int attempt) _backoff;
+  final Duration _pollInterval;
 
   List<BroadcastStream> _streams = const [];
   bool _loading = false;
@@ -57,6 +63,7 @@ class BroadcastNotifier extends ChangeNotifier {
 
   StreamSubscription<SseEvent>? _sseSubscription;
   Timer? _reconnectTimer;
+  Timer? _pollTimer;
   String? _sseStreamId;
   int _reconnectAttempt = 0;
 
@@ -178,19 +185,23 @@ class BroadcastNotifier extends ChangeNotifier {
   void setActive(bool active) {
     if (_active == active) return;
     _active = active;
-    if (active) {
-      _syncSubscription();
-    } else {
-      _cancelSubscription();
-    }
+    // `_syncSubscription` traite les deux sens : à faux, il coupe la
+    // souscription SSE **et** le polling. Les séparer avait laissé le timer de
+    // polling tourner en arrière-plan.
+    _syncSubscription();
   }
 
-  /// Branche ou débranche le SSE selon l'état courant : une souscription n'a
-  /// de sens que sur un flux en direct (l'endpoint répond 409 sinon).
+  /// Branche ou débranche le suivi temps réel selon l'état courant : il n'a de
+  /// sens que sur un flux en direct (l'endpoint SSE répond 409 sinon).
   void _syncSubscription() {
     final live = liveStream;
-    if (!_active || _sse == null || live == null) {
+    if (!_active || live == null) {
       _cancelSubscription();
+      _cancelPolling();
+      return;
+    }
+    if (_sse == null) {
+      _startPolling();
       return;
     }
     if (_sseStreamId == live.id && _sseSubscription != null) return;
@@ -198,6 +209,20 @@ class BroadcastNotifier extends ChangeNotifier {
     _sseStreamId = live.id;
     _reconnectAttempt = 0;
     _openSubscription();
+  }
+
+  /// Repli des plateformes sans streaming HTTP : on interroge périodiquement
+  /// l'API tant qu'un flux est en direct. Moins réactif qu'un `ended` SSE, mais
+  /// l'écran finit toujours par converger — et surtout, on n'enchaîne pas des
+  /// connexions vouées à échouer.
+  void _startPolling() {
+    if (_pollTimer != null) return;
+    _pollTimer = Timer.periodic(_pollInterval, (_) => unawaited(refresh()));
+  }
+
+  void _cancelPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   void _openSubscription() {
@@ -284,6 +309,7 @@ class BroadcastNotifier extends ChangeNotifier {
   @override
   void dispose() {
     _cancelSubscription();
+    _cancelPolling();
     super.dispose();
   }
 }

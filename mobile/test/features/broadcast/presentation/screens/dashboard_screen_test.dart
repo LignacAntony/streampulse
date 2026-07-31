@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:toastification/toastification.dart';
 
+import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/core/network/sse_client.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
@@ -32,10 +33,13 @@ BroadcastStream _stream(
     );
 
 class _FakeBroadcastRepository implements BroadcastRepository {
-  _FakeBroadcastRepository({List<BroadcastStream>? streams})
+  _FakeBroadcastRepository({List<BroadcastStream>? streams, this.startError})
       : streams = streams ?? const [];
 
   List<BroadcastStream> streams;
+
+  /// Si non nul, `startStream` échoue avec cette exception.
+  final Object? startError;
   int listCalls = 0;
 
   @override
@@ -59,8 +63,10 @@ class _FakeBroadcastRepository implements BroadcastRepository {
       );
 
   @override
-  Future<BroadcastStream> startStream(String id) async =>
-      _stream(id, status: 'live', startedAt: DateTime.now());
+  Future<BroadcastStream> startStream(String id) async {
+    if (startError != null) throw startError!;
+    return _stream(id, status: 'live', startedAt: DateTime.now());
+  }
 
   @override
   Future<BroadcastStream> stopStream(String id) async =>
@@ -235,6 +241,53 @@ void main() {
     });
   });
 
+  group('DashboardScreen — flux terminé', () {
+    testWidgets('aucun bouton de démarrage, le backend le refuserait',
+        (tester) async {
+      // `start` n'accepte que idle -> live : proposer le bouton sur un flux
+      // terminé ne peut produire qu'un 409.
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'ended')],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('dashboard_start_button_a')), findsNothing);
+      expect(find.byKey(const Key('dashboard_stop_button_a')), findsNothing);
+      expect(
+        find.text('Diffusion terminée. Créez un nouveau flux pour rediffuser.'),
+        findsOneWidget,
+      );
+      // Le motif « un autre flux est en direct » ne concerne que les flux
+      // encore démarrables.
+      expect(find.text('Un autre flux est en direct'), findsNothing);
+    });
+
+    testWidgets(
+      'un 409 sans autre direct est expliqué par la bonne raison',
+      (tester) async {
+        final repository = _FakeBroadcastRepository(
+          streams: [_stream('a')],
+          startError: const ConflictException('stream is not idle'),
+        );
+        await tester.pumpWidget(_harness(repository));
+        await _settle(tester);
+
+        await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+        await _settle(tester);
+        // Le toast vit dans un overlay animé : laisser l'animation d'entrée
+        // se dérouler avant d'assert.
+        await tester.pump(const Duration(milliseconds: 600));
+
+        expect(find.text("Ce flux n'est plus démarrable"), findsOneWidget);
+        expect(find.text('Un autre flux est déjà en direct'), findsNothing);
+
+        toastification.dismissAll(delayForAnimation: false);
+        await tester.pump(const Duration(milliseconds: 700));
+      },
+    );
+  });
+
   group('DashboardScreen — clé de diffusion', () {
     testWidgets('l\'URL d\'ingest est masquée par défaut', (tester) async {
       final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
@@ -261,9 +314,14 @@ void main() {
       await tester.tap(find.byKey(const Key('dashboard_reveal_key_a')));
       await tester.pump();
 
-      final displayed = tester
-          .widget<Text>(find.byKey(const Key('dashboard_ingest_url_a')))
-          .data!;
+      final revealed =
+          tester.widget<Text>(find.byKey(const Key('dashboard_ingest_url_a')));
+      expect(revealed.data!, contains('cle-secrete-a'));
+      // Tronquer l'URL révélée rendrait le bouton « révéler » inutile : on ne
+      // pourrait pas lire la clé qu'on vient de demander à voir.
+      expect(revealed.maxLines, isNull);
+      expect(revealed.overflow, isNot(TextOverflow.ellipsis));
+      final displayed = revealed.data!;
       expect(displayed, contains('cle-secrete-a'));
 
       // La révélation se referme d'elle-même : pas de secret laissé à l'écran.
