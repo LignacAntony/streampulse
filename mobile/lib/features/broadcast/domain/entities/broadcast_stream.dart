@@ -10,6 +10,7 @@ class BroadcastStream {
     required this.title,
     required this.status,
     required this.isPublic,
+    required this.createdAt,
     this.description,
     this.category,
     this.startedAt,
@@ -19,6 +20,11 @@ class BroadcastStream {
 
   final String id;
   final String title;
+
+  /// Date de création. Sert de critère de tri secondaire : `List.sort` de Dart
+  /// n'est pas stable, deux flux de même statut permuteraient donc d'un
+  /// rafraîchissement à l'autre sans ce départage.
+  final DateTime createdAt;
 
   /// Statut du flux : `idle`, `live` ou `ended`.
   final String status;
@@ -64,6 +70,7 @@ class BroadcastStream {
       title: title,
       status: status ?? this.status,
       isPublic: isPublic,
+      createdAt: createdAt,
       description: description,
       category: category,
       startedAt: clearStartedAt ? null : (startedAt ?? this.startedAt),

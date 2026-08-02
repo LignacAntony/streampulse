@@ -44,4 +44,7 @@ class BroadcastRepositoryImpl implements BroadcastRepository {
     final dto = await _remote.stopStream(id);
     return dto.toBroadcastEntity();
   }
+
+  @override
+  Future<void> deleteStream(String id) => _remote.deleteStream(id);
 }

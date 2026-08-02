@@ -13,12 +13,14 @@ BroadcastStream _stream(
   String status = 'idle',
   String? title,
   DateTime? startedAt,
+  DateTime? createdAt,
 }) =>
     BroadcastStream(
       id: id,
       title: title ?? 'Flux $id',
       status: status,
       isPublic: true,
+      createdAt: createdAt ?? DateTime.utc(2026, 1, 1),
       startedAt: startedAt,
       streamKey: 'key-$id',
       streamSourceUrl: 'http://localhost:8080/api/streams/ingest/key-$id',
@@ -58,6 +60,8 @@ class _FakeBroadcastRepository implements BroadcastRepository {
       title: title,
       status: 'idle',
       isPublic: isPublic,
+      // Plus récent que les flux de base : vérifie aussi le tri par date.
+      createdAt: DateTime.utc(2026, 6, 1),
       description: description,
       category: category,
     );
@@ -76,6 +80,14 @@ class _FakeBroadcastRepository implements BroadcastRepository {
     if (mutationError != null) throw mutationError!;
     return _stream(id, status: 'ended');
   }
+
+  @override
+  Future<void> deleteStream(String id) async {
+    deletedIds.add(id);
+    if (mutationError != null) throw mutationError!;
+  }
+
+  final List<String> deletedIds = [];
 }
 
 /// Repository dont chaque `listMyStreams` reste en vol tant que le test n'a
@@ -105,6 +117,40 @@ class _DeferredRepository implements BroadcastRepository {
 
   @override
   Future<BroadcastStream> stopStream(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> deleteStream(String id) => throw UnimplementedError();
+}
+
+/// Repository dont `startStream` reste en vol jusqu'à résolution manuelle :
+/// permet de disposer le notifier pendant qu'une mutation est en cours.
+class _DeferredMutationRepository implements BroadcastRepository {
+  final List<Completer<BroadcastStream>> pending = [];
+
+  @override
+  Future<BroadcastStream> startStream(String id) {
+    final completer = Completer<BroadcastStream>();
+    pending.add(completer);
+    return completer.future;
+  }
+
+  @override
+  Future<List<BroadcastStream>> listMyStreams() async => const [];
+
+  @override
+  Future<BroadcastStream> createStream({
+    required String title,
+    required bool isPublic,
+    String? description,
+    String? category,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<BroadcastStream> stopStream(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> deleteStream(String id) => throw UnimplementedError();
 }
 
 /// Connecteur SSE piloté par le test : chaque `connect` ouvre un
@@ -244,7 +290,7 @@ void main() {
       expect(notifier.mutatingId, isNull);
     });
 
-    test('une seule mutation à la fois', () async {
+    test('une seule mutation à la fois, et le no-op est signalé', () async {
       final repository = _FakeBroadcastRepository(
         streams: [_stream('a'), _stream('b')],
       );
@@ -255,9 +301,80 @@ void main() {
       // un no-op tant que le premier est en vol.
       final first = notifier.start('a');
       final second = notifier.start('b');
-      await Future.wait([first, second]);
+      final results = await Future.wait([first, second]);
 
       expect(repository.startedIds, ['a']);
+      // Le retour distingue « fait » de « ignoré » : sans ça, l'écran annonçait
+      // « Vous êtes en direct » sur le second tap alors que rien n'avait démarré.
+      expect(results, [true, false]);
+    });
+
+    test('isMutating expose qu\'une mutation est en vol', () async {
+      final repository = _DeferredRepository();
+      final notifier = BroadcastNotifier(repository);
+
+      expect(notifier.isMutating, isFalse);
+    });
+
+    test('delete retire le flux de la liste', () async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a'), _stream('b')],
+      );
+      final notifier = BroadcastNotifier(repository);
+      await notifier.load();
+
+      final deleted = await notifier.delete('a');
+
+      expect(deleted, isTrue);
+      expect(repository.deletedIds, ['a']);
+      expect(notifier.streams.map((s) => s.id).toList(), ['b']);
+    });
+
+    test('delete relaie les erreurs et libère le verrou', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')])
+        ..mutationError = const ServerException('boom');
+      final notifier = BroadcastNotifier(repository);
+      await notifier.load();
+
+      await expectLater(notifier.delete('a'), throwsA(isA<ServerException>()));
+      expect(notifier.mutatingId, isNull);
+      expect(notifier.streams, hasLength(1));
+    });
+  });
+
+  group('BroadcastNotifier — robustesse', () {
+    test('un tri de même rang suit createdAt décroissant', () async {
+      // `List.sort` de Dart n'est pas stable : sans départage explicite, deux
+      // flux de même statut pourraient permuter d'un refresh à l'autre.
+      final repository = _FakeBroadcastRepository(
+        streams: [
+          _stream('vieux', createdAt: DateTime.utc(2026, 1, 1)),
+          _stream('recent', createdAt: DateTime.utc(2026, 3, 1)),
+          _stream('milieu', createdAt: DateTime.utc(2026, 2, 1)),
+        ],
+      );
+      final notifier = BroadcastNotifier(repository);
+
+      await notifier.load();
+      final first = notifier.streams.map((s) => s.id).toList();
+      await notifier.refresh();
+      final second = notifier.streams.map((s) => s.id).toList();
+
+      expect(first, ['recent', 'milieu', 'vieux']);
+      expect(second, first, reason: 'l\'ordre doit être reproductible');
+    });
+
+    test('une mutation qui répond après dispose ne notifie pas', () async {
+      final repository = _DeferredMutationRepository();
+      final notifier = BroadcastNotifier(repository);
+
+      final pending = notifier.start('a');
+      notifier.dispose();
+      repository.pending.single.complete(_stream('a', status: 'live'));
+
+      // Sans garde `_disposed`, le `finally` lèverait « A ChangeNotifier was
+      // used after being disposed » en debug.
+      await expectLater(pending, completes);
     });
   });
 

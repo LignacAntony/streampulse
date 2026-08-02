@@ -29,4 +29,9 @@ abstract class BroadcastRepository {
   /// Passe le flux `live` -> `ended`. Lève une `ConflictException` si le flux
   /// n'était pas en direct (arrêt concurrent par un admin, par exemple).
   Future<BroadcastStream> stopStream(String id);
+
+  /// Archive le flux (suppression douce côté serveur : `archived_at`). Un flux
+  /// en direct est terminé au passage par le backend — l'écran doit donc
+  /// prévenir l'utilisateur avant d'appeler ceci sur un direct.
+  Future<void> deleteStream(String id);
 }

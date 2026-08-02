@@ -151,9 +151,11 @@ class _DashboardBodyState extends State<_DashboardBody>
   Future<void> _onStart(BroadcastStream stream) async {
     final notifier = context.read<BroadcastNotifier>();
     try {
-      await notifier.start(stream.id);
+      final started = await notifier.start(stream.id);
       if (!mounted) return;
-      showAuthSuccessToast(context, 'Vous êtes en direct');
+      // `false` = no-op (une autre mutation était en vol) : rien n'a démarré,
+      // annoncer un succès mentirait à l'utilisateur.
+      if (started) showAuthSuccessToast(context, 'Vous êtes en direct');
     } on ConflictException {
       // Le backend renvoie 409 pour deux raisons distinctes — « un autre flux
       // est déjà en direct » et « ce flux n'est pas au repos ». On tranche sur
@@ -204,9 +206,9 @@ class _DashboardBodyState extends State<_DashboardBody>
     if (!mounted || confirmed != true) return;
 
     try {
-      await notifier.stop(stream.id);
+      final stopped = await notifier.stop(stream.id);
       if (!mounted) return;
-      showAuthSuccessToast(context, 'Diffusion arrêtée');
+      if (stopped) showAuthSuccessToast(context, 'Diffusion arrêtée');
     } on ConflictException {
       // Le flux n'était déjà plus en direct (arrêt par un administrateur) :
       // recharger suffit à réaligner l'écran.
@@ -222,6 +224,59 @@ class _DashboardBodyState extends State<_DashboardBody>
     } catch (_) {
       if (!mounted) return;
       showAuthErrorToast(context, "Échec de l'arrêt");
+    }
+  }
+
+  /// Supprime un flux. Le backend fait une suppression douce (`archived_at`) et
+  /// **termine la diffusion au passage** si le flux est en direct : la
+  /// confirmation le dit explicitement plutôt que de laisser l'utilisateur
+  /// couper son propre direct sans le savoir.
+  Future<void> _onDelete(BroadcastStream stream) async {
+    final notifier = context.read<BroadcastNotifier>();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Supprimer « ${stream.title} » ?'),
+        content: Text(
+          stream.isLive
+              ? 'Ce flux est en direct : la diffusion sera arrêtée et les '
+                  'auditeurs déconnectés. Cette action est définitive.'
+              : 'Le flux disparaîtra de votre tableau de bord. Cette action '
+                  'est définitive.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            key: const Key('dashboard_confirm_delete_button'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    try {
+      final deleted = await notifier.delete(stream.id);
+      if (!mounted) return;
+      if (deleted) showAuthSuccessToast(context, 'Flux supprimé');
+    } on NetworkException {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Pas de connexion réseau');
+    } on ServerException catch (e) {
+      if (!mounted) return;
+      showAuthErrorToast(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Échec de la suppression');
     }
   }
 
@@ -340,8 +395,14 @@ class _DashboardBodyState extends State<_DashboardBody>
           blockedByOtherLive:
               notifier.hasLiveStream && !stream.isLive,
           mutating: notifier.mutatingId == stream.id,
+          // Tant qu'une mutation quelconque est en vol, les autres tuiles sont
+          // neutralisées : leur flux n'est pas encore à jour localement, un tap
+          // partirait sur un état périmé.
+          otherMutationInFlight:
+              notifier.isMutating && notifier.mutatingId != stream.id,
           onStart: () => _onStart(stream),
           onStop: () => _onStop(stream),
+          onDelete: () => _onDelete(stream),
         );
       },
     );
@@ -353,15 +414,23 @@ class _StreamCard extends StatelessWidget {
     required this.stream,
     required this.blockedByOtherLive,
     required this.mutating,
+    required this.otherMutationInFlight,
     required this.onStart,
     required this.onStop,
+    required this.onDelete,
   });
 
   final BroadcastStream stream;
   final bool blockedByOtherLive;
   final bool mutating;
+  final bool otherMutationInFlight;
   final VoidCallback onStart;
   final VoidCallback onStop;
+  final VoidCallback onDelete;
+
+  /// Vrai dès qu'une mutation touche cette carte ou une autre : dans les deux
+  /// cas ses actions doivent être neutralisées.
+  bool get _busy => mutating || otherMutationInFlight;
 
   @override
   Widget build(BuildContext context) {
@@ -383,6 +452,27 @@ class _StreamCard extends StatelessWidget {
                   child: Text(stream.title, style: text.titleMedium),
                 ),
                 _StatusBadge(status: stream.status),
+                PopupMenuButton<String>(
+                  key: Key('dashboard_stream_menu_${stream.id}'),
+                  enabled: !_busy,
+                  tooltip: 'Actions',
+                  onSelected: (value) {
+                    if (value == 'delete') onDelete();
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      key: Key('dashboard_delete_item_${stream.id}'),
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline, color: colors.error),
+                          const SizedBox(width: 12),
+                          const Text('Supprimer'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -421,7 +511,10 @@ class _StreamCard extends StatelessWidget {
                 ],
               ],
             ),
-            if (stream.streamSourceUrl != null) ...[
+            // Rien à pousser sur un flux terminé : la clé y est inutilisable
+            // (le backend n'autorise que idle -> live). L'afficher n'apporterait
+            // que du bruit et exposerait un secret pour rien.
+            if (stream.streamSourceUrl != null && !stream.isEnded) ...[
               const SizedBox(height: 12),
               _IngestUrlRow(
                 streamId: stream.id,
@@ -449,14 +542,14 @@ class _StreamCard extends StatelessWidget {
                           backgroundColor: colors.errorContainer,
                           foregroundColor: colors.onErrorContainer,
                         ),
-                        onPressed: mutating ? null : onStop,
+                        onPressed: _busy ? null : onStop,
                         icon: const Icon(Icons.stop_circle_outlined),
                         label: const Text('Arrêter la diffusion'),
                       )
                     : FilledButton.icon(
                         key: Key('dashboard_start_button_${stream.id}'),
                         onPressed:
-                            mutating || blockedByOtherLive ? null : onStart,
+                            _busy || blockedByOtherLive ? null : onStart,
                         icon: const Icon(Icons.play_circle_outline),
                         label: const Text('Démarrer la diffusion'),
                       ),
@@ -617,18 +710,26 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final isLive = status == 'live';
+
+    // Trois états, trois traitements distincts. `PRÊT` et `TERMINÉ` partageaient
+    // la même couleur : seul le mot les séparait, alors que l'un est
+    // actionnable et l'autre non.
+    final (Color background, Color foreground) = switch (status) {
+      'live' => (colors.error, colors.onError),
+      'idle' => (colors.primaryContainer, colors.onPrimaryContainer),
+      _ => (colors.surfaceContainerHighest, colors.onSurfaceVariant),
+    };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isLive ? colors.error : colors.surfaceContainerHighest,
+        color: background,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         _label(status),
         style: TextStyle(
-          color: isLive ? colors.onError : colors.secondary,
+          color: foreground,
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.6,

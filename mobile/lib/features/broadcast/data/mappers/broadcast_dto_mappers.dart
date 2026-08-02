@@ -10,6 +10,7 @@ extension StreamResponseBroadcastMapper on StreamResponse {
         title: title,
         status: status.value,
         isPublic: isPublic,
+        createdAt: createdAt,
         description: description,
         category: category,
         startedAt: startedAt,

@@ -20,12 +20,14 @@ BroadcastStream _stream(
   String? title,
   DateTime? startedAt,
   String? sourceUrl,
+  DateTime? createdAt,
 }) =>
     BroadcastStream(
       id: id,
       title: title ?? 'Flux $id',
       status: status,
       isPublic: true,
+      createdAt: createdAt ?? DateTime.utc(2026, 1, 1),
       startedAt: startedAt,
       streamKey: 'cle-secrete-$id',
       streamSourceUrl:
@@ -60,6 +62,7 @@ class _FakeBroadcastRepository implements BroadcastRepository {
         title: title,
         status: 'idle',
         isPublic: isPublic,
+        createdAt: DateTime.utc(2026, 6, 1),
       );
 
   @override
@@ -71,6 +74,13 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   @override
   Future<BroadcastStream> stopStream(String id) async =>
       _stream(id, status: 'ended');
+
+  @override
+  Future<void> deleteStream(String id) async {
+    deletedIds.add(id);
+  }
+
+  final List<String> deletedIds = [];
 }
 
 class _FakeProfileRepository implements ProfileRepository {
@@ -197,6 +207,15 @@ void main() {
       expect(find.text('Talk du soir'), findsOneWidget);
       expect(find.text('EN DIRECT'), findsOneWidget);
       expect(find.text('PRÊT'), findsOneWidget);
+
+      // La 3e carte est sous la ligne de flottaison : la ListView ne la
+      // construit qu'une fois amenée à l'écran.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('dashboard_stream_card_c')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump();
       expect(find.text('TERMINÉ'), findsOneWidget);
     });
 
@@ -286,6 +305,98 @@ void main() {
         await tester.pump(const Duration(milliseconds: 700));
       },
     );
+  });
+
+  group('DashboardScreen — retours de revue', () {
+    testWidgets('les badges PRÊT et TERMINÉ ne partagent pas leur couleur',
+        (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a'), _stream('b', status: 'ended')],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      Color badgeColor(String label) {
+        final container = tester.widget<Container>(
+          find.ancestor(
+            of: find.text(label),
+            matching: find.byType(Container),
+          ).first,
+        );
+        return (container.decoration! as BoxDecoration).color!;
+      }
+
+      expect(
+        badgeColor('PRÊT'),
+        isNot(badgeColor('TERMINÉ')),
+        reason: 'un flux actionnable doit se distinguer au coup d\'œil',
+      );
+    });
+
+    testWidgets('aucune URL d\'ingest sur un flux terminé', (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'ended'), _stream('b')],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      // La clé y est inutilisable : l'afficher n'est que du bruit, et une
+      // exposition inutile d'un secret.
+      expect(find.byKey(const Key('dashboard_ingest_url_a')), findsNothing);
+      expect(find.byKey(const Key('dashboard_ingest_url_b')), findsOneWidget);
+    });
+
+    testWidgets('supprimer un flux le retire après confirmation',
+        (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', title: 'À jeter'), _stream('b')],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('dashboard_delete_item_a')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Supprimer « À jeter » ?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('dashboard_confirm_delete_button')));
+      await _settle(tester);
+
+      expect(repository.deletedIds, ['a']);
+      expect(find.byKey(const Key('dashboard_stream_card_a')), findsNothing);
+      expect(find.byKey(const Key('dashboard_stream_card_b')), findsOneWidget);
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    testWidgets('supprimer un direct annonce l\'arrêt de la diffusion',
+        (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [
+          _stream('a', title: 'En cours', status: 'live',
+              startedAt: DateTime.now()),
+        ],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('dashboard_delete_item_a')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('la diffusion sera arrêtée'),
+        findsOneWidget,
+        reason: 'le backend termine le direct au passage : il faut le dire',
+      );
+
+      await tester.tap(find.text('Annuler'));
+      await _settle(tester);
+      expect(repository.deletedIds, isEmpty);
+    });
   });
 
   group('DashboardScreen — clé de diffusion', () {

@@ -68,4 +68,13 @@ class BroadcastRemoteDataSource {
       throw mapDioException(e);
     }
   }
+
+  /// `DELETE /api/streams/{id}` — 204 sans corps.
+  Future<void> deleteStream(String id) async {
+    try {
+      await _api.deleteStream(id: id);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
 }

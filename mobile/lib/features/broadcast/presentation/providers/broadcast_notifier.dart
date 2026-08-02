@@ -67,14 +67,25 @@ class BroadcastNotifier extends ChangeNotifier {
   String? _sseStreamId;
   int _reconnectAttempt = 0;
 
+  /// Vrai après [dispose]. Une requête encore en vol au moment où l'écran est
+  /// détruit (déconnexion pendant un `start`, par exemple) finirait sinon par
+  /// notifier un notifier disposé — assertion en debug, silencieux en release.
+  bool _disposed = false;
+
   List<BroadcastStream> get streams => _streams;
   bool get loading => _loading;
   bool get creating => _creating;
 
-  /// Identifiant du flux dont un `start`/`stop` est en vol, ou null. Sert à
-  /// n'afficher un indicateur que sur la tuile concernée et à empêcher deux
-  /// mutations simultanées.
+  /// Identifiant du flux dont un `start`/`stop`/`delete` est en vol, ou null.
+  /// Sert à n'afficher un indicateur que sur la tuile concernée et à empêcher
+  /// deux mutations simultanées.
   String? get mutatingId => _mutatingId;
+
+  /// Vrai dès qu'une mutation quelconque est en vol. L'écran s'en sert pour
+  /// neutraliser les actions des AUTRES tuiles : tant que `start(A)` n'a pas
+  /// répondu, A est encore `idle` localement, donc rien n'empêcherait sinon de
+  /// lancer `start(B)` — qui serait rejeté silencieusement.
+  bool get isMutating => _mutatingId != null;
   String? get error => _error;
   bool get isNetworkError => _isNetworkError;
 
@@ -97,7 +108,7 @@ class BroadcastNotifier extends ChangeNotifier {
     if (reset) _streams = const [];
     _loading = true;
     _clearError();
-    notifyListeners();
+    _safeNotify();
     try {
       final result = await _repository.listMyStreams();
       if (generation != _loadGeneration) return; // résultat obsolète
@@ -110,7 +121,7 @@ class BroadcastNotifier extends ChangeNotifier {
       // obsolète qui l'éteindrait figerait l'état du plus récent.
       if (generation == _loadGeneration) {
         _loading = false;
-        notifyListeners();
+        _safeNotify();
         _syncSubscription();
       }
     }
@@ -129,7 +140,7 @@ class BroadcastNotifier extends ChangeNotifier {
     String? category,
   }) async {
     _creating = true;
-    notifyListeners();
+    _safeNotify();
     try {
       final created = await _repository.createStream(
         title: title,
@@ -142,29 +153,57 @@ class BroadcastNotifier extends ChangeNotifier {
       return created;
     } finally {
       _creating = false;
-      notifyListeners();
+      _safeNotify();
     }
   }
 
-  /// Démarre le direct. No-op si une autre mutation est déjà en vol.
+  /// Démarre le direct. Retourne `false` sans rien faire si une autre mutation
+  /// est déjà en vol — l'appelant DOIT tester ce retour avant d'annoncer un
+  /// succès, sinon un second tap concurrent afficherait « Vous êtes en direct »
+  /// alors que rien n'a démarré.
   ///
-  /// L'écran désactive déjà le bouton quand un autre flux est en direct ; le
-  /// 409 « you already have a live stream » reste possible sur une course
+  /// Le 409 « you already have a live stream » reste possible sur une course
   /// entre deux appareils et remonte alors à l'appelant.
-  Future<void> start(String id) => _mutate(id, _repository.startStream);
+  Future<bool> start(String id) => _mutate(id, _repository.startStream);
 
-  /// Arrête le direct. Un 409 signifie que le flux n'était déjà plus en
-  /// direct (arrêt par un administrateur, par exemple) : l'écran le traite en
-  /// rechargeant plutôt qu'en affichant un échec sec.
-  Future<void> stop(String id) => _mutate(id, _repository.stopStream);
+  /// Arrête le direct. Même contrat de retour que [start]. Un 409 signifie que
+  /// le flux n'était déjà plus en direct (arrêt par un administrateur, par
+  /// exemple) : l'écran le traite en rechargeant plutôt qu'en affichant un
+  /// échec sec.
+  Future<bool> stop(String id) => _mutate(id, _repository.stopStream);
 
-  Future<void> _mutate(
+  /// Archive le flux et le retire de la liste. Même contrat de retour que
+  /// [start]. Sur un flux en direct, le backend termine la diffusion au
+  /// passage — l'écran doit l'avoir annoncé avant d'appeler ceci.
+  Future<bool> delete(String id) async {
+    if (_mutatingId != null) return false;
+    _mutatingId = id;
+    _safeNotify();
+    try {
+      await _repository.deleteStream(id);
+      _streams = List.unmodifiable(
+        _streams.where((stream) => stream.id != id).toList(),
+      );
+      _clearError();
+      return true;
+    } finally {
+      _mutatingId = null;
+      _safeNotify();
+      // Le flux supprimé était peut-être le direct suivi en SSE : resynchroniser
+      // la souscription évite de rester branché sur un flux qui n'existe plus.
+      _syncSubscription();
+    }
+  }
+
+  /// Retourne `false` en no-op quand une mutation est déjà en vol, `true` quand
+  /// l'appel a réellement eu lieu (les erreurs, elles, remontent en exception).
+  Future<bool> _mutate(
     String id,
     Future<BroadcastStream> Function(String id) action,
   ) async {
-    if (_mutatingId != null) return;
+    if (_mutatingId != null) return false;
     _mutatingId = id;
-    notifyListeners();
+    _safeNotify();
     try {
       final updated = await action(id);
       _streams = _sorted([
@@ -172,9 +211,10 @@ class BroadcastNotifier extends ChangeNotifier {
           if (stream.id == updated.id) updated else stream,
       ]);
       _clearError();
+      return true;
     } finally {
       _mutatingId = null;
-      notifyListeners();
+      _safeNotify();
       _syncSubscription();
     }
   }
@@ -272,11 +312,28 @@ class BroadcastNotifier extends ChangeNotifier {
     _sseStreamId = null;
   }
 
+  /// Notifie seulement si le notifier est encore vivant. Une requête en vol au
+  /// moment où l'écran est détruit finirait sinon dans `notifyListeners()`
+  /// après `dispose()`.
+  void _safeNotify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
   /// Direct en tête, puis les flux prêts à démarrer, puis les terminés : le
   /// diffuseur a besoin de l'état actionnable en premier.
+  ///
+  /// `List.sort` de Dart n'étant pas stable, l'ordre relatif de deux flux de
+  /// même rang varierait d'un rafraîchissement à l'autre — d'où le départage
+  /// explicite par date de création décroissante, qui reproduit l'ordre du
+  /// backend et rend la liste visuellement stable.
   List<BroadcastStream> _sorted(List<BroadcastStream> streams) {
     final sorted = [...streams];
-    sorted.sort((a, b) => _rank(a).compareTo(_rank(b)));
+    sorted.sort((a, b) {
+      final byRank = _rank(a).compareTo(_rank(b));
+      if (byRank != 0) return byRank;
+      return b.createdAt.compareTo(a.createdAt);
+    });
     return List.unmodifiable(sorted);
   }
 
@@ -308,6 +365,7 @@ class BroadcastNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _cancelSubscription();
     _cancelPolling();
     super.dispose();

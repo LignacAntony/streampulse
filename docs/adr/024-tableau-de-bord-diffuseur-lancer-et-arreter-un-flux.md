@@ -142,6 +142,22 @@ travail a donc été découpé pour n'entrer en conflit avec aucun d'eux :
 
 Les deux phases sont livrées.
 
+### 8. Suppression d'un flux depuis le dashboard (ajout après revue)
+
+L'US ne parle que de lancer et arrêter. La revue a relevé que les flux terminés
+s'accumulent sans aucun moyen de nettoyer la liste, ce qui rend le tableau de bord
+inutilisable au bout de quelques diffusions. La suppression a donc été rapatriée
+dans ce lot plutôt que reportée.
+
+Elle s'appuie sur `DELETE /api/streams/{id}`, déjà livré par STR-67 : suppression
+douce (`archived_at`), propriétaire uniquement. Point notable : `ArchiveStream`
+**termine le flux au passage** s'il est en direct. La confirmation le dit
+explicitement — sans quoi un diffuseur pourrait couper sa propre diffusion en
+croyant ranger sa liste.
+
+L'édition d'un flux (`PUT /api/streams/{id}`, également disponible) reste hors
+périmètre : aucun besoin exprimé, et elle mérite son propre ticket.
+
 ## Alternatives écartées
 
 - **Polling de `/api/users/me/streams`** plutôt que SSE : plus simple et sans client dédié, mais
