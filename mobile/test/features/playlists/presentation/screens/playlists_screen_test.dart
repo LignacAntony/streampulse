@@ -130,6 +130,10 @@ void main() {
         find.byKey(const Key('playlist_name_field')),
         'Road Trip',
       );
+      // La sheet est plus haute que la fenêtre de test : faire défiler le
+      // bouton dans la vue avant de le taper.
+      await tester.ensureVisible(find.byKey(const Key('playlist_form_submit')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('playlist_form_submit')));
       await tester.pumpAndSettle();
 

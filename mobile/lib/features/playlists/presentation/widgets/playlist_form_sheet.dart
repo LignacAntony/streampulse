@@ -1,0 +1,356 @@
+import 'package:flutter/material.dart';
+
+/// Résultat d'un `PlaylistFormSheet` : nom (obligatoire) + description
+/// (optionnelle, `null` si vide).
+class PlaylistFormResult {
+  const PlaylistFormResult({required this.name, this.description});
+
+  final String name;
+  final String? description;
+}
+
+/// Feuille modale (bottom sheet) de création/renommage d'une playlist.
+///
+/// Monte depuis le bas et se ferme par glissement vers le bas (drag handle en
+/// haut). Réutilisée pour la création (champs vides) et le renommage (champs
+/// pré-remplis). Renvoie un [PlaylistFormResult] via `Navigator.pop`, ou `null`
+/// si annulée.
+///
+/// ⚠️ Les contrôles « Disponible hors ligne » et « modifier l'image » sont
+/// présents côté UI mais **non branchés** : la logique de couverture et de
+/// téléchargement hors ligne fera l'objet d'une PR dédiée.
+class PlaylistFormSheet extends StatefulWidget {
+  const PlaylistFormSheet({
+    super.key,
+    required this.title,
+    required this.submitLabel,
+    this.initialName = '',
+    this.initialDescription,
+  });
+
+  final String title;
+  final String submitLabel;
+  final String initialName;
+  final String? initialDescription;
+
+  /// Ouvre la feuille modale et renvoie le résultat saisi (ou `null` si fermée).
+  static Future<PlaylistFormResult?> show(
+    BuildContext context, {
+    required String title,
+    required String submitLabel,
+    String initialName = '',
+    String? initialDescription,
+  }) {
+    return showModalBottomSheet<PlaylistFormResult>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      // Fermeture au glissement vers le bas (comportement par défaut d'une
+      // bottom sheet modale, renforcé par le drag handle).
+      builder: (_) => PlaylistFormSheet(
+        title: title,
+        submitLabel: submitLabel,
+        initialName: initialName,
+        initialDescription: initialDescription,
+      ),
+    );
+  }
+
+  @override
+  State<PlaylistFormSheet> createState() => _PlaylistFormSheetState();
+}
+
+class _PlaylistFormSheetState extends State<PlaylistFormSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+
+  /// État local du toggle « Disponible hors ligne » — front uniquement, non
+  /// envoyé au backend (feature à venir).
+  bool _offlineAvailable = true;
+
+  static const _maxNameLen = 120;
+  static const _maxDescriptionLen = 500;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _descriptionController = TextEditingController(
+      text: widget.initialDescription ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  String? _validateName(String? value) {
+    final name = value?.trim() ?? '';
+    if (name.isEmpty) return 'Le nom est requis';
+    if (name.length > _maxNameLen) return 'Nom trop long (max $_maxNameLen)';
+    return null;
+  }
+
+  String? _validateDescription(String? value) {
+    final desc = value?.trim() ?? '';
+    if (desc.length > _maxDescriptionLen) {
+      return 'Description trop longue (max $_maxDescriptionLen)';
+    }
+    return null;
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    final name = _nameController.text.trim();
+    final rawDesc = _descriptionController.text.trim();
+    Navigator.of(context).pop(
+      PlaylistFormResult(
+        name: name,
+        description: rawDesc.isEmpty ? null : rawDesc,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+
+    // La sheet reste fixe à l'ouverture du clavier (pas de padding sur
+    // viewInsets) : le contenu est déjà défilable si nécessaire.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: text.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton.filledTonal(
+                  key: const Key('playlist_form_close'),
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Center(child: _CoverPicker()),
+            const SizedBox(height: 24),
+            const _FieldLabel('NOM DE LA PLAYLIST'),
+            const SizedBox(height: 8),
+            TextFormField(
+              key: const Key('playlist_name_field'),
+              controller: _nameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                hintText: 'Ma superbe playlist',
+              ),
+              validator: _validateName,
+            ),
+            const SizedBox(height: 20),
+            const _FieldLabel('DESCRIPTION (OPTIONNEL)'),
+            const SizedBox(height: 8),
+            TextFormField(
+              key: const Key('playlist_description_field'),
+              controller: _descriptionController,
+              minLines: 2,
+              maxLines: 4,
+              textInputAction: TextInputAction.newline,
+              decoration: const InputDecoration(
+                hintText: 'Quel est le mood de cette sélection ?',
+              ),
+              validator: _validateDescription,
+            ),
+            const SizedBox(height: 24),
+            _OfflineToggleCard(
+              value: _offlineAvailable,
+              onChanged: (v) => setState(() => _offlineAvailable = v),
+            ),
+            const SizedBox(height: 24),
+            _GradientButton(
+              key: const Key('playlist_form_submit'),
+              label: widget.submitLabel,
+              onPressed: _submit,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: colors.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+/// Cover placeholder + bouton « modifier l'image ». Front uniquement : aucune
+/// sélection d'image n'est branchée (feature à venir).
+class _CoverPicker extends StatelessWidget {
+  const _CoverPicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 150,
+      height: 150,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 150,
+            height: 150,
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              Icons.add_a_photo_outlined,
+              size: 44,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          Positioned(
+            right: -6,
+            bottom: -6,
+            child: FloatingActionButton.small(
+              key: const Key('playlist_cover_edit'),
+              heroTag: 'playlist_cover_edit',
+              elevation: 0,
+              // Front uniquement : pas encore de logique de sélection d'image.
+              onPressed: () {},
+              child: const Icon(Icons.edit, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Carte « Disponible hors ligne » avec toggle. Front uniquement : la valeur
+/// n'est pas persistée ni envoyée au backend.
+class _OfflineToggleCard extends StatelessWidget {
+  const _OfflineToggleCard({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.download_outlined, color: colors.onSurfaceVariant),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Disponible hors ligne', style: text.titleMedium),
+                Text(
+                  'Télécharger automatiquement',
+                  style: text.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            key: const Key('playlist_offline_toggle'),
+            value: value,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bouton principal à dégradé (« Créer » / « Enregistrer »).
+class _GradientButton extends StatelessWidget {
+  const _GradientButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFB79CF6), Color(0xFF7C4DFF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onPressed,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

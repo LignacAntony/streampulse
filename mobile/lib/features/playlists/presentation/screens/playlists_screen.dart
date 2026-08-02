@@ -11,7 +11,7 @@ import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/repositories/playlist_repository.dart';
 import '../providers/playlists_controller.dart';
-import '../widgets/playlist_form_dialog.dart';
+import '../widgets/playlist_form_sheet.dart';
 
 /// Écran « Bibliothèque » : liste des playlists de l'utilisateur avec création,
 /// renommage et suppression (US-05-02). Remplace le `PlaceholderScreen` de
@@ -81,12 +81,10 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   Future<void> _onRefresh() => context.read<PlaylistsController>().refresh();
 
   Future<void> _onCreate() async {
-    final result = await showDialog<PlaylistFormResult>(
-      context: context,
-      builder: (_) => const PlaylistFormDialog(
-        title: 'Nouvelle playlist',
-        submitLabel: 'Créer',
-      ),
+    final result = await PlaylistFormSheet.show(
+      context,
+      title: 'Nouvelle playlist',
+      submitLabel: 'Créer',
     );
     if (!mounted || result == null) return;
 
@@ -102,14 +100,12 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   }
 
   Future<void> _onRename(Playlist playlist) async {
-    final result = await showDialog<PlaylistFormResult>(
-      context: context,
-      builder: (_) => PlaylistFormDialog(
-        title: 'Renommer la playlist',
-        submitLabel: 'Enregistrer',
-        initialName: playlist.name,
-        initialDescription: playlist.description,
-      ),
+    final result = await PlaylistFormSheet.show(
+      context,
+      title: 'Renommer la playlist',
+      submitLabel: 'Enregistrer',
+      initialName: playlist.name,
+      initialDescription: playlist.description,
     );
     if (!mounted || result == null) return;
 
