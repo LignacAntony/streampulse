@@ -9,6 +9,7 @@ import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/broadcaster/presentation/screens/broadcaster_request_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/playlists/presentation/screens/playlists_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/streams/domain/entities/live_stream.dart';
 import '../../features/streams/presentation/screens/discover_screen.dart';
@@ -103,10 +104,7 @@ GoRouter createAppRouter(SecureStorage storage) {
             routes: [
               GoRoute(
                 path: '/library',
-                builder: (context, state) => const PlaceholderScreen(
-                  title: 'Bibliothèque',
-                  icon: Icons.library_music_outlined,
-                ),
+                builder: (context, state) => const PlaylistsScreen(),
               ),
             ],
           ),

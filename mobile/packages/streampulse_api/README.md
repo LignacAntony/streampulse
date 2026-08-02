@@ -84,6 +84,12 @@ Class | Method | HTTP request | Description
 [*BroadcasterApi*](doc/BroadcasterApi.md) | [**rejectBroadcasterRequest**](doc/BroadcasterApi.md#rejectbroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/reject | Reject a broadcaster request (admin only).
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**createPlaylist**](doc/PlaylistApi.md#createplaylist) | **POST** /api/playlists | Create an empty playlist.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**deletePlaylist**](doc/PlaylistApi.md#deleteplaylist) | **DELETE** /api/playlists/{id} | Delete a playlist (owner only).
+[*PlaylistApi*](doc/PlaylistApi.md) | [**getPlaylist**](doc/PlaylistApi.md#getplaylist) | **GET** /api/playlists/{id} | Get one of the user&#39;s playlists.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylistTracks**](doc/PlaylistApi.md#listplaylisttracks) | **GET** /api/playlists/{id}/tracks | List a playlist&#39;s tracks (owner only).
+[*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylists**](doc/PlaylistApi.md#listplaylists) | **GET** /api/playlists | List the authenticated user&#39;s playlists.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**updatePlaylist**](doc/PlaylistApi.md#updateplaylist) | **PUT** /api/playlists/{id} | Rename a playlist (owner only).
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
 [*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
 [*StreamingApi*](doc/StreamingApi.md) | [**addFavorite**](doc/StreamingApi.md#addfavorite) | **PUT** /api/streams/{id}/favorite | Add a stream to the authenticated user&#39;s favorites.
@@ -112,6 +118,7 @@ Class | Method | HTTP request | Description
  - [BroadcasterRequestInput](doc/BroadcasterRequestInput.md)
  - [BroadcasterRequestListResponse](doc/BroadcasterRequestListResponse.md)
  - [BroadcasterRequestResponse](doc/BroadcasterRequestResponse.md)
+ - [CreatePlaylistRequest](doc/CreatePlaylistRequest.md)
  - [CreateStreamRequest](doc/CreateStreamRequest.md)
  - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
  - [ErrorDetail](doc/ErrorDetail.md)
@@ -121,6 +128,8 @@ Class | Method | HTTP request | Description
  - [LoginRequest](doc/LoginRequest.md)
  - [LogoutRequest](doc/LogoutRequest.md)
  - [MessageResponse](doc/MessageResponse.md)
+ - [PlaylistResponse](doc/PlaylistResponse.md)
+ - [PlaylistTrackResponse](doc/PlaylistTrackResponse.md)
  - [ProfileResponse](doc/ProfileResponse.md)
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
@@ -130,6 +139,7 @@ Class | Method | HTTP request | Description
  - [StreamResponse](doc/StreamResponse.md)
  - [StreamSummaryResponse](doc/StreamSummaryResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
+ - [UpdatePlaylistRequest](doc/UpdatePlaylistRequest.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
  - [UserResponse](doc/UserResponse.md)
 

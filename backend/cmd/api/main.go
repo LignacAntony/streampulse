@@ -25,6 +25,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/infrastructure/seeder"
 	"github.com/LignacAntony/streampulse/internal/observability"
 	"github.com/LignacAntony/streampulse/internal/openapi"
+	"github.com/LignacAntony/streampulse/internal/playlist"
 	"github.com/LignacAntony/streampulse/internal/profiles"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 	"github.com/LignacAntony/streampulse/internal/streaming"
@@ -138,6 +139,11 @@ func run() error {
 	broadcasterSvc := broadcaster.NewService(broadcasterRepo)
 	broadcasterHandler := broadcaster.NewHandler(broadcasterSvc, broadcasterSvc, broadcasterSvc, broadcasterSvc)
 
+	// Playlists de l'utilisateur (US-05-02) : CRUD + listing des pistes.
+	playlistRepo := playlist.NewRepository(pool)
+	playlistSvc := playlist.NewService(playlistRepo)
+	playlistHandler := playlist.NewHandler(playlistSvc)
+
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
 	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
 	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
@@ -221,6 +227,20 @@ func run() error {
 		http.HandlerFunc(streamingHandler.RemoveFavorite)))
 	mux.Handle("GET /api/users/me/favorites", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.ListFavorites)))
+
+	// Playlists (US-05-02) : actions de niveau utilisateur, RequireAuth seul.
+	mux.Handle("POST /api/playlists", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.Create)))
+	mux.Handle("GET /api/playlists", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.List)))
+	mux.Handle("GET /api/playlists/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.Get)))
+	mux.Handle("PUT /api/playlists/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.Update)))
+	mux.Handle("DELETE /api/playlists/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.Delete)))
+	mux.Handle("GET /api/playlists/{id}/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.ListTracks)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

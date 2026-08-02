@@ -20,6 +20,8 @@ tags:
     description: >-
       Administrative endpoints: user management (US-08-01) and live stream
       supervision/moderation (STR-192).
+  - name: Playlist
+    description: Personal playlist management (US-05-02).
 paths:
   /health:
     get:
@@ -1115,6 +1117,176 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/playlists:
+    post:
+      tags:
+        - Playlist
+      operationId: createPlaylist
+      summary: Create an empty playlist.
+      description: >-
+        Creates a new empty playlist owned by the authenticated user (US-05-02).
+        The name must be unique per user; a duplicate name returns 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlaylistRequest"
+      responses:
+        "201":
+          description: The newly created playlist (empty, track_count = 0).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags:
+        - Playlist
+      operationId: listPlaylists
+      summary: List the authenticated user's playlists.
+      description: >-
+        Returns the user's playlists with their track counts, ordered by
+        creation date (most recent first).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's playlists.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Playlist
+      operationId: getPlaylist
+      summary: Get one of the user's playlists.
+      description: >-
+        Returns the playlist if it belongs to the authenticated user; a playlist
+        owned by someone else returns 404 (its existence is not disclosed).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The playlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Playlist
+      operationId: updatePlaylist
+      summary: Rename a playlist (owner only).
+      description: >-
+        Renames the playlist and/or updates its description. Owner only; a
+        duplicate name returns 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlaylistRequest"
+      responses:
+        "200":
+          description: The updated playlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Playlist
+      operationId: deletePlaylist
+      summary: Delete a playlist (owner only).
+      description: >-
+        Permanently deletes the playlist and its track associations. Owner only.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The playlist was deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}/tracks:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Playlist
+      operationId: listPlaylistTracks
+      summary: List a playlist's tracks (owner only).
+      description: >-
+        Returns the tracks of the playlist, ordered by position. Owner only; a
+        playlist owned by someone else returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The playlist's tracks, ordered by position.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistTrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
@@ -1802,3 +1974,93 @@ components:
           format: int64
           description: Total number of live streams currently in the moderation list.
           example: 3
+    CreatePlaylistRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: My Favorites
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Ma playlist préférée
+    UpdatePlaylistRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Road Trip
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+    PlaylistResponse:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - is_public
+        - track_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: My Favorites
+        description:
+          type: string
+          nullable: true
+          example: Ma playlist préférée
+        is_public:
+          type: boolean
+        track_count:
+          type: integer
+          description: Number of tracks in the playlist.
+          example: 3
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PlaylistTrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+        - position
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+        position:
+          type: integer
+          description: Zero-based position of the track within the playlist.
+          example: 0
