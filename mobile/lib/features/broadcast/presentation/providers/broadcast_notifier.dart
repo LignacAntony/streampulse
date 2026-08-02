@@ -1,0 +1,373 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import '../../../../core/constants/api_constants.dart';
+import '../../../../core/errors/exceptions.dart';
+import '../../../../core/network/sse_client.dart';
+import '../../domain/entities/broadcast_stream.dart';
+import '../../domain/repositories/broadcast_repository.dart';
+
+/// Pilote `DashboardScreen` : flux du diffuseur connecté, création, démarrage
+/// et arrêt du direct (US-06-01, ADR 024).
+///
+/// Fraîcheur du statut : le dashboard ne poll pas. Tant qu'un flux est en
+/// direct, une souscription SSE (`/api/streams/{id}/events`) signale son arrêt,
+/// y compris lorsqu'il vient d'un administrateur (US-08-02) ou du nettoyage
+/// des flux orphelins côté backend. Le flux SSE n'émettant que `ended` et ne
+/// rejouant pas les évènements manqués, chaque **reconnexion** est suivie d'un
+/// `refresh()` de resynchronisation — c'est ce qui rattrape un arrêt survenu
+/// pendant une coupure réseau.
+///
+/// Comme `AdminStreamsProvider`, `load()` est réentrant et protégé par un
+/// jeton de génération : sur deux chargements concurrents (double
+/// pull-to-refresh), seul le plus récent écrit l'état. Les mutations
+/// (`create`/`start`/`stop`) ne capturent PAS leurs erreurs : elles sont
+/// relayées à l'écran, qui a un point d'appel unique où afficher un toast.
+class BroadcastNotifier extends ChangeNotifier {
+  BroadcastNotifier(
+    this._repository, {
+    SseConnector? sse,
+    Duration Function(int attempt)? backoff,
+    Duration pollInterval = const Duration(seconds: 15),
+  })  : _sse = sse,
+        _backoff = backoff ?? _defaultBackoff,
+        _pollInterval = pollInterval;
+
+  final BroadcastRepository _repository;
+
+  /// Null quand la plateforme ne sait pas maintenir un flux HTTP ouvert — c'est
+  /// le cas de Flutter web, dont l'adaptateur Dio ne supporte pas
+  /// `ResponseType.stream`. Le notifier bascule alors sur un rafraîchissement
+  /// périodique (cf. [_startPolling]) plutôt que d'échouer en boucle.
+  final SseConnector? _sse;
+  final Duration Function(int attempt) _backoff;
+  final Duration _pollInterval;
+
+  List<BroadcastStream> _streams = const [];
+  bool _loading = false;
+  bool _creating = false;
+  String? _mutatingId;
+  String? _error;
+  bool _isNetworkError = false;
+
+  /// Cf. `AdminStreamsProvider._loadGeneration` : incrémenté par `load()`
+  /// uniquement, il permet de jeter une réponse (succès OU échec) devenue
+  /// obsolète sans laisser le spinner figé.
+  int _loadGeneration = 0;
+
+  /// Faux quand l'écran n'est plus visible (onglet quitté, application en
+  /// arrière-plan) : coupe la souscription SSE plutôt que de maintenir une
+  /// connexion HTTP ouverte pour rien.
+  bool _active = false;
+
+  StreamSubscription<SseEvent>? _sseSubscription;
+  Timer? _reconnectTimer;
+  Timer? _pollTimer;
+  String? _sseStreamId;
+  int _reconnectAttempt = 0;
+
+  /// Vrai après [dispose]. Une requête encore en vol au moment où l'écran est
+  /// détruit (déconnexion pendant un `start`, par exemple) finirait sinon par
+  /// notifier un notifier disposé — assertion en debug, silencieux en release.
+  bool _disposed = false;
+
+  List<BroadcastStream> get streams => _streams;
+  bool get loading => _loading;
+  bool get creating => _creating;
+
+  /// Identifiant du flux dont un `start`/`stop`/`delete` est en vol, ou null.
+  /// Sert à n'afficher un indicateur que sur la tuile concernée et à empêcher
+  /// deux mutations simultanées.
+  String? get mutatingId => _mutatingId;
+
+  /// Vrai dès qu'une mutation quelconque est en vol. L'écran s'en sert pour
+  /// neutraliser les actions des AUTRES tuiles : tant que `start(A)` n'a pas
+  /// répondu, A est encore `idle` localement, donc rien n'empêcherait sinon de
+  /// lancer `start(B)` — qui serait rejeté silencieusement.
+  bool get isMutating => _mutatingId != null;
+  String? get error => _error;
+  bool get isNetworkError => _isNetworkError;
+
+  /// Flux actuellement en direct, ou null. Le backend garantit qu'il y en a au
+  /// plus un par diffuseur (migration `000016_streams_one_live`).
+  BroadcastStream? get liveStream {
+    for (final stream in _streams) {
+      if (stream.isLive) return stream;
+    }
+    return null;
+  }
+
+  bool get hasLiveStream => liveStream != null;
+
+  /// (Re)charge les flux du diffuseur.
+  /// `reset: true` vide la liste avant le fetch ; `reset: false` la conserve
+  /// affichée pendant le rechargement (resynchronisation SSE, pull-to-refresh).
+  Future<void> load({bool reset = true}) async {
+    final generation = ++_loadGeneration;
+    if (reset) _streams = const [];
+    _loading = true;
+    _clearError();
+    _safeNotify();
+    try {
+      final result = await _repository.listMyStreams();
+      if (generation != _loadGeneration) return; // résultat obsolète
+      _streams = _sorted(result);
+    } catch (e) {
+      if (generation != _loadGeneration) return; // échec obsolète
+      _setError(e);
+    } finally {
+      // Seul le chargement le plus récent possède `_loading` : un chargement
+      // obsolète qui l'éteindrait figerait l'état du plus récent.
+      if (generation == _loadGeneration) {
+        _loading = false;
+        _safeNotify();
+        _syncSubscription();
+      }
+    }
+  }
+
+  /// Pull-to-refresh : recharge sans vider la liste affichée, pour éviter un
+  /// clignotement de l'écran à chaque resynchronisation.
+  Future<void> refresh() => load(reset: false);
+
+  /// Crée un flux `idle` et l'ajoute en tête de liste. Les erreurs de
+  /// validation (400) et réseau sont relayées à l'appelant.
+  Future<BroadcastStream> create({
+    required String title,
+    required bool isPublic,
+    String? description,
+    String? category,
+  }) async {
+    _creating = true;
+    _safeNotify();
+    try {
+      final created = await _repository.createStream(
+        title: title,
+        isPublic: isPublic,
+        description: description,
+        category: category,
+      );
+      _streams = _sorted([created, ..._streams]);
+      _clearError();
+      return created;
+    } finally {
+      _creating = false;
+      _safeNotify();
+    }
+  }
+
+  /// Démarre le direct. Retourne `false` sans rien faire si une autre mutation
+  /// est déjà en vol — l'appelant DOIT tester ce retour avant d'annoncer un
+  /// succès, sinon un second tap concurrent afficherait « Vous êtes en direct »
+  /// alors que rien n'a démarré.
+  ///
+  /// Le 409 « you already have a live stream » reste possible sur une course
+  /// entre deux appareils et remonte alors à l'appelant.
+  Future<bool> start(String id) => _mutate(id, _repository.startStream);
+
+  /// Arrête le direct. Même contrat de retour que [start]. Un 409 signifie que
+  /// le flux n'était déjà plus en direct (arrêt par un administrateur, par
+  /// exemple) : l'écran le traite en rechargeant plutôt qu'en affichant un
+  /// échec sec.
+  Future<bool> stop(String id) => _mutate(id, _repository.stopStream);
+
+  /// Archive le flux et le retire de la liste. Même contrat de retour que
+  /// [start]. Sur un flux en direct, le backend termine la diffusion au
+  /// passage — l'écran doit l'avoir annoncé avant d'appeler ceci.
+  Future<bool> delete(String id) async {
+    if (_mutatingId != null) return false;
+    _mutatingId = id;
+    _safeNotify();
+    try {
+      await _repository.deleteStream(id);
+      _streams = List.unmodifiable(
+        _streams.where((stream) => stream.id != id).toList(),
+      );
+      _clearError();
+      return true;
+    } finally {
+      _mutatingId = null;
+      _safeNotify();
+      // Le flux supprimé était peut-être le direct suivi en SSE : resynchroniser
+      // la souscription évite de rester branché sur un flux qui n'existe plus.
+      _syncSubscription();
+    }
+  }
+
+  /// Retourne `false` en no-op quand une mutation est déjà en vol, `true` quand
+  /// l'appel a réellement eu lieu (les erreurs, elles, remontent en exception).
+  Future<bool> _mutate(
+    String id,
+    Future<BroadcastStream> Function(String id) action,
+  ) async {
+    if (_mutatingId != null) return false;
+    _mutatingId = id;
+    _safeNotify();
+    try {
+      final updated = await action(id);
+      _streams = _sorted([
+        for (final stream in _streams)
+          if (stream.id == updated.id) updated else stream,
+      ]);
+      _clearError();
+      return true;
+    } finally {
+      _mutatingId = null;
+      _safeNotify();
+      _syncSubscription();
+    }
+  }
+
+  /// Signale que l'écran est visible ou non. Appelé au montage/démontage et
+  /// sur changement de cycle de vie de l'application : une connexion SSE ne
+  /// doit pas survivre à la mise en arrière-plan.
+  void setActive(bool active) {
+    if (_active == active) return;
+    _active = active;
+    // `_syncSubscription` traite les deux sens : à faux, il coupe la
+    // souscription SSE **et** le polling. Les séparer avait laissé le timer de
+    // polling tourner en arrière-plan.
+    _syncSubscription();
+  }
+
+  /// Branche ou débranche le suivi temps réel selon l'état courant : il n'a de
+  /// sens que sur un flux en direct (l'endpoint SSE répond 409 sinon).
+  void _syncSubscription() {
+    final live = liveStream;
+    if (!_active || live == null) {
+      _cancelSubscription();
+      _cancelPolling();
+      return;
+    }
+    if (_sse == null) {
+      _startPolling();
+      return;
+    }
+    if (_sseStreamId == live.id && _sseSubscription != null) return;
+    _cancelSubscription();
+    _sseStreamId = live.id;
+    _reconnectAttempt = 0;
+    _openSubscription();
+  }
+
+  /// Repli des plateformes sans streaming HTTP : on interroge périodiquement
+  /// l'API tant qu'un flux est en direct. Moins réactif qu'un `ended` SSE, mais
+  /// l'écran finit toujours par converger — et surtout, on n'enchaîne pas des
+  /// connexions vouées à échouer.
+  void _startPolling() {
+    if (_pollTimer != null) return;
+    _pollTimer = Timer.periodic(_pollInterval, (_) => unawaited(refresh()));
+  }
+
+  void _cancelPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  void _openSubscription() {
+    final id = _sseStreamId;
+    final sse = _sse;
+    if (id == null || sse == null) return;
+    _sseSubscription = sse
+        .connect('${ApiConstants.streams}/$id/events')
+        .listen(
+          _onSseEvent,
+          onError: (Object _) => _scheduleReconnect(),
+          onDone: _scheduleReconnect,
+          cancelOnError: true,
+        );
+  }
+
+  void _onSseEvent(SseEvent event) {
+    // Recevoir quoi que ce soit prouve que la connexion est saine : le backoff
+    // repart de zéro pour la prochaine coupure.
+    _reconnectAttempt = 0;
+    if (event.name != 'ended') return;
+    _cancelSubscription();
+    unawaited(refresh());
+  }
+
+  /// Reprogramme une connexion après une coupure, avec un délai croissant
+  /// plafonné. La resynchronisation qui suit la reconnexion est ce qui
+  /// rattrape un `ended` émis pendant la coupure.
+  void _scheduleReconnect() {
+    _sseSubscription = null;
+    if (!_active || _sseStreamId == null) return;
+    final delay = _backoff(_reconnectAttempt);
+    _reconnectAttempt++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () {
+      if (!_active || _sseStreamId == null) return;
+      _openSubscription();
+      unawaited(refresh());
+    });
+  }
+
+  void _cancelSubscription() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
+    _sseStreamId = null;
+  }
+
+  /// Notifie seulement si le notifier est encore vivant. Une requête en vol au
+  /// moment où l'écran est détruit finirait sinon dans `notifyListeners()`
+  /// après `dispose()`.
+  void _safeNotify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  /// Direct en tête, puis les flux prêts à démarrer, puis les terminés : le
+  /// diffuseur a besoin de l'état actionnable en premier.
+  ///
+  /// `List.sort` de Dart n'étant pas stable, l'ordre relatif de deux flux de
+  /// même rang varierait d'un rafraîchissement à l'autre — d'où le départage
+  /// explicite par date de création décroissante, qui reproduit l'ordre du
+  /// backend et rend la liste visuellement stable.
+  List<BroadcastStream> _sorted(List<BroadcastStream> streams) {
+    final sorted = [...streams];
+    sorted.sort((a, b) {
+      final byRank = _rank(a).compareTo(_rank(b));
+      if (byRank != 0) return byRank;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return List.unmodifiable(sorted);
+  }
+
+  int _rank(BroadcastStream stream) {
+    if (stream.isLive) return 0;
+    if (stream.isIdle) return 1;
+    return 2;
+  }
+
+  void _setError(Object error) {
+    _error = error is NetworkException
+        ? 'Pas de connexion réseau'
+        : 'Impossible de charger vos flux';
+    _isNetworkError = error is NetworkException;
+  }
+
+  void _clearError() {
+    _error = null;
+    _isNetworkError = false;
+  }
+
+  static Duration _defaultBackoff(int attempt) {
+    const maxSeconds = 30;
+    // 1, 2, 4, 8, 16 puis palier à 30 s. Le décalage est borné avant le shift
+    // pour ne pas déborder sur une coupure très longue.
+    final seconds = attempt >= 5 ? maxSeconds : 1 << attempt;
+    return Duration(seconds: seconds > maxSeconds ? maxSeconds : seconds);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _cancelSubscription();
+    _cancelPolling();
+    super.dispose();
+  }
+}

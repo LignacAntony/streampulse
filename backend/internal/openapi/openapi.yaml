@@ -977,6 +977,35 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/users/me/streams:
+    get:
+      tags:
+        - Streaming
+      operationId: listMyStreams
+      summary: List the authenticated user's own streams (broadcaster dashboard).
+      description: >-
+        Returns the caller's own streams (all statuses: idle, live, ended),
+        archived ones excluded, ordered by creation date descending. Unlike every
+        other listing endpoint, this one DOES include stream_key and
+        stream_source_url: the query is scoped to the caller's user id, so the
+        recipient is the owner by construction. A user with no streams — for
+        instance one who does not hold the broadcaster role — receives an empty
+        array rather than a 403.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's own streams, including their secrets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/streams/ingest/{stream_key}:
     parameters:
       - name: stream_key

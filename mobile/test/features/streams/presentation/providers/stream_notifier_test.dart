@@ -154,4 +154,55 @@ void main() {
       expect(notifier.isLoadingMore, isFalse);
     });
   });
+
+  group('StreamNotifier — armement du polling', () {
+    test('startPolling rafraîchit immédiatement', () async {
+      // Sans ce rafraîchissement, revenir sur l'onglet Accueil laisse la liste
+      // périmée jusqu'au premier tick du timer (10 s).
+      final repository = _FakeRepository(result: [_stream('a')]);
+      final notifier = StreamNotifier(repository);
+      await notifier.load();
+      final callsAfterLoad = repository.calls;
+
+      notifier.startPolling();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repository.calls, callsAfterLoad + 1);
+      notifier.stopPolling();
+    });
+
+    test('pas de rafraîchissement immédiat si un chargement est en vol',
+        () async {
+      // Cas du démarrage de l'app : `load()` part juste avant `startPolling()`
+      // dans le postFrameCallback de HomeScreen — doubler la requête initiale
+      // serait du gaspillage.
+      final repository = _FakeRepository(result: [_stream('a')]);
+      final notifier = StreamNotifier(repository);
+
+      final loading = notifier.load(); // non attendu : reste en vol
+      notifier.startPolling();
+      await loading;
+
+      expect(repository.calls, 1);
+      notifier.stopPolling();
+    });
+
+    test('startPolling répété n\'empile ni timer ni requête', () async {
+      final repository = _FakeRepository(result: [_stream('a')]);
+      final notifier = StreamNotifier(repository);
+      await notifier.load();
+      final callsAfterLoad = repository.calls;
+
+      notifier.startPolling();
+      await Future<void>.delayed(Duration.zero);
+      // `_syncPolling` est rappelé à chaque changement de route : les appels
+      // suivants doivent être des no-op tant que le timer tourne.
+      notifier.startPolling();
+      notifier.startPolling();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repository.calls, callsAfterLoad + 1);
+      notifier.stopPolling();
+    });
+  });
 }

@@ -47,6 +47,8 @@ tmp/
 *.dylib
 bin/
 dist/
+# `go build ./cmd/api` sans -o dépose le binaire ici
+backend/api
 
 # Test & coverage
 *.test

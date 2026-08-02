@@ -170,6 +170,7 @@ type Repository interface {
 	AddFavorite(ctx context.Context, userID, streamID string) error
 	RemoveFavorite(ctx context.Context, userID, streamID string) error
 	ListFavorites(ctx context.Context, userID string) ([]Stream, error)
+	ListByOwner(ctx context.Context, userID string) ([]Stream, error)
 	StopLiveStreamsByUser(ctx context.Context, userID string) ([]string, error)
 	ForceStopLiveStream(ctx context.Context, id string) (string, error)
 }
@@ -263,6 +264,16 @@ func (s *Service) RemoveFavorite(ctx context.Context, streamID, requesterID stri
 // archivés, triés par date d'ajout décroissante.
 func (s *Service) ListFavorites(ctx context.Context, requesterID string) ([]Stream, error) {
 	return s.repo.ListFavorites(ctx, requesterID)
+}
+
+// ListMyStreams retourne les flux du demandeur pour son tableau de bord
+// (STR-153) : tous statuts, archivés exclus, secrets inclus.
+//
+// Aucun contrôle de rôle : un utilisateur sans le rôle diffuseur ne possède
+// simplement aucun flux et reçoit une liste vide. C'est volontaire — le client
+// n'a pas à distinguer « pas diffuseur » de « pas encore de flux » (ADR 024).
+func (s *Service) ListMyStreams(ctx context.Context, requesterID string) ([]Stream, error) {
+	return s.repo.ListByOwner(ctx, requesterID)
 }
 
 // UpdateStream valide puis met à jour le flux du propriétaire (404 si absent,

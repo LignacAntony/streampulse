@@ -24,6 +24,17 @@ WHERE s.is_public = true AND s.status = 'live' AND s.archived_at IS NULL
 ORDER BY s.started_at DESC NULLS LAST, s.created_at DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
+-- name: ListStreamsByOwner :many
+-- Flux d'un diffuseur pour son tableau de bord (STR-153) : tous statuts
+-- (idle/live/ended), archivés exclus. Contrairement à ListPublicLiveStreams, le
+-- stream_key EST sélectionné : le filtre sur user_id garantit que l'appelant est
+-- le propriétaire, seul destinataire légitime de ce secret.
+SELECT id::text AS id, user_id::text AS user_id, title, description, category,
+       status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+FROM streams
+WHERE user_id = sqlc.arg(user_id)::uuid AND archived_at IS NULL
+ORDER BY created_at DESC;
+
 -- name: GetStreamByID :one
 SELECT id::text AS id, user_id::text AS user_id, title, description, category,
        status, is_public, stream_key, started_at, ended_at, created_at, updated_at

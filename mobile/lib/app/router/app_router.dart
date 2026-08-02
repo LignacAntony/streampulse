@@ -7,6 +7,7 @@ import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/broadcast/presentation/screens/dashboard_screen.dart';
 import '../../features/broadcaster/presentation/screens/broadcaster_request_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
@@ -122,10 +123,7 @@ GoRouter createAppRouter(SecureStorage storage) {
             routes: [
               GoRoute(
                 path: '/dashboard',
-                builder: (context, state) => const PlaceholderScreen(
-                  title: 'Tableau',
-                  icon: Icons.grid_view_outlined,
-                ),
+                builder: (context, state) => const DashboardScreen(),
               ),
             ],
           ),
