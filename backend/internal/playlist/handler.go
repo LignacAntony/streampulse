@@ -95,14 +95,10 @@ type trackResponse struct {
 	Position  int     `json:"position"`
 }
 
+// toTrackResponse : conversion directe (mêmes champs que PlaylistTrack, les
+// tags JSON n'affectent pas la convertibilité — cf. staticcheck S1016).
 func toTrackResponse(t PlaylistTrack) trackResponse {
-	return trackResponse{
-		ID:        t.ID,
-		Title:     t.Title,
-		Artist:    t.Artist,
-		DurationS: t.DurationS,
-		Position:  t.Position,
-	}
+	return trackResponse(t)
 }
 
 // Create gère POST /api/playlists : crée une playlist vide (201).
