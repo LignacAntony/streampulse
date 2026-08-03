@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 
 	"os"
@@ -53,6 +54,39 @@ type StreamSessions interface {
 	AttachIngest(streamKey string) (io.Writer, func(), error)
 	Playlist(streamID string) (string, bool)
 	Segment(streamID, name string) (string, bool)
+	TouchListener(streamID, clientKey string)
+	Stats(streamID string) (SessionStats, bool)
+}
+
+// clientKey identifie un lecteur HLS pour le comptage d'auditeurs (STR-154).
+//
+// L'adresse réseau est le seul discriminant disponible : les lecteurs natifs
+// (AVPlayer/ExoPlayer) ne portent pas le Bearer, et rien d'autre dans la
+// requête n'est stable. Conséquences assumées : deux lecteurs derrière la même
+// IP publique comptent pour un, et un client qui change d'adresse compte
+// double le temps que sa fenêtre expire.
+//
+// X-Forwarded-For n'est lu que si `TRUST_PROXY_HEADERS` est activé. L'en-tête
+// est falsifiable : sans reverse proxy qui le réécrit, le lire laisserait
+// n'importe qui gonfler le compteur d'un flux en variant sa valeur. Sans lui
+// en revanche, tous les auditeurs derrière le proxy de production partagent
+// l'adresse de ce dernier et le compteur sature à 1 — d'où le drapeau.
+func (h *Handler) clientKey(r *http.Request) string {
+	if h.trustProxyHeaders {
+		// Premier maillon = client d'origine ; les suivants sont les proxies
+		// traversés. Caddy réécrit l'en-tête, la valeur est donc fiable ici.
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			if first, _, found := strings.Cut(fwd, ","); found {
+				return strings.TrimSpace(first)
+			}
+			return strings.TrimSpace(fwd)
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // Handler expose le domaine streaming en HTTP. ingestBaseURL sert à construire
@@ -62,6 +96,10 @@ type Handler struct {
 	ingestBaseURL string
 	sessions      StreamSessions
 	metrics       MetricsRecorder // jamais nil : noopRecorder par défaut (STR-166)
+
+	// trustProxyHeaders : cf. clientKey. Faux par défaut, activé par
+	// SetTrustProxyHeaders au démarrage quand un reverse proxy est devant.
+	trustProxyHeaders bool
 }
 
 func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions) *Handler {
@@ -72,6 +110,11 @@ func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions
 		metrics:       noopRecorder{},
 	}
 }
+
+// SetTrustProxyHeaders autorise la lecture de X-Forwarded-For pour identifier
+// les auditeurs (STR-154). Setter plutôt que paramètre de constructeur : même
+// motif que SetMetrics — c'est une donnée de déploiement, pas du domaine.
+func (h *Handler) SetTrustProxyHeaders(trust bool) { h.trustProxyHeaders = trust }
 
 // SetMetrics injecte le collecteur de métriques métier (STR-166, ADR 022).
 // Setter plutôt que paramètre de constructeur : l'observabilité est optionnelle
@@ -459,6 +502,79 @@ func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// streamStatsResponse est l'instantané d'audience d'un flux (STR-154).
+//
+// `listeners` et `peak_listeners` sont des **estimations** issues d'un suivi en
+// mémoire des requêtes de manifeste (cf. listeners.go) : elles repartent de
+// zéro au redémarrage du process et ne survivent pas à l'arrêt du flux.
+type streamStatsResponse struct {
+	StreamID        string     `json:"stream_id"`
+	Status          string     `json:"status"`
+	Listeners       int        `json:"listeners"`
+	PeakListeners   int        `json:"peak_listeners"`
+	StartedAt       *time.Time `json:"started_at"`
+	DurationSeconds int64      `json:"duration_seconds"`
+}
+
+// Stats gère GET /api/streams/{id}/stats : audience et durée d'un flux, pour
+// son tableau de bord (STR-154). Propriétaire uniquement — 404 sinon, comme
+// partout ailleurs, pour ne pas divulguer l'existence du flux.
+//
+// Un flux qui n'est pas en direct répond 200 avec des compteurs à zéro plutôt
+// qu'une erreur : le client poll pendant toute la vie de l'écran et n'a pas à
+// distinguer « pas encore démarré » de « échec ».
+func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	id := r.PathValue("id")
+
+	stream, isOwner, err := h.svc.GetStream(r.Context(), id, requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	if !isOwner {
+		httpjson.WriteError(w, r, apperror.NotFound("stream not found"))
+		return
+	}
+
+	// Absence de session = flux pas en direct : compteurs à zéro.
+	stats, _ := h.sessions.Stats(id)
+
+	if err := httpjson.Write(w, http.StatusOK, streamStatsResponse{
+		StreamID:        stream.ID,
+		Status:          stream.Status,
+		Listeners:       stats.Listeners,
+		PeakListeners:   stats.Peak,
+		StartedAt:       stream.StartedAt,
+		DurationSeconds: broadcastDuration(stream, time.Now()),
+	}); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode stats")
+	}
+}
+
+// broadcastDuration retourne la durée de diffusion en secondes : depuis
+// started_at jusqu'à maintenant si le flux est en direct, jusqu'à ended_at
+// sinon. Zéro si le flux n'a jamais démarré, ou si l'horloge donne un écart
+// négatif (started_at dans le futur).
+func broadcastDuration(s Stream, now time.Time) int64 {
+	if s.StartedAt == nil {
+		return 0
+	}
+	end := now
+	if s.Status != StatusLive && s.EndedAt != nil {
+		end = *s.EndedAt
+	}
+	elapsed := end.Sub(*s.StartedAt)
+	if elapsed < 0 {
+		return 0
+	}
+	return int64(elapsed.Seconds())
+}
+
 // Events gère GET /api/streams/{id}/events : flux SSE d'événements du direct.
 // L'abonné reçoit un event "ended" quand le diffuseur arrête le flux.
 func (h *Handler) Events(w http.ResponseWriter, r *http.Request) {
@@ -640,7 +756,17 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, con
 	// réellement rendu — http.ServeFile écrit l'en-tête lui-même.
 	sr := &hlsStatusRecorder{ResponseWriter: w}
 	w = sr
-	defer func() { h.metrics.RecordHLSRequest(id, kind, sr.statusText()) }()
+	defer func() {
+		h.metrics.RecordHLSRequest(id, kind, sr.statusText())
+		// Un manifeste servi = un lecteur vivant (STR-154). Seules les
+		// playlists comptent : un lecteur en récupère une régulièrement tant
+		// qu'il écoute, alors que les segments arrivent par rafales et
+		// gonfleraient le compte. Les réponses non-200 ne comptent pas : une
+		// requête refusée n'est pas un auditeur.
+		if kind == HLSKindPlaylist && sr.statusText() == "200" {
+			h.sessions.TouchListener(id, h.clientKey(r))
+		}
+	}()
 
 	// Le fichier peut ne pas exister encore (fenêtre entre le start et le premier
 	// segment, ou push dont ffmpeg n'a encore rien produit) ou avoir été retiré

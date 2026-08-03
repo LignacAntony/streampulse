@@ -123,6 +123,7 @@ func run() error {
 	streamingMetrics := observability.NewStreamingMetrics(prometheus.DefaultRegisterer)
 	streamingSessions.SetMetrics(streamingMetrics)
 	streamingHandler.SetMetrics(streamingMetrics)
+	streamingHandler.SetTrustProxyHeaders(cfg.TrustProxyHeaders)
 	observability.RegisterLiveStreamsGauge(prometheus.DefaultRegisterer, streamingSessions.ActiveCount)
 
 	// Réconciliation : les sessions LiveSessions sont en mémoire et reparties
@@ -225,6 +226,9 @@ func run() error {
 	// un non-diffuseur ne possède aucun flux et reçoit [] (cf. ADR 024).
 	mux.Handle("GET /api/users/me/streams", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.ListMine)))
+	// Statistiques d'audience du flux, propriétaire uniquement (STR-154).
+	mux.Handle("GET /api/streams/{id}/stats", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Stats)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

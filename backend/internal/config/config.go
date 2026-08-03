@@ -69,6 +69,17 @@ type Config struct {
 	// servies simultanément — STR-88. <= 0 désactive la borne.
 	HLSMaxConcurrent int `mapstructure:"HLS_MAX_CONCURRENT"`
 
+	// TrustProxyHeaders autorise la lecture de X-Forwarded-For pour identifier
+	// l'auditeur d'un flux (comptage d'audience, STR-154).
+	//
+	// Faux par défaut, et c'est volontaire : l'en-tête est falsifiable par le
+	// client, l'activer sans reverse proxy devant laisserait n'importe qui
+	// gonfler le compteur d'un flux en variant sa valeur. À passer à true
+	// **uniquement** derrière un proxy qui réécrit l'en-tête (Caddy le fait).
+	// Sans lui, tous les auditeurs derrière le proxy partagent une adresse et
+	// le compteur sature à 1.
+	TrustProxyHeaders bool `mapstructure:"TRUST_PROXY_HEADERS"`
+
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
 
@@ -97,6 +108,7 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_PORT", defaultDBPort)
 	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
 	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
+	v.SetDefault("TRUST_PROXY_HEADERS", false)
 	v.SetDefault("LOG_LEVEL", defaultLogLevel)
 	v.SetDefault("LOG_PRETTY", false)
 

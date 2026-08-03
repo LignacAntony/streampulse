@@ -853,6 +853,112 @@ func TestHandler_ListFavorites_OK(t *testing.T) {
 	}
 }
 
+func TestHandler_Stats_OwnerOK(t *testing.T) {
+	started := time.Now().Add(-2 * time.Minute)
+	stub := &stubService{
+		getOwner: true,
+		getRet: Stream{
+			ID: "s1", UserID: testUserID, Title: "Mon flux",
+			Status: StatusLive, StartedAt: &started,
+		},
+	}
+	sessions := NewLiveSessions(t.Context())
+	h := NewHandler(stub, testIngestURL, sessions)
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Stats), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	// Aucune session active : compteurs à zéro, mais la durée reste calculée
+	// depuis started_at.
+	if !strings.Contains(body, `"listeners":0`) || !strings.Contains(body, `"peak_listeners":0`) {
+		t.Errorf("compteurs attendus à zéro sans session: %s", body)
+	}
+	if !strings.Contains(body, `"duration_seconds":12`) {
+		t.Errorf("durée attendue autour de 120 s: %s", body)
+	}
+}
+
+func TestHandler_Stats_CountsListeners(t *testing.T) {
+	started := time.Now().Add(-time.Minute)
+	stub := &stubService{
+		getOwner: true,
+		getRet: Stream{
+			ID: "s1", UserID: testUserID, Status: StatusLive, StartedAt: &started,
+		},
+	}
+	sessions := NewLiveSessions(t.Context())
+	sessions.Start("s1", "KEY")
+	t.Cleanup(func() { sessions.Stop("s1") })
+	sessions.TouchListener("s1", "10.0.0.1")
+	sessions.TouchListener("s1", "10.0.0.2")
+
+	h := NewHandler(stub, testIngestURL, sessions)
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Stats), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"listeners":2`) || !strings.Contains(body, `"peak_listeners":2`) {
+		t.Errorf("deux auditeurs distincts attendus: %s", body)
+	}
+}
+
+func TestHandler_Stats_NotOwnerIs404(t *testing.T) {
+	// Un tiers ne doit pas apprendre l'audience d'un flux, ni même son
+	// existence : 404 et non 403.
+	stub := &stubService{
+		getOwner: false,
+		getRet:   Stream{ID: "s1", UserID: "autre", Status: StatusLive},
+	}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(t.Context()))
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Stats), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Stats_Unauthenticated(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(t.Context()))
+
+	rec := doID(t, http.MethodGet, "s1", "", http.HandlerFunc(h.Stats), false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_ClientKey_IgnoresForwardedForByDefault(t *testing.T) {
+	// X-Forwarded-For est falsifiable : sans reverse proxy devant, le lire
+	// laisserait n'importe qui gonfler le compteur en variant sa valeur.
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(t.Context()))
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/playlist.m3u8", nil)
+	req.RemoteAddr = "192.0.2.10:54321"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+
+	if got := h.clientKey(req); got != "192.0.2.10" {
+		t.Errorf("clientKey = %q, want %q", got, "192.0.2.10")
+	}
+}
+
+func TestHandler_ClientKey_UsesFirstForwardedHopWhenTrusted(t *testing.T) {
+	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(t.Context()))
+	h.SetTrustProxyHeaders(true)
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/playlist.m3u8", nil)
+	req.RemoteAddr = "192.0.2.10:54321"
+	// Premier maillon = client d'origine, les suivants sont les proxies.
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
+
+	if got := h.clientKey(req); got != "1.2.3.4" {
+		t.Errorf("clientKey = %q, want %q", got, "1.2.3.4")
+	}
+}
+
 func TestHandler_ListMine_OK(t *testing.T) {
 	stub := &stubService{listMineRet: []Stream{
 		{ID: "s1", UserID: testUserID, Title: "En direct", Status: StatusLive, IsPublic: true, StreamKey: "SECRET1"},
