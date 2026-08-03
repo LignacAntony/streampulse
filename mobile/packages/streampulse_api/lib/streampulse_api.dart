@@ -40,6 +40,7 @@ export 'package:streampulse_api/src/model/reset_password_request.dart';
 export 'package:streampulse_api/src/model/review_request_input.dart';
 export 'package:streampulse_api/src/model/set_user_active_request.dart';
 export 'package:streampulse_api/src/model/stream_response.dart';
+export 'package:streampulse_api/src/model/stream_stats_response.dart';
 export 'package:streampulse_api/src/model/stream_summary_response.dart';
 export 'package:streampulse_api/src/model/token_pair_response.dart';
 export 'package:streampulse_api/src/model/update_profile_request.dart';

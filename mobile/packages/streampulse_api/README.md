@@ -90,6 +90,7 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**createStream**](doc/StreamingApi.md#createstream) | **POST** /api/streams | Create and configure a new live stream (broadcaster only).
 [*StreamingApi*](doc/StreamingApi.md) | [**deleteStream**](doc/StreamingApi.md#deletestream) | **DELETE** /api/streams/{id} | Delete (archive) a stream (owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**getStream**](doc/StreamingApi.md#getstream) | **GET** /api/streams/{id} | Get a stream by id.
+[*StreamingApi*](doc/StreamingApi.md) | [**getStreamStats**](doc/StreamingApi.md#getstreamstats) | **GET** /api/streams/{id}/stats | Live audience statistics for the caller&#39;s own stream.
 [*StreamingApi*](doc/StreamingApi.md) | [**ingestStream**](doc/StreamingApi.md#ingeststream) | **POST** /api/streams/ingest/{stream_key} | Push a live audio stream (broadcaster ingest).
 [*StreamingApi*](doc/StreamingApi.md) | [**listMyFavorites**](doc/StreamingApi.md#listmyfavorites) | **GET** /api/users/me/favorites | List the authenticated user&#39;s favorite streams.
 [*StreamingApi*](doc/StreamingApi.md) | [**listMyStreams**](doc/StreamingApi.md#listmystreams) | **GET** /api/users/me/streams | List the authenticated user&#39;s own streams (broadcaster dashboard).
@@ -129,6 +130,7 @@ Class | Method | HTTP request | Description
  - [ReviewRequestInput](doc/ReviewRequestInput.md)
  - [SetUserActiveRequest](doc/SetUserActiveRequest.md)
  - [StreamResponse](doc/StreamResponse.md)
+ - [StreamStatsResponse](doc/StreamStatsResponse.md)
  - [StreamSummaryResponse](doc/StreamSummaryResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)

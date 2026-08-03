@@ -1,5 +1,6 @@
 import 'package:streampulse_api/streampulse_api.dart';
 
+import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 
 /// Conversion du DTO généré vers l'entité domaine : le type généré ne franchit
@@ -16,6 +17,15 @@ extension StreamResponseBroadcastMapper on StreamResponse {
         startedAt: startedAt,
         streamKey: streamKey,
         streamSourceUrl: streamSourceUrl,
+      );
+}
+
+extension StreamStatsResponseMapper on StreamStatsResponse {
+  BroadcastStats toEntity() => BroadcastStats(
+        streamId: streamId,
+        listeners: listeners,
+        peak: peakListeners,
+        duration: Duration(seconds: durationSeconds),
       );
 }
 

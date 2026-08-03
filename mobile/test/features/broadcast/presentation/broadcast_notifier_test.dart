@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/core/network/sse_client.dart';
+import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
 import 'package:streampulse/features/broadcast/presentation/providers/broadcast_notifier.dart';
@@ -87,7 +88,22 @@ class _FakeBroadcastRepository implements BroadcastRepository {
     if (mutationError != null) throw mutationError!;
   }
 
+  @override
+  Future<BroadcastStats> streamStats(String id) async {
+    statsCalls++;
+    if (statsError != null) throw statsError!;
+    return BroadcastStats(
+      streamId: id,
+      listeners: listeners,
+      peak: listeners,
+      duration: const Duration(minutes: 2),
+    );
+  }
+
   final List<String> deletedIds = [];
+  int statsCalls = 0;
+  int listeners = 3;
+  Object? statsError;
 }
 
 /// Repository dont chaque `listMyStreams` reste en vol tant que le test n'a
@@ -120,6 +136,9 @@ class _DeferredRepository implements BroadcastRepository {
 
   @override
   Future<void> deleteStream(String id) => throw UnimplementedError();
+
+  @override
+  Future<BroadcastStats> streamStats(String id) => throw UnimplementedError();
 }
 
 /// Repository dont `startStream` reste en vol jusqu'à résolution manuelle :
@@ -151,6 +170,9 @@ class _DeferredMutationRepository implements BroadcastRepository {
 
   @override
   Future<void> deleteStream(String id) => throw UnimplementedError();
+
+  @override
+  Future<BroadcastStats> streamStats(String id) => throw UnimplementedError();
 }
 
 /// Connecteur SSE piloté par le test : chaque `connect` ouvre un
@@ -339,6 +361,125 @@ void main() {
       await expectLater(notifier.delete('a'), throwsA(isA<ServerException>()));
       expect(notifier.mutatingId, isNull);
       expect(notifier.streams, hasLength(1));
+    });
+  });
+
+  group('BroadcastNotifier — audience (STR-154)', () {
+    test('un direct déclenche une première mesure immédiate', () async {
+      // Attendre 5 s laisserait la carte sans chiffre juste après le
+      // démarrage, au moment où le diffuseur la regarde le plus.
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+
+      await notifier.load();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repository.statsCalls, greaterThanOrEqualTo(1));
+      expect(notifier.stats?.listeners, 3);
+      notifier.dispose();
+    });
+
+    test('les mesures se répètent à la cadence demandée', () async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+      final callsAfterLoad = repository.statsCalls;
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(repository.statsCalls, greaterThan(callsAfterLoad));
+      notifier.dispose();
+    });
+
+    test('aucune mesure sans flux en direct', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+
+      await notifier.load();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(repository.statsCalls, 0);
+      expect(notifier.stats, isNull);
+      notifier.dispose();
+    });
+
+    test('l\'arrêt du direct coupe les mesures et efface l\'audience',
+        () async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+      await Future<void>.delayed(Duration.zero);
+      expect(notifier.stats, isNotNull);
+
+      await notifier.stop('a');
+      final callsAfterStop = repository.statsCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(notifier.stats, isNull);
+      expect(repository.statsCalls, callsAfterStop);
+      notifier.dispose();
+    });
+
+    test('les mesures s\'arrêtent en arrière-plan', () async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+
+      notifier.setActive(false);
+      final callsAfterPause = repository.statsCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(repository.statsCalls, callsAfterPause);
+      notifier.dispose();
+    });
+
+    test('un échec de mesure ne casse pas l\'écran', () async {
+      // L'audience est une information d'appoint : une coupure réseau ne doit
+      // pas faire clignoter une erreur sur un dashboard par ailleurs sain.
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      )..statsError = const NetworkException();
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+
+      await notifier.load();
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+
+      expect(notifier.stats, isNull);
+      expect(notifier.error, isNull, reason: 'pas d\'erreur remontée à l\'écran');
+      expect(notifier.streams, hasLength(1));
+      notifier.dispose();
     });
   });
 

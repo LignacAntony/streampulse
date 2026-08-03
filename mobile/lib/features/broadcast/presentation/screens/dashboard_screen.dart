@@ -14,6 +14,7 @@ import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
 import '../../data/datasources/broadcast_remote_data_source.dart';
 import '../../data/repositories/broadcast_repository_impl.dart';
+import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
 import '../providers/broadcast_notifier.dart';
@@ -400,6 +401,8 @@ class _DashboardBodyState extends State<_DashboardBody>
           // partirait sur un état périmé.
           otherMutationInFlight:
               notifier.isMutating && notifier.mutatingId != stream.id,
+          // L'audience ne concerne que le direct en cours.
+          stats: stream.isLive ? notifier.stats : null,
           onStart: () => _onStart(stream),
           onStop: () => _onStop(stream),
           onDelete: () => _onDelete(stream),
@@ -415,6 +418,7 @@ class _StreamCard extends StatelessWidget {
     required this.blockedByOtherLive,
     required this.mutating,
     required this.otherMutationInFlight,
+    required this.stats,
     required this.onStart,
     required this.onStop,
     required this.onDelete,
@@ -424,6 +428,10 @@ class _StreamCard extends StatelessWidget {
   final bool blockedByOtherLive;
   final bool mutating;
   final bool otherMutationInFlight;
+
+  /// Audience du direct, ou null si le flux n'est pas en direct ou si aucune
+  /// mesure n'est encore arrivée.
+  final BroadcastStats? stats;
   final VoidCallback onStart;
   final VoidCallback onStop;
   final VoidCallback onDelete;
@@ -511,6 +519,10 @@ class _StreamCard extends StatelessWidget {
                 ],
               ],
             ),
+            if (stats != null) ...[
+              const SizedBox(height: 12),
+              _AudienceRow(streamId: stream.id, stats: stats!),
+            ],
             // Rien à pousser sur un flux terminé : la clé y est inutilisable
             // (le backend n'autorise que idle -> live). L'afficher n'apporterait
             // que du bruit et exposerait un secret pour rien.
@@ -565,6 +577,55 @@ class _StreamCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Audience du direct : auditeurs connectés et pic depuis le démarrage.
+///
+/// Le libellé reste volontairement prudent — « estimé » — parce que le compte
+/// l'est réellement : HLS n'a pas de connexion persistante, deux lecteurs
+/// derrière la même adresse publique comptent pour un, et un auditeur parti met
+/// quelques dizaines de secondes à disparaître (cf. ADR 025).
+class _AudienceRow extends StatelessWidget {
+  const _AudienceRow({required this.streamId, required this.stats});
+
+  final String streamId;
+  final BroadcastStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.headphones_outlined, size: 18, color: colors.primary),
+          const SizedBox(width: 8),
+          Text(
+            key: Key('dashboard_listeners_$streamId'),
+            '${stats.listeners}',
+            style: text.titleMedium?.copyWith(color: colors.primary),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            stats.listeners > 1 ? 'auditeurs estimés' : 'auditeur estimé',
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+          const Spacer(),
+          Text(
+            key: Key('dashboard_peak_$streamId'),
+            'pic ${stats.peak}',
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }
