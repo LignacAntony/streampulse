@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -48,6 +49,13 @@ func TestSession_Peak_SurvivesDepartures(t *testing.T) {
 	s.touchListener("b", start)
 	s.touchListener("c", start)
 
+	// Le pic est celui OBSERVÉ aux instants de lecture : il se fige au moment
+	// où l'audience est mesurée, pas à l'insertion — sans quoi chaque requête
+	// de manifeste devrait balayer toute la map (cf. touchListener).
+	if got := s.stats(start); got.Peak != 3 {
+		t.Fatalf("Peak à la mesure = %d, want 3", got.Peak)
+	}
+
 	// Tout le monde part : le compte courant retombe, le pic reste.
 	later := start.Add(listenerWindow + time.Second)
 	got := s.stats(later)
@@ -60,12 +68,68 @@ func TestSession_Peak_SurvivesDepartures(t *testing.T) {
 	}
 }
 
+func TestSession_TouchListener_DoesNotScanOnHotPath(t *testing.T) {
+	// Le chemin chaud HLS ne doit pas purger : la purge est un balayage complet
+	// sous le mutex de session, et toutes les requêtes de playlist d'un flux
+	// s'y sérialiseraient. Vérifié par l'observable : une entrée expirée reste
+	// présente tant que personne n'a lu les stats.
+	s := &session{}
+	start := time.Now()
+	s.touchListener("parti", start)
+
+	later := start.Add(listenerWindow + time.Second)
+	s.touchListener("nouveau", later)
+
+	if _, still := s.listeners["parti"]; !still {
+		t.Error("touchListener a purgé sur le chemin chaud")
+	}
+	// La lecture, elle, purge.
+	if got := s.stats(later); got.Listeners != 1 {
+		t.Errorf("après stats: Listeners = %d, want 1", got.Listeners)
+	}
+}
+
+func TestSession_CapPurgesExpiredBeforeRejecting(t *testing.T) {
+	// Une map saturée d'entrées EXPIRÉES ne doit pas faire rejeter un auditeur
+	// légitime : purger d'abord libère les créneaux morts.
+	s := &session{listeners: make(map[string]time.Time)}
+	start := time.Now()
+	for i := 0; i < maxTrackedListeners; i++ {
+		s.listeners[fmt.Sprintf("vieux-%d", i)] = start
+	}
+
+	later := start.Add(listenerWindow + time.Second)
+	s.touchListener("legitime", later)
+
+	if _, ok := s.listeners["legitime"]; !ok {
+		t.Error("auditeur légitime rejeté alors que la map était pleine d'expirés")
+	}
+}
+
+func TestSession_CapStillSaturatesWhenGenuinelyFull(t *testing.T) {
+	// Plafond atteint par des clients TOUS actifs : là, on sature pour de bon.
+	s := &session{listeners: make(map[string]time.Time)}
+	now := time.Now()
+	for i := 0; i < maxTrackedListeners; i++ {
+		s.listeners[fmt.Sprintf("actif-%d", i)] = now
+	}
+
+	s.touchListener("de-trop", now)
+
+	if _, ok := s.listeners["de-trop"]; ok {
+		t.Error("le plafond doit tenir quand tous les clients suivis sont actifs")
+	}
+	if got := len(s.listeners); got > maxTrackedListeners {
+		t.Errorf("len = %d, dépasse le plafond %d", got, maxTrackedListeners)
+	}
+}
+
 func TestSession_Listeners_Capped(t *testing.T) {
 	s := &session{}
 	now := time.Now()
 
 	for i := 0; i < maxTrackedListeners+50; i++ {
-		s.touchListener(string(rune(i))+"-client", now)
+		s.touchListener(fmt.Sprintf("client-%d", i), now)
 	}
 
 	if got := s.stats(now).Listeners; got > maxTrackedListeners {
@@ -74,16 +138,16 @@ func TestSession_Listeners_Capped(t *testing.T) {
 }
 
 func TestSession_Listeners_CapDoesNotFreezeKnownClients(t *testing.T) {
-	s := &session{}
+	s := &session{listeners: make(map[string]time.Time)}
 	start := time.Now()
-	s.listeners = make(map[string]time.Time)
 
-	// Saturer la map, puis rafraîchir un client déjà suivi : son horodatage
-	// doit être mis à jour malgré le plafond, sinon il expirerait à tort.
+	// Saturer la map de clients ACTIFS, puis rafraîchir l'un d'eux : son
+	// horodatage doit être mis à jour malgré le plafond, sinon il expirerait
+	// à tort alors qu'il écoute toujours.
 	for i := 0; i < maxTrackedListeners; i++ {
-		s.listeners[string(rune(i))+"-x"] = start
+		s.listeners[fmt.Sprintf("x-%d", i)] = start
 	}
-	known := string(rune(0)) + "-x"
+	const known = "x-0"
 
 	later := start.Add(10 * time.Second)
 	s.touchListener(known, later)

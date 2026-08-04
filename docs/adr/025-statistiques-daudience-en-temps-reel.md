@@ -39,14 +39,25 @@ souvent ; un lecteur parti sort du compte en une demi-minute.
 gonfleraient artificiellement le chiffre. Seules les réponses `200` comptent :
 une requête refusée n'est pas un auditeur.
 
-Le pic (`peak_listeners`) est le maximum observé depuis le début de la
-diffusion. Il survit aux départs mais pas à l'arrêt du flux ni au redémarrage
-du process — l'historique persistant est [STR-162](https://linear.app/streampulse/issue/STR-162).
+**La purge n'a pas lieu sur le chemin chaud.** Elle balaie toute la map, et la
+déclencher à chaque manifeste sérialiserait derrière le mutex de session toutes
+les requêtes concurrentes d'un flux très suivi — jusqu'à 10 000 entrées
+parcourues par requête. `touchListener` est donc O(1) ; la purge vit dans
+`stats()`, appelé toutes les 5 s par un seul lecteur, et en dernier recours
+quand le plafond est atteint.
 
-La map est purgée à chaque lecture et plafonnée à `maxTrackedListeners` = 10 000
-entrées : une diffusion très suivie — ou un client qui ferait varier son
-identité — ne doit pas faire enfler la mémoire sans limite. Un client déjà suivi
-reste rafraîchi malgré le plafond, sinon il expirerait à tort.
+Le pic (`peak_listeners`) est par conséquent le maximum **observé aux instants
+de lecture**, à 5 s près, et non un maximum instantané continu : le compte n'est
+exact qu'après purge. Il survit aux départs mais pas à l'arrêt du flux ni au
+redémarrage du process — l'historique persistant est
+[STR-162](https://linear.app/streampulse/issue/STR-162).
+
+La map est plafonnée à `maxTrackedListeners` = 10 000 entrées : une diffusion
+très suivie — ou un client qui ferait varier son identité — ne doit pas faire
+enfler la mémoire sans limite. Le plafond purge **avant** de rejeter : une map
+saturée d'entrées déjà expirées écarterait sinon un auditeur légitime et
+sous-compterait l'audience. Un client déjà suivi reste rafraîchi malgré le
+plafond, sinon il expirerait à tort.
 
 ### 2. Identification par adresse réseau, et le drapeau qui va avec
 
@@ -102,6 +113,17 @@ arrière-plan, comme la souscription SSE.
 d'appoint : une coupure réseau ne doit pas faire clignoter une erreur sur un
 tableau de bord par ailleurs fonctionnel. La dernière valeur connue reste
 affichée, et l'erreur de chargement de la liste garde son propre canal.
+
+La ligne d'audience est rendue **dès que le flux est en direct**, avec des
+tirets tant qu'aucune mesure n'est arrivée. La faire apparaître au premier
+relevé ferait sauter la mise en page, et elle disparaîtrait au passage en
+arrière-plan — là où la durée, elle, se contente de figer. C'est la métrique
+cœur de l'US : elle garde sa place.
+
+`duration_seconds` n'est pas repris côté mobile. Le tableau de bord affiche déjà
+la durée via un compteur local rafraîchi chaque seconde ; la valeur serveur
+n'arriverait que toutes les 5 s et ferait sauter le chronomètre. Le champ reste
+dans le contrat HTTP, où l'historique en aura besoin.
 
 ## Alternatives écartées
 

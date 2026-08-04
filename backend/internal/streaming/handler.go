@@ -564,11 +564,25 @@ func broadcastDuration(s Stream, now time.Time) int64 {
 	if s.StartedAt == nil {
 		return 0
 	}
-	end := now
-	if s.Status != StatusLive && s.EndedAt != nil {
-		end = *s.EndedAt
+	if s.Status != StatusLive {
+		// Diffusion terminée sans `ended_at` : la borne manque. Compter jusqu'à
+		// maintenant ferait croître indéfiniment la durée d'un flux pourtant
+		// arrêté, à chaque poll. `ArchiveStream` pose justement `status='ended'`
+		// sans renseigner `ended_at` — inatteignable ici aujourd'hui (les flux
+		// archivés sont exclus par GetStreamByID), mais on ne s'appuie pas
+		// là-dessus.
+		if s.EndedAt == nil {
+			return 0
+		}
+		return durationBetween(*s.StartedAt, *s.EndedAt)
 	}
-	elapsed := end.Sub(*s.StartedAt)
+	return durationBetween(*s.StartedAt, now)
+}
+
+// durationBetween retourne l'écart en secondes, borné à zéro : une horloge en
+// avance (started_at dans le futur) ne doit pas produire de durée négative.
+func durationBetween(from, to time.Time) int64 {
+	elapsed := to.Sub(from)
 	if elapsed < 0 {
 		return 0
 	}
