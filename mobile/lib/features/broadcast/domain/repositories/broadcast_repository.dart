@@ -1,3 +1,4 @@
+import '../entities/broadcast_stats.dart';
 import '../entities/broadcast_stream.dart';
 
 /// Contrat de la couche données du tableau de bord diffuseur (US-06-01).
@@ -34,4 +35,8 @@ abstract class BroadcastRepository {
   /// en direct est terminé au passage par le backend — l'écran doit donc
   /// prévenir l'utilisateur avant d'appeler ceci sur un direct.
   Future<void> deleteStream(String id);
+
+  /// Audience courante du flux (US-06-02). Un flux qui n'est pas en direct
+  /// répond avec des compteurs à zéro, pas une erreur.
+  Future<BroadcastStats> streamStats(String id);
 }

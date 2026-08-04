@@ -1,3 +1,4 @@
+import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
 import '../datasources/broadcast_remote_data_source.dart';
@@ -47,4 +48,10 @@ class BroadcastRepositoryImpl implements BroadcastRepository {
 
   @override
   Future<void> deleteStream(String id) => _remote.deleteStream(id);
+
+  @override
+  Future<BroadcastStats> streamStats(String id) async {
+    final dto = await _remote.streamStats(id);
+    return dto.toEntity();
+  }
 }

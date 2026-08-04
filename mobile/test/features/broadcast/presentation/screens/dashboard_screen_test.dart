@@ -7,6 +7,7 @@ import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/core/network/sse_client.dart';
+import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
 import 'package:streampulse/features/broadcast/presentation/screens/dashboard_screen.dart';
@@ -80,7 +81,26 @@ class _FakeBroadcastRepository implements BroadcastRepository {
     deletedIds.add(id);
   }
 
+  @override
+  Future<BroadcastStats> streamStats(String id) async => BroadcastStats(
+        streamId: id,
+        listeners: listeners,
+        peak: peak,
+      );
+
   final List<String> deletedIds = [];
+  int listeners = 4;
+  int peak = 9;
+}
+
+/// Repository dont `streamStats` ne répond jamais : reproduit la fenêtre entre
+/// le passage en direct et le premier relevé, ainsi que le retour
+/// d'arrière-plan où l'audience est repartie à null.
+class _DeferredStatsRepository extends _FakeBroadcastRepository {
+  _DeferredStatsRepository({super.streams});
+
+  @override
+  Future<BroadcastStats> streamStats(String id) => Completer<BroadcastStats>().future;
 }
 
 class _FakeProfileRepository implements ProfileRepository {
@@ -257,6 +277,110 @@ void main() {
         find.byKey(const Key('dashboard_stop_button_a')),
       );
       expect(stopA.onPressed, isNotNull);
+    });
+  });
+
+  group('DashboardScreen — audience (STR-154)', () {
+    testWidgets('le direct affiche les auditeurs estimés et le pic',
+        (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
+      )
+        ..listeners = 4
+        ..peak = 9;
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('dashboard_listeners_a')), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('dashboard_listeners_a'))).data,
+        '4',
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const Key('dashboard_peak_a'))).data,
+        'Pic : 9',
+      );
+      // Le libellé reste prudent : le compte est une estimation, pas une
+      // mesure de connexions (HLS n'en a pas).
+      expect(find.text('auditeurs estimés'), findsOneWidget);
+    });
+
+    testWidgets('un seul auditeur : libellé au singulier', (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
+      )..listeners = 1;
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      expect(find.text('auditeur estimé'), findsOneWidget);
+    });
+
+    testWidgets('la ligne est présente dès le direct, avant toute mesure',
+        (tester) async {
+      // Sans ça, la ligne « apparaît » au premier relevé et pousse le contenu
+      // vers le bas ; et elle disparaît au passage en arrière-plan, quand
+      // `_cancelStats()` remet l'audience à null.
+      final repository = _DeferredStatsRepository(
+        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('dashboard_listeners_a')), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('dashboard_listeners_a'))).data,
+        '—',
+      );
+      expect(
+        tester.widget<Text>(find.byKey(const Key('dashboard_peak_a'))).data,
+        'Pic : —',
+      );
+    });
+
+    testWidgets('le pic est libellé explicitement', (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
+      )..peak = 9;
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      expect(
+        tester.widget<Text>(find.byKey(const Key('dashboard_peak_a'))).data,
+        'Pic : 9',
+      );
+    });
+
+    testWidgets('une info-bulle explique que le chiffre est une estimation',
+        (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      // Cibler l'info-bulle QUI ENTOURE la ligne d'audience : le menu ⋮ de la
+      // carte en porte une autre.
+      final tooltip = tester.widget<Tooltip>(
+        find
+            .ancestor(
+              of: find.byKey(const Key('dashboard_listeners_a')),
+              matching: find.byType(Tooltip),
+            )
+            .first,
+      );
+      expect(tooltip.message, contains('même connexion comptent pour un'));
+    });
+
+    testWidgets('aucune audience affichée sur un flux qui n\'est pas en direct',
+        (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a'), _stream('b', status: 'ended')],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('dashboard_listeners_a')), findsNothing);
+      expect(find.byKey(const Key('dashboard_listeners_b')), findsNothing);
     });
   });
 

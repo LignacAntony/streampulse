@@ -238,6 +238,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | DELETE | `/api/streams/{id}/favorite` | `Handler.RemoveFavorite` | Oui (JWT) — retire des favoris ; idempotent → 204 (US-04-05) |
 | GET | `/api/users/me/favorites` | `Handler.ListFavorites` | Oui (JWT) — liste « mes favoris » (tous statuts, visibles, non archivés), sans secret (US-04-05) |
 | GET | `/api/users/me/streams` | `Handler.ListMine` | Oui (JWT) — tableau de bord diffuseur : **mes** flux (tous statuts, non archivés), **avec** `stream_key`/`stream_source_url` (le filtre porte sur le porteur du JWT) ; `[]` si aucun flux, jamais 403 (STR-153, ADR 024) |
+| GET | `/api/streams/{id}/stats` | `Handler.Stats` | Oui (JWT) — audience du flux : auditeurs **estimés**, pic, durée. Propriétaire uniquement → 404 sinon ; flux non live → 200 avec compteurs à zéro (STR-154, ADR 025) |
 | POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio AAC segmenté en HLS (STR-70/71) |
 | GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Public** (`OptionalAuth`) — flux publics servis à un anonyme, privé → 404 ; owner authentifié voit ses flux privés — manifeste HLS, 409 si pas live/pas prêt (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
 | GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Public** (`OptionalAuth`) — idem playlist — segment `.ts` (nom validé anti-traversal) (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
@@ -475,6 +476,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
+| `TRUST_PROXY_HEADERS` | Lire `X-Forwarded-For` pour identifier les auditeurs (comptage d'audience, ADR 025). `false` en local ; `true` **uniquement** derrière un reverse proxy, sinon le compteur sature à 1 | `false` |
 | `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
 | `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint OTLP/HTTP Tempo pour les traces (vide = tracing désactivé) — ADR 020 | `http://tempo:4318` |
@@ -540,7 +542,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `025-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `026-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
