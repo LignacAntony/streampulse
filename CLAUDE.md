@@ -248,6 +248,24 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 - Titre **non unique** (contrainte retirée en `000015`) : pas de 409 sur le titre.
 - `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
 
+### Routes playlists existantes
+
+Domaine `internal/playlist/` (handler/service/repository). Playlists personnelles de
+l'utilisateur : actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle). Détails dans
+[ADR 026](docs/adr/026-domaine-playlists.md).
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| POST | `/api/playlists` | `Handler.Create` | Oui (JWT) — crée une playlist vide ; 409 si le nom est déjà utilisé (contrainte `uq_playlists_user_name`) |
+| GET | `/api/playlists` | `Handler.List` | Oui (JWT) — playlists du demandeur avec `track_count` (LEFT JOIN), triées par date de création desc ; pas de pagination |
+| GET | `/api/playlists/{id}` | `Handler.Get` | Oui (JWT) — propriétaire uniquement ; playlist d'un tiers → **404** (ne divulgue pas l'existence) |
+| PUT | `/api/playlists/{id}` | `Handler.Update` | Oui (JWT) — renommage/description, propriétaire uniquement ; **remplacement total** (omettre `description` l'efface) ; 409 sur nom en doublon |
+| DELETE | `/api/playlists/{id}` | `Handler.Delete` | Oui (JWT) — suppression définitive (cascade `playlist_tracks`), propriétaire uniquement ; 404 sinon |
+| GET | `/api/playlists/{id}/tracks` | `Handler.ListTracks` | Oui (JWT) — pistes ordonnées par `position` ; propriété vérifiée via `GetPlaylist` (404 si tiers) |
+
+- Tables `playlists` / `playlist_tracks` préexistantes (migration `000004`) ; contrainte `UNIQUE (user_id, name)` (`000006`) → **pas de migration** pour cette US.
+- Isolation : `GetPlaylist` compare `user_id` ; `ListTracks` réutilise `GetPlaylist` ; `Update`/`Delete` filtrent sur `(id, user_id)` en SQL (0 ligne → 404).
+
 ### Routes admin existantes
 
 Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
@@ -542,7 +560,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `026-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `027-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

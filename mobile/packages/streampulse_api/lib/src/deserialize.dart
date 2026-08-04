@@ -6,6 +6,7 @@ import 'package:streampulse_api/src/model/broadcaster_request_admin.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_input.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_list_response.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_response.dart';
+import 'package:streampulse_api/src/model/create_playlist_request.dart';
 import 'package:streampulse_api/src/model/create_stream_request.dart';
 import 'package:streampulse_api/src/model/delete_account_request.dart';
 import 'package:streampulse_api/src/model/error_detail.dart';
@@ -15,6 +16,8 @@ import 'package:streampulse_api/src/model/health_response.dart';
 import 'package:streampulse_api/src/model/login_request.dart';
 import 'package:streampulse_api/src/model/logout_request.dart';
 import 'package:streampulse_api/src/model/message_response.dart';
+import 'package:streampulse_api/src/model/playlist_response.dart';
+import 'package:streampulse_api/src/model/playlist_track_response.dart';
 import 'package:streampulse_api/src/model/profile_response.dart';
 import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
@@ -25,6 +28,7 @@ import 'package:streampulse_api/src/model/stream_response.dart';
 import 'package:streampulse_api/src/model/stream_stats_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 import 'package:streampulse_api/src/model/token_pair_response.dart';
+import 'package:streampulse_api/src/model/update_playlist_request.dart';
 import 'package:streampulse_api/src/model/update_profile_request.dart';
 import 'package:streampulse_api/src/model/user_response.dart';
 
@@ -76,6 +80,9 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'BroadcasterRequestResponse':
       return BroadcasterRequestResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
+    case 'CreatePlaylistRequest':
+      return CreatePlaylistRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'CreateStreamRequest':
       return CreateStreamRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -100,6 +107,12 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'MessageResponse':
       return MessageResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'PlaylistResponse':
+      return PlaylistResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'PlaylistTrackResponse':
+      return PlaylistTrackResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'ProfileResponse':
       return ProfileResponse.fromJson(value as Map<String, dynamic>)
@@ -130,6 +143,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'TokenPairResponse':
       return TokenPairResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'UpdatePlaylistRequest':
+      return UpdatePlaylistRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'UpdateProfileRequest':
       return UpdateProfileRequest.fromJson(value as Map<String, dynamic>)

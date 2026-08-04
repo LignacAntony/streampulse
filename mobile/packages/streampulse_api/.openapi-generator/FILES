@@ -9,6 +9,7 @@ lib/src/api/auth_api.dart
 lib/src/api/broadcaster_api.dart
 lib/src/api/health_api.dart
 lib/src/api/metrics_api.dart
+lib/src/api/playlist_api.dart
 lib/src/api/profile_api.dart
 lib/src/api/streaming_api.dart
 lib/src/auth/api_key_auth.dart
@@ -25,6 +26,7 @@ lib/src/model/broadcaster_request_admin.dart
 lib/src/model/broadcaster_request_input.dart
 lib/src/model/broadcaster_request_list_response.dart
 lib/src/model/broadcaster_request_response.dart
+lib/src/model/create_playlist_request.dart
 lib/src/model/create_stream_request.dart
 lib/src/model/delete_account_request.dart
 lib/src/model/error_detail.dart
@@ -34,6 +36,8 @@ lib/src/model/health_response.dart
 lib/src/model/login_request.dart
 lib/src/model/logout_request.dart
 lib/src/model/message_response.dart
+lib/src/model/playlist_response.dart
+lib/src/model/playlist_track_response.dart
 lib/src/model/profile_response.dart
 lib/src/model/refresh_request.dart
 lib/src/model/register_request.dart
@@ -44,6 +48,7 @@ lib/src/model/stream_response.dart
 lib/src/model/stream_stats_response.dart
 lib/src/model/stream_summary_response.dart
 lib/src/model/token_pair_response.dart
+lib/src/model/update_playlist_request.dart
 lib/src/model/update_profile_request.dart
 lib/src/model/user_response.dart
 lib/streampulse_api.dart
