@@ -77,4 +77,14 @@ class BroadcastRemoteDataSource {
       throw mapDioException(e);
     }
   }
+
+  /// `GET /api/streams/{id}/stats` — audience courante, propriétaire seul.
+  Future<StreamStatsResponse> streamStats(String id) async {
+    try {
+      final response = await _api.getStreamStats(id: id);
+      return response.data ?? (throw const ServerException(_emptyBody));
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
 }

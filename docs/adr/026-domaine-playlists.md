@@ -1,4 +1,4 @@
-# ADR 025 — Domaine playlists : CRUD, isolation propriétaire et unicité du nom
+# ADR 026 — Domaine playlists : CRUD, isolation propriétaire et unicité du nom
 
 **Date** : 2026-08-04
 **Statut** : Accepté

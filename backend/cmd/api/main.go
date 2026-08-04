@@ -124,6 +124,7 @@ func run() error {
 	streamingMetrics := observability.NewStreamingMetrics(prometheus.DefaultRegisterer)
 	streamingSessions.SetMetrics(streamingMetrics)
 	streamingHandler.SetMetrics(streamingMetrics)
+	streamingHandler.SetTrustProxyHeaders(cfg.TrustProxyHeaders)
 	observability.RegisterLiveStreamsGauge(prometheus.DefaultRegisterer, streamingSessions.ActiveCount)
 
 	// Réconciliation : les sessions LiveSessions sont en mémoire et reparties
@@ -231,8 +232,11 @@ func run() error {
 	// un non-diffuseur ne possède aucun flux et reçoit [] (cf. ADR 024).
 	mux.Handle("GET /api/users/me/streams", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.ListMine)))
+	// Statistiques d'audience du flux, propriétaire uniquement (STR-154).
+	mux.Handle("GET /api/streams/{id}/stats", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.Stats)))
 
-	// Playlists (US-05-02) : actions de niveau utilisateur, RequireAuth seul (cf. ADR 025).
+	// Playlists (US-05-02) : actions de niveau utilisateur, RequireAuth seul (cf. ADR 026).
 	mux.Handle("POST /api/playlists", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.Create)))
 	mux.Handle("GET /api/playlists", auth.RequireAuth(cfg.JWTSecret,

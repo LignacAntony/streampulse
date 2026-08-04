@@ -45,6 +45,7 @@ lib/src/model/reset_password_request.dart
 lib/src/model/review_request_input.dart
 lib/src/model/set_user_active_request.dart
 lib/src/model/stream_response.dart
+lib/src/model/stream_stats_response.dart
 lib/src/model/stream_summary_response.dart
 lib/src/model/token_pair_response.dart
 lib/src/model/update_playlist_request.dart

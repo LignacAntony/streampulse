@@ -25,6 +25,7 @@ import 'package:streampulse_api/src/model/reset_password_request.dart';
 import 'package:streampulse_api/src/model/review_request_input.dart';
 import 'package:streampulse_api/src/model/set_user_active_request.dart';
 import 'package:streampulse_api/src/model/stream_response.dart';
+import 'package:streampulse_api/src/model/stream_stats_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 import 'package:streampulse_api/src/model/token_pair_response.dart';
 import 'package:streampulse_api/src/model/update_playlist_request.dart';
@@ -133,6 +134,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'StreamResponse':
       return StreamResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'StreamStatsResponse':
+      return StreamStatsResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'StreamSummaryResponse':
       return StreamSummaryResponse.fromJson(value as Map<String, dynamic>)

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/sse_client.dart';
+import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
 
@@ -30,9 +31,11 @@ class BroadcastNotifier extends ChangeNotifier {
     SseConnector? sse,
     Duration Function(int attempt)? backoff,
     Duration pollInterval = const Duration(seconds: 15),
+    Duration statsInterval = const Duration(seconds: 5),
   })  : _sse = sse,
         _backoff = backoff ?? _defaultBackoff,
-        _pollInterval = pollInterval;
+        _pollInterval = pollInterval,
+        _statsInterval = statsInterval;
 
   final BroadcastRepository _repository;
 
@@ -43,6 +46,10 @@ class BroadcastNotifier extends ChangeNotifier {
   final SseConnector? _sse;
   final Duration Function(int attempt) _backoff;
   final Duration _pollInterval;
+
+  /// Cadence des statistiques d'audience. 5 s : c'est la fréquence de mise à
+  /// jour demandée par l'AC de l'US-06-02.
+  final Duration _statsInterval;
 
   List<BroadcastStream> _streams = const [];
   bool _loading = false;
@@ -64,6 +71,9 @@ class BroadcastNotifier extends ChangeNotifier {
   StreamSubscription<SseEvent>? _sseSubscription;
   Timer? _reconnectTimer;
   Timer? _pollTimer;
+  Timer? _statsTimer;
+  BroadcastStats? _stats;
+  String? _statsStreamId;
   String? _sseStreamId;
   int _reconnectAttempt = 0;
 
@@ -99,6 +109,10 @@ class BroadcastNotifier extends ChangeNotifier {
   }
 
   bool get hasLiveStream => liveStream != null;
+
+  /// Audience du direct en cours, ou null tant qu'aucune mesure n'est arrivée
+  /// (ou si aucun flux n'est en direct). Rafraîchie toutes les [_statsInterval].
+  BroadcastStats? get stats => _stats;
 
   /// (Re)charge les flux du diffuseur.
   /// `reset: true` vide la liste avant le fetch ; `reset: false` la conserve
@@ -235,6 +249,7 @@ class BroadcastNotifier extends ChangeNotifier {
   /// sens que sur un flux en direct (l'endpoint SSE répond 409 sinon).
   void _syncSubscription() {
     final live = liveStream;
+    _syncStats(live);
     if (!_active || live == null) {
       _cancelSubscription();
       _cancelPolling();
@@ -263,6 +278,55 @@ class BroadcastNotifier extends ChangeNotifier {
   void _cancelPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
+  }
+
+  /// Arme, réarme ou coupe la remontée d'audience selon le direct en cours.
+  /// Distincte du repli SSE : elle tourne sur toutes les plateformes, et à une
+  /// cadence propre (5 s) imposée par l'AC.
+  void _syncStats(BroadcastStream? live) {
+    if (!_active || live == null) {
+      _cancelStats();
+      return;
+    }
+    if (_statsStreamId == live.id && _statsTimer != null) return;
+    _cancelStats();
+    _statsStreamId = live.id;
+    // Première mesure tout de suite : attendre 5 s laisserait la carte sans
+    // chiffre juste après le démarrage, au moment où on la regarde le plus.
+    unawaited(_fetchStats());
+    _statsTimer =
+        Timer.periodic(_statsInterval, (_) => unawaited(_fetchStats()));
+  }
+
+  /// Récupère l'audience. Un échec est ignoré volontairement : l'audience est
+  /// une information d'appoint, une coupure réseau ne doit pas faire clignoter
+  /// une erreur sur un tableau de bord par ailleurs fonctionnel. La dernière
+  /// valeur connue reste affichée.
+  Future<void> _fetchStats() async {
+    final id = _statsStreamId;
+    if (id == null) return;
+    try {
+      final stats = await _repository.streamStats(id);
+      if (_disposed || _statsStreamId != id) return; // flux changé entre-temps
+      // Ne notifier que sur changement réel : l'audience bouge rarement entre
+      // deux mesures, inutile de reconstruire l'écran toutes les 5 s pour
+      // réafficher les mêmes chiffres.
+      if (_stats == stats) return;
+      _stats = stats;
+      _safeNotify();
+    } catch (_) {
+      // Silencieux : cf. doc ci-dessus.
+    }
+  }
+
+  void _cancelStats() {
+    _statsTimer?.cancel();
+    _statsTimer = null;
+    _statsStreamId = null;
+    if (_stats != null) {
+      _stats = null;
+      _safeNotify();
+    }
   }
 
   void _openSubscription() {
@@ -368,6 +432,7 @@ class BroadcastNotifier extends ChangeNotifier {
     _disposed = true;
     _cancelSubscription();
     _cancelPolling();
+    _statsTimer?.cancel();
     super.dispose();
   }
 }

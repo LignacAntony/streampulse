@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -25,6 +26,11 @@ type session struct {
 	ingesting   bool          // un seul push audio à la fois
 	hls         *hlsSegmenter // publié après le spawn ; protégé par mu
 	subscribers map[chan SessionEvent]struct{}
+
+	// Suivi d'audience (STR-154) : dernière requête de manifeste par client, et
+	// pic observé. Détail du raisonnement dans listeners.go.
+	listeners     map[string]time.Time
+	peakListeners int
 }
 
 // segmenter retourne le segmenteur si la session est exploitable (segmenteur
@@ -309,6 +315,39 @@ func (ls *LiveSessions) IsLive(streamID string) bool {
 	defer ls.mu.Unlock()
 	_, ok := ls.byID[streamID]
 	return ok
+}
+
+// TouchListener enregistre qu'un client vient de demander le manifeste d'un
+// flux (STR-154). No-op si le flux n'est plus en direct.
+//
+// clientKey identifie le lecteur : HLS n'ouvre pas de connexion persistante et
+// les lecteurs natifs ne portent pas le Bearer (cf. serveHLSFile), on ne peut
+// donc pas s'appuyer sur l'identité authentifiée.
+func (ls *LiveSessions) TouchListener(streamID, clientKey string) {
+	ls.mu.Lock()
+	s, ok := ls.byID[streamID]
+	ls.mu.Unlock()
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	s.touchListener(clientKey, time.Now())
+	s.mu.Unlock()
+}
+
+// Stats retourne l'audience courante d'un flux en direct. Le second retour est
+// faux si le flux n'a pas de session active — l'appelant décide alors quoi
+// afficher (zéro plutôt qu'une erreur, cf. handler).
+func (ls *LiveSessions) Stats(streamID string) (SessionStats, bool) {
+	ls.mu.Lock()
+	s, ok := ls.byID[streamID]
+	ls.mu.Unlock()
+	if !ok {
+		return SessionStats{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stats(time.Now()), true
 }
 
 // StopAll annule toutes les sessions (arrêt serveur) et libère les goroutines

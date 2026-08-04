@@ -979,6 +979,46 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/stats:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: getStreamStats
+      summary: Live audience statistics for the caller's own stream.
+      description: >-
+        Returns the current audience of a stream the caller owns. A stream that
+        is not live answers 200 with zeroed counters rather than an error, so a
+        polling client has no special case to handle. A stream owned by someone
+        else answers 404, never 403 — its very existence stays private.
+
+
+        `listeners` and `peak_listeners` are ESTIMATES. HLS has no persistent
+        connection, so a client counts as a listener while it has fetched the
+        manifest recently; two players behind one public address count as one.
+        Both values live in memory: they reset when the process restarts and do
+        not survive the end of the broadcast.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current audience and broadcast duration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamStatsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/users/me/streams:
     get:
       tags:
@@ -1787,6 +1827,44 @@ components:
         is_public:
           type: boolean
           example: true
+    StreamStatsResponse:
+      type: object
+      required:
+        - stream_id
+        - status
+        - listeners
+        - peak_listeners
+        - duration_seconds
+      properties:
+        stream_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [idle, live, ended]
+        listeners:
+          type: integer
+          description: >-
+            Estimated number of distinct clients that fetched the manifest
+            recently. Zero when the stream is not live.
+          example: 12
+        peak_listeners:
+          type: integer
+          description: >-
+            Highest `listeners` value observed since the broadcast started.
+            In-memory only: reset on process restart, lost when the stream ends.
+          example: 27
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        duration_seconds:
+          type: integer
+          format: int64
+          description: >-
+            Seconds since `started_at` — up to now while live, up to `ended_at`
+            once the broadcast is over. Zero if the stream never started.
+          example: 3725
     StreamSummaryResponse:
       type: object
       required:

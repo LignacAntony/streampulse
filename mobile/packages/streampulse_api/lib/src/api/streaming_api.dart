@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'package:streampulse_api/src/model/create_stream_request.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/stream_response.dart';
+import 'package:streampulse_api/src/model/stream_stats_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 
 class StreamingApi {
@@ -287,6 +288,88 @@ class StreamingApi {
     }
 
     return Response<StreamResponse>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Live audience statistics for the caller&#39;s own stream.
+  /// Returns the current audience of a stream the caller owns. A stream that is not live answers 200 with zeroed counters rather than an error, so a polling client has no special case to handle. A stream owned by someone else answers 404, never 403 — its very existence stays private.  &#x60;listeners&#x60; and &#x60;peak_listeners&#x60; are ESTIMATES. HLS has no persistent connection, so a client counts as a listener while it has fetched the manifest recently; two players behind one public address count as one. Both values live in memory: they reset when the process restarts and do not survive the end of the broadcast.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [StreamStatsResponse] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<StreamStatsResponse>> getStreamStats({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/api/streams/{id}/stats'.replaceAll(
+      '{'
+      r'id'
+      '}',
+      id.toString(),
+    );
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{...?headers},
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {'type': 'http', 'scheme': 'bearer', 'name': 'bearerAuth'},
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    StreamStatsResponse? _responseData;
+
+    try {
+      final rawData = _response.data;
+      _responseData = rawData == null
+          ? null
+          : deserialize<StreamStatsResponse, StreamStatsResponse>(
+              rawData,
+              'StreamStatsResponse',
+              growable: true,
+            );
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<StreamStatsResponse>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,
