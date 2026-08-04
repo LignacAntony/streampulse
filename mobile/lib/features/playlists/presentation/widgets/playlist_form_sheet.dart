@@ -65,10 +65,6 @@ class _PlaylistFormSheetState extends State<PlaylistFormSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
 
-  /// État local du toggle « Disponible hors ligne » — front uniquement, non
-  /// envoyé au backend (feature à venir).
-  bool _offlineAvailable = true;
-
   static const _maxNameLen = 120;
   static const _maxDescriptionLen = 500;
 
@@ -175,10 +171,7 @@ class _PlaylistFormSheetState extends State<PlaylistFormSheet> {
               validator: _validateDescription,
             ),
             const SizedBox(height: 24),
-            _OfflineToggleCard(
-              value: _offlineAvailable,
-              onChanged: (v) => setState(() => _offlineAvailable = v),
-            ),
+            const _OfflineToggleCard(),
             const SizedBox(height: 24),
             _GradientButton(
               key: const Key('playlist_form_submit'),
@@ -238,16 +231,20 @@ class _CoverPicker extends StatelessWidget {
               color: colors.onSurfaceVariant,
             ),
           ),
-          Positioned(
+          const Positioned(
             right: -6,
             bottom: -6,
-            child: FloatingActionButton.small(
-              key: const Key('playlist_cover_edit'),
-              heroTag: 'playlist_cover_edit',
-              elevation: 0,
-              // Front uniquement : pas encore de logique de sélection d'image.
-              onPressed: () {},
-              child: const Icon(Icons.edit, size: 18),
+            // Désactivé (onPressed: null) : sélection d'image non branchée,
+            // feature à venir dans une PR dédiée.
+            child: Tooltip(
+              message: 'Bientôt disponible',
+              child: FloatingActionButton.small(
+                key: Key('playlist_cover_edit'),
+                heroTag: 'playlist_cover_edit',
+                elevation: 0,
+                onPressed: null,
+                child: Icon(Icons.edit, size: 18),
+              ),
             ),
           ),
         ],
@@ -256,48 +253,50 @@ class _CoverPicker extends StatelessWidget {
   }
 }
 
-/// Carte « Disponible hors ligne » avec toggle. Front uniquement : la valeur
-/// n'est pas persistée ni envoyée au backend.
+/// Carte « Disponible hors ligne ». **Non branchée** : présentée désactivée
+/// (« Bientôt disponible ») pour ne pas laisser croire que le téléchargement
+/// automatique est déjà actif. La logique fera l'objet d'une PR dédiée.
 class _OfflineToggleCard extends StatelessWidget {
-  const _OfflineToggleCard({required this.value, required this.onChanged});
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  const _OfflineToggleCard();
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.download_outlined, color: colors.onSurfaceVariant),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Disponible hors ligne', style: text.titleMedium),
-                Text(
-                  'Télécharger automatiquement',
-                  style: text.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+    return Opacity(
+      opacity: 0.5,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.download_outlined, color: colors.onSurfaceVariant),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Disponible hors ligne', style: text.titleMedium),
+                  Text(
+                    'Bientôt disponible',
+                    style: text.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Switch(
-            key: const Key('playlist_offline_toggle'),
-            value: value,
-            onChanged: onChanged,
-          ),
-        ],
+            // Désactivé (onChanged: null) : contrôle non branché.
+            const Switch(
+              key: Key('playlist_offline_toggle'),
+              value: false,
+              onChanged: null,
+            ),
+          ],
+        ),
       ),
     );
   }

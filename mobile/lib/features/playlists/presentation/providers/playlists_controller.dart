@@ -44,21 +44,35 @@ class PlaylistsController extends ChangeNotifier {
   Future<void> refresh() => load();
 
   /// Crée une playlist puis recharge la liste. Relaie l'exception à l'appelant.
+  ///
+  /// Le `finally { load() }` garantit un rafraîchissement même en cas d'échec :
+  /// une mutation qui échoue (ex. 404 si la ressource a été supprimée depuis un
+  /// autre appareil) ne doit pas laisser la liste dans un état périmé (carte
+  /// fantôme). L'exception est tout de même propagée pour le toast.
   Future<void> create(String name, String? description) async {
-    await _repository.create(name, description);
-    await load();
+    try {
+      await _repository.create(name, description);
+    } finally {
+      await load();
+    }
   }
 
   /// Renomme une playlist puis recharge la liste. Relaie l'exception.
   Future<void> rename(String id, String name, String? description) async {
-    await _repository.rename(id, name, description);
-    await load();
+    try {
+      await _repository.rename(id, name, description);
+    } finally {
+      await load();
+    }
   }
 
   /// Supprime une playlist puis recharge la liste. Relaie l'exception.
   Future<void> delete(String id) async {
-    await _repository.delete(id);
-    await load();
+    try {
+      await _repository.delete(id);
+    } finally {
+      await load();
+    }
   }
 
   void _setError(Object error) {

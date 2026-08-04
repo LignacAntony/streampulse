@@ -30,7 +30,7 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Playlist, er
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
-			return Playlist{}, apperror.Conflict("une playlist porte déjà ce nom")
+			return Playlist{}, apperror.Conflict("Une playlist porte déjà ce nom")
 		}
 		if isForeignKeyViolation(err) {
 			return Playlist{}, apperror.Unauthorized("invalid user")
@@ -111,7 +111,7 @@ func (r *pgRepository) Update(ctx context.Context, p UpdateParams) (Playlist, er
 			return Playlist{}, apperror.NotFound("playlist not found")
 		}
 		if isUniqueViolation(err) {
-			return Playlist{}, apperror.Conflict("une playlist porte déjà ce nom")
+			return Playlist{}, apperror.Conflict("Une playlist porte déjà ce nom")
 		}
 		return Playlist{}, fmt.Errorf("repo: update playlist: %w", err)
 	}

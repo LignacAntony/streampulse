@@ -145,6 +145,38 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
     });
 
+    testWidgets('renommage : sheet pré-remplie puis mise à jour',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_playlist('p-1', 'Rock')],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('playlist_menu_p-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('playlist_action_rename')));
+      await tester.pumpAndSettle();
+
+      // Le nom courant est pré-rempli dans la sheet.
+      expect(find.widgetWithText(TextFormField, 'Rock'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('playlist_name_field')),
+        'Metal',
+      );
+      await tester.ensureVisible(find.byKey(const Key('playlist_form_submit')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('playlist_form_submit')));
+      await tester.pumpAndSettle();
+
+      expect(repo.renameCalls, 1);
+      expect(find.text('Metal'), findsOneWidget);
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
     testWidgets('suppression demande confirmation puis supprime',
         (tester) async {
       final repo = _FakePlaylistRepository(
