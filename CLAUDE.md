@@ -237,6 +237,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | PUT | `/api/streams/{id}/favorite` | `Handler.AddFavorite` | Oui (JWT) — ajoute aux favoris ; idempotent → 204 ; flux non visible → 404 (US-04-05). **PUT** et non POST : évite un conflit ServeMux avec `ingest/{stream_key}` |
 | DELETE | `/api/streams/{id}/favorite` | `Handler.RemoveFavorite` | Oui (JWT) — retire des favoris ; idempotent → 204 (US-04-05) |
 | GET | `/api/users/me/favorites` | `Handler.ListFavorites` | Oui (JWT) — liste « mes favoris » (tous statuts, visibles, non archivés), sans secret (US-04-05) |
+| GET | `/api/users/me/streams` | `Handler.ListMine` | Oui (JWT) — tableau de bord diffuseur : **mes** flux (tous statuts, non archivés), **avec** `stream_key`/`stream_source_url` (le filtre porte sur le porteur du JWT) ; `[]` si aucun flux, jamais 403 (STR-153, ADR 024) |
 | POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio AAC segmenté en HLS (STR-70/71) |
 | GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Public** (`OptionalAuth`) — flux publics servis à un anonyme, privé → 404 ; owner authentifié voit ses flux privés — manifeste HLS, 409 si pas live/pas prêt (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
 | GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Public** (`OptionalAuth`) — idem playlist — segment `.ts` (nom validé anti-traversal) (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
@@ -250,7 +251,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 
 Domaine `internal/playlist/` (handler/service/repository). Playlists personnelles de
 l'utilisateur : actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle). Détails dans
-[ADR 024](docs/adr/024-domaine-playlists.md).
+[ADR 025](docs/adr/025-domaine-playlists.md).
 
 | Méthode | Route | Handler | Auth requise |
 |---|---|---|---|
@@ -557,7 +558,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `025-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `026-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

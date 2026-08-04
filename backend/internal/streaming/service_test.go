@@ -163,6 +163,9 @@ type fakeRepo struct {
 	removeFavErr    error
 	listFavRet      []Stream
 	listFavErr      error
+	listOwnerRet    []Stream
+	listOwnerErr    error
+	listOwnerUserID string
 
 	gotStopLiveForUserID string
 	stopLiveForUserIDs   []string
@@ -234,6 +237,11 @@ func (f *fakeRepo) RemoveFavorite(_ context.Context, userID, streamID string) er
 func (f *fakeRepo) ListFavorites(_ context.Context, userID string) ([]Stream, error) {
 	f.favUserID = userID
 	return f.listFavRet, f.listFavErr
+}
+
+func (f *fakeRepo) ListByOwner(_ context.Context, userID string) ([]Stream, error) {
+	f.listOwnerUserID = userID
+	return f.listOwnerRet, f.listOwnerErr
 }
 
 func (f *fakeRepo) StopLiveStreamsByUser(_ context.Context, userID string) ([]string, error) {
@@ -630,6 +638,46 @@ func TestService_RemoveFavorite_NoVisibilityCheck(t *testing.T) {
 	}
 	if repo.favUserID != "u2" || repo.favStreamID != "s1" {
 		t.Errorf("args = (%q, %q), want (u2, s1)", repo.favUserID, repo.favStreamID)
+	}
+}
+
+func TestService_ListMyStreams(t *testing.T) {
+	repo := &fakeRepo{listOwnerRet: []Stream{
+		{ID: "s1", Status: StatusLive, StreamKey: "SECRET"},
+		{ID: "s2", Status: StatusIdle},
+	}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	got, err := svc.ListMyStreams(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if repo.listOwnerUserID != "u1" {
+		t.Errorf("userID transmis = %q, want u1", repo.listOwnerUserID)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	// Le service ne filtre rien : c'est la requête SQL qui borne au propriétaire
+	// et exclut les archivés, et le handler qui décide d'exposer les secrets.
+	if got[0].StreamKey != "SECRET" {
+		t.Errorf("le service ne doit pas effacer la stream_key du propriétaire")
+	}
+}
+
+func TestService_ListMyStreams_NoRoleCheck(t *testing.T) {
+	// Un utilisateur sans flux (typiquement sans le rôle diffuseur) obtient une
+	// liste vide et surtout PAS une erreur d'autorisation — le client n'a pas à
+	// distinguer « pas diffuseur » de « pas encore de flux » (ADR 024).
+	repo := &fakeRepo{listOwnerRet: []Stream{}}
+	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
+
+	got, err := svc.ListMyStreams(context.Background(), "u-sans-flux")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len = %d, want 0", len(got))
 	}
 }
 

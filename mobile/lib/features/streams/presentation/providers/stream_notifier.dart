@@ -76,7 +76,14 @@ class StreamNotifier extends ChangeNotifier {
   }
 
   void startPolling() {
-    _timer ??= Timer.periodic(pollInterval, (_) => _refreshLoaded());
+    if (_timer != null) return;
+    _timer = Timer.periodic(pollInterval, (_) => _refreshLoaded());
+    // Rafraîchissement immédiat à l'armement : sans lui, revenir sur l'onglet
+    // Accueil laisse la liste périmée jusqu'au premier tick, soit jusqu'à
+    // `pollInterval`. Sauté quand un chargement est déjà en vol — c'est le cas
+    // au démarrage de l'app, où `load()` part juste avant `startPolling()` —
+    // pour ne pas doubler la requête initiale.
+    if (!_isRefreshing) _refreshLoaded();
   }
 
   void stopPolling() {

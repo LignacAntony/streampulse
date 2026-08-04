@@ -47,8 +47,8 @@ tmp/
 *.dylib
 bin/
 dist/
-# Binaire compilé du serveur (go build ./cmd/api depuis backend/)
-/backend/api
+# `go build ./cmd/api` sans -o dépose le binaire ici
+backend/api
 
 # Test & coverage
 *.test

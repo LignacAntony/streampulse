@@ -256,6 +256,31 @@ func (r *pgRepository) ListFavorites(ctx context.Context, userID string) ([]Stre
 	return streams, nil
 }
 
+// ListByOwner retourne les flux d'un diffuseur, tous statuts, non archivés,
+// AVEC leur stream_key : la requête filtre sur user_id, l'appelant est donc le
+// propriétaire par construction (STR-153).
+//
+// Un userID syntaxiquement invalide ne peut par construction posséder aucun
+// flux : traité comme « aucun résultat » plutôt qu'en paniquant (même choix que
+// StopLiveStreamsByUser — le sub d'un JWT n'est pas une donnée de confiance).
+func (r *pgRepository) ListByOwner(ctx context.Context, userID string) ([]Stream, error) {
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return []Stream{}, nil
+	}
+	rows, err := r.q.ListStreamsByOwner(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("repo: list streams by owner: %w", err)
+	}
+	streams := make([]Stream, 0, len(rows))
+	for _, row := range rows {
+		streams = append(streams, fullStream(row.ID, row.UserID, row.Title, row.Description,
+			row.Category, row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt,
+			row.CreatedAt, row.UpdatedAt))
+	}
+	return streams, nil
+}
+
 // StopLiveStreamsByUser termine tous les flux live d'un utilisateur (usage admin,
 // STR-191) et renvoie les ids arrêtés (pour que le service coupe leur session
 // in-memory). Un userID syntaxiquement invalide n'a par construction aucun flux

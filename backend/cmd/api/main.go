@@ -227,8 +227,12 @@ func run() error {
 		http.HandlerFunc(streamingHandler.RemoveFavorite)))
 	mux.Handle("GET /api/users/me/favorites", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.ListFavorites)))
+	// Tableau de bord diffuseur (STR-153) : pas de RequireRole("broadcaster") —
+	// un non-diffuseur ne possède aucun flux et reçoit [] (cf. ADR 024).
+	mux.Handle("GET /api/users/me/streams", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(streamingHandler.ListMine)))
 
-	// Playlists (US-05-02) : actions de niveau utilisateur, RequireAuth seul.
+	// Playlists (US-05-02) : actions de niveau utilisateur, RequireAuth seul (cf. ADR 025).
 	mux.Handle("POST /api/playlists", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.Create)))
 	mux.Handle("GET /api/playlists", auth.RequireAuth(cfg.JWTSecret,

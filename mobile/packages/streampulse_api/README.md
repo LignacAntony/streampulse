@@ -98,6 +98,7 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**getStream**](doc/StreamingApi.md#getstream) | **GET** /api/streams/{id} | Get a stream by id.
 [*StreamingApi*](doc/StreamingApi.md) | [**ingestStream**](doc/StreamingApi.md#ingeststream) | **POST** /api/streams/ingest/{stream_key} | Push a live audio stream (broadcaster ingest).
 [*StreamingApi*](doc/StreamingApi.md) | [**listMyFavorites**](doc/StreamingApi.md#listmyfavorites) | **GET** /api/users/me/favorites | List the authenticated user&#39;s favorite streams.
+[*StreamingApi*](doc/StreamingApi.md) | [**listMyStreams**](doc/StreamingApi.md#listmystreams) | **GET** /api/users/me/streams | List the authenticated user&#39;s own streams (broadcaster dashboard).
 [*StreamingApi*](doc/StreamingApi.md) | [**listStreams**](doc/StreamingApi.md#liststreams) | **GET** /api/streams | List public live streams (paginated).
 [*StreamingApi*](doc/StreamingApi.md) | [**removeFavorite**](doc/StreamingApi.md#removefavorite) | **DELETE** /api/streams/{id}/favorite | Remove a stream from the authenticated user&#39;s favorites.
 [*StreamingApi*](doc/StreamingApi.md) | [**startStream**](doc/StreamingApi.md#startstream) | **PATCH** /api/streams/{id}/start | Start a stream — go live (broadcaster owner only).

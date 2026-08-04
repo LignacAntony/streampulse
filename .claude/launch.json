@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mobile-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd mobile && flutter run -d web-server --web-hostname=localhost --web-port=5050 --dart-define=API_BASE_URL=http://localhost:8080"
+      ],
+      "port": 5050,
+      "autoPort": false
+    }
+  ]
+}
