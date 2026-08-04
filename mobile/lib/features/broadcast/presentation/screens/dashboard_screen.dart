@@ -14,18 +14,17 @@ import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
 import '../../data/datasources/broadcast_remote_data_source.dart';
 import '../../data/repositories/broadcast_repository_impl.dart';
+import '../../data/services/microphone_audio_publisher.dart';
 import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
+import '../../domain/services/broadcast_audio_publisher.dart';
 import '../providers/broadcast_notifier.dart';
 import 'create_stream_sheet.dart';
 
-/// Tableau de bord du diffuseur (US-06-01, ADR 024) : créer un flux, lancer et
-/// arrêter le direct, récupérer l'URL d'ingest à donner à son encodeur.
-///
-/// La capture micro depuis le téléphone ne fait PAS partie de cette US : le
-/// diffuseur pousse son audio vers `stream_source_url` avec l'encodeur de son
-/// choix (ffmpeg, BUTT, Mixxx). Cf. STR-156 pour le push mobile.
+/// Tableau de bord du diffuseur (US-06-01, ADR 024 et ADR 027) : créer un flux,
+/// lancer/arrêter le direct et pousser le microphone du téléphone en AAC/ADTS.
+/// L'URL d'ingest reste disponible pour un encodeur externe.
 ///
 /// [repository] et [sse] sont injectables pour les tests ; en production ils
 /// sont construits depuis [DioClient] et [SecureStorage].
@@ -35,10 +34,16 @@ import 'create_stream_sheet.dart';
 /// hors de cet onglet, et le laisser local garantit que la souscription SSE
 /// meurt avec l'écran.
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key, this.repository, this.sse});
+  const DashboardScreen({
+    super.key,
+    this.repository,
+    this.sse,
+    this.audioPublisher,
+  });
 
   final BroadcastRepository? repository;
   final SseConnector? sse;
+  final BroadcastAudioPublisher? audioPublisher;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +58,10 @@ class DashboardScreen extends StatelessWidget {
         // (`net::ERR_FAILED`) et la relancer n'y changerait rien. Le notifier
         // bascule alors sur un rafraîchissement périodique.
         sse: sse ?? (kIsWeb ? null : SseClient(ctx.read<SecureStorage>())),
+        audioPublisher: audioPublisher ??
+            (kIsWeb
+                ? const UnsupportedBroadcastAudioPublisher()
+                : MicrophoneAudioPublisher()),
       ),
       child: const _DashboardBody(),
     );
@@ -101,9 +110,13 @@ class _DashboardBodyState extends State<_DashboardBody>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
-    context
-        .read<BroadcastNotifier>()
-        .setActive(state == AppLifecycleState.resumed);
+    final notifier = context.read<BroadcastNotifier>();
+    notifier.setActive(state == AppLifecycleState.resumed);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      unawaited(notifier.stopForBackground());
+    }
   }
 
   /// (Dés)active le battement de seconde selon la présence d'un direct.
@@ -166,7 +179,7 @@ class _DashboardBodyState extends State<_DashboardBody>
         context,
         notifier.hasLiveStream
             ? 'Un autre flux est déjà en direct'
-            : "Ce flux n'est plus démarrable",
+            : 'Ce flux n\'est plus démarrable',
       );
       // L'état local était périmé : on repart de la vérité serveur plutôt que
       // de laisser l'écran mentir.
@@ -177,6 +190,18 @@ class _DashboardBodyState extends State<_DashboardBody>
     } on ServerException catch (e) {
       if (!mounted) return;
       showAuthErrorToast(context, e.message);
+    } on MicrophonePermissionException {
+      if (!mounted) return;
+      showAuthErrorToast(
+        context,
+        'Autorisez le microphone pour démarrer le direct',
+      );
+    } on AudioEncoderUnsupportedException {
+      if (!mounted) return;
+      showAuthErrorToast(
+        context,
+        'La diffusion AAC n\'est pas disponible sur cet appareil',
+      );
     } catch (_) {
       if (!mounted) return;
       showAuthErrorToast(context, 'Échec du démarrage');
@@ -224,7 +249,7 @@ class _DashboardBodyState extends State<_DashboardBody>
       showAuthErrorToast(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      showAuthErrorToast(context, "Échec de l'arrêt");
+      showAuthErrorToast(context, 'Échec de l\'arrêt');
     }
   }
 
@@ -342,8 +367,7 @@ class _DashboardBodyState extends State<_DashboardBody>
       return _MessageView(
         icon: Icons.mic_none_outlined,
         title: 'Diffusez vos propres flux',
-        message:
-            'Demandez le rôle diffuseur pour créer et lancer un direct.',
+        message: 'Demandez le rôle diffuseur pour créer et lancer un direct.',
         actionLabel: 'Devenir diffuseur',
         actionKey: const Key('dashboard_become_broadcaster_button'),
         onAction: () => context.push('/broadcaster-request'),
@@ -393,8 +417,7 @@ class _DashboardBodyState extends State<_DashboardBody>
           // Un seul direct par diffuseur : on désactive le démarrage des
           // autres flux plutôt que de laisser l'utilisateur découvrir la
           // règle par un 409.
-          blockedByOtherLive:
-              notifier.hasLiveStream && !stream.isLive,
+          blockedByOtherLive: notifier.hasLiveStream && !stream.isLive,
           mutating: notifier.mutatingId == stream.id,
           // Tant qu'une mutation quelconque est en vol, les autres tuiles sont
           // neutralisées : leur flux n'est pas encore à jour localement, un tap
@@ -403,6 +426,8 @@ class _DashboardBodyState extends State<_DashboardBody>
               notifier.isMutating && notifier.mutatingId != stream.id,
           // L'audience ne concerne que le direct en cours.
           stats: stream.isLive ? notifier.stats : null,
+          audioState: notifier.audioState,
+          publishingAudio: notifier.isPublishingAudio(stream.id),
           onStart: () => _onStart(stream),
           onStop: () => _onStop(stream),
           onDelete: () => _onDelete(stream),
@@ -419,6 +444,8 @@ class _StreamCard extends StatelessWidget {
     required this.mutating,
     required this.otherMutationInFlight,
     required this.stats,
+    required this.audioState,
+    required this.publishingAudio,
     required this.onStart,
     required this.onStop,
     required this.onDelete,
@@ -432,6 +459,8 @@ class _StreamCard extends StatelessWidget {
   /// Audience du direct, ou null si le flux n'est pas en direct ou si aucune
   /// mesure n'est encore arrivée.
   final BroadcastStats? stats;
+  final BroadcastAudioState audioState;
+  final bool publishingAudio;
   final VoidCallback onStart;
   final VoidCallback onStop;
   final VoidCallback onDelete;
@@ -456,9 +485,7 @@ class _StreamCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(stream.title, style: text.titleMedium),
-                ),
+                Expanded(child: Text(stream.title, style: text.titleMedium)),
                 _StatusBadge(status: stream.status),
                 PopupMenuButton<String>(
                   key: Key('dashboard_stream_menu_${stream.id}'),
@@ -526,6 +553,12 @@ class _StreamCard extends StatelessWidget {
             // place et affiche « — » en attendant.
             if (stream.isLive) ...[
               const SizedBox(height: 12),
+              _MicrophoneStatusRow(
+                streamId: stream.id,
+                state: audioState,
+                publishing: publishingAudio,
+              ),
+              const SizedBox(height: 8),
               _AudienceRow(streamId: stream.id, stats: stats),
             ],
             // Rien à pousser sur un flux terminé : la clé y est inutilisable
@@ -545,9 +578,7 @@ class _StreamCard extends StatelessWidget {
             if (stream.isEnded)
               Text(
                 'Diffusion terminée. Créez un nouveau flux pour rediffuser.',
-                style: text.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               )
             else
               SizedBox(
@@ -565,8 +596,7 @@ class _StreamCard extends StatelessWidget {
                       )
                     : FilledButton.icon(
                         key: Key('dashboard_start_button_${stream.id}'),
-                        onPressed:
-                            _busy || blockedByOtherLive ? null : onStart,
+                        onPressed: _busy || blockedByOtherLive ? null : onStart,
                         icon: const Icon(Icons.play_circle_outline),
                         label: const Text('Démarrer la diffusion'),
                       ),
@@ -575,14 +605,69 @@ class _StreamCard extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 'Un autre flux est en direct',
-                style: text.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
             ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MicrophoneStatusRow extends StatelessWidget {
+  const _MicrophoneStatusRow({
+    required this.streamId,
+    required this.state,
+    required this.publishing,
+  });
+
+  final String streamId;
+  final BroadcastAudioState state;
+  final bool publishing;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final (IconData icon, String label, Color color) = !publishing
+        ? (
+            Icons.devices_outlined,
+            'Microphone de cet appareil inactif',
+            colors.onSurfaceVariant,
+          )
+        : switch (state) {
+            BroadcastAudioState.connecting => (
+                Icons.mic_none_outlined,
+                'Connexion du microphone…',
+                colors.primary,
+              ),
+            BroadcastAudioState.reconnecting => (
+                Icons.wifi_tethering_error_outlined,
+                'Reconnexion audio…',
+                colors.tertiary,
+              ),
+            BroadcastAudioState.live => (
+                Icons.mic_outlined,
+                'Microphone diffusé',
+                colors.primary,
+              ),
+            BroadcastAudioState.idle => (
+                Icons.mic_off_outlined,
+                'Microphone arrêté',
+                colors.error,
+              ),
+          };
+
+    return Row(
+      key: Key('dashboard_microphone_status_$streamId'),
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+        ),
+      ],
     );
   }
 }
@@ -706,7 +791,7 @@ class _IngestUrlRowState extends State<_IngestUrlRow> {
     await Clipboard.setData(ClipboardData(text: widget.sourceUrl));
     if (!mounted) return;
     // Le toast ne réécrit surtout pas la valeur copiée.
-    showAuthSuccessToast(context, "URL d'ingest copiée");
+    showAuthSuccessToast(context, 'URL d\'ingest copiée');
   }
 
   @override
@@ -727,7 +812,7 @@ class _IngestUrlRowState extends State<_IngestUrlRow> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "URL d'ingest",
+                  'URL d\'ingest',
                   style: text.labelSmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -752,7 +837,9 @@ class _IngestUrlRowState extends State<_IngestUrlRow> {
           IconButton(
             key: Key('dashboard_reveal_key_${widget.streamId}'),
             icon: Icon(
-              _revealed ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              _revealed
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
             ),
             tooltip: _revealed ? 'Masquer' : 'Révéler 15 s',
             onPressed: _toggleReveal,
@@ -760,7 +847,7 @@ class _IngestUrlRowState extends State<_IngestUrlRow> {
           IconButton(
             key: Key('dashboard_copy_key_${widget.streamId}'),
             icon: const Icon(Icons.copy_outlined),
-            tooltip: "Copier l'URL",
+            tooltip: 'Copier l\'URL',
             onPressed: _copy,
           ),
         ],

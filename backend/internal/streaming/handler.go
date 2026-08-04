@@ -31,6 +31,21 @@ const sseKeepAliveInterval = 15 * time.Second
 // pas pouvoir bloquer indéfiniment le Write (fuite de goroutine/connexion).
 const sseWriteTimeout = 10 * time.Second
 
+type ingestDeadlineReader struct {
+	body       io.Reader
+	controller *http.ResponseController
+	timeout    time.Duration
+}
+
+// Read renouvelle la deadline avant chaque attente d'octets. Une connexion TCP
+// half-open ne peut ainsi pas réserver indéfiniment l'unique slot d'ingest.
+func (r ingestDeadlineReader) Read(p []byte) (int, error) {
+	if r.timeout > 0 {
+		_ = r.controller.SetReadDeadline(time.Now().Add(r.timeout))
+	}
+	return r.body.Read(p)
+}
+
 // StreamService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type StreamService interface {
 	CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error)
@@ -99,7 +114,8 @@ type Handler struct {
 
 	// trustProxyHeaders : cf. clientKey. Faux par défaut, activé par
 	// SetTrustProxyHeaders au démarrage quand un reverse proxy est devant.
-	trustProxyHeaders bool
+	trustProxyHeaders    bool
+	ingestReconnectGrace time.Duration
 }
 
 func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions) *Handler {
@@ -115,6 +131,12 @@ func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions
 // les auditeurs (STR-154). Setter plutôt que paramètre de constructeur : même
 // motif que SetMetrics — c'est une donnée de déploiement, pas du domaine.
 func (h *Handler) SetTrustProxyHeaders(trust bool) { h.trustProxyHeaders = trust }
+
+// SetIngestReconnectGrace configure la deadline glissante d'un push audio.
+// Zéro désactive la deadline, notamment dans les tests unitaires du handler.
+func (h *Handler) SetIngestReconnectGrace(grace time.Duration) {
+	h.ingestReconnectGrace = grace
+}
 
 // SetMetrics injecte le collecteur de métriques métier (STR-166, ADR 022).
 // Setter plutôt que paramètre de constructeur : l'observabilité est optionnelle
@@ -686,16 +708,22 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Push long : neutraliser les deadlines read/write posées par http.Server
-	// (ReadTimeout/WriteTimeout couperaient une diffusion de plusieurs minutes).
+	// Push long : la deadline de lecture est glissante (renouvelée à chaque bloc
+	// audio) et la deadline d'écriture est neutralisée. Une connexion active peut
+	// durer des heures, mais une socket half-open libère l'ingest après le délai
+	// de grâce pour laisser le mobile se reconnecter.
 	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(time.Time{})
 	_ = rc.SetWriteDeadline(time.Time{})
 
 	// Copie bloquante jusqu'à la fin du push (EOF = diffuseur déconnecté). On ne
 	// ferme PAS l'entrée du segmenteur : la session reste live (fenêtre de
 	// segments disponible) jusqu'au stop explicite.
-	if _, err := io.Copy(writer, r.Body); err != nil {
+	reader := ingestDeadlineReader{
+		body:       r.Body,
+		controller: rc,
+		timeout:    h.ingestReconnectGrace,
+	}
+	if _, err := io.Copy(writer, reader); err != nil {
 		// Push interrompu par une erreur : refléter l'échec plutôt qu'un 204
 		// trompeur (un broadcast avorté ≠ déconnexion propre). Ne jamais logger le
 		// stream_key (secret). Si le client est déjà parti, l'écriture est un no-op.

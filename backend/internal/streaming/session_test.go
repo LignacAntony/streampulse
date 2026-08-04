@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -39,6 +40,101 @@ func TestLiveSessions_StartIdempotent(t *testing.T) {
 		t.Fatal("s1 devrait être live")
 	}
 	ls.Stop("s1")
+}
+
+func TestLiveSessions_IngestExpiryStopsSilentSession(t *testing.T) {
+	ls := newTestSessions(context.Background())
+	expired := make(chan string, 1)
+	ls.SetIngestDisconnectHandler(10*time.Millisecond, func(id string) error {
+		expired <- id
+		return nil
+	})
+	ls.Start("s1", "KEY1")
+	defer ls.StopAll()
+
+	select {
+	case id := <-expired:
+		if id != "s1" {
+			t.Fatalf("id expiré = %q, want s1", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("le direct sans ingest n'a pas expiré")
+	}
+}
+
+func TestLiveSessions_IngestReconnectResetsExpiry(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	expired := make(chan string, 1)
+	ls.SetIngestDisconnectHandler(40*time.Millisecond, func(id string) error {
+		expired <- id
+		return nil
+	})
+	ls.Start("s1", "KEY1")
+	defer ls.StopAll()
+
+	_, release, err := ls.AttachIngest("KEY1")
+	if err != nil {
+		t.Fatalf("attach ingest: %v", err)
+	}
+	select {
+	case <-expired:
+		t.Fatal("un ingest actif ne doit pas expirer")
+	case <-time.After(80 * time.Millisecond):
+	}
+
+	release()
+	select {
+	case id := <-expired:
+		if id != "s1" {
+			t.Fatalf("id expiré = %q, want s1", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("le délai n'a pas été réarmé après déconnexion")
+	}
+}
+
+func TestLiveSessions_StopCancelsIngestExpiry(t *testing.T) {
+	ls := newTestSessions(context.Background())
+	expired := make(chan string, 1)
+	ls.SetIngestDisconnectHandler(20*time.Millisecond, func(id string) error {
+		expired <- id
+		return nil
+	})
+	ls.Start("s1", "KEY1")
+	ls.Stop("s1")
+
+	select {
+	case <-expired:
+		t.Fatal("un flux arrêté explicitement ne doit pas expirer ensuite")
+	case <-time.After(60 * time.Millisecond):
+	}
+}
+
+func TestLiveSessions_IngestExpiryRetriesAfterHandlerFailure(t *testing.T) {
+	ls := newTestSessions(context.Background())
+	attempts := make(chan int, 2)
+	count := 0
+	ls.SetIngestDisconnectHandler(10*time.Millisecond, func(string) error {
+		count++
+		attempts <- count
+		if count == 1 {
+			return errors.New("database unavailable")
+		}
+		return nil
+	})
+	ls.Start("s1", "KEY1")
+	defer ls.StopAll()
+
+	for want := 1; want <= 2; want++ {
+		select {
+		case got := <-attempts:
+			if got != want {
+				t.Fatalf("tentative = %d, want %d", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("tentative %d non reçue", want)
+		}
+	}
 }
 
 func TestLiveSessions_SubscribeReceivesEnded(t *testing.T) {

@@ -22,6 +22,11 @@ laissant l'encodeur du diffuseur pousser vers l'URL d'ingest ?
 
 ### 1. Plan de contrôle uniquement — la capture micro sort du périmètre
 
+> **Mise à jour 2026-08-04** — Cette limite est levée par
+> [l'ADR 027](027-capture-microphone-et-push-aac-mobile.md) : `record` 6.2.1
+> sait désormais streamer de l'AAC/ADTS sur Android et iOS. La décision
+> ci-dessous reste l'historique du périmètre de STR-153.
+
 Le tableau de bord crée, démarre et arrête les flux, et remet au diffuseur l'URL d'ingest à
 donner à son encodeur (ffmpeg, BUTT, Mixxx). Il ne capture pas le micro.
 

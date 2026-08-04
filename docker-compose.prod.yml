@@ -65,6 +65,8 @@ services:
       # cette variable, le backend retombe sur http://localhost:8080 (config.go),
       # inutilisable en prod où l'API est exposée via Caddy sur le domaine public.
       STREAM_INGEST_BASE_URL: ${STREAM_INGEST_BASE_URL:-https://api.streampulse.win}
+      INGEST_RECONNECT_GRACE_SECONDS: ${INGEST_RECONNECT_GRACE_SECONDS:-45}
+      INGEST_STOP_TIMEOUT_SECONDS: ${INGEST_STOP_TIMEOUT_SECONDS:-10}
       # LOG_PRETTY volontairement absent : en conteneur la sortie doit rester
       # du JSON pour la collecte Loki (STR-163, ADR 018).
       LOG_LEVEL: ${LOG_LEVEL:-info}

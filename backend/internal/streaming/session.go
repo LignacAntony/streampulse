@@ -17,15 +17,17 @@ type SessionEvent struct {
 // session représente une diffusion en cours : le context d'annulation de sa
 // goroutine, son segmenteur HLS (STR-70), et l'ensemble des abonnés SSE (STR-85).
 type session struct {
+	streamID  string
 	streamKey string // secret de push (index d'ingest) ; "" si non routable
 	cancel    context.CancelFunc
 
-	mu          sync.Mutex
-	closed      bool
-	dead        bool          // ffmpeg s'est arrêté seul : segmenteur inexploitable
-	ingesting   bool          // un seul push audio à la fois
-	hls         *hlsSegmenter // publié après le spawn ; protégé par mu
-	subscribers map[chan SessionEvent]struct{}
+	mu           sync.Mutex
+	closed       bool
+	dead         bool          // ffmpeg s'est arrêté seul : segmenteur inexploitable
+	ingesting    bool          // un seul push audio à la fois
+	ingestExpiry *time.Timer   // arrêt différé si aucun push ne revient
+	hls          *hlsSegmenter // publié après le spawn ; protégé par mu
+	subscribers  map[chan SessionEvent]struct{}
 
 	// Suivi d'audience (STR-154) : dernière requête de manifeste par client, et
 	// pic observé. Détail du raisonnement dans listeners.go.
@@ -56,6 +58,22 @@ type LiveSessions struct {
 	byKey   map[string]*session // stream_key secret -> session (ingest)
 	wg      sync.WaitGroup
 	metrics MetricsRecorder // jamais nil : noopRecorder par défaut (STR-166)
+
+	ingestGrace     time.Duration
+	onIngestExpired func(streamID string) error
+}
+
+// SetIngestDisconnectHandler arme le bail audio des directs. Un flux qui ne
+// reçoit aucun ingest pendant grace est confié au handler, qui termine son état
+// persistant. Appelé une fois au démarrage, avant les requêtes HTTP.
+func (ls *LiveSessions) SetIngestDisconnectHandler(
+	grace time.Duration,
+	handler func(streamID string) error,
+) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.ingestGrace = grace
+	ls.onIngestExpired = handler
 }
 
 // NewLiveSessions construit le registre. base est le context de cycle de vie du
@@ -111,6 +129,7 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 	}
 	ctx, cancel := context.WithCancel(ls.base)
 	s := &session{
+		streamID:    streamID,
 		streamKey:   streamKey,
 		cancel:      cancel,
 		subscribers: make(map[chan SessionEvent]struct{}),
@@ -135,6 +154,7 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 	s.mu.Lock()
 	s.hls = seg
 	s.mu.Unlock()
+	ls.armIngestExpiry(s)
 
 	go func() {
 		defer ls.wg.Done()
@@ -210,6 +230,45 @@ func (ls *LiveSessions) Stop(streamID string) {
 	s.cancel()
 }
 
+// armIngestExpiry (ré)arme le délai de grâce d'une session sans ingest. Le
+// callback est appelé hors verrou ; il peut donc repasser par Service puis Stop
+// sans interblocage.
+func (ls *LiveSessions) armIngestExpiry(s *session) {
+	ls.mu.Lock()
+	grace := ls.ingestGrace
+	handler := ls.onIngestExpired
+	ls.mu.Unlock()
+	if grace <= 0 || handler == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.dead || s.ingesting {
+		return
+	}
+	if s.ingestExpiry != nil {
+		s.ingestExpiry.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(grace, func() {
+		s.mu.Lock()
+		if s.ingestExpiry != timer || s.closed || s.dead || s.ingesting {
+			s.mu.Unlock()
+			return
+		}
+		s.ingestExpiry = nil
+		s.mu.Unlock()
+		if err := handler(s.streamID); err != nil {
+			// Une indisponibilité transitoire de la base ne doit pas désarmer le
+			// garde-fou : tant que la session existe, une nouvelle tentative sera
+			// faite après le même délai de grâce.
+			ls.armIngestExpiry(s)
+		}
+	})
+	s.ingestExpiry = timer
+}
+
 // AttachIngest réserve la session live identifiée par streamKey pour un unique
 // push audio, et retourne l'entrée où copier le flux + une fonction de
 // détachement. Erreurs : errNotLive (clé inconnue / flux pas en direct / segmenteur
@@ -234,11 +293,19 @@ func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error
 	if s.ingesting {
 		return nil, nil, errIngestInProgress
 	}
+	if s.ingestExpiry != nil {
+		s.ingestExpiry.Stop()
+		s.ingestExpiry = nil
+	}
 	s.ingesting = true
+	var once sync.Once
 	release := func() {
-		s.mu.Lock()
-		s.ingesting = false
-		s.mu.Unlock()
+		once.Do(func() {
+			s.mu.Lock()
+			s.ingesting = false
+			s.mu.Unlock()
+			ls.armIngestExpiry(s)
+		})
 	}
 	return s.hls.input(), release, nil
 }
@@ -390,6 +457,10 @@ func (s *session) closeSubscribers() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closed = true
+	if s.ingestExpiry != nil {
+		s.ingestExpiry.Stop()
+		s.ingestExpiry = nil
+	}
 	for ch := range s.subscribers {
 		close(ch)
 		delete(s.subscribers, ch)

@@ -23,6 +23,9 @@ dependencies:
   streampulse_api:
     path: packages/streampulse_api
 
+  # Capture microphone AAC/ADTS pour l'ingest du direct (STR-156)
+  record: ^6.2.1
+
   # Stockage sécurisé (tokens JWT)
   flutter_secure_storage: ^9.0.0
 

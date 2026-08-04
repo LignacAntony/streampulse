@@ -10,6 +10,7 @@ import 'package:streampulse/core/network/sse_client.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
+import 'package:streampulse/features/broadcast/domain/services/broadcast_audio_publisher.dart';
 import 'package:streampulse/features/broadcast/presentation/screens/dashboard_screen.dart';
 import 'package:streampulse/features/profile/domain/entities/user_profile.dart';
 import 'package:streampulse/features/profile/domain/repositories/profile_repository.dart';
@@ -22,22 +23,21 @@ BroadcastStream _stream(
   DateTime? startedAt,
   String? sourceUrl,
   DateTime? createdAt,
-}) =>
-    BroadcastStream(
-      id: id,
-      title: title ?? 'Flux $id',
-      status: status,
-      isPublic: true,
-      createdAt: createdAt ?? DateTime.utc(2026, 1, 1),
-      startedAt: startedAt,
-      streamKey: 'cle-secrete-$id',
-      streamSourceUrl:
-          sourceUrl ?? 'http://localhost:8080/api/streams/ingest/cle-secrete-$id',
-    );
+}) => BroadcastStream(
+  id: id,
+  title: title ?? 'Flux $id',
+  status: status,
+  isPublic: true,
+  createdAt: createdAt ?? DateTime.utc(2026, 1, 1),
+  startedAt: startedAt,
+  streamKey: 'cle-secrete-$id',
+  streamSourceUrl:
+      sourceUrl ?? 'http://localhost:8080/api/streams/ingest/cle-secrete-$id',
+);
 
 class _FakeBroadcastRepository implements BroadcastRepository {
   _FakeBroadcastRepository({List<BroadcastStream>? streams, this.startError})
-      : streams = streams ?? const [];
+    : streams = streams ?? const [];
 
   List<BroadcastStream> streams;
 
@@ -57,14 +57,13 @@ class _FakeBroadcastRepository implements BroadcastRepository {
     required bool isPublic,
     String? description,
     String? category,
-  }) async =>
-      BroadcastStream(
-        id: 'new',
-        title: title,
-        status: 'idle',
-        isPublic: isPublic,
-        createdAt: DateTime.utc(2026, 6, 1),
-      );
+  }) async => BroadcastStream(
+    id: 'new',
+    title: title,
+    status: 'idle',
+    isPublic: isPublic,
+    createdAt: DateTime.utc(2026, 6, 1),
+  );
 
   @override
   Future<BroadcastStream> startStream(String id) async {
@@ -73,8 +72,10 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   }
 
   @override
-  Future<BroadcastStream> stopStream(String id) async =>
-      _stream(id, status: 'ended');
+  Future<BroadcastStream> stopStream(String id) async {
+    stoppedIds.add(id);
+    return _stream(id, status: 'ended');
+  }
 
   @override
   Future<void> deleteStream(String id) async {
@@ -82,13 +83,11 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   }
 
   @override
-  Future<BroadcastStats> streamStats(String id) async => BroadcastStats(
-        streamId: id,
-        listeners: listeners,
-        peak: peak,
-      );
+  Future<BroadcastStats> streamStats(String id) async =>
+      BroadcastStats(streamId: id, listeners: listeners, peak: peak);
 
   final List<String> deletedIds = [];
+  final List<String> stoppedIds = [];
   int listeners = 4;
   int peak = 9;
 }
@@ -100,7 +99,8 @@ class _DeferredStatsRepository extends _FakeBroadcastRepository {
   _DeferredStatsRepository({super.streams});
 
   @override
-  Future<BroadcastStats> streamStats(String id) => Completer<BroadcastStats>().future;
+  Future<BroadcastStats> streamStats(String id) =>
+      Completer<BroadcastStats>().future;
 }
 
 class _FakeProfileRepository implements ProfileRepository {
@@ -138,10 +138,42 @@ class _InertSseConnector implements SseConnector {
   Stream<SseEvent> connect(String path) => const Stream.empty();
 }
 
+class _FakeAudioPublisher implements BroadcastAudioPublisher {
+  final StreamController<BroadcastAudioState> _states =
+      StreamController<BroadcastAudioState>.broadcast();
+
+  @override
+  BroadcastAudioState state = BroadcastAudioState.idle;
+
+  @override
+  Stream<BroadcastAudioState> get states => _states.stream;
+
+  @override
+  Future<void> prepare() async {}
+
+  @override
+  Future<void> start(Uri sourceUrl) async {
+    state = BroadcastAudioState.live;
+    _states.add(state);
+  }
+
+  @override
+  Future<void> stop() async {
+    state = BroadcastAudioState.idle;
+    _states.add(state);
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _states.close();
+  }
+}
+
 Widget _harness(
   BroadcastRepository repository, {
   String role = 'broadcaster',
   bool profileFails = false,
+  BroadcastAudioPublisher? audioPublisher,
 }) {
   return ToastificationWrapper(
     child: MultiProvider(
@@ -156,6 +188,7 @@ Widget _harness(
         home: DashboardScreen(
           repository: repository,
           sse: _InertSseConnector(),
+          audioPublisher: audioPublisher ?? _FakeAudioPublisher(),
         ),
       ),
     ),
@@ -173,9 +206,12 @@ Future<void> _settle(WidgetTester tester) async {
 
 void main() {
   group('DashboardScreen — accès', () {
-    testWidgets('un non-diffuseur est orienté vers la demande de rôle',
-        (tester) async {
-      await tester.pumpWidget(_harness(_FakeBroadcastRepository(), role: 'user'));
+    testWidgets('un non-diffuseur est orienté vers la demande de rôle', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(_FakeBroadcastRepository(), role: 'user'),
+      );
       await _settle(tester);
 
       expect(find.text('Diffusez vos propres flux'), findsOneWidget);
@@ -187,8 +223,9 @@ void main() {
       expect(find.byKey(const Key('dashboard_create_button')), findsNothing);
     });
 
-    testWidgets('un visiteur non connecté est invité à se connecter',
-        (tester) async {
+    testWidgets('un visiteur non connecté est invité à se connecter', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _harness(_FakeBroadcastRepository(), profileFails: true),
       );
@@ -198,8 +235,9 @@ void main() {
       expect(find.byKey(const Key('dashboard_login_button')), findsOneWidget);
     });
 
-    testWidgets('un diffuseur sans flux est invité à en créer un',
-        (tester) async {
+    testWidgets('un diffuseur sans flux est invité à en créer un', (
+      tester,
+    ) async {
       await tester.pumpWidget(_harness(_FakeBroadcastRepository()));
       await _settle(tester);
 
@@ -215,8 +253,12 @@ void main() {
     testWidgets('affiche le statut de chaque flux', (tester) async {
       final repository = _FakeBroadcastRepository(
         streams: [
-          _stream('a', title: 'Talk du soir', status: 'live',
-              startedAt: DateTime.now().subtract(const Duration(minutes: 2))),
+          _stream(
+            'a',
+            title: 'Talk du soir',
+            status: 'live',
+            startedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+          ),
           _stream('b', title: 'Session jazz'),
           _stream('c', title: 'Archive', status: 'ended'),
         ],
@@ -239,12 +281,16 @@ void main() {
       expect(find.text('TERMINÉ'), findsOneWidget);
     });
 
-    testWidgets('le direct affiche un chronomètre, pas les autres flux',
-        (tester) async {
+    testWidgets('le direct affiche un chronomètre, pas les autres flux', (
+      tester,
+    ) async {
       final repository = _FakeBroadcastRepository(
         streams: [
-          _stream('a', status: 'live',
-              startedAt: DateTime.now().subtract(const Duration(minutes: 2))),
+          _stream(
+            'a',
+            status: 'live',
+            startedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+          ),
           _stream('b'),
         ],
       );
@@ -256,44 +302,51 @@ void main() {
     });
 
     testWidgets(
-        'un seul live : le démarrage des autres flux est désactivé et expliqué',
-        (tester) async {
-      final repository = _FakeBroadcastRepository(
-        streams: [
-          _stream('a', status: 'live', startedAt: DateTime.now()),
-          _stream('b'),
-        ],
-      );
-      await tester.pumpWidget(_harness(repository));
-      await _settle(tester);
+      'un seul live : le démarrage des autres flux est désactivé et expliqué',
+      (tester) async {
+        final repository = _FakeBroadcastRepository(
+          streams: [
+            _stream('a', status: 'live', startedAt: DateTime.now()),
+            _stream('b'),
+          ],
+        );
+        await tester.pumpWidget(_harness(repository));
+        await _settle(tester);
 
-      final startB = tester.widget<FilledButton>(
-        find.byKey(const Key('dashboard_start_button_b')),
-      );
-      expect(startB.onPressed, isNull);
-      expect(find.text('Un autre flux est en direct'), findsOneWidget);
-      // Le flux en direct garde son bouton d'arrêt actif.
-      final stopA = tester.widget<FilledButton>(
-        find.byKey(const Key('dashboard_stop_button_a')),
-      );
-      expect(stopA.onPressed, isNotNull);
-    });
+        final startB = tester.widget<FilledButton>(
+          find.byKey(const Key('dashboard_start_button_b')),
+        );
+        expect(startB.onPressed, isNull);
+        expect(find.text('Un autre flux est en direct'), findsOneWidget);
+        // Le flux en direct garde son bouton d'arrêt actif.
+        final stopA = tester.widget<FilledButton>(
+          find.byKey(const Key('dashboard_stop_button_a')),
+        );
+        expect(stopA.onPressed, isNotNull);
+      },
+    );
   });
 
   group('DashboardScreen — audience (STR-154)', () {
-    testWidgets('le direct affiche les auditeurs estimés et le pic',
-        (tester) async {
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
-      )
-        ..listeners = 4
-        ..peak = 9;
+    testWidgets('le direct affiche les auditeurs estimés et le pic', (
+      tester,
+    ) async {
+      final repository =
+          _FakeBroadcastRepository(
+              streams: [
+                _stream('a', status: 'live', startedAt: DateTime.now()),
+              ],
+            )
+            ..listeners = 4
+            ..peak = 9;
       await tester.pumpWidget(_harness(repository));
       await _settle(tester);
 
       expect(find.byKey(const Key('dashboard_listeners_a')), findsOneWidget);
       expect(
-        tester.widget<Text>(find.byKey(const Key('dashboard_listeners_a'))).data,
+        tester
+            .widget<Text>(find.byKey(const Key('dashboard_listeners_a')))
+            .data,
         '4',
       );
       expect(
@@ -315,8 +368,9 @@ void main() {
       expect(find.text('auditeur estimé'), findsOneWidget);
     });
 
-    testWidgets('la ligne est présente dès le direct, avant toute mesure',
-        (tester) async {
+    testWidgets('la ligne est présente dès le direct, avant toute mesure', (
+      tester,
+    ) async {
       // Sans ça, la ligne « apparaît » au premier relevé et pousse le contenu
       // vers le bas ; et elle disparaît au passage en arrière-plan, quand
       // `_cancelStats()` remet l'audience à null.
@@ -328,7 +382,9 @@ void main() {
 
       expect(find.byKey(const Key('dashboard_listeners_a')), findsOneWidget);
       expect(
-        tester.widget<Text>(find.byKey(const Key('dashboard_listeners_a'))).data,
+        tester
+            .widget<Text>(find.byKey(const Key('dashboard_listeners_a')))
+            .data,
         '—',
       );
       expect(
@@ -350,8 +406,9 @@ void main() {
       );
     });
 
-    testWidgets('une info-bulle explique que le chiffre est une estimation',
-        (tester) async {
+    testWidgets('une info-bulle explique que le chiffre est une estimation', (
+      tester,
+    ) async {
       final repository = _FakeBroadcastRepository(
         streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
       );
@@ -371,22 +428,28 @@ void main() {
       expect(tooltip.message, contains('même connexion comptent pour un'));
     });
 
-    testWidgets('aucune audience affichée sur un flux qui n\'est pas en direct',
-        (tester) async {
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a'), _stream('b', status: 'ended')],
-      );
-      await tester.pumpWidget(_harness(repository));
-      await _settle(tester);
+    testWidgets(
+      'aucune audience affichée sur un flux qui n\'est pas en direct',
+      (tester) async {
+        final repository = _FakeBroadcastRepository(
+          streams: [
+            _stream('a'),
+            _stream('b', status: 'ended'),
+          ],
+        );
+        await tester.pumpWidget(_harness(repository));
+        await _settle(tester);
 
-      expect(find.byKey(const Key('dashboard_listeners_a')), findsNothing);
-      expect(find.byKey(const Key('dashboard_listeners_b')), findsNothing);
-    });
+        expect(find.byKey(const Key('dashboard_listeners_a')), findsNothing);
+        expect(find.byKey(const Key('dashboard_listeners_b')), findsNothing);
+      },
+    );
   });
 
   group('DashboardScreen — flux terminé', () {
-    testWidgets('aucun bouton de démarrage, le backend le refuserait',
-        (tester) async {
+    testWidgets('aucun bouton de démarrage, le backend le refuserait', (
+      tester,
+    ) async {
       // `start` n'accepte que idle -> live : proposer le bouton sur un flux
       // terminé ne peut produire qu'un 409.
       final repository = _FakeBroadcastRepository(
@@ -406,46 +469,48 @@ void main() {
       expect(find.text('Un autre flux est en direct'), findsNothing);
     });
 
-    testWidgets(
-      'un 409 sans autre direct est expliqué par la bonne raison',
-      (tester) async {
-        final repository = _FakeBroadcastRepository(
-          streams: [_stream('a')],
-          startError: const ConflictException('stream is not idle'),
-        );
-        await tester.pumpWidget(_harness(repository));
-        await _settle(tester);
+    testWidgets('un 409 sans autre direct est expliqué par la bonne raison', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a')],
+        startError: const ConflictException('stream is not idle'),
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
 
-        await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
-        await _settle(tester);
-        // Le toast vit dans un overlay animé : laisser l'animation d'entrée
-        // se dérouler avant d'assert.
-        await tester.pump(const Duration(milliseconds: 600));
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+      // Le toast vit dans un overlay animé : laisser l'animation d'entrée
+      // se dérouler avant d'assert.
+      await tester.pump(const Duration(milliseconds: 600));
 
-        expect(find.text("Ce flux n'est plus démarrable"), findsOneWidget);
-        expect(find.text('Un autre flux est déjà en direct'), findsNothing);
+      expect(find.text("Ce flux n'est plus démarrable"), findsOneWidget);
+      expect(find.text('Un autre flux est déjà en direct'), findsNothing);
 
-        toastification.dismissAll(delayForAnimation: false);
-        await tester.pump(const Duration(milliseconds: 700));
-      },
-    );
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
   });
 
   group('DashboardScreen — retours de revue', () {
-    testWidgets('les badges PRÊT et TERMINÉ ne partagent pas leur couleur',
-        (tester) async {
+    testWidgets('les badges PRÊT et TERMINÉ ne partagent pas leur couleur', (
+      tester,
+    ) async {
       final repository = _FakeBroadcastRepository(
-        streams: [_stream('a'), _stream('b', status: 'ended')],
+        streams: [
+          _stream('a'),
+          _stream('b', status: 'ended'),
+        ],
       );
       await tester.pumpWidget(_harness(repository));
       await _settle(tester);
 
       Color badgeColor(String label) {
         final container = tester.widget<Container>(
-          find.ancestor(
-            of: find.text(label),
-            matching: find.byType(Container),
-          ).first,
+          find
+              .ancestor(of: find.text(label), matching: find.byType(Container))
+              .first,
         );
         return (container.decoration! as BoxDecoration).color!;
       }
@@ -459,7 +524,10 @@ void main() {
 
     testWidgets('aucune URL d\'ingest sur un flux terminé', (tester) async {
       final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'ended'), _stream('b')],
+        streams: [
+          _stream('a', status: 'ended'),
+          _stream('b'),
+        ],
       );
       await tester.pumpWidget(_harness(repository));
       await _settle(tester);
@@ -470,10 +538,14 @@ void main() {
       expect(find.byKey(const Key('dashboard_ingest_url_b')), findsOneWidget);
     });
 
-    testWidgets('supprimer un flux le retire après confirmation',
-        (tester) async {
+    testWidgets('supprimer un flux le retire après confirmation', (
+      tester,
+    ) async {
       final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', title: 'À jeter'), _stream('b')],
+        streams: [
+          _stream('a', title: 'À jeter'),
+          _stream('b'),
+        ],
       );
       await tester.pumpWidget(_harness(repository));
       await _settle(tester);
@@ -484,7 +556,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Supprimer « À jeter » ?'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('dashboard_confirm_delete_button')));
+      await tester.tap(
+        find.byKey(const Key('dashboard_confirm_delete_button')),
+      );
       await _settle(tester);
 
       expect(repository.deletedIds, ['a']);
@@ -495,12 +569,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
     });
 
-    testWidgets('supprimer un direct annonce l\'arrêt de la diffusion',
-        (tester) async {
+    testWidgets('supprimer un direct annonce l\'arrêt de la diffusion', (
+      tester,
+    ) async {
       final repository = _FakeBroadcastRepository(
         streams: [
-          _stream('a', title: 'En cours', status: 'live',
-              startedAt: DateTime.now()),
+          _stream(
+            'a',
+            title: 'En cours',
+            status: 'live',
+            startedAt: DateTime.now(),
+          ),
         ],
       );
       await tester.pumpWidget(_harness(repository));
@@ -549,8 +628,9 @@ void main() {
       await tester.tap(find.byKey(const Key('dashboard_reveal_key_a')));
       await tester.pump();
 
-      final revealed =
-          tester.widget<Text>(find.byKey(const Key('dashboard_ingest_url_a')));
+      final revealed = tester.widget<Text>(
+        find.byKey(const Key('dashboard_ingest_url_a')),
+      );
       expect(revealed.data!, contains('cle-secrete-a'));
       // Tronquer l'URL révélée rendrait le bouton « révéler » inutile : on ne
       // pourrait pas lire la clé qu'on vient de demander à voir.
@@ -586,28 +666,74 @@ void main() {
   });
 
   group('DashboardScreen — latence de démarrage (STR-159)', () {
+    testWidgets('le passage EN DIRECT est rendu depuis la réponse de start, '
+        'sans rechargement bloquant', (tester) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+      final listCallsAfterLoad = repository.listCalls;
+
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+
+      expect(find.text('EN DIRECT'), findsOneWidget);
+      expect(
+        repository.listCalls,
+        listCallsAfterLoad,
+        reason:
+            'le rendu du direct ne doit pas attendre un refetch de la '
+            'liste : la réponse de start suffit',
+      );
+
+      // Le toast de succès arme un minuteur d'auto-fermeture : le purger
+      // avant la fin du test (même pattern que `AdminStreamsScreen`).
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+  });
+
+  group('DashboardScreen — microphone (STR-156)', () {
+    testWidgets('affiche que le microphone de cet appareil est diffusé', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      await tester.pumpWidget(_harness(repository, audioPublisher: audio));
+      await _settle(tester);
+
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+
+      expect(find.text('Microphone diffusé'), findsOneWidget);
+      expect(
+        find.byKey(const Key('dashboard_microphone_status_a')),
+        findsOneWidget,
+      );
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
     testWidgets(
-      'le passage EN DIRECT est rendu depuis la réponse de start, '
-      'sans rechargement bloquant',
+      'le passage en arrière-plan arrête le live et libère le micro',
       (tester) async {
         final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
-        await tester.pumpWidget(_harness(repository));
+        final audio = _FakeAudioPublisher();
+        await tester.pumpWidget(_harness(repository, audioPublisher: audio));
         await _settle(tester);
-        final listCallsAfterLoad = repository.listCalls;
-
         await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
         await _settle(tester);
 
-        expect(find.text('EN DIRECT'), findsOneWidget);
-        expect(
-          repository.listCalls,
-          listCallsAfterLoad,
-          reason: 'le rendu du direct ne doit pas attendre un refetch de la '
-              'liste : la réponse de start suffit',
-        );
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await _settle(tester);
 
-        // Le toast de succès arme un minuteur d'auto-fermeture : le purger
-        // avant la fin du test (même pattern que `AdminStreamsScreen`).
+        expect(repository.stoppedIds, ['a']);
+        expect(audio.state, BroadcastAudioState.idle);
+        expect(find.text('TERMINÉ'), findsOneWidget);
+
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
         toastification.dismissAll(delayForAnimation: false);
         await tester.pump(const Duration(milliseconds: 700));
       },

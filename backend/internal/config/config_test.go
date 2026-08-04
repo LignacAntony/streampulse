@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // setEnv positionne plusieurs variables d'environnement pour la durée du test.
@@ -167,6 +168,48 @@ func TestLoad_HLSMaxConcurrent(t *testing.T) {
 			}
 			if cfg.HLSMaxConcurrent != tt.want {
 				t.Errorf("HLSMaxConcurrent = %d, want %d", cfg.HLSMaxConcurrent, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoad_IngestTimeouts(t *testing.T) {
+	t.Run("défauts", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != 45*time.Second {
+			t.Errorf("IngestReconnectGrace() = %s, want 45s", cfg.IngestReconnectGrace())
+		}
+		if cfg.IngestStopTimeout() != 10*time.Second {
+			t.Errorf("IngestStopTimeout() = %s, want 10s", cfg.IngestStopTimeout())
+		}
+	})
+
+	t.Run("personnalisés", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", "60")
+		t.Setenv("INGEST_STOP_TIMEOUT_SECONDS", "15")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != time.Minute {
+			t.Errorf("IngestReconnectGrace() = %s, want 1m", cfg.IngestReconnectGrace())
+		}
+		if cfg.IngestStopTimeout() != 15*time.Second {
+			t.Errorf("IngestStopTimeout() = %s, want 15s", cfg.IngestStopTimeout())
+		}
+	})
+
+	for _, key := range []string{"INGEST_RECONNECT_GRACE_SECONDS", "INGEST_STOP_TIMEOUT_SECONDS"} {
+		t.Run(key+" invalide", func(t *testing.T) {
+			setEnv(t, validVars())
+			t.Setenv(key, "0")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("Load() error = %v, want erreur pour %s", err, key)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import 'package:streampulse/core/network/sse_client.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.dart';
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
+import 'package:streampulse/features/broadcast/domain/services/broadcast_audio_publisher.dart';
 import 'package:streampulse/features/broadcast/presentation/providers/broadcast_notifier.dart';
 
 BroadcastStream _stream(
@@ -15,21 +16,20 @@ BroadcastStream _stream(
   String? title,
   DateTime? startedAt,
   DateTime? createdAt,
-}) =>
-    BroadcastStream(
-      id: id,
-      title: title ?? 'Flux $id',
-      status: status,
-      isPublic: true,
-      createdAt: createdAt ?? DateTime.utc(2026, 1, 1),
-      startedAt: startedAt,
-      streamKey: 'key-$id',
-      streamSourceUrl: 'http://localhost:8080/api/streams/ingest/key-$id',
-    );
+}) => BroadcastStream(
+  id: id,
+  title: title ?? 'Flux $id',
+  status: status,
+  isPublic: true,
+  createdAt: createdAt ?? DateTime.utc(2026, 1, 1),
+  startedAt: startedAt,
+  streamKey: 'key-$id',
+  streamSourceUrl: 'http://localhost:8080/api/streams/ingest/key-$id',
+);
 
 class _FakeBroadcastRepository implements BroadcastRepository {
   _FakeBroadcastRepository({List<BroadcastStream>? streams})
-      : streams = streams ?? [_stream('a')];
+    : streams = streams ?? [_stream('a')];
 
   List<BroadcastStream> streams;
 
@@ -92,11 +92,7 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   Future<BroadcastStats> streamStats(String id) async {
     statsCalls++;
     if (statsError != null) throw statsError!;
-    return BroadcastStats(
-      streamId: id,
-      listeners: listeners,
-      peak: listeners,
-    );
+    return BroadcastStats(streamId: id, listeners: listeners, peak: listeners);
   }
 
   final List<String> deletedIds = [];
@@ -124,8 +120,7 @@ class _DeferredRepository implements BroadcastRepository {
     required bool isPublic,
     String? description,
     String? category,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<BroadcastStream> startStream(String id) => throw UnimplementedError();
@@ -161,8 +156,7 @@ class _DeferredMutationRepository implements BroadcastRepository {
     required bool isPublic,
     String? description,
     String? category,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<BroadcastStream> stopStream(String id) => throw UnimplementedError();
@@ -192,28 +186,75 @@ class _FakeSseConnector implements SseConnector {
   }
 }
 
+class _FakeAudioPublisher implements BroadcastAudioPublisher {
+  final StreamController<BroadcastAudioState> _states =
+      StreamController<BroadcastAudioState>.broadcast();
+  Object? prepareError;
+  Object? startError;
+  int prepares = 0;
+  int starts = 0;
+  int stops = 0;
+  Uri? sourceUrl;
+
+  @override
+  BroadcastAudioState state = BroadcastAudioState.idle;
+
+  @override
+  Stream<BroadcastAudioState> get states => _states.stream;
+
+  @override
+  Future<void> prepare() async {
+    prepares++;
+    if (prepareError != null) throw prepareError!;
+  }
+
+  @override
+  Future<void> start(Uri sourceUrl) async {
+    starts++;
+    this.sourceUrl = sourceUrl;
+    if (startError != null) throw startError!;
+    state = BroadcastAudioState.live;
+    _states.add(state);
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    state = BroadcastAudioState.idle;
+    _states.add(state);
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _states.close();
+  }
+}
+
 void main() {
   group('BroadcastNotifier — chargement', () {
-    test('trie le direct en tête, puis les flux prêts, puis les terminés',
-        () async {
-      final repository = _FakeBroadcastRepository(
-        streams: [
-          _stream('ended', status: 'ended'),
-          _stream('idle'),
-          _stream('live', status: 'live'),
-        ],
-      );
-      final notifier = BroadcastNotifier(repository);
+    test(
+      'trie le direct en tête, puis les flux prêts, puis les terminés',
+      () async {
+        final repository = _FakeBroadcastRepository(
+          streams: [
+            _stream('ended', status: 'ended'),
+            _stream('idle'),
+            _stream('live', status: 'live'),
+          ],
+        );
+        final notifier = BroadcastNotifier(repository);
 
-      await notifier.load();
+        await notifier.load();
 
-      expect(
-        notifier.streams.map((s) => s.id).toList(),
-        ['live', 'idle', 'ended'],
-      );
-      expect(notifier.liveStream?.id, 'live');
-      expect(notifier.hasLiveStream, isTrue);
-    });
+        expect(notifier.streams.map((s) => s.id).toList(), [
+          'live',
+          'idle',
+          'ended',
+        ]);
+        expect(notifier.liveStream?.id, 'live');
+        expect(notifier.hasLiveStream, isTrue);
+      },
+    );
 
     test('expose un message dédié sur erreur réseau', () async {
       final repository = _FakeBroadcastRepository()
@@ -227,20 +268,21 @@ void main() {
       expect(notifier.loading, isFalse);
     });
 
-    test('erreur non réseau : message générique, isNetworkError faux',
-        () async {
-      final repository = _FakeBroadcastRepository()
-        ..listError = const ServerException();
-      final notifier = BroadcastNotifier(repository);
-
-      await notifier.load();
-
-      expect(notifier.error, 'Impossible de charger vos flux');
-      expect(notifier.isNetworkError, isFalse);
-    });
-
     test(
-        'deux chargements concurrents : seul le plus récent écrit l\'état, '
+      'erreur non réseau : message générique, isNetworkError faux',
+      () async {
+        final repository = _FakeBroadcastRepository()
+          ..listError = const ServerException();
+        final notifier = BroadcastNotifier(repository);
+
+        await notifier.load();
+
+        expect(notifier.error, 'Impossible de charger vos flux');
+        expect(notifier.isNetworkError, isFalse);
+      },
+    );
+
+    test('deux chargements concurrents : seul le plus récent écrit l\'état, '
         'sans spinner figé', () async {
       final repository = _DeferredRepository();
       final notifier = BroadcastNotifier(repository);
@@ -285,6 +327,54 @@ void main() {
       expect(notifier.mutatingId, isNull);
     });
 
+    test('start prépare le micro puis pousse vers stream_source_url', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+      await notifier.load();
+
+      await notifier.start('a');
+
+      expect(audio.prepares, 1);
+      expect(audio.starts, 1);
+      expect(audio.sourceUrl, Uri.parse(_stream('a').streamSourceUrl!));
+      expect(notifier.audioState, BroadcastAudioState.live);
+      expect(notifier.isPublishingAudio('a'), isTrue);
+    });
+
+    test('un refus micro ne passe jamais le flux serveur à live', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher()
+        ..prepareError = const MicrophonePermissionException();
+      final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+      await notifier.load();
+
+      await expectLater(
+        notifier.start('a'),
+        throwsA(isA<MicrophonePermissionException>()),
+      );
+
+      expect(repository.startedIds, isEmpty);
+      expect(notifier.streams.single.isIdle, isTrue);
+    });
+
+    test(
+      'un échec de capture après start annule immédiatement le live',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher()..startError = StateError('occupé');
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        await notifier.load();
+
+        await expectLater(notifier.start('a'), throwsStateError);
+
+        expect(repository.startedIds, ['a']);
+        expect(repository.stoppedIds, ['a']);
+        expect(notifier.streams.single.isEnded, isTrue);
+        expect(notifier.isPublishingAudio('a'), isFalse);
+      },
+    );
+
     test('stop remplace le flux par sa version terminée', () async {
       final repository = _FakeBroadcastRepository(
         streams: [_stream('a', status: 'live')],
@@ -298,6 +388,37 @@ void main() {
       expect(notifier.streams.single.isEnded, isTrue);
       expect(notifier.hasLiveStream, isFalse);
     });
+
+    test('stop termine le serveur avant de libérer le micro local', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+      await notifier.load();
+      await notifier.start('a');
+
+      await notifier.stop('a');
+
+      expect(repository.stoppedIds, ['a']);
+      expect(audio.stops, 1);
+      expect(notifier.audioState, BroadcastAudioState.idle);
+    });
+
+    test(
+      'le passage en arrière-plan termine le live et coupe l\'audio',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher();
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        await notifier.load();
+        await notifier.start('a');
+
+        await notifier.stopForBackground();
+
+        expect(repository.stoppedIds, ['a']);
+        expect(audio.stops, 1);
+        expect(notifier.hasLiveStream, isFalse);
+      },
+    );
 
     test('les erreurs de mutation remontent à l\'appelant', () async {
       final repository = _FakeBroadcastRepository(streams: [_stream('a')])
@@ -418,28 +539,30 @@ void main() {
       notifier.dispose();
     });
 
-    test('l\'arrêt du direct coupe les mesures et efface l\'audience',
-        () async {
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'live')],
-      );
-      final notifier = BroadcastNotifier(
-        repository,
-        statsInterval: const Duration(milliseconds: 20),
-      );
-      notifier.setActive(true);
-      await notifier.load();
-      await Future<void>.delayed(Duration.zero);
-      expect(notifier.stats, isNotNull);
+    test(
+      'l\'arrêt du direct coupe les mesures et efface l\'audience',
+      () async {
+        final repository = _FakeBroadcastRepository(
+          streams: [_stream('a', status: 'live')],
+        );
+        final notifier = BroadcastNotifier(
+          repository,
+          statsInterval: const Duration(milliseconds: 20),
+        );
+        notifier.setActive(true);
+        await notifier.load();
+        await Future<void>.delayed(Duration.zero);
+        expect(notifier.stats, isNotNull);
 
-      await notifier.stop('a');
-      final callsAfterStop = repository.statsCalls;
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+        await notifier.stop('a');
+        final callsAfterStop = repository.statsCalls;
+        await Future<void>.delayed(const Duration(milliseconds: 60));
 
-      expect(notifier.stats, isNull);
-      expect(repository.statsCalls, callsAfterStop);
-      notifier.dispose();
-    });
+        expect(notifier.stats, isNull);
+        expect(repository.statsCalls, callsAfterStop);
+        notifier.dispose();
+      },
+    );
 
     test('les mesures s\'arrêtent en arrière-plan', () async {
       final repository = _FakeBroadcastRepository(
@@ -478,7 +601,11 @@ void main() {
       notifier.addListener(() => notifications++);
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      expect(repository.statsCalls, greaterThan(1), reason: 'les mesures tournent');
+      expect(
+        repository.statsCalls,
+        greaterThan(1),
+        reason: 'les mesures tournent',
+      );
       expect(notifications, 0, reason: 'valeurs inchangées : aucun rebuild');
       notifier.dispose();
     });
@@ -521,7 +648,11 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 40));
 
       expect(notifier.stats, isNull);
-      expect(notifier.error, isNull, reason: 'pas d\'erreur remontée à l\'écran');
+      expect(
+        notifier.error,
+        isNull,
+        reason: 'pas d\'erreur remontée à l\'écran',
+      );
       expect(notifier.streams, hasLength(1));
       notifier.dispose();
     });
@@ -564,25 +695,26 @@ void main() {
   });
 
   group('BroadcastNotifier — souscription SSE', () {
-    test('ne se branche que sur un flux en direct, et sur le bon chemin',
-        () async {
-      final sse = _FakeSseConnector();
-      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
-      final notifier = BroadcastNotifier(repository, sse: sse);
-      notifier.setActive(true);
+    test(
+      'ne se branche que sur un flux en direct, et sur le bon chemin',
+      () async {
+        final sse = _FakeSseConnector();
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final notifier = BroadcastNotifier(repository, sse: sse);
+        notifier.setActive(true);
 
-      await notifier.load();
-      expect(sse.connectCount, 0, reason: 'aucun flux en direct');
+        await notifier.load();
+        expect(sse.connectCount, 0, reason: 'aucun flux en direct');
 
-      repository.streams = [_stream('a', status: 'live')];
-      await notifier.load();
+        repository.streams = [_stream('a', status: 'live')];
+        await notifier.load();
 
-      expect(sse.connectCount, 1);
-      expect(sse.paths.single, '/api/streams/a/events');
-    });
+        expect(sse.connectCount, 1);
+        expect(sse.paths.single, '/api/streams/a/events');
+      },
+    );
 
-    test('l\'évènement ended coupe la souscription et resynchronise',
-        () async {
+    test('l\'évènement ended coupe la souscription et resynchronise', () async {
       final sse = _FakeSseConnector();
       final repository = _FakeBroadcastRepository(
         streams: [_stream('a', status: 'live')],
@@ -600,55 +732,64 @@ void main() {
       expect(notifier.hasLiveStream, isFalse);
     });
 
-    test('une coupure déclenche une reconnexion suivie d\'une resynchronisation',
-        () async {
-      final sse = _FakeSseConnector();
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'live')],
-      );
-      final notifier = BroadcastNotifier(
-        repository,
-        sse: sse,
-        // Backoff neutralisé : le test vérifie la mécanique, pas les délais.
-        backoff: (_) => Duration.zero,
-      );
-      notifier.setActive(true);
-      await notifier.load();
-      final callsBefore = repository.listCalls;
+    test(
+      'une coupure déclenche une reconnexion suivie d\'une resynchronisation',
+      () async {
+        final sse = _FakeSseConnector();
+        final repository = _FakeBroadcastRepository(
+          streams: [_stream('a', status: 'live')],
+        );
+        final notifier = BroadcastNotifier(
+          repository,
+          sse: sse,
+          // Backoff neutralisé : le test vérifie la mécanique, pas les délais.
+          backoff: (_) => Duration.zero,
+        );
+        notifier.setActive(true);
+        await notifier.load();
+        final callsBefore = repository.listCalls;
 
-      // Le serveur ferme la connexion sans avoir envoyé `ended`.
-      await sse.current.close();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        // Le serveur ferme la connexion sans avoir envoyé `ended`.
+        await sse.current.close();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(sse.connectCount, 2, reason: 'reconnexion attendue');
-      expect(
-        repository.listCalls,
-        greaterThan(callsBefore),
-        reason: 'le SSE ne rejoue pas les évènements manqués : il faut '
-            'resynchroniser après chaque reconnexion',
-      );
-    });
+        expect(sse.connectCount, 2, reason: 'reconnexion attendue');
+        expect(
+          repository.listCalls,
+          greaterThan(callsBefore),
+          reason:
+              'le SSE ne rejoue pas les évènements manqués : il faut '
+              'resynchroniser après chaque reconnexion',
+        );
+      },
+    );
 
-    test('setActive(false) coupe la souscription et empêche la reconnexion',
-        () async {
-      final sse = _FakeSseConnector();
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'live')],
-      );
-      final notifier = BroadcastNotifier(
-        repository,
-        sse: sse,
-        backoff: (_) => Duration.zero,
-      );
-      notifier.setActive(true);
-      await notifier.load();
-      expect(sse.connectCount, 1);
+    test(
+      'setActive(false) coupe la souscription et empêche la reconnexion',
+      () async {
+        final sse = _FakeSseConnector();
+        final repository = _FakeBroadcastRepository(
+          streams: [_stream('a', status: 'live')],
+        );
+        final notifier = BroadcastNotifier(
+          repository,
+          sse: sse,
+          backoff: (_) => Duration.zero,
+        );
+        notifier.setActive(true);
+        await notifier.load();
+        expect(sse.connectCount, 1);
 
-      notifier.setActive(false);
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        notifier.setActive(false);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(sse.connectCount, 1, reason: 'aucune reconnexion en arrière-plan');
-    });
+        expect(
+          sse.connectCount,
+          1,
+          reason: 'aucune reconnexion en arrière-plan',
+        );
+      },
+    );
 
     test('sans connecteur SSE, le notifier reste fonctionnel', () async {
       final repository = _FakeBroadcastRepository(
@@ -664,63 +805,68 @@ void main() {
     });
   });
 
-  group('BroadcastNotifier — repli par polling (plateformes sans streaming)', () {
-    test('un direct sans connecteur SSE déclenche un rafraîchissement périodique',
+  group(
+    'BroadcastNotifier — repli par polling (plateformes sans streaming)',
+    () {
+      test(
+        'un direct sans connecteur SSE déclenche un rafraîchissement périodique',
         () async {
-      // Cas de Flutter web : l'adaptateur navigateur de Dio ne sait pas
-      // streamer, on ne branche donc aucun SSE et on interroge l'API.
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'live')],
+          // Cas de Flutter web : l'adaptateur navigateur de Dio ne sait pas
+          // streamer, on ne branche donc aucun SSE et on interroge l'API.
+          final repository = _FakeBroadcastRepository(
+            streams: [_stream('a', status: 'live')],
+          );
+          final notifier = BroadcastNotifier(
+            repository,
+            pollInterval: const Duration(milliseconds: 20),
+          );
+          notifier.setActive(true);
+          await notifier.load();
+          final callsAfterLoad = repository.listCalls;
+
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+
+          expect(repository.listCalls, greaterThan(callsAfterLoad));
+          notifier.dispose();
+        },
       );
-      final notifier = BroadcastNotifier(
-        repository,
-        pollInterval: const Duration(milliseconds: 20),
-      );
-      notifier.setActive(true);
-      await notifier.load();
-      final callsAfterLoad = repository.listCalls;
 
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+      test('aucun polling tant qu\'aucun flux n\'est en direct', () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final notifier = BroadcastNotifier(
+          repository,
+          pollInterval: const Duration(milliseconds: 20),
+        );
+        notifier.setActive(true);
+        await notifier.load();
+        final callsAfterLoad = repository.listCalls;
 
-      expect(repository.listCalls, greaterThan(callsAfterLoad));
-      notifier.dispose();
-    });
+        await Future<void>.delayed(const Duration(milliseconds: 80));
 
-    test('aucun polling tant qu\'aucun flux n\'est en direct', () async {
-      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
-      final notifier = BroadcastNotifier(
-        repository,
-        pollInterval: const Duration(milliseconds: 20),
-      );
-      notifier.setActive(true);
-      await notifier.load();
-      final callsAfterLoad = repository.listCalls;
+        expect(repository.listCalls, callsAfterLoad);
+        notifier.dispose();
+      });
 
-      await Future<void>.delayed(const Duration(milliseconds: 80));
+      test('le polling s\'arrête en arrière-plan', () async {
+        final repository = _FakeBroadcastRepository(
+          streams: [_stream('a', status: 'live')],
+        );
+        final notifier = BroadcastNotifier(
+          repository,
+          pollInterval: const Duration(milliseconds: 20),
+        );
+        notifier.setActive(true);
+        await notifier.load();
 
-      expect(repository.listCalls, callsAfterLoad);
-      notifier.dispose();
-    });
+        notifier.setActive(false);
+        final callsAfterPause = repository.listCalls;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
 
-    test('le polling s\'arrête en arrière-plan', () async {
-      final repository = _FakeBroadcastRepository(
-        streams: [_stream('a', status: 'live')],
-      );
-      final notifier = BroadcastNotifier(
-        repository,
-        pollInterval: const Duration(milliseconds: 20),
-      );
-      notifier.setActive(true);
-      await notifier.load();
-
-      notifier.setActive(false);
-      final callsAfterPause = repository.listCalls;
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-
-      expect(repository.listCalls, callsAfterPause);
-      notifier.dispose();
-    });
-  });
+        expect(repository.listCalls, callsAfterPause);
+        notifier.dispose();
+      });
+    },
+  );
 
   group('BroadcastStream', () {
     test('liveDurationAt ne vaut que pour un flux en direct', () {
