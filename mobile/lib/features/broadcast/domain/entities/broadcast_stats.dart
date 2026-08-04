@@ -12,22 +12,28 @@ class BroadcastStats {
     required this.streamId,
     required this.listeners,
     required this.peak,
-    required this.duration,
   });
 
   final String streamId;
   final int listeners;
+
+  /// Maximum d'auditeurs observé depuis le début de la diffusion. **Tout aussi
+  /// estimé** que [listeners] : il dérive exactement des mêmes mesures.
   final int peak;
 
-  /// Durée de diffusion : depuis le démarrage jusqu'à maintenant tant que le
-  /// flux est en direct, jusqu'à son arrêt ensuite.
-  final Duration duration;
+  /// `duration_seconds` de l'API n'est volontairement pas repris ici : le
+  /// tableau de bord affiche déjà la durée du direct via un compteur local
+  /// rafraîchi chaque seconde, alors que la valeur serveur n'arriverait que
+  /// toutes les 5 s et ferait sauter le chronomètre. Le champ reste dans le
+  /// contrat HTTP, où l'historique (STR-162) en aura besoin.
 
-  /// Instantané vide, affiché tant qu'aucune mesure n'est arrivée.
-  static const empty = BroadcastStats(
-    streamId: '',
-    listeners: 0,
-    peak: 0,
-    duration: Duration.zero,
-  );
+  @override
+  bool operator ==(Object other) =>
+      other is BroadcastStats &&
+      other.streamId == streamId &&
+      other.listeners == listeners &&
+      other.peak == peak;
+
+  @override
+  int get hashCode => Object.hash(streamId, listeners, peak);
 }

@@ -21,11 +21,11 @@ extension StreamResponseBroadcastMapper on StreamResponse {
 }
 
 extension StreamStatsResponseMapper on StreamStatsResponse {
+  /// `durationSeconds` du DTO n'est pas repris : cf. [BroadcastStats].
   BroadcastStats toEntity() => BroadcastStats(
         streamId: streamId,
         listeners: listeners,
         peak: peakListeners,
-        duration: Duration(seconds: durationSeconds),
       );
 }
 

@@ -96,7 +96,6 @@ class _FakeBroadcastRepository implements BroadcastRepository {
       streamId: id,
       listeners: listeners,
       peak: listeners,
-      duration: const Duration(minutes: 2),
     );
   }
 
@@ -458,6 +457,51 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
       expect(repository.statsCalls, callsAfterPause);
+      notifier.dispose();
+    });
+
+    test('une mesure identique ne notifie pas', () async {
+      // L'audience bouge rarement entre deux relevés : reconstruire l'écran
+      // toutes les 5 s pour réafficher les mêmes chiffres est du gaspillage.
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+      await Future<void>.delayed(Duration.zero);
+
+      var notifications = 0;
+      notifier.addListener(() => notifications++);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(repository.statsCalls, greaterThan(1), reason: 'les mesures tournent');
+      expect(notifications, 0, reason: 'valeurs inchangées : aucun rebuild');
+      notifier.dispose();
+    });
+
+    test('une mesure différente notifie', () async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live')],
+      );
+      final notifier = BroadcastNotifier(
+        repository,
+        statsInterval: const Duration(milliseconds: 20),
+      );
+      notifier.setActive(true);
+      await notifier.load();
+      await Future<void>.delayed(Duration.zero);
+
+      var notifications = 0;
+      notifier.addListener(() => notifications++);
+      repository.listeners = 12;
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(notifications, greaterThan(0));
+      expect(notifier.stats?.listeners, 12);
       notifier.dispose();
     });
 

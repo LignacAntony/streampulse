@@ -308,6 +308,10 @@ class BroadcastNotifier extends ChangeNotifier {
     try {
       final stats = await _repository.streamStats(id);
       if (_disposed || _statsStreamId != id) return; // flux changé entre-temps
+      // Ne notifier que sur changement réel : l'audience bouge rarement entre
+      // deux mesures, inutile de reconstruire l'écran toutes les 5 s pour
+      // réafficher les mêmes chiffres.
+      if (_stats == stats) return;
       _stats = stats;
       _safeNotify();
     } catch (_) {
