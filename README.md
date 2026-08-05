@@ -114,7 +114,7 @@ Le projet suit la méthodologie [**12-Factor App**](https://12factor.net/fr/conf
 | `DB_USER` | Utilisateur PostgreSQL | — | **oui** | `streampulse` |
 | `DB_PASSWORD` | Mot de passe PostgreSQL | — | **oui** | `<mot de passe fort>` |
 | `DB_NAME` | Nom de la base PostgreSQL | — | **oui** | `streampulse_db` |
-| `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live | `45` | non | `45` |
+| `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live (doit dépasser 30 s, le backoff mobile max — refusé au démarrage sinon) | `45` | non | `45` |
 | `INGEST_STOP_TIMEOUT_SECONDS` | Timeout d'une tentative d'arrêt automatique en base | `10` | non | `10` |
 | `POSTGRES_USER` | Alias compose pour `DB_USER` (init du conteneur Postgres) | — | **oui (compose)** | `streampulse` |
 | `POSTGRES_PASSWORD` | Alias compose pour `DB_PASSWORD` | — | **oui (compose)** | `<mot de passe fort>` |

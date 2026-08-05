@@ -48,13 +48,29 @@ Ce client n'hérite ni du timeout de réception des appels REST courts, ni de
 l'intercepteur JWT : la requête dure tout le direct et l'authentification est
 portée par la clé secrète dans l'URL.
 
-### 3. Reconnexion avec un nouvel encodeur et un backoff borné
+### 3. Reconnexion avec un nouvel encodeur, un backoff borné et un abandon borné
 
 Une fin de requête ou une erreur réseau pendant que la diffusion est désirée
 déclenche une nouvelle tentative après 1, 2, 4, 8, 16 puis 30 secondes. Chaque
 tentative redémarre `record`, afin que le nouveau corps commence par des trames
 AAC/ADTS autonomes. L'interface affiche « Reconnexion audio… » pendant cette
 fenêtre et le bouton Arrêter reste disponible.
+
+Toutes les pannes ne sont pas des coupures réseau : une permission révoquée en
+cours de direct, un micro capté par une autre application ou un encodeur en
+échec ne guériront pas d'eux-mêmes. Le nombre de tentatives **consécutives
+n'ayant transmis aucun octet** est donc borné (six, soit la rampe complète du
+backoff, ~31 s). Au-delà, le diffuseur audio passe à l'état terminal `failed` ;
+le contrôleur de session termine alors le direct côté serveur et l'écran
+l'annonce, plutôt que de laisser la carte figée sur « Reconnexion audio… »
+jusqu'à l'expiration du bail. Une tentative qui transmet de l'audio réarme à la
+fois ce compteur et la rampe de backoff : un direct de plusieurs heures ne doit
+pas céder à la énième micro-coupure.
+
+L'état `live` n'est émis qu'au **premier octet réellement poussé**, pas à
+l'ouverture du micro : le signaler plus tôt ferait clignoter la ligne micro
+entre « Microphone diffusé » et « Reconnexion audio… » à chaque cycle de backoff
+sur une connexion qui n'aboutit jamais.
 
 ### 4. Diffusion au premier plan uniquement
 
@@ -79,13 +95,27 @@ notifie les abonnés. Un échec persistant est borné par
 `INGEST_STOP_TIMEOUT_SECONDS` (10 secondes par défaut), puis le bail est réarmé
 pour réessayer. Le délai par défaut dépasse le plus grand backoff mobile (30
 secondes), ce qui laisse une tentative de reprise sans conserver indéfiniment
-un live silencieux.
+un live silencieux. Cet invariant est **validé au démarrage** : l'API refuse un
+`INGEST_RECONNECT_GRACE_SECONDS` inférieur ou égal à 30, qui couperait les
+directs pendant la fenêtre de reconnexion normale du téléphone.
+
+Pendant que le handler d'expiration termine la session (hors verrou), la
+session est marquée « en fermeture » : un diffuseur qui se reconnecterait dans
+cet intervalle est refusé, plutôt que d'obtenir un ingest aussitôt cassé par
+l'arrêt sur un flux déjà passé à `ended`.
 
 ### 5. Pas de capture sur Flutter web
 
 L'adaptateur HTTP navigateur ne sait pas pousser ce corps streamé de la même
 manière. La vérification échoue avant le démarrage avec un message
 d'indisponibilité ; aucun live muet n'est créé.
+
+L'indisponibilité est portée par le contrat (`BroadcastAudioPublisher
+.isSupported`) et non déduite de `kIsWeb` par l'écran : le tableau de bord
+**désactive** le bouton « Démarrer la diffusion » et indique que la diffusion
+se fait depuis l'application mobile, plutôt que de laisser l'utilisateur
+découvrir l'indisponibilité après un tap. L'URL d'ingest reste affichée : un
+encodeur externe, lui, fonctionne depuis n'importe quelle plateforme.
 
 ## Alternatives écartées
 
@@ -103,7 +133,9 @@ d'indisponibilité ; aucun live muet n'est créé.
 - Le bouton « Démarrer » active désormais le micro du téléphone ; l'URL reste
   affichée pour les encodeurs externes et le diagnostic.
 - Une coupure réseau ne termine pas immédiatement le direct : le client tente
-  de reprendre et expose son état dans la carte.
+  de reprendre et expose son état dans la carte. La reprise est bornée, et la
+  carte le dit — un direct peut donc s'arrêter sans action de l'utilisateur,
+  auquel cas un message l'explique.
 - La mise en arrière-plan termine volontairement la diffusion.
 - Le protocole est verrouillé par un test HTTP réel : octets bruts, type
   `audio/aac`, absence de `Content-Length`.
