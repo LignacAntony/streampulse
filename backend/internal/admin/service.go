@@ -5,9 +5,10 @@ package admin
 
 import (
 	"context"
-	"log"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
@@ -128,7 +129,13 @@ func (s *Service) StopStream(ctx context.Context, streamID, actorID string) erro
 		return err
 	}
 	if err := s.repo.InsertAuditLog(ctx, actorID, "stream.stopped", "stream", streamID); err != nil {
-		log.Printf("admin: audit stream.stopped %s par %s non journalisé: %v", streamID, actorID, err)
+		// Champs structurés plutôt qu'une phrase interpolée : c'est ce qui rend
+		// la trace requêtable dans Loki (ADR 018), et `zerolog.Ctx` la corrèle
+		// au request_id posé par le middleware d'accès.
+		zerolog.Ctx(ctx).Error().Err(err).
+			Str("stream_id", streamID).
+			Str("actor_id", actorID).
+			Msg("admin: interruption de flux non journalisée")
 	}
 	return nil
 }
