@@ -1,5 +1,10 @@
 /// Etat du chemin audio local, distinct du statut métier du flux côté API.
-enum BroadcastAudioState { idle, connecting, live, reconnecting }
+///
+/// [failed] est terminal et n'est émis *que* de la propre initiative du
+/// diffuseur audio, lorsqu'il renonce à se reconnecter. Un arrêt demandé passe
+/// toujours par [idle] : le contrôleur peut donc distinguer une panne d'un
+/// arrêt volontaire sans drapeau supplémentaire.
+enum BroadcastAudioState { idle, connecting, live, reconnecting, failed }
 
 /// Capture le microphone et pousse l'audio vers l'URL d'ingest d'un direct.
 ///
@@ -7,6 +12,11 @@ enum BroadcastAudioState { idle, connecting, live, reconnecting }
 /// la permission et vérifier l'encodeur *avant* de passer le flux à `live`,
 /// tout en n'ouvrant l'ingest qu'après la réponse de l'API.
 abstract interface class BroadcastAudioPublisher {
+  /// Faux quand la plateforme ne sait pas capturer et pousser l'audio. L'écran
+  /// s'en sert pour neutraliser le démarrage en amont, plutôt que de laisser
+  /// l'utilisateur découvrir l'indisponibilité après un tap.
+  bool get isSupported;
+
   BroadcastAudioState get state;
   Stream<BroadcastAudioState> get states;
 
@@ -35,6 +45,9 @@ class AudioEncoderUnsupportedException implements Exception {
 /// L'échec survient pendant [prepare], donc avant le passage serveur à `live`.
 class UnsupportedBroadcastAudioPublisher implements BroadcastAudioPublisher {
   const UnsupportedBroadcastAudioPublisher();
+
+  @override
+  bool get isSupported => false;
 
   @override
   BroadcastAudioState get state => BroadcastAudioState.idle;

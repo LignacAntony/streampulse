@@ -139,8 +139,13 @@ class _InertSseConnector implements SseConnector {
 }
 
 class _FakeAudioPublisher implements BroadcastAudioPublisher {
+  _FakeAudioPublisher({this.isSupported = true});
+
   final StreamController<BroadcastAudioState> _states =
       StreamController<BroadcastAudioState>.broadcast();
+
+  @override
+  final bool isSupported;
 
   @override
   BroadcastAudioState state = BroadcastAudioState.idle;
@@ -153,19 +158,27 @@ class _FakeAudioPublisher implements BroadcastAudioPublisher {
 
   @override
   Future<void> start(Uri sourceUrl) async {
-    state = BroadcastAudioState.live;
-    _states.add(state);
+    _emit(BroadcastAudioState.live);
   }
 
   @override
   Future<void> stop() async {
-    state = BroadcastAudioState.idle;
-    _states.add(state);
+    _emit(BroadcastAudioState.idle);
+  }
+
+  /// Reconnexion en cours, puis abandon : les deux états que le diffuseur
+  /// audio émet sans que l'utilisateur n'ait rien demandé.
+  void reconnect() => _emit(BroadcastAudioState.reconnecting);
+  void giveUp() => _emit(BroadcastAudioState.failed);
+
+  void _emit(BroadcastAudioState next) {
+    state = next;
+    _states.add(next);
   }
 
   @override
   Future<void> dispose() async {
-    await _states.close();
+    if (!_states.isClosed) await _states.close();
   }
 }
 
@@ -738,5 +751,84 @@ void main() {
         await tester.pump(const Duration(milliseconds: 700));
       },
     );
+
+    testWidgets('annonce que la reprise est bornée pendant une reconnexion', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      await tester.pumpWidget(_harness(repository, audioPublisher: audio));
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+
+      audio.reconnect();
+      await _settle(tester);
+
+      expect(find.text('Reconnexion audio…'), findsOneWidget);
+      expect(
+        find.text('Le direct s\'arrêtera si la reconnexion échoue.'),
+        findsOneWidget,
+      );
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    // La panne définitive du micro arrête le direct sans action de
+    // l'utilisateur : la carte doit le dire, sinon le flux passerait de « en
+    // direct » à « terminé » sans explication.
+    testWidgets('un abandon du micro termine le direct et le signale', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      await tester.pumpWidget(_harness(repository, audioPublisher: audio));
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+      expect(find.text('EN DIRECT'), findsOneWidget);
+
+      audio.giveUp();
+      await _settle(tester);
+      // Laisse l'animation d'entrée du toast se jouer : `pump()` sans durée
+      // ne fait pas avancer l'overlay de toastification.
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(repository.stoppedIds, ['a']);
+      expect(find.text('TERMINÉ'), findsOneWidget);
+      expect(
+        find.text('Diffusion arrêtée : le microphone n\'est plus disponible'),
+        findsOneWidget,
+      );
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    // Sur le web, `prepare()` échouerait après coup : un bouton pleinement
+    // actif qui ne fait qu'afficher un toast fugace est une fausse promesse.
+    testWidgets('neutralise le démarrage sur une plateforme sans capture', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      await tester.pumpWidget(
+        _harness(
+          repository,
+          audioPublisher: _FakeAudioPublisher(isSupported: false),
+        ),
+      );
+      await _settle(tester);
+
+      final button = tester.widget<FilledButton>(
+        find.byKey(const Key('dashboard_start_button_a')),
+      );
+      expect(button.onPressed, isNull);
+      expect(
+        find.byKey(const Key('dashboard_audio_unsupported_a')),
+        findsOneWidget,
+      );
+      expect(find.text('EN DIRECT'), findsNothing);
+    });
   });
 }

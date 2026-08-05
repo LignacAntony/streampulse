@@ -38,7 +38,12 @@ class _FakeCapture implements AudioCapture {
     stops++;
     final controller = current;
     current = null;
-    if (controller != null && !controller.isClosed) await controller.close();
+    // `close()` d'un StreamController jamais écouté ne complète pas : une
+    // tentative d'ingest qui échoue avant de s'abonner laisse précisément le
+    // flux micro sans écouteur. Le vrai `record` ne dépend pas de l'abonné.
+    if (controller != null && !controller.isClosed) {
+      unawaited(controller.close());
+    }
   }
 
   @override
@@ -54,10 +59,15 @@ class _FakeIngest implements AudioIngestClient {
   Completer<void>? current;
   StreamSubscription<List<int>>? audioSubscription;
 
+  /// Si non nul, chaque tentative échoue immédiatement, avant d'avoir consommé
+  /// le moindre octet — le cas d'une connexion qui n'aboutit jamais.
+  Object? pushError;
+
   @override
   Future<void> push(Uri sourceUrl, Stream<List<int>> audio) {
     pushes++;
     this.sourceUrl = sourceUrl;
+    if (pushError != null) return Future<void>.error(pushError!);
     audioSubscription = audio.listen((_) {});
     current = Completer<void>();
     return current!.future;
@@ -82,6 +92,10 @@ Future<void> _pumpUntil(bool Function() condition) async {
   }
   expect(condition(), isTrue);
 }
+
+/// Une trame ADTS minimale : n'importe quel octet suffit à prouver que le
+/// premier morceau d'audio a bien traversé le client d'ingest.
+final _frame = Uint8List.fromList([0xff, 0xf1, 0x50]);
 
 void main() {
   group('MicrophoneAudioPublisher', () {
@@ -134,14 +148,21 @@ void main() {
         await publisher.start(endpoint);
         expect(ingest.pushes, 1);
         expect(ingest.sourceUrl, endpoint);
-        expect(publisher.state, BroadcastAudioState.live);
+        // Requête ouverte mais aucun octet transmis : encore « connexion ».
+        expect(publisher.state, BroadcastAudioState.connecting);
+
+        capture.current!.add(_frame);
+        await _pumpUntil(() => publisher.state == BroadcastAudioState.live);
 
         ingest.fail();
         await _pumpUntil(() => ingest.pushes == 2);
 
         expect(capture.starts, 2);
         expect(states, contains(BroadcastAudioState.reconnecting));
-        expect(publisher.state, BroadcastAudioState.live);
+        expect(publisher.state, BroadcastAudioState.reconnecting);
+
+        capture.current!.add(_frame);
+        await _pumpUntil(() => publisher.state == BroadcastAudioState.live);
 
         await publisher.stop();
         expect(publisher.state, BroadcastAudioState.idle);
@@ -152,6 +173,63 @@ void main() {
         expect(capture.disposed, isTrue);
       },
     );
+
+    // Sans borne, une panne définitive (permission révoquée en cours de direct,
+    // micro capté par une autre application) serait rejouée indéfiniment et la
+    // carte resterait figée sur « Reconnexion audio… ».
+    test(
+      'abandonne après N tentatives sans le moindre octet transmis',
+      () async {
+        final capture = _FakeCapture();
+        final ingest = _FakeIngest()..pushError = const SocketException('refus');
+        final publisher = MicrophoneAudioPublisher(
+          capture: capture,
+          ingest: ingest,
+          backoff: (_) => Duration.zero,
+          maxSilentAttempts: 3,
+        );
+        final states = <BroadcastAudioState>[];
+        final subscription = publisher.states.listen(states.add);
+
+        await publisher.start(Uri.parse('https://api.test/ingest/secret'));
+        await _pumpUntil(() => publisher.state == BroadcastAudioState.failed);
+
+        expect(ingest.pushes, 3);
+        expect(states.last, BroadcastAudioState.failed);
+        expect(states, isNot(contains(BroadcastAudioState.live)));
+
+        await subscription.cancel();
+        await publisher.dispose();
+      },
+    );
+
+    // Le compteur d'abandon porte sur les tentatives *stériles* : une
+    // reconnexion qui refait passer de l'audio doit rendre son crédit complet
+    // au diffuseur, sinon un direct de plusieurs heures finirait par céder à la
+    // énième micro-coupure.
+    test('une tentative productive réarme le compteur d\'abandon', () async {
+      final capture = _FakeCapture();
+      final ingest = _FakeIngest();
+      final publisher = MicrophoneAudioPublisher(
+        capture: capture,
+        ingest: ingest,
+        backoff: (_) => Duration.zero,
+        maxSilentAttempts: 2,
+      );
+
+      await publisher.start(Uri.parse('https://api.test/ingest/secret'));
+      for (var round = 0; round < 4; round++) {
+        capture.current!.add(_frame);
+        await _pumpUntil(() => publisher.state == BroadcastAudioState.live);
+        ingest.fail();
+        await _pumpUntil(() => ingest.pushes == round + 2);
+      }
+
+      expect(publisher.state, isNot(BroadcastAudioState.failed));
+
+      await publisher.stop();
+      await publisher.dispose();
+    });
 
     test('relaie un échec de capture initial sans lancer de push', () async {
       final capture = _FakeCapture()..startError = StateError('micro occupé');

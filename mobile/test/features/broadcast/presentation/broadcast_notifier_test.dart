@@ -197,7 +197,16 @@ class _FakeAudioPublisher implements BroadcastAudioPublisher {
   Uri? sourceUrl;
 
   @override
+  bool isSupported = true;
+
+  @override
   BroadcastAudioState state = BroadcastAudioState.idle;
+
+  /// Abandon du diffuseur audio après épuisement de ses reconnexions.
+  void giveUp() {
+    state = BroadcastAudioState.failed;
+    _states.add(state);
+  }
 
   @override
   Stream<BroadcastAudioState> get states => _states.stream;
@@ -228,6 +237,15 @@ class _FakeAudioPublisher implements BroadcastAudioPublisher {
   Future<void> dispose() async {
     await _states.close();
   }
+}
+
+/// Laisse tourner les callbacks asynchrones (arrêt serveur déclenché en
+/// `unawaited` derrière un flux d'états) jusqu'à ce que [condition] tienne.
+Future<void> _pumpUntil(bool Function() condition) async {
+  for (var i = 0; i < 100 && !condition(); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  expect(condition(), isTrue);
 }
 
 void main() {
@@ -372,6 +390,29 @@ void main() {
         expect(repository.stoppedIds, ['a']);
         expect(notifier.streams.single.isEnded, isTrue);
         expect(notifier.isPublishingAudio('a'), isFalse);
+      },
+    );
+
+    // Une panne définitive du micro coupe le direct sans passer par `stop()` :
+    // la liste doit s'aligner sur l'état rendu par l'arrêt serveur, sans
+    // rechargement — c'est justement le moment où le réseau est le moins sûr.
+    test(
+      'un abandon du micro réaligne la liste sans recharger',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher();
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        await notifier.load();
+        await notifier.start('a');
+        final listCallsBefore = repository.listCalls;
+
+        audio.giveUp();
+        await _pumpUntil(() => notifier.streams.single.isEnded);
+
+        expect(repository.stoppedIds, ['a']);
+        expect(notifier.hasLiveStream, isFalse);
+        expect(notifier.isPublishingAudio('a'), isFalse);
+        expect(repository.listCalls, listCallsBefore);
       },
     );
 

@@ -15,13 +15,28 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
     AudioCapture? capture,
     AudioIngestClient? ingest,
     Duration Function(int attempt)? backoff,
+    int maxSilentAttempts = _defaultMaxSilentAttempts,
   }) : _capture = capture ?? RecordAudioCapture(),
        _ingest = ingest ?? DioAudioIngestClient(),
-       _backoff = backoff ?? cappedExponentialBackoff;
+       _backoff = backoff ?? cappedExponentialBackoff,
+       _maxSilentAttempts = maxSilentAttempts;
+
+  /// Nombre de tentatives consécutives n'ayant transmis aucun octet avant
+  /// d'abandonner. Toutes les pannes ne sont pas des coupures réseau : une
+  /// permission révoquée en cours de direct, un micro capté par une autre
+  /// application ou un encodeur en échec ne guériront pas d'eux-mêmes, et une
+  /// reprise sans borne laisserait la carte figée sur « Reconnexion audio… ».
+  ///
+  /// Six tentatives couvrent la rampe complète du backoff
+  /// (1 + 2 + 4 + 8 + 16 = 31 s d'attente), soit plus que le plus long délai
+  /// utile côté client et moins que le bail d'ingest du serveur, qui prendrait
+  /// de toute façon le relais (`INGEST_RECONNECT_GRACE_SECONDS` > 30 s).
+  static const int _defaultMaxSilentAttempts = 6;
 
   final AudioCapture _capture;
   final AudioIngestClient _ingest;
   final Duration Function(int attempt) _backoff;
+  final int _maxSilentAttempts;
   final StreamController<BroadcastAudioState> _states =
       StreamController<BroadcastAudioState>.broadcast();
 
@@ -30,6 +45,9 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
   bool _disposed = false;
   Future<void>? _runFuture;
   Completer<void>? _retryGate;
+
+  @override
+  bool get isSupported => true;
 
   @override
   BroadcastAudioState get state => _state;
@@ -52,7 +70,14 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
     if (_disposed) throw StateError('Diffuseur audio déjà libéré');
     if (_desired) return;
     if (sourceUrl.scheme != 'http' && sourceUrl.scheme != 'https') {
-      throw ArgumentError.value(sourceUrl, 'sourceUrl', 'URL HTTP(S) attendue');
+      // Seul le schéma est rapporté : l'URL d'ingest porte le `stream_key` en
+      // clair, et le message d'une exception finit facilement dans un log ou
+      // un rapport de crash.
+      throw ArgumentError.value(
+        sourceUrl.scheme,
+        'sourceUrl.scheme',
+        'URL HTTP(S) attendue',
+      );
     }
 
     _desired = true;
@@ -62,23 +87,39 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
   }
 
   Future<void> _run(Uri sourceUrl, Completer<void> firstAttempt) async {
-    var attempt = 0;
+    var started = false;
+    var silentAttempts = 0;
+    var gaveUp = false;
     Object? initialError;
     StackTrace? initialStackTrace;
     try {
       while (_desired) {
         _emit(
-          attempt == 0
-              ? BroadcastAudioState.connecting
-              : BroadcastAudioState.reconnecting,
+          started
+              ? BroadcastAudioState.reconnecting
+              : BroadcastAudioState.connecting,
         );
+        var pushedBytes = false;
         try {
           final audio = await _capture.start();
           if (!_desired) break;
 
-          _emit(BroadcastAudioState.live);
+          started = true;
           if (!firstAttempt.isCompleted) firstAttempt.complete();
-          await _ingest.push(sourceUrl, audio);
+          // `live` n'est émis qu'au premier octet réellement poussé : le
+          // signaler dès l'ouverture du micro ferait clignoter la carte entre
+          // « Microphone diffusé » et « Reconnexion audio… » à chaque cycle de
+          // backoff sur une connexion qui n'aboutit jamais.
+          await _ingest.push(
+            sourceUrl,
+            audio.map((chunk) {
+              if (!pushedBytes && chunk.isNotEmpty) {
+                pushedBytes = true;
+                _emit(BroadcastAudioState.live);
+              }
+              return chunk;
+            }),
+          );
         } catch (error, stackTrace) {
           // Une erreur avant même l'obtention du flux micro est un échec de
           // démarrage. Une coupure après démarrage, elle, est transitoire et
@@ -93,12 +134,24 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
         }
 
         if (!_desired) break;
+        // Une tentative qui a transmis de l'audio prouve que la chaîne est
+        // saine : le compteur d'abandon ET la rampe de backoff repartent de
+        // zéro, sinon un direct de plusieurs heures finirait par attendre 30 s
+        // à la moindre micro-coupure.
+        if (pushedBytes) {
+          silentAttempts = 0;
+        } else if (++silentAttempts >= _maxSilentAttempts) {
+          gaveUp = true;
+          _desired = false;
+          break;
+        }
         _emit(BroadcastAudioState.reconnecting);
-        await _waitForRetry(_backoff(attempt));
-        attempt++;
+        await _waitForRetry(
+          _backoff(silentAttempts == 0 ? 0 : silentAttempts - 1),
+        );
       }
     } finally {
-      _emit(BroadcastAudioState.idle);
+      _emit(gaveUp ? BroadcastAudioState.failed : BroadcastAudioState.idle);
       if (initialError != null && !firstAttempt.isCompleted) {
         firstAttempt.completeError(initialError, initialStackTrace!);
       } else if (!firstAttempt.isCompleted) {

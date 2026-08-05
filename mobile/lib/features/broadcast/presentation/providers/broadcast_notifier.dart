@@ -48,6 +48,23 @@ class BroadcastNotifier extends ChangeNotifier {
     _audioSubscription = _sessionController.audioStates.listen(
       (_) => _safeNotify(),
     );
+    // Le contrôleur a déjà terminé le direct côté serveur : il reste à
+    // réaligner la liste, dont la tuile est encore affichée « en direct ».
+    // Une panne du micro va souvent de pair avec une panne réseau — on
+    // privilégie donc l'état rendu par l'arrêt, et on ne recharge que s'il
+    // manque.
+    _audioFailureSubscription = _sessionController.audioFailures.listen((
+      failure,
+    ) {
+      final ended = failure.serverState;
+      if (ended == null) {
+        unawaited(refresh());
+        return;
+      }
+      _replace(ended);
+      _safeNotify();
+      _syncSubscription();
+    });
   }
 
   final BroadcastRepository _repository;
@@ -84,6 +101,7 @@ class BroadcastNotifier extends ChangeNotifier {
 
   StreamSubscription<SseEvent>? _sseSubscription;
   StreamSubscription<BroadcastAudioState>? _audioSubscription;
+  StreamSubscription<BroadcastAudioFailure>? _audioFailureSubscription;
   Timer? _reconnectTimer;
   Timer? _pollTimer;
   Timer? _statsTimer;
@@ -116,8 +134,18 @@ class BroadcastNotifier extends ChangeNotifier {
 
   /// Etat du micro de cet appareil. Un flux peut être `live` sans être capturé
   /// localement s'il a été démarré depuis un autre téléphone ou un encodeur.
-  BroadcastAudioState get audioState =>
-      _sessionController.audioState;
+  BroadcastAudioState get audioState => _sessionController.audioState;
+
+  /// Faux sur une plateforme incapable de capturer et pousser l'audio (web) :
+  /// l'écran désactive alors le démarrage plutôt que de laisser l'utilisateur
+  /// découvrir l'indisponibilité après un tap.
+  bool get audioSupported => _sessionController.audioSupported;
+
+  /// Direct terminé parce que la capture locale a renoncé à se reconnecter.
+  /// L'écran s'y abonne pour le signaler ; la liste, elle, est réalignée ici
+  /// même.
+  Stream<BroadcastAudioFailure> get audioFailures =>
+      _sessionController.audioFailures;
 
   bool isPublishingAudio(String streamId) =>
       _sessionController.isPublishing(streamId);
@@ -484,6 +512,7 @@ class BroadcastNotifier extends ChangeNotifier {
     _cancelPolling();
     _statsTimer?.cancel();
     _audioSubscription?.cancel();
+    _audioFailureSubscription?.cancel();
     unawaited(_sessionController.dispose());
     super.dispose();
   }

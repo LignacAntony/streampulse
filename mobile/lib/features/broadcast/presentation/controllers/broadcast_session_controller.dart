@@ -11,19 +11,33 @@ import '../../domain/services/broadcast_audio_publisher.dart';
 /// Le dashboard conserve ainsi la présentation de la liste/SSE/statistiques,
 /// tandis que les invariants « jamais live sans tentative audio » restent ici.
 class BroadcastSessionController {
-  BroadcastSessionController(this._repository, this._audioPublisher);
+  BroadcastSessionController(this._repository, this._audioPublisher) {
+    _audioSubscription = _audioPublisher?.states.listen(_onAudioState);
+  }
 
   final BroadcastRepository _repository;
   final BroadcastAudioPublisher? _audioPublisher;
 
   String? _publishingStreamId;
   bool _backgroundStopRequested = false;
+  StreamSubscription<BroadcastAudioState>? _audioSubscription;
+  final StreamController<BroadcastAudioFailure> _audioFailures =
+      StreamController<BroadcastAudioFailure>.broadcast();
 
   BroadcastAudioState get audioState =>
       _audioPublisher?.state ?? BroadcastAudioState.idle;
   Stream<BroadcastAudioState> get audioStates =>
       _audioPublisher?.states ?? const Stream.empty();
   String? get publishingStreamId => _publishingStreamId;
+
+  /// Faux quand la plateforme ne sait pas diffuser : sans publisher injecté
+  /// (tests de présentation), rien ne l'interdit.
+  bool get audioSupported => _audioPublisher?.isSupported ?? true;
+
+  /// Emet la fin d'un direct que la capture locale a fait échouer. La
+  /// présentation s'en sert pour réaligner la liste et prévenir l'utilisateur ;
+  /// l'arrêt serveur, lui, est déjà tenté ici.
+  Stream<BroadcastAudioFailure> get audioFailures => _audioFailures.stream;
 
   bool isPublishing(String streamId) => _publishingStreamId == streamId;
 
@@ -102,6 +116,36 @@ class BroadcastSessionController {
     }
   }
 
+  /// Le diffuseur audio ne passe à `failed` que de sa propre initiative, après
+  /// avoir épuisé ses tentatives de reconnexion. Laisser le flux `live` sans
+  /// audio violerait l'invariant « jamais de live silencieux » (ADR 027) : on
+  /// termine donc le direct côté serveur, sans attendre l'expiration du bail.
+  void _onAudioState(BroadcastAudioState state) {
+    if (state != BroadcastAudioState.failed) return;
+    final id = _publishingStreamId;
+    if (id == null) return;
+    unawaited(_endAfterAudioFailure(id));
+  }
+
+  Future<void> _endAfterAudioFailure(String id) async {
+    BroadcastStream? ended;
+    try {
+      ended = await _repository.stopStream(id);
+    } catch (_) {
+      // Réseau toujours coupé — le cas le plus probable quand le micro
+      // renonce — ou direct déjà terminé par un administrateur : le bail
+      // d'ingest du serveur s'en chargera. La panne est signalée sans état
+      // serveur, à charge pour la présentation de resynchroniser.
+    } finally {
+      await _stopAudio(expectedId: id, ignoreErrors: true);
+      if (!_audioFailures.isClosed) {
+        _audioFailures.add(
+          BroadcastAudioFailure(streamId: id, serverState: ended),
+        );
+      }
+    }
+  }
+
   Future<void> _stopAudio({
     String? expectedId,
     bool ignoreErrors = false,
@@ -122,7 +166,24 @@ class BroadcastSessionController {
     }
   }
 
-  Future<void> dispose() => _audioPublisher?.dispose() ?? Future.value();
+  Future<void> dispose() async {
+    await _audioSubscription?.cancel();
+    _audioSubscription = null;
+    await _audioFailures.close();
+    await _audioPublisher?.dispose();
+  }
+}
+
+/// Fin de direct subie : la capture locale a renoncé après avoir épuisé ses
+/// reconnexions, et le direct a été terminé côté serveur dans la foulée.
+class BroadcastAudioFailure {
+  const BroadcastAudioFailure({required this.streamId, this.serverState});
+
+  final String streamId;
+
+  /// Flux tel que renvoyé par l'arrêt, ou null si cet arrêt a lui aussi échoué
+  /// — la liste affichée est alors périmée et doit être rechargée.
+  final BroadcastStream? serverState;
 }
 
 /// Transporte vers la présentation l'état serveur obtenu pendant le rollback,

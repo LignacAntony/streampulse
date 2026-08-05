@@ -19,6 +19,7 @@ import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
 import '../../domain/services/broadcast_audio_publisher.dart';
+import '../controllers/broadcast_session_controller.dart';
 import '../providers/broadcast_notifier.dart';
 import 'create_stream_sheet.dart';
 
@@ -81,6 +82,11 @@ class _DashboardBodyState extends State<_DashboardBody>
   /// flux est en direct : inutile de reconstruire l'écran chaque seconde sinon.
   Timer? _ticker;
 
+  /// Le direct peut s'arrêter sans action de l'utilisateur (micro définitivement
+  /// perdu) : sans ce toast, la tuile passerait de « en direct » à « terminé »
+  /// sans explication.
+  StreamSubscription<BroadcastAudioFailure>? _audioFailureSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +99,13 @@ class _DashboardBodyState extends State<_DashboardBody>
       }
       final notifier = context.read<BroadcastNotifier>();
       notifier.setActive(true);
+      _audioFailureSubscription = notifier.audioFailures.listen((_) {
+        if (!mounted) return;
+        showAuthErrorToast(
+          context,
+          'Diffusion arrêtée : le microphone n\'est plus disponible',
+        );
+      });
       notifier.load();
     });
   }
@@ -100,6 +113,7 @@ class _DashboardBodyState extends State<_DashboardBody>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_audioFailureSubscription?.cancel());
     _ticker?.cancel();
     super.dispose();
   }
@@ -428,6 +442,9 @@ class _DashboardBodyState extends State<_DashboardBody>
           stats: stream.isLive ? notifier.stats : null,
           audioState: notifier.audioState,
           publishingAudio: notifier.isPublishingAudio(stream.id),
+          // Sur une plateforme sans capture (web), `prepare()` échouerait après
+          // coup : mieux vaut neutraliser le bouton et le dire.
+          audioSupported: notifier.audioSupported,
           onStart: () => _onStart(stream),
           onStop: () => _onStop(stream),
           onDelete: () => _onDelete(stream),
@@ -446,6 +463,7 @@ class _StreamCard extends StatelessWidget {
     required this.stats,
     required this.audioState,
     required this.publishingAudio,
+    required this.audioSupported,
     required this.onStart,
     required this.onStop,
     required this.onDelete,
@@ -461,6 +479,10 @@ class _StreamCard extends StatelessWidget {
   final BroadcastStats? stats;
   final BroadcastAudioState audioState;
   final bool publishingAudio;
+
+  /// Faux sur une plateforme incapable de capturer le micro : le démarrage est
+  /// neutralisé plutôt que rejeté après coup par un toast fugace.
+  final bool audioSupported;
   final VoidCallback onStart;
   final VoidCallback onStop;
   final VoidCallback onDelete;
@@ -596,12 +618,23 @@ class _StreamCard extends StatelessWidget {
                       )
                     : FilledButton.icon(
                         key: Key('dashboard_start_button_${stream.id}'),
-                        onPressed: _busy || blockedByOtherLive ? null : onStart,
+                        onPressed: _busy || blockedByOtherLive || !audioSupported
+                            ? null
+                            : onStart,
                         icon: const Icon(Icons.play_circle_outline),
                         label: const Text('Démarrer la diffusion'),
                       ),
               ),
-            if (blockedByOtherLive && stream.isIdle) ...[
+            if (!audioSupported && stream.isIdle) ...[
+              const SizedBox(height: 6),
+              Text(
+                key: Key('dashboard_audio_unsupported_${stream.id}'),
+                'Diffusion disponible depuis l\'application mobile. '
+                'L\'URL d\'ingest ci-dessus reste utilisable par un encodeur '
+                'externe.',
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ] else if (blockedByOtherLive && stream.isIdle) ...[
               const SizedBox(height: 6),
               Text(
                 'Un autre flux est en direct',
@@ -629,12 +662,14 @@ class _MicrophoneStatusRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final (IconData, String, Color) inactive = (
+      Icons.devices_outlined,
+      'Microphone de cet appareil inactif',
+      colors.onSurfaceVariant,
+    );
     final (IconData icon, String label, Color color) = !publishing
-        ? (
-            Icons.devices_outlined,
-            'Microphone de cet appareil inactif',
-            colors.onSurfaceVariant,
-          )
+        ? inactive
         : switch (state) {
             BroadcastAudioState.connecting => (
                 Icons.mic_none_outlined,
@@ -651,22 +686,40 @@ class _MicrophoneStatusRow extends StatelessWidget {
                 'Microphone diffusé',
                 colors.primary,
               ),
-            BroadcastAudioState.idle => (
+            BroadcastAudioState.failed => (
                 Icons.mic_off_outlined,
-                'Microphone arrêté',
+                'Diffusion du micro interrompue',
                 colors.error,
               ),
+            // Fenêtre courte entre l'arrêt du micro et la remise à zéro de
+            // `publishing` par le contrôleur : la ligne inactive est plus juste
+            // qu'un état d'erreur, l'arrêt étant volontaire.
+            BroadcastAudioState.idle => inactive,
           };
 
-    return Row(
+    return Column(
       key: Key('dashboard_microphone_status_$streamId'),
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+        Row(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(label, style: text.bodySmall?.copyWith(color: color)),
+            ),
+          ],
         ),
+        // La reprise est bornée (cf. MicrophoneAudioPublisher) : le dire évite
+        // de laisser croire à une reconnexion indéfinie, et prépare
+        // l'utilisateur à l'arrêt automatique si le réseau ne revient pas.
+        if (publishing && state == BroadcastAudioState.reconnecting) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Le direct s\'arrêtera si la reconnexion échoue.',
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ],
       ],
     );
   }
