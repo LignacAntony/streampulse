@@ -5,9 +5,12 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/sse_client.dart';
+import '../../../../core/utils/retry_backoff.dart';
 import '../../domain/entities/broadcast_stats.dart';
 import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
+import '../../domain/services/broadcast_audio_publisher.dart';
+import '../controllers/broadcast_session_controller.dart';
 
 /// Pilote `DashboardScreen` : flux du diffuseur connecté, création, démarrage
 /// et arrêt du direct (US-06-01, ADR 024).
@@ -27,15 +30,42 @@ import '../../domain/repositories/broadcast_repository.dart';
 /// relayées à l'écran, qui a un point d'appel unique où afficher un toast.
 class BroadcastNotifier extends ChangeNotifier {
   BroadcastNotifier(
-    this._repository, {
+    BroadcastRepository repository, {
     SseConnector? sse,
     Duration Function(int attempt)? backoff,
     Duration pollInterval = const Duration(seconds: 15),
     Duration statsInterval = const Duration(seconds: 5),
-  })  : _sse = sse,
-        _backoff = backoff ?? _defaultBackoff,
+    BroadcastAudioPublisher? audioPublisher,
+  })  : _repository = repository,
+        _sse = sse,
+        _backoff = backoff ?? cappedExponentialBackoff,
         _pollInterval = pollInterval,
-        _statsInterval = statsInterval;
+        _statsInterval = statsInterval,
+        _sessionController = BroadcastSessionController(
+          repository,
+          audioPublisher,
+        ) {
+    _audioSubscription = _sessionController.audioStates.listen(
+      (_) => _safeNotify(),
+    );
+    // Le contrôleur a déjà terminé le direct côté serveur : il reste à
+    // réaligner la liste, dont la tuile est encore affichée « en direct ».
+    // Une panne du micro va souvent de pair avec une panne réseau — on
+    // privilégie donc l'état rendu par l'arrêt, et on ne recharge que s'il
+    // manque.
+    _audioFailureSubscription = _sessionController.audioFailures.listen((
+      failure,
+    ) {
+      final ended = failure.serverState;
+      if (ended == null) {
+        unawaited(refresh());
+        return;
+      }
+      _replace(ended);
+      _safeNotify();
+      _syncSubscription();
+    });
+  }
 
   final BroadcastRepository _repository;
 
@@ -50,6 +80,7 @@ class BroadcastNotifier extends ChangeNotifier {
   /// Cadence des statistiques d'audience. 5 s : c'est la fréquence de mise à
   /// jour demandée par l'AC de l'US-06-02.
   final Duration _statsInterval;
+  final BroadcastSessionController _sessionController;
 
   List<BroadcastStream> _streams = const [];
   bool _loading = false;
@@ -69,6 +100,8 @@ class BroadcastNotifier extends ChangeNotifier {
   bool _active = false;
 
   StreamSubscription<SseEvent>? _sseSubscription;
+  StreamSubscription<BroadcastAudioState>? _audioSubscription;
+  StreamSubscription<BroadcastAudioFailure>? _audioFailureSubscription;
   Timer? _reconnectTimer;
   Timer? _pollTimer;
   Timer? _statsTimer;
@@ -98,6 +131,24 @@ class BroadcastNotifier extends ChangeNotifier {
   bool get isMutating => _mutatingId != null;
   String? get error => _error;
   bool get isNetworkError => _isNetworkError;
+
+  /// Etat du micro de cet appareil. Un flux peut être `live` sans être capturé
+  /// localement s'il a été démarré depuis un autre téléphone ou un encodeur.
+  BroadcastAudioState get audioState => _sessionController.audioState;
+
+  /// Faux sur une plateforme incapable de capturer et pousser l'audio (web) :
+  /// l'écran désactive alors le démarrage plutôt que de laisser l'utilisateur
+  /// découvrir l'indisponibilité après un tap.
+  bool get audioSupported => _sessionController.audioSupported;
+
+  /// Direct terminé parce que la capture locale a renoncé à se reconnecter.
+  /// L'écran s'y abonne pour le signaler ; la liste, elle, est réalignée ici
+  /// même.
+  Stream<BroadcastAudioFailure> get audioFailures =>
+      _sessionController.audioFailures;
+
+  bool isPublishingAudio(String streamId) =>
+      _sessionController.isPublishing(streamId);
 
   /// Flux actuellement en direct, ou null. Le backend garantit qu'il y en a au
   /// plus un par diffuseur (migration `000016_streams_one_live`).
@@ -178,13 +229,63 @@ class BroadcastNotifier extends ChangeNotifier {
   ///
   /// Le 409 « you already have a live stream » reste possible sur une course
   /// entre deux appareils et remonte alors à l'appelant.
-  Future<bool> start(String id) => _mutate(id, _repository.startStream);
+  Future<bool> start(String id) async {
+    if (_mutatingId != null) return false;
+    _mutatingId = id;
+    _safeNotify();
+    try {
+      final updated = await _sessionController.start(id);
+      _replace(updated);
+      _clearError();
+      return true;
+    } on BroadcastSessionStartException catch (error) {
+      _replace(error.serverState);
+      if (error.refreshRequired) unawaited(refresh());
+      Error.throwWithStackTrace(error.cause, error.stackTrace);
+    } finally {
+      _mutatingId = null;
+      _safeNotify();
+      _syncSubscription();
+    }
+  }
 
   /// Arrête le direct. Même contrat de retour que [start]. Un 409 signifie que
   /// le flux n'était déjà plus en direct (arrêt par un administrateur, par
   /// exemple) : l'écran le traite en rechargeant plutôt qu'en affichant un
   /// échec sec.
-  Future<bool> stop(String id) => _mutate(id, _repository.stopStream);
+  Future<bool> stop(String id) async {
+    if (_mutatingId != null) return false;
+    _mutatingId = id;
+    _safeNotify();
+    try {
+      final updated = await _sessionController.stop(id);
+      _replace(updated);
+      _clearError();
+      return true;
+    } finally {
+      _mutatingId = null;
+      _safeNotify();
+      _syncSubscription();
+    }
+  }
+
+  /// Politique mobile choisie par l'ADR 027 : diffusion au premier plan
+  /// uniquement. On termine d'abord le live côté serveur, puis on libère le
+  /// micro quoi qu'il arrive lorsque l'OS suspend l'application.
+  Future<void> stopForBackground() async {
+    try {
+      final ended = await _sessionController.stopForBackground();
+      if (ended != null) _replace(ended);
+    } catch (_) {
+      // L'OS peut suspendre le réseau avant la fin du stop. Le micro est déjà
+      // libéré par le contrôleur et le bail backend terminera le live ; une
+      // resynchronisation est tentée si l'application reste assez longtemps.
+      unawaited(refresh());
+    } finally {
+      _safeNotify();
+      _syncSubscription();
+    }
+  }
 
   /// Archive le flux et le retire de la liste. Même contrat de retour que
   /// [start]. Sur un flux en direct, le backend termine la diffusion au
@@ -194,7 +295,7 @@ class BroadcastNotifier extends ChangeNotifier {
     _mutatingId = id;
     _safeNotify();
     try {
-      await _repository.deleteStream(id);
+      await _sessionController.delete(id);
       _streams = List.unmodifiable(
         _streams.where((stream) => stream.id != id).toList(),
       );
@@ -209,28 +310,11 @@ class BroadcastNotifier extends ChangeNotifier {
     }
   }
 
-  /// Retourne `false` en no-op quand une mutation est déjà en vol, `true` quand
-  /// l'appel a réellement eu lieu (les erreurs, elles, remontent en exception).
-  Future<bool> _mutate(
-    String id,
-    Future<BroadcastStream> Function(String id) action,
-  ) async {
-    if (_mutatingId != null) return false;
-    _mutatingId = id;
-    _safeNotify();
-    try {
-      final updated = await action(id);
-      _streams = _sorted([
-        for (final stream in _streams)
-          if (stream.id == updated.id) updated else stream,
-      ]);
-      _clearError();
-      return true;
-    } finally {
-      _mutatingId = null;
-      _safeNotify();
-      _syncSubscription();
-    }
+  void _replace(BroadcastStream updated) {
+    _streams = _sorted([
+      for (final stream in _streams)
+        if (stream.id == updated.id) updated else stream,
+    ]);
   }
 
   /// Signale que l'écran est visible ou non. Appelé au montage/démontage et
@@ -239,6 +323,7 @@ class BroadcastNotifier extends ChangeNotifier {
   void setActive(bool active) {
     if (_active == active) return;
     _active = active;
+    _sessionController.setActive(active);
     // `_syncSubscription` traite les deux sens : à faux, il coupe la
     // souscription SSE **et** le polling. Les séparer avait laissé le timer de
     // polling tourner en arrière-plan.
@@ -249,6 +334,7 @@ class BroadcastNotifier extends ChangeNotifier {
   /// sens que sur un flux en direct (l'endpoint SSE répond 409 sinon).
   void _syncSubscription() {
     final live = liveStream;
+    unawaited(_sessionController.reconcile(live));
     _syncStats(live);
     if (!_active || live == null) {
       _cancelSubscription();
@@ -294,8 +380,10 @@ class BroadcastNotifier extends ChangeNotifier {
     // Première mesure tout de suite : attendre 5 s laisserait la carte sans
     // chiffre juste après le démarrage, au moment où on la regarde le plus.
     unawaited(_fetchStats());
-    _statsTimer =
-        Timer.periodic(_statsInterval, (_) => unawaited(_fetchStats()));
+    _statsTimer = Timer.periodic(
+      _statsInterval,
+      (_) => unawaited(_fetchStats()),
+    );
   }
 
   /// Récupère l'audience. Un échec est ignoré volontairement : l'audience est
@@ -333,9 +421,7 @@ class BroadcastNotifier extends ChangeNotifier {
     final id = _sseStreamId;
     final sse = _sse;
     if (id == null || sse == null) return;
-    _sseSubscription = sse
-        .connect('${ApiConstants.streams}/$id/events')
-        .listen(
+    _sseSubscription = sse.connect('${ApiConstants.streams}/$id/events').listen(
           _onSseEvent,
           onError: (Object _) => _scheduleReconnect(),
           onDone: _scheduleReconnect,
@@ -419,20 +505,15 @@ class BroadcastNotifier extends ChangeNotifier {
     _isNetworkError = false;
   }
 
-  static Duration _defaultBackoff(int attempt) {
-    const maxSeconds = 30;
-    // 1, 2, 4, 8, 16 puis palier à 30 s. Le décalage est borné avant le shift
-    // pour ne pas déborder sur une coupure très longue.
-    final seconds = attempt >= 5 ? maxSeconds : 1 << attempt;
-    return Duration(seconds: seconds > maxSeconds ? maxSeconds : seconds);
-  }
-
   @override
   void dispose() {
     _disposed = true;
     _cancelSubscription();
     _cancelPolling();
     _statsTimer?.cancel();
+    _audioSubscription?.cancel();
+    _audioFailureSubscription?.cancel();
+    unawaited(_sessionController.dispose());
     super.dispose();
   }
 }

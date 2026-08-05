@@ -273,6 +273,22 @@ func (f *fakeSessions) Start(id, key string) {
 }
 func (f *fakeSessions) Stop(id string) { f.stopped = append(f.stopped, id) }
 
+func TestService_EndDisconnectedStream(t *testing.T) {
+	repo := &fakeRepo{forceStopRet: "s1"}
+	sessions := &fakeSessions{}
+	svc := NewService(repo, fakeKeys{}, sessions)
+
+	if err := svc.EndDisconnectedStream(context.Background(), "s1"); err != nil {
+		t.Fatalf("EndDisconnectedStream: %v", err)
+	}
+	if repo.gotForceStopID != "s1" {
+		t.Fatalf("repo id = %q, want s1", repo.gotForceStopID)
+	}
+	if len(sessions.stopped) != 1 || sessions.stopped[0] != "s1" {
+		t.Fatalf("sessions stopped = %v, want [s1]", sessions.stopped)
+	}
+}
+
 func TestService_CreateStream_Success(t *testing.T) {
 	repo := &fakeRepo{ret: Stream{ID: "s1", Title: "Mon flux"}}
 	svc := NewService(repo, fakeKeys{key: "SECRET_KEY"}, &fakeSessions{})

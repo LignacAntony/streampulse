@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // setEnv positionne plusieurs variables d'environnement pour la durée du test.
@@ -170,6 +171,74 @@ func TestLoad_HLSMaxConcurrent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoad_IngestTimeouts(t *testing.T) {
+	t.Run("défauts", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != 45*time.Second {
+			t.Errorf("IngestReconnectGrace() = %s, want 45s", cfg.IngestReconnectGrace())
+		}
+		if cfg.IngestStopTimeout() != 10*time.Second {
+			t.Errorf("IngestStopTimeout() = %s, want 10s", cfg.IngestStopTimeout())
+		}
+	})
+
+	t.Run("personnalisés", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", "60")
+		t.Setenv("INGEST_STOP_TIMEOUT_SECONDS", "15")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != time.Minute {
+			t.Errorf("IngestReconnectGrace() = %s, want 1m", cfg.IngestReconnectGrace())
+		}
+		if cfg.IngestStopTimeout() != 15*time.Second {
+			t.Errorf("IngestStopTimeout() = %s, want 15s", cfg.IngestStopTimeout())
+		}
+	})
+
+	for _, key := range []string{"INGEST_RECONNECT_GRACE_SECONDS", "INGEST_STOP_TIMEOUT_SECONDS"} {
+		t.Run(key+" invalide", func(t *testing.T) {
+			setEnv(t, validVars())
+			t.Setenv(key, "0")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("Load() error = %v, want erreur pour %s", err, key)
+			}
+		})
+	}
+
+	// Invariant de l'ADR 027 : un bail plus court que le backoff mobile
+	// couperait les directs pendant la fenêtre de reconnexion normale du
+	// téléphone. La borne est refusée au démarrage, pas seulement documentée.
+	for _, value := range []string{"20", "30"} {
+		t.Run("bail plus court que le backoff mobile ("+value+"s)", func(t *testing.T) {
+			setEnv(t, validVars())
+			t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "INGEST_RECONNECT_GRACE_SECONDS") {
+				t.Fatalf("Load() error = %v, want refus du bail %ss", err, value)
+			}
+		})
+	}
+
+	t.Run("bail juste au-dessus du backoff mobile", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", "31")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != 31*time.Second {
+			t.Errorf("IngestReconnectGrace() = %s, want 31s", cfg.IngestReconnectGrace())
+		}
+	})
 }
 
 func TestConfig_DBDSN(t *testing.T) {

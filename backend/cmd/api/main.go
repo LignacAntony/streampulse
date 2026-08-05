@@ -117,6 +117,17 @@ func run() error {
 	streamingSessions := streaming.NewLiveSessions(ctx)
 	streamingSvc := streaming.NewService(streamingRepo, streamingKeys, streamingSessions)
 	streamingHandler := streaming.NewHandler(streamingSvc, cfg.StreamIngestBaseURL, streamingSessions)
+	streamingHandler.SetIngestReconnectGrace(cfg.IngestReconnectGrace())
+	streamingSessions.SetIngestDisconnectHandler(cfg.IngestReconnectGrace(), func(streamID string) error {
+		stopCtx, cancel := context.WithTimeout(context.Background(), cfg.IngestStopTimeout())
+		defer cancel()
+		if err := streamingSvc.EndDisconnectedStream(stopCtx, streamID); err != nil {
+			log.Error().Err(err).Str("stream_id", streamID).
+				Msg("streaming: échec de l'arrêt après expiration de l'ingest, nouvelle tentative planifiée")
+			return err
+		}
+		return nil
+	})
 
 	// Métriques métier du streaming (STR-166, ADR 022) : le domaine reçoit
 	// l'implémentation Prometheus via son interface étroite, et la gauge des

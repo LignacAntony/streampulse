@@ -60,6 +60,8 @@ caractères → l'API refuse de démarrer.
 | `DB_USER` | Utilisateur PostgreSQL | — | **Oui** |
 | `DB_PASSWORD` | Mot de passe PostgreSQL | — | **Oui** |
 | `DB_NAME` | Nom de la base PostgreSQL | — | **Oui** |
+| `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live (doit dépasser 30 s, le backoff mobile max — refusé au démarrage sinon) | `45` | Non |
+| `INGEST_STOP_TIMEOUT_SECONDS` | Timeout d'une tentative d'arrêt automatique en base | `10` | Non |
 
 > **Note :** en compose, le service `api` reçoit `DB_HOST=postgres` (nom du service Docker),
 > tandis qu'en dev natif (hors compose) `DB_HOST=localhost`. Les deux cas sont couverts par

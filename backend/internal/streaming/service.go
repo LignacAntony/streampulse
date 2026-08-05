@@ -338,6 +338,21 @@ func (s *Service) StopStream(ctx context.Context, id, requesterID string) (Strea
 	return stream, nil
 }
 
+// EndDisconnectedStream termine un direct dont le bail audio a expiré. La
+// transition est idempotente face à un stop utilisateur concurrent.
+func (s *Service) EndDisconnectedStream(ctx context.Context, id string) error {
+	endedID, err := s.repo.ForceStopLiveStream(ctx, id)
+	if err != nil {
+		if errors.Is(err, errNoRowAffected) {
+			s.sessions.Stop(id)
+			return nil
+		}
+		return err
+	}
+	s.sessions.Stop(endedID)
+	return nil
+}
+
 // classifyTransitionFailure traduit un échec de transition (0 ligne mise à jour)
 // en 404 (absent/archivé/pas propriétaire) ou 409 (mauvais statut, conflictMsg).
 func (s *Service) classifyTransitionFailure(ctx context.Context, id, requesterID, conflictMsg string) error {

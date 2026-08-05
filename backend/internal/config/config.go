@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -18,15 +19,23 @@ import (
 // constantes pour qu'elles soient à la fois passées à viper.SetDefault
 // et appliquées en post-processing si la variable est définie à "".
 const (
-	defaultGoEnv               = "development"
-	defaultAPIPort             = "8080"
-	defaultDBHost              = "localhost"
-	defaultDBPort              = "5432"
-	defaultStreamIngestBaseURL = "http://localhost:8080"
-	defaultHLSMaxConcurrent    = 256
-	defaultLogLevel            = "info"
+	defaultGoEnv                       = "development"
+	defaultAPIPort                     = "8080"
+	defaultDBHost                      = "localhost"
+	defaultDBPort                      = "5432"
+	defaultStreamIngestBaseURL         = "http://localhost:8080"
+	defaultHLSMaxConcurrent            = 256
+	defaultIngestReconnectGraceSeconds = 45
+	defaultIngestStopTimeoutSeconds    = 10
+	defaultLogLevel                    = "info"
 
 	minJWTSecretLen = 32
+
+	// mobileMaxReconnectBackoffSeconds reprend le plafond du backoff de
+	// reconnexion du mobile (cappedExponentialBackoff, ADR 027 §3). Le bail
+	// d'ingest doit le dépasser, sinon le serveur couperait les directs pendant
+	// la fenêtre de reprise normale du téléphone.
+	mobileMaxReconnectBackoffSeconds = 30
 )
 
 // validLogLevels énumère les niveaux acceptés pour LOG_LEVEL
@@ -69,6 +78,12 @@ type Config struct {
 	// servies simultanément — STR-88. <= 0 désactive la borne.
 	HLSMaxConcurrent int `mapstructure:"HLS_MAX_CONCURRENT"`
 
+	// IngestReconnectGraceSeconds est le bail sans audio accordé au diffuseur
+	// avant l'arrêt automatique du direct. IngestStopTimeoutSeconds borne chaque
+	// tentative de transition persistante live -> ended.
+	IngestReconnectGraceSeconds int `mapstructure:"INGEST_RECONNECT_GRACE_SECONDS"`
+	IngestStopTimeoutSeconds    int `mapstructure:"INGEST_STOP_TIMEOUT_SECONDS"`
+
 	// TrustProxyHeaders autorise la lecture de X-Forwarded-For pour identifier
 	// l'auditeur d'un flux (comptage d'audience, STR-154).
 	//
@@ -108,6 +123,8 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_PORT", defaultDBPort)
 	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
 	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
+	v.SetDefault("INGEST_RECONNECT_GRACE_SECONDS", defaultIngestReconnectGraceSeconds)
+	v.SetDefault("INGEST_STOP_TIMEOUT_SECONDS", defaultIngestStopTimeoutSeconds)
 	v.SetDefault("TRUST_PROXY_HEADERS", false)
 	v.SetDefault("LOG_LEVEL", defaultLogLevel)
 	v.SetDefault("LOG_PRETTY", false)
@@ -135,7 +152,8 @@ func Load() (*Config, error) {
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
 		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
-		"HLS_MAX_CONCURRENT", "LOG_LEVEL", "LOG_PRETTY",
+		"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
+		"INGEST_STOP_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_PRETTY",
 		"OTEL_EXPORTER_OTLP_ENDPOINT",
 	} {
 		if err := v.BindEnv(key); err != nil {
@@ -163,6 +181,12 @@ func Load() (*Config, error) {
 	// déjà converti : seule une chaîne vide retombe sur le défaut.
 	if strings.TrimSpace(v.GetString("HLS_MAX_CONCURRENT")) == "" {
 		cfg.HLSMaxConcurrent = defaultHLSMaxConcurrent
+	}
+	if strings.TrimSpace(v.GetString("INGEST_RECONNECT_GRACE_SECONDS")) == "" {
+		cfg.IngestReconnectGraceSeconds = defaultIngestReconnectGraceSeconds
+	}
+	if strings.TrimSpace(v.GetString("INGEST_STOP_TIMEOUT_SECONDS")) == "" {
+		cfg.IngestStopTimeoutSeconds = defaultIngestStopTimeoutSeconds
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -226,6 +250,16 @@ func (c *Config) HTTPAddr() string {
 	return ":" + c.APIPort
 }
 
+// IngestReconnectGrace retourne le bail sans audio configuré.
+func (c *Config) IngestReconnectGrace() time.Duration {
+	return time.Duration(c.IngestReconnectGraceSeconds) * time.Second
+}
+
+// IngestStopTimeout borne une tentative d'arrêt automatique en base.
+func (c *Config) IngestStopTimeout() time.Duration {
+	return time.Duration(c.IngestStopTimeoutSeconds) * time.Second
+}
+
 // DBDSN retourne la DSN PostgreSQL prête à passer à database/sql ou pgx.
 func (c *Config) DBDSN() string {
 	return fmt.Sprintf(
@@ -259,6 +293,16 @@ func (c *Config) validate() error {
 
 	if !validLogLevels[c.LogLevel] {
 		return fmt.Errorf("config: LOG_LEVEL invalide %q (attendu: trace|debug|info|warn|error|fatal|panic)", c.LogLevel)
+	}
+
+	if c.IngestReconnectGraceSeconds <= mobileMaxReconnectBackoffSeconds {
+		return fmt.Errorf(
+			"config: INGEST_RECONNECT_GRACE_SECONDS invalide %d (attendu: > %d, le backoff de reconnexion maximal du mobile)",
+			c.IngestReconnectGraceSeconds, mobileMaxReconnectBackoffSeconds,
+		)
+	}
+	if c.IngestStopTimeoutSeconds <= 0 {
+		return fmt.Errorf("config: INGEST_STOP_TIMEOUT_SECONDS invalide %d (attendu: > 0)", c.IngestStopTimeoutSeconds)
 	}
 
 	return nil
