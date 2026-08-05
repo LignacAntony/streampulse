@@ -79,6 +79,9 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
   }
 
   Future<void> _onRemove(PlaylistTrack track) async {
+    final confirmed = await _confirmRemoveDialog(context, track.title);
+    if (!mounted || !confirmed) return;
+
     final controller = context.read<PlaylistDetailController>();
     try {
       await controller.removeTrack(track.id);
@@ -175,6 +178,35 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       },
     );
   }
+}
+
+/// Confirmation avant de retirer une piste. Le retrait ne détruit pas la piste
+/// (elle reste dans la bibliothèque) mais **perd sa position** : la ré-ajouter
+/// la remet en fin de playlist. Le libellé le dit plutôt que d'annoncer une
+/// suppression définitive, qui serait faux.
+Future<bool> _confirmRemoveDialog(BuildContext context, String title) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text('Retirer « $title » de la playlist ?'),
+      content: const Text(
+        'La piste reste dans ta bibliothèque, mais sa place dans la playlist '
+        'est perdue.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          key: const Key('playlist_track_confirm_remove'),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Retirer'),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
 }
 
 class _TrackTile extends StatelessWidget {

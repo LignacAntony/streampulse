@@ -168,7 +168,8 @@ void main() {
       await _dismissToasts(tester);
     });
 
-    testWidgets('retirer une piste appelle le repository', (tester) async {
+    testWidgets('retirer une piste demande confirmation puis retire',
+        (tester) async {
       final repo = _FakePlaylistRepository(
         initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
       );
@@ -178,9 +179,33 @@ void main() {
       await tester.tap(find.byKey(const Key('playlist_track_remove_t1')));
       await tester.pumpAndSettle();
 
+      // Rien n'est retiré tant que la confirmation n'est pas donnée.
+      expect(find.text('Retirer « Midnight Drive » de la playlist ?'),
+          findsOneWidget);
+      expect(repo.removeCalls, 0);
+
+      await tester.tap(find.byKey(const Key('playlist_track_confirm_remove')));
+      await tester.pumpAndSettle();
+
       expect(repo.removeCalls, 1);
       expect(find.text('Midnight Drive'), findsNothing);
       await _dismissToasts(tester);
+    });
+
+    testWidgets('annuler la confirmation ne retire rien', (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('playlist_track_remove_t1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      expect(repo.removeCalls, 0);
+      expect(find.text('Midnight Drive'), findsOneWidget);
     });
 
     testWidgets('le sélecteur n\'affiche que les pistes absentes',

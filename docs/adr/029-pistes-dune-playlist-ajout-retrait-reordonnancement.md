@@ -112,11 +112,24 @@ remplace la liste par la réponse serveur. En cas d'erreur, l'ordre **précéden
 toast l'annonce : ne pas revenir en arrière laisserait l'écran afficher un ordre qui n'existe pas
 en base. Même schéma pour le retrait.
 
-### 9. La file d'attente (queue) reste **hors périmètre**
+### 9. Confirmation avant de retirer une piste
+
+Le retrait passe par un dialogue de confirmation, comme la suppression d'une playlist
+([ADR 026](026-domaine-playlists.md)). Le libellé dit ce qui se passe réellement — « la piste reste
+dans ta bibliothèque, mais sa place dans la playlist est perdue » — et non « action définitive » :
+la piste n'est pas détruite, mais la ré-ajouter la remet **en fin de liste**, sa position n'est pas
+récupérable. Sur une playlist longue réordonnée à la main, un tap accidentel coûte donc cher, et
+les deux boutons « retirer » et « poignée de drag » sont voisins sur la ligne.
+
+Une action « annuler » dans le toast aurait été moins intrusive mais demande deux appels pour
+restaurer la position (`POST` puis `PUT` de l'ordre) ; le dialogue a été retenu pour la cohérence
+avec le reste de l'écran Bibliothèque.
+
+### 10. La file d'attente (queue) reste **hors périmètre**
 
 Le critère d'acceptation mentionne la mise à jour de la queue. La lecture d'une playlist avec file
 d'attente est [STR-133](https://linear.app/streampulse/issue/STR-133) (US-05-04), **bloquée par**
-celle-ci : aucun lecteur ne consomme encore l'ordre d'une playlist. L'invariant livré ici — les
+celle-ci : aucun lecteur ne consomme encore l’ordre d’une playlist. L'invariant livré ici — les
 positions sont contiguës et `GET .../tracks` les renvoie triées — est exactement le contrat sur
 lequel US-05-04 construira la queue.
 
