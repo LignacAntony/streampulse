@@ -239,6 +239,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | GET | `/api/users/me/favorites` | `Handler.ListFavorites` | Oui (JWT) — liste « mes favoris » (tous statuts, visibles, non archivés), sans secret (US-04-05) |
 | GET | `/api/users/me/streams` | `Handler.ListMine` | Oui (JWT) — tableau de bord diffuseur : **mes** flux (tous statuts, non archivés), **avec** `stream_key`/`stream_source_url` (le filtre porte sur le porteur du JWT) ; `[]` si aucun flux, jamais 403 (STR-153, ADR 024) |
 | GET | `/api/streams/{id}/stats` | `Handler.Stats` | Oui (JWT) — audience du flux : auditeurs **estimés**, pic, durée. Propriétaire uniquement → 404 sinon ; flux non live → 200 avec compteurs à zéro (STR-154, ADR 025) |
+| POST | `/api/streams/{id}/key/rotate` | `Handler.RotateKey` | Oui — rôle `broadcaster`, owner ; remet une `stream_key` neuve et invalide l'ancienne, 409 si le flux est **live** (l'index `byKey` de `LiveSessions` pointerait sur l'ancienne clé). Chemin en `key/rotate` et **non** `rotate-key` : ce dernier entre en conflit ServeMux avec `ingest/{stream_key}` (STR-228, ADR 028) |
 | POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio AAC segmenté en HLS (STR-70/71) |
 | GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Public** (`OptionalAuth`) — flux publics servis à un anonyme, privé → 404 ; owner authentifié voit ses flux privés — manifeste HLS, 409 si pas live/pas prêt (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
 | GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Public** (`OptionalAuth`) — idem playlist — segment `.ts` (nom validé anti-traversal) (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
@@ -560,7 +561,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `027-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `029-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
