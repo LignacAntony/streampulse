@@ -210,6 +210,41 @@ void main() {
     });
   });
 
+  group('BroadcastRepositoryImpl.rotateStreamKey', () {
+    test('renvoie le flux porteur de la clé neuve', () async {
+      adapter.onPost(
+        '/api/streams/s-1/key/rotate',
+        (server) => server.reply(
+          200,
+          _streamJson(
+            's-1',
+            streamKey: 'cle-neuve',
+            sourceUrl: 'http://localhost:8080/api/streams/ingest/cle-neuve',
+          ),
+        ),
+      );
+
+      final rotated = await repository.rotateStreamKey('s-1');
+
+      expect(rotated.streamKey, 'cle-neuve');
+      expect(rotated.streamSourceUrl, contains('cle-neuve'));
+    });
+
+    test('409 sur un flux en direct -> ConflictException', () async {
+      adapter.onPost(
+        '/api/streams/s-2/key/rotate',
+        (server) => server.reply(409, {
+          'error': {'code': 'conflict', 'message': 'stream is live'},
+        }),
+      );
+
+      await expectLater(
+        repository.rotateStreamKey('s-2'),
+        throwsA(isA<ConflictException>()),
+      );
+    });
+  });
+
   group('streamCategoryToDto', () {
     test('traduit une catégorie de la liste blanche', () {
       expect(

@@ -102,6 +102,7 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**listMyStreams**](doc/StreamingApi.md#listmystreams) | **GET** /api/users/me/streams | List the authenticated user&#39;s own streams (broadcaster dashboard).
 [*StreamingApi*](doc/StreamingApi.md) | [**listStreams**](doc/StreamingApi.md#liststreams) | **GET** /api/streams | List public live streams (paginated).
 [*StreamingApi*](doc/StreamingApi.md) | [**removeFavorite**](doc/StreamingApi.md#removefavorite) | **DELETE** /api/streams/{id}/favorite | Remove a stream from the authenticated user&#39;s favorites.
+[*StreamingApi*](doc/StreamingApi.md) | [**rotateStreamKey**](doc/StreamingApi.md#rotatestreamkey) | **POST** /api/streams/{id}/key/rotate | Issue a new ingest key, invalidating the previous one (broadcaster owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**startStream**](doc/StreamingApi.md#startstream) | **PATCH** /api/streams/{id}/start | Start a stream — go live (broadcaster owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**stopStream**](doc/StreamingApi.md#stopstream) | **PATCH** /api/streams/{id}/stop | Stop a live stream — end it (broadcaster owner only).
 [*StreamingApi*](doc/StreamingApi.md) | [**streamEvents**](doc/StreamingApi.md#streamevents) | **GET** /api/streams/{id}/events | Subscribe to a live stream&#39;s events (SSE).

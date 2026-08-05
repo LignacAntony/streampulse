@@ -300,6 +300,64 @@ func (q *Queries) ListStreamsByOwner(ctx context.Context, userID pgtype.UUID) ([
 	return items, nil
 }
 
+const rotateStreamKey = `-- name: RotateStreamKey :one
+UPDATE streams
+SET stream_key = $1, updated_at = NOW()
+WHERE id = $2::uuid AND user_id = $3::uuid
+  AND status <> 'live' AND archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at
+`
+
+type RotateStreamKeyParams struct {
+	StreamKey string
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+}
+
+type RotateStreamKeyRow struct {
+	ID          string
+	UserID      string
+	Title       string
+	Description pgtype.Text
+	Category    pgtype.Text
+	Status      string
+	IsPublic    bool
+	StreamKey   string
+	StartedAt   *time.Time
+	EndedAt     *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Remplace le secret d'ingest d'un flux (propriétaire, non archivé), invalidant
+// l'ancien du même coup : la colonne est unique, il n'y a qu'une clé valide par
+// flux à tout instant.
+//
+// Le statut 'live' est exclu ici, en SQL, et pas seulement gardé dans le
+// service : LiveSessions indexe la session par la clé au démarrage du direct.
+// Une rotation pendant la diffusion désynchroniserait cet index — l'ancienne
+// clé continuerait de router l'ingest, la nouvelle renverrait 404.
+func (q *Queries) RotateStreamKey(ctx context.Context, arg RotateStreamKeyParams) (RotateStreamKeyRow, error) {
+	row := q.db.QueryRow(ctx, rotateStreamKey, arg.StreamKey, arg.ID, arg.UserID)
+	var i RotateStreamKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.Status,
+		&i.IsPublic,
+		&i.StreamKey,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const startStream = `-- name: StartStream :one
 UPDATE streams AS s
 SET status = 'live', started_at = NOW(), updated_at = NOW()

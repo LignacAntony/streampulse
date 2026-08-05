@@ -47,6 +47,12 @@ class BroadcastRepositoryImpl implements BroadcastRepository {
   }
 
   @override
+  Future<BroadcastStream> rotateStreamKey(String id) async {
+    final dto = await _remote.rotateStreamKey(id);
+    return dto.toBroadcastEntity();
+  }
+
+  @override
   Future<void> deleteStream(String id) => _remote.deleteStream(id);
 
   @override

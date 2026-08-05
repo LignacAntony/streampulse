@@ -174,6 +174,12 @@ type fakeRepo struct {
 	gotForceStopID string
 	forceStopRet   string
 	forceStopErr   error
+
+	gotRotateID     string
+	gotRotateUserID string
+	gotRotateKey    string
+	rotateRet       Stream
+	rotateErr       error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
@@ -252,6 +258,13 @@ func (f *fakeRepo) StopLiveStreamsByUser(_ context.Context, userID string) ([]st
 func (f *fakeRepo) ForceStopLiveStream(_ context.Context, id string) (string, error) {
 	f.gotForceStopID = id
 	return f.forceStopRet, f.forceStopErr
+}
+
+func (f *fakeRepo) RotateStreamKey(_ context.Context, id, userID, newKey string) (Stream, error) {
+	f.gotRotateID = id
+	f.gotRotateUserID = userID
+	f.gotRotateKey = newKey
+	return f.rotateRet, f.rotateErr
 }
 
 type fakeKeys struct {
@@ -572,6 +585,125 @@ func TestService_StartStream_AlreadyLive_UniqueViolation(t *testing.T) {
 	}
 	if len(sessions.started) != 0 {
 		t.Error("aucune session ne doit démarrer sur échec")
+	}
+}
+
+// fakeAudit enregistre les appels au journal, et peut les faire échouer pour
+// vérifier que la rotation reste acquise malgré un audit indisponible.
+type fakeAudit struct {
+	calls [][5]string
+	err   error
+}
+
+func (f *fakeAudit) InsertAuditLog(_ context.Context, actorID, action, targetType, targetID string) error {
+	f.calls = append(f.calls, [5]string{actorID, action, targetType, targetID, ""})
+	return f.err
+}
+
+func TestService_RotateStreamKey_Success(t *testing.T) {
+	repo := &fakeRepo{rotateRet: Stream{ID: "s1", UserID: "u1", StreamKey: "nouvelle-cle"}}
+	audit := &fakeAudit{}
+	svc := NewService(repo, fakeKeys{key: "nouvelle-cle"}, &fakeSessions{})
+	svc.SetAuditRecorder(audit)
+
+	stream, err := svc.RotateStreamKey(context.Background(), "s1", "u1")
+	if err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	if stream.StreamKey != "nouvelle-cle" {
+		t.Errorf("StreamKey = %q, want nouvelle-cle", stream.StreamKey)
+	}
+	if repo.gotRotateKey != "nouvelle-cle" || repo.gotRotateID != "s1" || repo.gotRotateUserID != "u1" {
+		t.Errorf("repo appelé avec (%q, %q, %q)", repo.gotRotateID, repo.gotRotateUserID, repo.gotRotateKey)
+	}
+	if len(audit.calls) != 1 {
+		t.Fatalf("appels d'audit = %d, want 1", len(audit.calls))
+	}
+	// L'acteur est le propriétaire, la cible l'id public — jamais la clé.
+	if got := audit.calls[0]; got[0] != "u1" || got[1] != "stream.key_rotated" ||
+		got[2] != "stream" || got[3] != "s1" {
+		t.Errorf("entrée d'audit = %v", got)
+	}
+}
+
+// Une rotation est irréversible : l'ancienne clé n'existe plus. Échouer la
+// requête parce que le journal est indisponible laisserait l'appelant croire
+// que rien n'a bougé, alors que son encodeur est déjà cassé.
+func TestService_RotateStreamKey_AuditFailureDoesNotFailRotation(t *testing.T) {
+	repo := &fakeRepo{rotateRet: Stream{ID: "s1", StreamKey: "nouvelle-cle"}}
+	audit := &fakeAudit{err: errors.New("audit_logs indisponible")}
+	svc := NewService(repo, fakeKeys{key: "nouvelle-cle"}, &fakeSessions{})
+	svc.SetAuditRecorder(audit)
+
+	stream, err := svc.RotateStreamKey(context.Background(), "s1", "u1")
+	if err != nil {
+		t.Fatalf("un audit en échec ne doit pas faire échouer la rotation: %v", err)
+	}
+	if stream.StreamKey != "nouvelle-cle" {
+		t.Errorf("StreamKey = %q, want nouvelle-cle", stream.StreamKey)
+	}
+}
+
+// Sans SetAuditRecorder (tests, binaire minimal), le service doit fonctionner :
+// noopAudit garantit qu'aucun nil ne circule.
+func TestService_RotateStreamKey_WithoutAuditRecorder(t *testing.T) {
+	repo := &fakeRepo{rotateRet: Stream{ID: "s1", StreamKey: "k"}}
+	svc := NewService(repo, fakeKeys{key: "k"}, &fakeSessions{})
+
+	if _, err := svc.RotateStreamKey(context.Background(), "s1", "u1"); err != nil {
+		t.Fatalf("erreur inattendue: %v", err)
+	}
+	svc.SetAuditRecorder(nil) // ne doit pas réintroduire un nil
+	if _, err := svc.RotateStreamKey(context.Background(), "s1", "u1"); err != nil {
+		t.Fatalf("erreur inattendue après SetAuditRecorder(nil): %v", err)
+	}
+}
+
+func TestService_RotateStreamKey_Live_Conflict(t *testing.T) {
+	// La query exclut 'live' : 0 ligne, propriétaire confirmé -> 409.
+	repo := &fakeRepo{rotateErr: errNoRowAffected, getRet: Stream{UserID: "u1", Status: StatusLive}}
+	audit := &fakeAudit{}
+	svc := NewService(repo, fakeKeys{key: "k"}, &fakeSessions{})
+	svc.SetAuditRecorder(audit)
+
+	_, err := svc.RotateStreamKey(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeConflict) {
+		t.Fatalf("code = %v, want conflict (flux en direct)", err)
+	}
+	if len(audit.calls) != 0 {
+		t.Error("aucune entrée d'audit ne doit être écrite si rien n'a tourné")
+	}
+}
+
+func TestService_RotateStreamKey_NotOwner_NotFound(t *testing.T) {
+	// 0 ligne, et le flux appartient à un tiers : 404 plutôt que 409, pour ne pas
+	// divulguer l'existence du flux (même règle que Get).
+	repo := &fakeRepo{rotateErr: errNoRowAffected, getRet: Stream{UserID: "autre", Status: StatusIdle}}
+	svc := NewService(repo, fakeKeys{key: "k"}, &fakeSessions{})
+
+	_, err := svc.RotateStreamKey(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("code = %v, want not found", err)
+	}
+}
+
+// La clé est tirée avant l'UPDATE : un générateur en panne doit s'arrêter là,
+// sans écrire en base ni journaliser quoi que ce soit.
+func TestService_RotateStreamKey_KeyGeneratorFailure(t *testing.T) {
+	repo := &fakeRepo{}
+	audit := &fakeAudit{}
+	svc := NewService(repo, fakeKeys{err: errors.New("entropie indisponible")}, &fakeSessions{})
+	svc.SetAuditRecorder(audit)
+
+	_, err := svc.RotateStreamKey(context.Background(), "s1", "u1")
+	if !apperror.IsCode(err, apperror.CodeInternal) {
+		t.Fatalf("code = %v, want internal", err)
+	}
+	if repo.gotRotateID != "" {
+		t.Error("la base ne doit pas être touchée si la clé n'a pas pu être générée")
+	}
+	if len(audit.calls) != 0 {
+		t.Error("aucune entrée d'audit sans rotation")
 	}
 }
 

@@ -95,16 +95,18 @@ plutôt qu'un échec sec.
 
 ### 6. La clé de diffusion n'est jamais rendue par défaut
 
-`stream_key` est un secret de type bearer : qui la détient diffuse à la place du propriétaire, et
-**aucun endpoint de rotation n'existe** — en cas de fuite, le seul recours est de supprimer le
-flux et d'en recréer un. L'URL d'ingest s'affiche donc masquée (points + 4 derniers caractères),
-la révélation se referme seule au bout de 15 s, et le bouton de copie place l'URL entière dans le
-presse-papier sans jamais l'afficher ni l'écho dans le toast.
+`stream_key` est un secret de type bearer : qui la détient diffuse à la place du propriétaire.
+L'URL d'ingest s'affiche donc masquée (points + 4 derniers caractères), la révélation se referme
+seule au bout de 15 s, et le bouton de copie place l'URL entière dans le presse-papier sans jamais
+l'afficher ni l'écho dans le toast.
 
 Limite assumée : sur Android le presse-papier est lisible par d'autres applications, et
 `Clipboard.setData` de Flutter n'expose pas le drapeau « contenu sensible » d'Android 13+.
 
-Un ticket dédié doit couvrir la rotation de `stream_key`.
+**Mise à jour (STR-228, [ADR 028](028-rotation-de-la-cle-de-diffusion.md))** : la clé se régénère
+désormais depuis le tableau de bord (`POST /api/streams/{id}/key/rotate`). En cas de fuite, le
+recours n'est plus de supprimer le flux et d'en recréer un — ce qui lui faisait perdre son
+identifiant, ses favoris et son historique.
 
 ### 7. Onglet visible pour tous, état vide orienté
 

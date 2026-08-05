@@ -727,6 +727,88 @@ class StreamingApi {
     return _response;
   }
 
+  /// Issue a new ingest key, invalidating the previous one (broadcaster owner only).
+  /// Recovery path for a leaked stream_key (STR-228). The key authenticates ingest on its own, so anyone holding it can broadcast in the owner&#39;s place; before this endpoint the only remedy was deleting the stream and losing its id, favourites and history.  The response carries the new secrets, which exist nowhere else. The broadcaster&#39;s encoder must be reconfigured with the new URL.  Rejected with 409 while the stream is live: the in-memory session is indexed by the key, so rotating mid-broadcast would cut the running ingest and leave the index on the old key. Logged to the audit trail on a best-effort basis, without ever recording the key itself.  The path is &#x60;/{id}/key/rotate&#x60; and not &#x60;/{id}/rotate-key&#x60; because the latter structurally conflicts with &#x60;/api/streams/ingest/{stream_key}&#x60; in Go&#39;s ServeMux — &#x60;/api/streams/ingest/rotate-key&#x60; would match both.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [StreamResponse] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<StreamResponse>> rotateStreamKey({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/api/streams/{id}/key/rotate'.replaceAll(
+      '{'
+      r'id'
+      '}',
+      id.toString(),
+    );
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{...?headers},
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {'type': 'http', 'scheme': 'bearer', 'name': 'bearerAuth'},
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    StreamResponse? _responseData;
+
+    try {
+      final rawData = _response.data;
+      _responseData = rawData == null
+          ? null
+          : deserialize<StreamResponse, StreamResponse>(
+              rawData,
+              'StreamResponse',
+              growable: true,
+            );
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<StreamResponse>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Start a stream — go live (broadcaster owner only).
   ///
   ///

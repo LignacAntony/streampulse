@@ -69,6 +69,18 @@ class BroadcastRemoteDataSource {
     }
   }
 
+  /// `POST /api/streams/{id}/key/rotate` — la réponse porte la clé neuve, qui
+  /// n'existe nulle part ailleurs. Le 409 (« flux en direct ») remonte tel quel,
+  /// même raison que `startStream`.
+  Future<StreamResponse> rotateStreamKey(String id) async {
+    try {
+      final response = await _api.rotateStreamKey(id: id);
+      return response.data ?? (throw const ServerException(_emptyBody));
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   /// `DELETE /api/streams/{id}` — 204 sans corps.
   Future<void> deleteStream(String id) async {
     try {

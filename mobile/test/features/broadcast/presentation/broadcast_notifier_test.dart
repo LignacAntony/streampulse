@@ -83,6 +83,24 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   }
 
   @override
+  Future<BroadcastStream> rotateStreamKey(String id) async {
+    rotatedIds.add(id);
+    if (mutationError != null) throw mutationError!;
+    // La rotation ne touche pas au statut : seuls la clé et l'URL changent.
+    final current = streams.firstWhere((s) => s.id == id);
+    return BroadcastStream(
+      id: current.id,
+      title: current.title,
+      status: current.status,
+      isPublic: current.isPublic,
+      createdAt: current.createdAt,
+      startedAt: current.startedAt,
+      streamKey: 'cle-neuve-$id',
+      streamSourceUrl: 'http://localhost:8080/api/streams/ingest/cle-neuve-$id',
+    );
+  }
+
+  @override
   Future<void> deleteStream(String id) async {
     deletedIds.add(id);
     if (mutationError != null) throw mutationError!;
@@ -96,6 +114,7 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   }
 
   final List<String> deletedIds = [];
+  final List<String> rotatedIds = [];
   int statsCalls = 0;
   int listeners = 3;
   Object? statsError;
@@ -132,6 +151,10 @@ class _DeferredRepository implements BroadcastRepository {
   Future<void> deleteStream(String id) => throw UnimplementedError();
 
   @override
+  Future<BroadcastStream> rotateStreamKey(String id) =>
+      throw UnimplementedError();
+
+  @override
   Future<BroadcastStats> streamStats(String id) => throw UnimplementedError();
 }
 
@@ -163,6 +186,10 @@ class _DeferredMutationRepository implements BroadcastRepository {
 
   @override
   Future<void> deleteStream(String id) => throw UnimplementedError();
+
+  @override
+  Future<BroadcastStream> rotateStreamKey(String id) =>
+      throw UnimplementedError();
 
   @override
   Future<BroadcastStats> streamStats(String id) => throw UnimplementedError();
@@ -497,6 +524,47 @@ void main() {
       final notifier = BroadcastNotifier(repository);
 
       expect(notifier.isMutating, isFalse);
+    });
+
+    test('rotateKey remplace le flux par sa version à clé neuve', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final notifier = BroadcastNotifier(repository);
+      await notifier.load();
+
+      final rotated = await notifier.rotateKey('a');
+
+      expect(rotated, isTrue);
+      expect(repository.rotatedIds, ['a']);
+      expect(notifier.streams.single.streamKey, 'cle-neuve-a');
+      expect(notifier.streams.single.streamSourceUrl, contains('cle-neuve-a'));
+      // Le statut ne bouge pas : c'est ce qui distingue la rotation des autres
+      // mutations, et pourquoi elle ne resynchronise ni SSE ni audience.
+      expect(notifier.streams.single.isIdle, isTrue);
+      expect(notifier.mutatingId, isNull);
+    });
+
+    test('rotateKey est un no-op si une autre mutation est en vol', () async {
+      final repository = _DeferredMutationRepository();
+      final notifier = BroadcastNotifier(repository);
+      unawaited(notifier.start('a'));
+
+      expect(await notifier.rotateKey('a'), isFalse);
+
+      repository.pending.first.complete(_stream('a', status: 'live'));
+      notifier.dispose();
+    });
+
+    test('rotateKey relaie le 409 d\'un flux passé en direct', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')])
+        ..mutationError = const ConflictException('stream is live');
+      final notifier = BroadcastNotifier(repository);
+      await notifier.load();
+
+      await expectLater(
+        notifier.rotateKey('a'),
+        throwsA(isA<ConflictException>()),
+      );
+      expect(notifier.mutatingId, isNull);
     });
 
     test('delete retire le flux de la liste', () async {

@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/rs/zerolog"
+
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
@@ -173,7 +175,20 @@ type Repository interface {
 	ListByOwner(ctx context.Context, userID string) ([]Stream, error)
 	StopLiveStreamsByUser(ctx context.Context, userID string) ([]string, error)
 	ForceStopLiveStream(ctx context.Context, id string) (string, error)
+	RotateStreamKey(ctx context.Context, id, userID, newKey string) (Stream, error)
 }
+
+// AuditRecorder journalise une action sensible dans le journal d'audit.
+// Interface étroite (ISP) : le domaine streaming ne connaît ni la table ni le
+// package qui sait y écrire — main.go lui injecte l'implémentation du domaine
+// admin, seul propriétaire d'audit_logs. Jamais nil : noopAudit par défaut.
+type AuditRecorder interface {
+	InsertAuditLog(ctx context.Context, actorID, action, targetType, targetID string) error
+}
+
+type noopAudit struct{}
+
+func (noopAudit) InsertAuditLog(context.Context, string, string, string, string) error { return nil }
 
 // KeyGenerator génère le secret de stream source (implémenté par keyGenerator).
 type KeyGenerator interface {
@@ -193,10 +208,22 @@ type Service struct {
 	repo     Repository
 	keys     KeyGenerator
 	sessions Sessions
+	audit    AuditRecorder // jamais nil : noopAudit par défaut
 }
 
 func NewService(repo Repository, keys KeyGenerator, sessions Sessions) *Service {
-	return &Service{repo: repo, keys: keys, sessions: sessions}
+	return &Service{repo: repo, keys: keys, sessions: sessions, audit: noopAudit{}}
+}
+
+// SetAuditRecorder injecte le journal d'audit (STR-228). Setter plutôt que
+// paramètre de constructeur, comme SetMetrics côté sessions : le domaine
+// fonctionne sans, et l'implémentation vit dans un autre domaine construit plus
+// tard dans main.go. Appelé une fois au démarrage, avant les requêtes HTTP.
+func (s *Service) SetAuditRecorder(rec AuditRecorder) {
+	if rec == nil {
+		rec = noopAudit{}
+	}
+	s.audit = rec
 }
 
 // CreateStream valide l'entrée, génère le stream_key et persiste le flux avec
@@ -335,6 +362,37 @@ func (s *Service) StopStream(ctx context.Context, id, requesterID string) (Strea
 		return Stream{}, err
 	}
 	s.sessions.Stop(stream.ID)
+	return stream, nil
+}
+
+// RotateStreamKey remplace le secret d'ingest d'un flux (propriétaire
+// uniquement) et invalide l'ancien. 404 si absent/pas propriétaire ; 409 si le
+// flux est en direct — une rotation couperait l'ingest en cours et laisserait
+// l'index de session sur l'ancienne clé (cf. la query).
+//
+// L'audit est best-effort, comme côté admin : la rotation est irréversible une
+// fois faite, échouer la requête sur un journal indisponible ne rendrait pas
+// l'ancienne clé et laisserait l'appelant croire que rien n'a bougé.
+func (s *Service) RotateStreamKey(ctx context.Context, id, requesterID string) (Stream, error) {
+	key, err := s.keys.NewStreamKey()
+	if err != nil {
+		return Stream{}, apperror.Internal("generate stream key", err)
+	}
+
+	stream, err := s.repo.RotateStreamKey(ctx, id, requesterID, key)
+	if err != nil {
+		if errors.Is(err, errNoRowAffected) {
+			return Stream{}, s.classifyTransitionFailure(ctx, id, requesterID, "stream is live")
+		}
+		return Stream{}, err
+	}
+
+	// Ni la clé ni l'URL d'ingest ne doivent atteindre le journal : seul l'id
+	// public du flux est tracé (cf. httpjson.LoggablePath, ADR 018).
+	if err := s.audit.InsertAuditLog(ctx, requesterID, "stream.key_rotated", "stream", stream.ID); err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Str("stream_id", stream.ID).
+			Msg("streaming: rotation de clé non journalisée")
+	}
 	return stream, nil
 }
 

@@ -871,6 +871,64 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/key/rotate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - Streaming
+      operationId: rotateStreamKey
+      summary: Issue a new ingest key, invalidating the previous one (broadcaster owner only).
+      description: >-
+        Recovery path for a leaked stream_key (STR-228). The key authenticates
+        ingest on its own, so anyone holding it can broadcast in the owner's
+        place; before this endpoint the only remedy was deleting the stream and
+        losing its id, favourites and history.
+
+
+        The response carries the new secrets, which exist nowhere else. The
+        broadcaster's encoder must be reconfigured with the new URL.
+
+
+        Rejected with 409 while the stream is live: the in-memory session is
+        indexed by the key, so rotating mid-broadcast would cut the running
+        ingest and leave the index on the old key. Logged to the audit trail on
+        a best-effort basis, without ever recording the key itself.
+
+
+        The path is `/{id}/key/rotate` and not `/{id}/rotate-key` because the
+        latter structurally conflicts with `/api/streams/ingest/{stream_key}`
+        in Go's ServeMux — `/api/streams/ingest/rotate-key` would match both.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: >-
+            A new key was issued. stream_key and stream_source_url carry the new
+            secret; the previous one is no longer accepted for ingest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stream is live — stop it before rotating its key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/streams/{id}/events:
     parameters:
       - name: id
