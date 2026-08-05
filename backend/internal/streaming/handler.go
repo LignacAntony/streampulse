@@ -133,7 +133,9 @@ func NewHandler(svc StreamService, ingestBaseURL string, sessions StreamSessions
 func (h *Handler) SetTrustProxyHeaders(trust bool) { h.trustProxyHeaders = trust }
 
 // SetIngestReconnectGrace configure la deadline glissante d'un push audio.
-// Zéro désactive la deadline, notamment dans les tests unitaires du handler.
+// Zéro désactive toute deadline de lecture sur l'ingest — y compris celle
+// posée par le ReadTimeout d'http.Server, qui couperait un push après quelques
+// secondes. C'est le cas des tests unitaires du handler.
 func (h *Handler) SetIngestReconnectGrace(grace time.Duration) {
 	h.ingestReconnectGrace = grace
 }
@@ -714,6 +716,11 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	// de grâce pour laisser le mobile se reconnecter.
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{})
+	if h.ingestReconnectGrace <= 0 {
+		// Sans bail, il faut neutraliser explicitement la deadline de lecture :
+		// le ReadTimeout d'http.Server (5 s) couperait sinon tous les pushes.
+		_ = rc.SetReadDeadline(time.Time{})
+	}
 
 	// Copie bloquante jusqu'à la fin du push (EOF = diffuseur déconnecté). On ne
 	// ferme PAS l'entrée du segmenteur : la session reste live (fenêtre de

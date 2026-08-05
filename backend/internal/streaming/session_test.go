@@ -137,6 +137,67 @@ func TestLiveSessions_IngestExpiryRetriesAfterHandlerFailure(t *testing.T) {
 	}
 }
 
+// Le handler d'expiration termine la session hors du verrou de session. Un
+// diffuseur qui se reconnecte pendant cet intervalle doit être refusé : lui
+// rendre un ingest que Stop casserait aussitôt le laisserait pousser dans le
+// vide, sur un flux déjà passé à `ended`.
+func TestLiveSessions_AttachIngestRefusedWhileExpiryStops(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	running := make(chan struct{})
+	release := make(chan struct{})
+	ls.SetIngestDisconnectHandler(10*time.Millisecond, func(string) error {
+		close(running)
+		<-release
+		return nil
+	})
+	ls.Start("s1", "KEY1")
+	defer ls.StopAll()
+
+	select {
+	case <-running:
+	case <-time.After(time.Second):
+		t.Fatal("le bail n'a pas expiré")
+	}
+
+	_, _, err := ls.AttachIngest("KEY1")
+	close(release)
+	if !errors.Is(err, errNotLive) {
+		t.Fatalf("AttachIngest pendant l'arrêt = %v, want errNotLive", err)
+	}
+}
+
+// Miroir du test précédent : si l'arrêt échoue, la session reste live et le
+// diffuseur doit pouvoir se rattacher — le refus ne doit pas être définitif.
+func TestLiveSessions_AttachIngestAllowedAfterFailedExpiryStop(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	failed := make(chan struct{}, 2)
+	count := 0
+	ls.SetIngestDisconnectHandler(10*time.Millisecond, func(string) error {
+		count++
+		failed <- struct{}{}
+		return errors.New("database unavailable")
+	})
+	ls.Start("s1", "KEY1")
+	defer ls.StopAll()
+
+	select {
+	case <-failed:
+	case <-time.After(time.Second):
+		t.Fatal("le bail n'a pas expiré")
+	}
+
+	// Le réarmement suit immédiatement l'échec ; on laisse la goroutine du
+	// timer repasser par armIngestExpiry avant de tenter le rattachement.
+	var err error
+	for i := 0; i < 100; i++ {
+		if _, _, err = ls.AttachIngest("KEY1"); err == nil {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("AttachIngest après un arrêt en échec = %v, want nil", err)
+}
+
 func TestLiveSessions_SubscribeReceivesEnded(t *testing.T) {
 	ls := newTestSessions(context.Background())
 	ls.Start("s1", "")

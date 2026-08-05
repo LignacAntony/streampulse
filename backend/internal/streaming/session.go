@@ -25,6 +25,7 @@ type session struct {
 	closed       bool
 	dead         bool          // ffmpeg s'est arrêté seul : segmenteur inexploitable
 	ingesting    bool          // un seul push audio à la fois
+	expiring     bool          // bail expiré : arrêt en cours, plus aucun ingest accepté
 	ingestExpiry *time.Timer   // arrêt différé si aucun push ne revient
 	hls          *hlsSegmenter // publié après le spawn ; protégé par mu
 	subscribers  map[chan SessionEvent]struct{}
@@ -253,16 +254,25 @@ func (ls *LiveSessions) armIngestExpiry(s *session) {
 	var timer *time.Timer
 	timer = time.AfterFunc(grace, func() {
 		s.mu.Lock()
-		if s.ingestExpiry != timer || s.closed || s.dead || s.ingesting {
+		if s.ingestExpiry != timer || s.closed || s.dead || s.ingesting || s.expiring {
 			s.mu.Unlock()
 			return
 		}
 		s.ingestExpiry = nil
+		// Marquer l'arrêt AVANT de relâcher le verrou : le handler termine la
+		// session sans le tenir, et un diffuseur qui se reconnecterait dans cet
+		// intervalle passerait sinon tous les gardes d'AttachIngest pour
+		// obtenir un ingest aussitôt cassé par Stop.
+		s.expiring = true
 		s.mu.Unlock()
 		if err := handler(s.streamID); err != nil {
 			// Une indisponibilité transitoire de la base ne doit pas désarmer le
 			// garde-fou : tant que la session existe, une nouvelle tentative sera
-			// faite après le même délai de grâce.
+			// faite après le même délai de grâce — et l'ingest redevient
+			// acceptable entre-temps, la session n'ayant pas été terminée.
+			s.mu.Lock()
+			s.expiring = false
+			s.mu.Unlock()
 			ls.armIngestExpiry(s)
 		}
 	})
@@ -272,7 +282,8 @@ func (ls *LiveSessions) armIngestExpiry(s *session) {
 // AttachIngest réserve la session live identifiée par streamKey pour un unique
 // push audio, et retourne l'entrée où copier le flux + une fonction de
 // détachement. Erreurs : errNotLive (clé inconnue / flux pas en direct / segmenteur
-// mort), errSegmenterUnavailable, errIngestInProgress (un push est déjà en cours).
+// mort / bail d'ingest expiré), errSegmenterUnavailable, errIngestInProgress (un
+// push est déjà en cours).
 func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error) {
 	ls.mu.Lock()
 	s, ok := ls.byKey[streamKey]
@@ -283,8 +294,9 @@ func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed || s.dead {
-		// Session arrêtée (entre la lecture de la map et ici) ou segmenteur mort.
+	if s.closed || s.dead || s.expiring {
+		// Session arrêtée (entre la lecture de la map et ici), segmenteur mort,
+		// ou bail expiré dont l'arrêt est déjà lancé.
 		return nil, nil, errNotLive
 	}
 	if s.hls == nil {

@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -643,6 +644,48 @@ func TestHandler_Ingest_AllowsAbsentContentType(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("want 204 (content-type absent accepté), got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// Le push d'ingest dure tout le direct : il doit échapper au ReadTimeout court
+// d'http.Server. Sans bail configuré (grace = 0), la deadline de lecture doit
+// être explicitement neutralisée, sinon un push lent mais parfaitement sain se
+// ferait couper au bout de quelques secondes.
+func TestHandler_Ingest_SurvivesServerReadTimeoutWithoutGrace(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("sid-slow", "KEYSLOW")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/streams/ingest/{stream_key}", h.Ingest)
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Config.ReadTimeout = 100 * time.Millisecond
+	srv.Start()
+	defer srv.Close()
+
+	// Corps envoyé en deux morceaux séparés par plus que le ReadTimeout.
+	body, writer := io.Pipe()
+	go func() {
+		_, _ = writer.Write([]byte{0xff, 0xf1})
+		time.Sleep(300 * time.Millisecond)
+		_, _ = writer.Write([]byte{0x50, 0x80})
+		_ = writer.Close()
+	}()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/streams/ingest/KEYSLOW", body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", "audio/aac")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("push interrompu par le ReadTimeout du serveur: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
 	}
 }
 

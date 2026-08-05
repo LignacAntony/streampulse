@@ -30,6 +30,12 @@ const (
 	defaultLogLevel                    = "info"
 
 	minJWTSecretLen = 32
+
+	// mobileMaxReconnectBackoffSeconds reprend le plafond du backoff de
+	// reconnexion du mobile (cappedExponentialBackoff, ADR 027 §3). Le bail
+	// d'ingest doit le dépasser, sinon le serveur couperait les directs pendant
+	// la fenêtre de reprise normale du téléphone.
+	mobileMaxReconnectBackoffSeconds = 30
 )
 
 // validLogLevels énumère les niveaux acceptés pour LOG_LEVEL
@@ -289,11 +295,14 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: LOG_LEVEL invalide %q (attendu: trace|debug|info|warn|error|fatal|panic)", c.LogLevel)
 	}
 
-	if c.IngestReconnectGraceSeconds <= 0 {
-		return fmt.Errorf("config: INGEST_RECONNECT_GRACE_SECONDS must be greater than 0")
+	if c.IngestReconnectGraceSeconds <= mobileMaxReconnectBackoffSeconds {
+		return fmt.Errorf(
+			"config: INGEST_RECONNECT_GRACE_SECONDS invalide %d (attendu: > %d, le backoff de reconnexion maximal du mobile)",
+			c.IngestReconnectGraceSeconds, mobileMaxReconnectBackoffSeconds,
+		)
 	}
 	if c.IngestStopTimeoutSeconds <= 0 {
-		return fmt.Errorf("config: INGEST_STOP_TIMEOUT_SECONDS must be greater than 0")
+		return fmt.Errorf("config: INGEST_STOP_TIMEOUT_SECONDS invalide %d (attendu: > 0)", c.IngestStopTimeoutSeconds)
 	}
 
 	return nil
