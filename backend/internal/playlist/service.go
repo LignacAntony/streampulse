@@ -16,6 +16,10 @@ const (
 	MaxDescriptionLen = 500
 )
 
+// MaxTracksPerPlaylist borne la taille d'un réordonnancement : le corps de la
+// requête porte l'ordre complet, il faut donc un plafond explicite.
+const MaxTracksPerPlaylist = 1000
+
 // Playlist est le type domaine d'une playlist. Description est un pointeur pour
 // pouvoir être nul. TrackCount est le nombre de pistes qu'elle contient.
 type Playlist struct {
@@ -37,6 +41,23 @@ type PlaylistTrack struct {
 	Artist    *string
 	DurationS *int
 	Position  int
+}
+
+// Track est une piste de la bibliothèque de l'utilisateur (source du sélecteur
+// « ajouter une piste »). Artist et DurationS sont nullables.
+type Track struct {
+	ID        string
+	Title     string
+	Artist    *string
+	DurationS *int
+}
+
+// AddTrackParams est la demande d'ajout adressée au Repository. UserID sert à
+// restreindre l'ajout aux pistes du demandeur.
+type AddTrackParams struct {
+	PlaylistID string
+	TrackID    string
+	UserID     string
 }
 
 // CreateInput porte les champs fournis à la création. UserID provient du JWT.
@@ -77,6 +98,10 @@ type Repository interface {
 	Update(ctx context.Context, p UpdateParams) (Playlist, error)
 	Delete(ctx context.Context, id, userID string) error
 	ListTracks(ctx context.Context, playlistID string) ([]PlaylistTrack, error)
+	ListUserTracks(ctx context.Context, userID string) ([]Track, error)
+	AddTrack(ctx context.Context, p AddTrackParams) error
+	RemoveTrack(ctx context.Context, playlistID, trackID string) error
+	Reorder(ctx context.Context, playlistID string, trackIDs []string) error
 }
 
 // Service porte la logique métier du domaine playlist.
@@ -180,4 +205,66 @@ func (s *Service) ListTracks(ctx context.Context, id, requesterID string) ([]Pla
 		return nil, err
 	}
 	return s.repo.ListTracks(ctx, id)
+}
+
+// ListUserTracks retourne la bibliothèque de pistes du demandeur : elle alimente
+// le sélecteur d'ajout côté client. Aucune piste d'un tiers n'y figure (le filtre
+// porte sur le porteur du JWT).
+func (s *Service) ListUserTracks(ctx context.Context, requesterID string) ([]Track, error) {
+	return s.repo.ListUserTracks(ctx, requesterID)
+}
+
+// AddTrack ajoute une piste en fin de playlist et retourne l'ordre résultant.
+// La playlist doit appartenir au demandeur (404 sinon) ; la piste aussi (404 :
+// on ne divulgue pas l'existence de la piste d'un tiers). Une piste déjà
+// présente renvoie 409.
+func (s *Service) AddTrack(ctx context.Context, playlistID, trackID, requesterID string) ([]PlaylistTrack, error) {
+	if _, err := s.GetPlaylist(ctx, playlistID, requesterID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.AddTrack(ctx, AddTrackParams{
+		PlaylistID: playlistID,
+		TrackID:    trackID,
+		UserID:     requesterID,
+	}); err != nil {
+		return nil, err
+	}
+	return s.repo.ListTracks(ctx, playlistID)
+}
+
+// RemoveTrack retire une piste de la playlist du demandeur. Le repo recompacte
+// les positions pour qu'elles restent contiguës (0..n-1).
+func (s *Service) RemoveTrack(ctx context.Context, playlistID, trackID, requesterID string) error {
+	if _, err := s.GetPlaylist(ctx, playlistID, requesterID); err != nil {
+		return err
+	}
+	return s.repo.RemoveTrack(ctx, playlistID, trackID)
+}
+
+// ReorderTracks réécrit l'ordre complet de la playlist du demandeur à partir de
+// la liste d'identifiants fournie (index 0 = première piste), et retourne
+// l'ordre persisté. La liste doit couvrir exactement les pistes de la playlist :
+// un doublon est rejeté ici (400), un effectif ou un identifiant qui ne
+// correspond pas est rejeté par le repo (409).
+func (s *Service) ReorderTracks(ctx context.Context, playlistID, requesterID string, trackIDs []string) ([]PlaylistTrack, error) {
+	if _, err := s.GetPlaylist(ctx, playlistID, requesterID); err != nil {
+		return nil, err
+	}
+	if len(trackIDs) == 0 {
+		return nil, apperror.InvalidArgument("track_ids must not be empty")
+	}
+	if len(trackIDs) > MaxTracksPerPlaylist {
+		return nil, apperror.InvalidArgument("too many tracks")
+	}
+	seen := make(map[string]struct{}, len(trackIDs))
+	for _, id := range trackIDs {
+		if _, dup := seen[id]; dup {
+			return nil, apperror.InvalidArgument("duplicate track id")
+		}
+		seen[id] = struct{}{}
+	}
+	if err := s.repo.Reorder(ctx, playlistID, trackIDs); err != nil {
+		return nil, err
+	}
+	return s.repo.ListTracks(ctx, playlistID)
 }

@@ -283,6 +283,16 @@ func run() error {
 		http.HandlerFunc(playlistHandler.Delete)))
 	mux.Handle("GET /api/playlists/{id}/tracks", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.ListTracks)))
+	// Pistes d'une playlist (US-05-03) : ajout, retrait, réordonnancement complet.
+	mux.Handle("POST /api/playlists/{id}/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.AddTrack)))
+	mux.Handle("PUT /api/playlists/{id}/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.ReorderTracks)))
+	mux.Handle("DELETE /api/playlists/{id}/tracks/{trackId}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.RemoveTrack)))
+	// Bibliothèque de pistes du demandeur : source du sélecteur d'ajout.
+	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.ListUserTracks)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

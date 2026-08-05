@@ -33,6 +33,22 @@ type fakeRepo struct {
 	tracksRet  []PlaylistTrack
 	tracksErr  error
 	tracksCall bool
+
+	userTracksRet []Track
+
+	addErr  error
+	addCall bool
+	gotAdd  AddTrackParams
+
+	removeErr     error
+	removeCall    bool
+	gotRemoveID   string
+	gotRemoveTrck string
+
+	reorderErr   error
+	reorderCall  bool
+	gotReorderID string
+	gotOrder     []string
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Playlist, error) {
@@ -65,6 +81,30 @@ func (f *fakeRepo) Delete(_ context.Context, id, userID string) error {
 func (f *fakeRepo) ListTracks(_ context.Context, _ string) ([]PlaylistTrack, error) {
 	f.tracksCall = true
 	return f.tracksRet, f.tracksErr
+}
+
+func (f *fakeRepo) ListUserTracks(_ context.Context, _ string) ([]Track, error) {
+	return f.userTracksRet, nil
+}
+
+func (f *fakeRepo) AddTrack(_ context.Context, p AddTrackParams) error {
+	f.addCall = true
+	f.gotAdd = p
+	return f.addErr
+}
+
+func (f *fakeRepo) RemoveTrack(_ context.Context, playlistID, trackID string) error {
+	f.removeCall = true
+	f.gotRemoveID = playlistID
+	f.gotRemoveTrck = trackID
+	return f.removeErr
+}
+
+func (f *fakeRepo) Reorder(_ context.Context, playlistID string, trackIDs []string) error {
+	f.reorderCall = true
+	f.gotReorderID = playlistID
+	f.gotOrder = trackIDs
+	return f.reorderErr
 }
 
 const (
@@ -188,5 +228,137 @@ func TestDeletePlaylist_ScopedToRequester(t *testing.T) {
 	}
 	if !repo.deleteCall || repo.gotDelID != "p1" || repo.gotDelUser != ownerID {
 		t.Errorf("delete not scoped correctly: id=%q user=%q", repo.gotDelID, repo.gotDelUser)
+	}
+}
+
+func TestAddTrack_Owner_ForwardsRequesterAsTrackOwner(t *testing.T) {
+	repo := &fakeRepo{
+		getRet:    Playlist{ID: "p1", UserID: ownerID},
+		tracksRet: []PlaylistTrack{{ID: "t1", Title: "Song", Position: 0}},
+	}
+	svc := NewService(repo)
+
+	tracks, err := svc.AddTrack(context.Background(), "p1", "t1", ownerID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.gotAdd.UserID != ownerID || repo.gotAdd.TrackID != "t1" || repo.gotAdd.PlaylistID != "p1" {
+		t.Errorf("params not forwarded: %+v", repo.gotAdd)
+	}
+	// La réponse porte l'ordre relu après insertion.
+	if len(tracks) != 1 || tracks[0].Position != 0 {
+		t.Errorf("unexpected tracks: %+v", tracks)
+	}
+}
+
+func TestAddTrack_ThirdPartyPlaylist_NotFound(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: otherID}}
+	svc := NewService(repo)
+
+	_, err := svc.AddTrack(context.Background(), "p1", "t1", ownerID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if repo.addCall {
+		t.Error("repo.AddTrack must not be called for a third-party playlist")
+	}
+}
+
+func TestRemoveTrack_ThirdPartyPlaylist_NotFound(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: otherID}}
+	svc := NewService(repo)
+
+	err := svc.RemoveTrack(context.Background(), "p1", "t1", ownerID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if repo.removeCall {
+		t.Error("repo.RemoveTrack must not be called for a third-party playlist")
+	}
+}
+
+func TestRemoveTrack_Owner_ScopedToPlaylist(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: ownerID}}
+	svc := NewService(repo)
+
+	if err := svc.RemoveTrack(context.Background(), "p1", "t1", ownerID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.gotRemoveID != "p1" || repo.gotRemoveTrck != "t1" {
+		t.Errorf("remove not scoped: playlist=%q track=%q", repo.gotRemoveID, repo.gotRemoveTrck)
+	}
+}
+
+func TestReorderTracks_Owner_PersistsOrder(t *testing.T) {
+	repo := &fakeRepo{
+		getRet: Playlist{ID: "p1", UserID: ownerID},
+		tracksRet: []PlaylistTrack{
+			{ID: "t2", Title: "B", Position: 0},
+			{ID: "t1", Title: "A", Position: 1},
+		},
+	}
+	svc := NewService(repo)
+
+	tracks, err := svc.ReorderTracks(context.Background(), "p1", ownerID, []string{"t2", "t1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.gotReorderID != "p1" || len(repo.gotOrder) != 2 || repo.gotOrder[0] != "t2" {
+		t.Errorf("order not forwarded: id=%q order=%+v", repo.gotReorderID, repo.gotOrder)
+	}
+	if len(tracks) != 2 || tracks[0].ID != "t2" {
+		t.Errorf("unexpected tracks: %+v", tracks)
+	}
+}
+
+func TestReorderTracks_Duplicate_InvalidArgument(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: ownerID}}
+	svc := NewService(repo)
+
+	_, err := svc.ReorderTracks(context.Background(), "p1", ownerID, []string{"t1", "t1"})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("expected InvalidArgument, got %v", err)
+	}
+	if repo.reorderCall {
+		t.Error("repo.Reorder must not be called on a duplicated id")
+	}
+}
+
+func TestReorderTracks_Empty_InvalidArgument(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: ownerID}}
+	svc := NewService(repo)
+
+	_, err := svc.ReorderTracks(context.Background(), "p1", ownerID, nil)
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("expected InvalidArgument, got %v", err)
+	}
+	if repo.reorderCall {
+		t.Error("repo.Reorder must not be called on an empty order")
+	}
+}
+
+func TestReorderTracks_ThirdPartyPlaylist_NotFound(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: otherID}}
+	svc := NewService(repo)
+
+	_, err := svc.ReorderTracks(context.Background(), "p1", ownerID, []string{"t1"})
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if repo.reorderCall {
+		t.Error("repo.Reorder must not be called for a third-party playlist")
+	}
+}
+
+func TestListUserTracks_ReturnsRequesterLibrary(t *testing.T) {
+	repo := &fakeRepo{userTracksRet: []Track{{ID: "t1", Title: "Song"}}}
+	svc := NewService(repo)
+
+	tracks, err := svc.ListUserTracks(context.Background(), ownerID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tracks) != 1 || tracks[0].Title != "Song" {
+		t.Errorf("unexpected tracks: %+v", tracks)
 	}
 }

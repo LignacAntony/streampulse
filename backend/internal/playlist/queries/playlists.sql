@@ -59,3 +59,73 @@ FROM playlist_tracks pt
 JOIN tracks t ON t.id = pt.track_id
 WHERE pt.playlist_id = sqlc.arg(playlist_id)::uuid
 ORDER BY pt.position;
+
+-- name: ListTracksByUser :many
+-- Bibliothèque de pistes du demandeur : source du sélecteur « ajouter une
+-- piste » côté mobile. Les plus récentes d'abord.
+SELECT id::text AS id, title, artist, duration_s
+FROM tracks
+WHERE user_id = sqlc.arg(user_id)::uuid
+ORDER BY created_at DESC;
+
+-- name: AddTrackToPlaylist :one
+-- Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur :
+-- une piste inconnue ou appartenant à un tiers ne produit aucune ligne -> le
+-- repo renvoie NotFound. Une piste déjà présente viole la PK -> 23505 -> 409.
+INSERT INTO playlist_tracks (playlist_id, track_id, position)
+SELECT sqlc.arg(playlist_id)::uuid,
+       t.id,
+       COALESCE(
+           (SELECT MAX(pt.position) + 1
+            FROM playlist_tracks pt
+            WHERE pt.playlist_id = sqlc.arg(playlist_id)::uuid),
+           0
+       )
+FROM tracks t
+WHERE t.id = sqlc.arg(track_id)::uuid
+  AND t.user_id = sqlc.arg(user_id)::uuid
+RETURNING track_id::text AS track_id, position;
+
+-- name: RemoveTrackFromPlaylist :one
+-- Retrait d'une piste. 0 ligne -> NotFound (piste absente de la playlist).
+DELETE FROM playlist_tracks
+WHERE playlist_id = sqlc.arg(playlist_id)::uuid
+  AND track_id = sqlc.arg(track_id)::uuid
+RETURNING track_id::text AS track_id;
+
+-- name: ResequencePlaylistTracks :exec
+-- Recompacte les positions en 0..n-1 après un retrait, pour qu'aucun trou ne
+-- subsiste (le réordonnancement suivant repartirait sur des index faussés).
+UPDATE playlist_tracks pt
+SET position = ranked.rn - 1
+FROM (
+    SELECT track_id, ROW_NUMBER() OVER (ORDER BY position) AS rn
+    FROM playlist_tracks
+    WHERE playlist_id = sqlc.arg(playlist_id)::uuid
+) ranked
+WHERE pt.playlist_id = sqlc.arg(playlist_id)::uuid
+  AND pt.track_id = ranked.track_id
+  AND pt.position <> ranked.rn - 1;
+
+-- name: CountPlaylistTracks :one
+SELECT COUNT(*) AS total
+FROM playlist_tracks
+WHERE playlist_id = sqlc.arg(playlist_id)::uuid;
+
+-- name: ReorderPlaylistTracks :execrows
+-- Réécriture complète de l'ordre : la position de chaque piste vient de son rang
+-- dans le tableau fourni (WITH ORDINALITY). Le nombre de lignes touchées est
+-- comparé à l'effectif de la playlist par le repo -> un id étranger à la
+-- playlist fait échouer l'opération.
+UPDATE playlist_tracks pt
+SET position = ord.pos
+FROM (
+    SELECT u.id AS track_id, (u.idx - 1)::int AS pos
+    FROM unnest(sqlc.arg(track_ids)::uuid[]) WITH ORDINALITY AS u(id, idx)
+) ord
+WHERE pt.playlist_id = sqlc.arg(playlist_id)::uuid
+  AND pt.track_id = ord.track_id;
+
+-- name: TouchPlaylist :exec
+-- Met à jour updated_at de la playlist après une mutation de ses pistes.
+UPDATE playlists SET updated_at = NOW() WHERE id = sqlc.arg(id)::uuid;

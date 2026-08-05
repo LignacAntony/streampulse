@@ -135,6 +135,15 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     }
   }
 
+  /// Ouvre le détail d'une playlist (pistes + drag-and-drop, US-05-03). Le nom
+  /// est passé en `extra` pour afficher le titre sans attendre le chargement.
+  /// Au retour, la liste est rechargée : le nombre de pistes a pu changer.
+  Future<void> _onOpen(Playlist playlist) async {
+    await context.push('/library/playlist/${playlist.id}', extra: playlist.name);
+    if (!mounted) return;
+    await context.read<PlaylistsController>().refresh();
+  }
+
   /// Message adapté au type d'exception pour un toast de mutation.
   String _mutationMessage(Object error) {
     if (error is ConflictException) return error.message;
@@ -229,6 +238,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
           index: index,
           onRename: _onRename,
           onDelete: _onDelete,
+          onOpen: _onOpen,
         );
       },
     );
@@ -288,12 +298,14 @@ class _PlaylistCard extends StatelessWidget {
     required this.index,
     required this.onRename,
     required this.onDelete,
+    required this.onOpen,
   });
 
   final Playlist playlist;
   final int index;
   final ValueChanged<Playlist> onRename;
   final ValueChanged<Playlist> onDelete;
+  final ValueChanged<Playlist> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -321,11 +333,23 @@ class _PlaylistCard extends StatelessWidget {
             ),
             child: Stack(
               children: [
-                Center(
-                  child: Icon(
-                    icon,
-                    size: 48,
-                    color: Colors.white.withValues(alpha: 0.85),
+                // La zone tactile couvre la cover mais reste *sous* le menu :
+                // ouvrir les options ne doit pas ouvrir la playlist.
+                Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      key: Key('playlist_open_${playlist.id}'),
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => onOpen(playlist),
+                      child: Center(
+                        child: Icon(
+                          icon,
+                          size: 48,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Positioned(

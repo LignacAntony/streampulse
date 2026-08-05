@@ -1,5 +1,6 @@
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/playlist_track.dart';
+import '../../domain/entities/track.dart';
 import '../../domain/repositories/playlist_repository.dart';
 import '../datasources/playlist_remote_data_source.dart';
 import '../mappers/playlist_dto_mappers.dart';
@@ -33,6 +34,34 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
   @override
   Future<List<PlaylistTrack>> tracks(String id) async {
     final dtos = await _remote.tracks(id);
+    return dtos.map((d) => d.toEntity()).toList();
+  }
+
+  @override
+  Future<List<Track>> libraryTracks() async {
+    final dtos = await _remote.libraryTracks();
+    return dtos.map((d) => d.toEntity()).toList();
+  }
+
+  @override
+  Future<List<PlaylistTrack>> addTrack(
+    String playlistId,
+    String trackId,
+  ) async {
+    final dtos = await _remote.addTrack(playlistId, trackId);
+    return dtos.map((d) => d.toEntity()).toList();
+  }
+
+  @override
+  Future<void> removeTrack(String playlistId, String trackId) =>
+      _remote.removeTrack(playlistId, trackId);
+
+  @override
+  Future<List<PlaylistTrack>> reorderTracks(
+    String playlistId,
+    List<String> trackIds,
+  ) async {
+    final dtos = await _remote.reorderTracks(playlistId, trackIds);
     return dtos.map((d) => d.toEntity()).toList();
   }
 }

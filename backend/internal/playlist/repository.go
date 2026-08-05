@@ -15,11 +15,14 @@ import (
 
 type pgRepository struct {
 	q *playlistdb.Queries
+	// pool sert aux mutations multi-requêtes (retrait + recompactage,
+	// réordonnancement) qui doivent tenir dans une seule transaction.
+	pool *pgxpool.Pool
 }
 
 // NewRepository construit le repository PostgreSQL du domaine playlist.
 func NewRepository(pool *pgxpool.Pool) Repository {
-	return &pgRepository{q: playlistdb.New(pool)}
+	return &pgRepository{q: playlistdb.New(pool), pool: pool}
 }
 
 func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Playlist, error) {
@@ -164,6 +167,140 @@ func (r *pgRepository) ListTracks(ctx context.Context, playlistID string) ([]Pla
 		})
 	}
 	return tracks, nil
+}
+
+func (r *pgRepository) ListUserTracks(ctx context.Context, userID string) ([]Track, error) {
+	rows, err := r.q.ListTracksByUser(ctx, uuidParam(userID))
+	if err != nil {
+		return nil, fmt.Errorf("repo: list user tracks: %w", err)
+	}
+	tracks := make([]Track, 0, len(rows))
+	for _, row := range rows {
+		tracks = append(tracks, Track{
+			ID:        row.ID,
+			Title:     row.Title,
+			Artist:    textValue(row.Artist),
+			DurationS: int4Value(row.DurationS),
+		})
+	}
+	return tracks, nil
+}
+
+func (r *pgRepository) AddTrack(ctx context.Context, p AddTrackParams) error {
+	playlistID, ok := parseUUID(p.PlaylistID)
+	if !ok {
+		return apperror.NotFound("playlist not found")
+	}
+	trackID, ok := parseUUID(p.TrackID)
+	if !ok {
+		return apperror.NotFound("track not found")
+	}
+	return r.inTx(ctx, func(q *playlistdb.Queries) error {
+		if _, err := q.AddTrackToPlaylist(ctx, playlistdb.AddTrackToPlaylistParams{
+			PlaylistID: playlistID,
+			TrackID:    trackID,
+			UserID:     uuidParam(p.UserID),
+		}); err != nil {
+			// Aucune ligne insérée : la piste n'existe pas ou appartient à un tiers.
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apperror.NotFound("track not found")
+			}
+			if isUniqueViolation(err) {
+				return apperror.Conflict("Cette piste est déjà dans la playlist")
+			}
+			return fmt.Errorf("repo: add track: %w", err)
+		}
+		return q.TouchPlaylist(ctx, playlistID)
+	})
+}
+
+func (r *pgRepository) RemoveTrack(ctx context.Context, playlistID, trackID string) error {
+	pid, ok := parseUUID(playlistID)
+	if !ok {
+		return apperror.NotFound("playlist not found")
+	}
+	tid, ok := parseUUID(trackID)
+	if !ok {
+		return apperror.NotFound("track not found")
+	}
+	return r.inTx(ctx, func(q *playlistdb.Queries) error {
+		if _, err := q.RemoveTrackFromPlaylist(ctx, playlistdb.RemoveTrackFromPlaylistParams{
+			PlaylistID: pid,
+			TrackID:    tid,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apperror.NotFound("track not found")
+			}
+			return fmt.Errorf("repo: remove track: %w", err)
+		}
+		// Recompactage dans la même transaction : les positions restent
+		// contiguës, sans quoi un réordonnancement ultérieur partirait d'index
+		// troués.
+		if err := q.ResequencePlaylistTracks(ctx, pid); err != nil {
+			return fmt.Errorf("repo: resequence tracks: %w", err)
+		}
+		return q.TouchPlaylist(ctx, pid)
+	})
+}
+
+func (r *pgRepository) Reorder(ctx context.Context, playlistID string, trackIDs []string) error {
+	pid, ok := parseUUID(playlistID)
+	if !ok {
+		return apperror.NotFound("playlist not found")
+	}
+	ids := make([]pgtype.UUID, 0, len(trackIDs))
+	for _, raw := range trackIDs {
+		id, ok := parseUUID(raw)
+		if !ok {
+			return apperror.InvalidArgument("invalid track id")
+		}
+		ids = append(ids, id)
+	}
+	return r.inTx(ctx, func(q *playlistdb.Queries) error {
+		// L'ordre fourni doit couvrir exactement la playlist : on compare son
+		// effectif au nombre de lignes réellement repositionnées (un id absent
+		// de la playlist n'en touche aucune).
+		total, err := q.CountPlaylistTracks(ctx, pid)
+		if err != nil {
+			return fmt.Errorf("repo: count playlist tracks: %w", err)
+		}
+		if int64(len(ids)) != total {
+			return apperror.Conflict("L'ordre fourni ne correspond plus à la playlist")
+		}
+		updated, err := q.ReorderPlaylistTracks(ctx, playlistdb.ReorderPlaylistTracksParams{
+			PlaylistID: pid,
+			TrackIds:   ids,
+		})
+		if err != nil {
+			return fmt.Errorf("repo: reorder tracks: %w", err)
+		}
+		if updated != total {
+			return apperror.Conflict("L'ordre fourni ne correspond plus à la playlist")
+		}
+		return q.TouchPlaylist(ctx, pid)
+	})
+}
+
+// inTx exécute fn dans une transaction et l'annule si fn renvoie une erreur.
+// Les contraintes différées (uq_playlist_tracks_position) ne sont vérifiées
+// qu'au COMMIT : une violation y remonte, elle est donc traduite ici.
+func (r *pgRepository) inTx(ctx context.Context, fn func(*playlistdb.Queries) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("repo: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := fn(r.q.WithTx(tx)); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isUniqueViolation(err) {
+			return apperror.Conflict("Ordre des pistes invalide")
+		}
+		return fmt.Errorf("repo: commit tx: %w", err)
+	}
+	return nil
 }
 
 func uuidParam(s string) pgtype.UUID {

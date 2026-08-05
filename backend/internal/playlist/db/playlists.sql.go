@@ -12,6 +12,56 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addTrackToPlaylist = `-- name: AddTrackToPlaylist :one
+INSERT INTO playlist_tracks (playlist_id, track_id, position)
+SELECT $1::uuid,
+       t.id,
+       COALESCE(
+           (SELECT MAX(pt.position) + 1
+            FROM playlist_tracks pt
+            WHERE pt.playlist_id = $1::uuid),
+           0
+       )
+FROM tracks t
+WHERE t.id = $2::uuid
+  AND t.user_id = $3::uuid
+RETURNING track_id::text AS track_id, position
+`
+
+type AddTrackToPlaylistParams struct {
+	PlaylistID pgtype.UUID
+	TrackID    pgtype.UUID
+	UserID     pgtype.UUID
+}
+
+type AddTrackToPlaylistRow struct {
+	TrackID  string
+	Position int32
+}
+
+// Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur :
+// une piste inconnue ou appartenant à un tiers ne produit aucune ligne -> le
+// repo renvoie NotFound. Une piste déjà présente viole la PK -> 23505 -> 409.
+func (q *Queries) AddTrackToPlaylist(ctx context.Context, arg AddTrackToPlaylistParams) (AddTrackToPlaylistRow, error) {
+	row := q.db.QueryRow(ctx, addTrackToPlaylist, arg.PlaylistID, arg.TrackID, arg.UserID)
+	var i AddTrackToPlaylistRow
+	err := row.Scan(&i.TrackID, &i.Position)
+	return i, err
+}
+
+const countPlaylistTracks = `-- name: CountPlaylistTracks :one
+SELECT COUNT(*) AS total
+FROM playlist_tracks
+WHERE playlist_id = $1::uuid
+`
+
+func (q *Queries) CountPlaylistTracks(ctx context.Context, playlistID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlaylistTracks, playlistID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createPlaylist = `-- name: CreatePlaylist :one
 INSERT INTO playlists (user_id, name, description)
 VALUES (
@@ -211,6 +261,125 @@ func (q *Queries) ListPlaylistsByUser(ctx context.Context, userID pgtype.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTracksByUser = `-- name: ListTracksByUser :many
+SELECT id::text AS id, title, artist, duration_s
+FROM tracks
+WHERE user_id = $1::uuid
+ORDER BY created_at DESC
+`
+
+type ListTracksByUserRow struct {
+	ID        string
+	Title     string
+	Artist    pgtype.Text
+	DurationS pgtype.Int4
+}
+
+// Bibliothèque de pistes du demandeur : source du sélecteur « ajouter une
+// piste » côté mobile. Les plus récentes d'abord.
+func (q *Queries) ListTracksByUser(ctx context.Context, userID pgtype.UUID) ([]ListTracksByUserRow, error) {
+	rows, err := q.db.Query(ctx, listTracksByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTracksByUserRow
+	for rows.Next() {
+		var i ListTracksByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Artist,
+			&i.DurationS,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeTrackFromPlaylist = `-- name: RemoveTrackFromPlaylist :one
+DELETE FROM playlist_tracks
+WHERE playlist_id = $1::uuid
+  AND track_id = $2::uuid
+RETURNING track_id::text AS track_id
+`
+
+type RemoveTrackFromPlaylistParams struct {
+	PlaylistID pgtype.UUID
+	TrackID    pgtype.UUID
+}
+
+// Retrait d'une piste. 0 ligne -> NotFound (piste absente de la playlist).
+func (q *Queries) RemoveTrackFromPlaylist(ctx context.Context, arg RemoveTrackFromPlaylistParams) (string, error) {
+	row := q.db.QueryRow(ctx, removeTrackFromPlaylist, arg.PlaylistID, arg.TrackID)
+	var track_id string
+	err := row.Scan(&track_id)
+	return track_id, err
+}
+
+const reorderPlaylistTracks = `-- name: ReorderPlaylistTracks :execrows
+UPDATE playlist_tracks pt
+SET position = ord.pos
+FROM (
+    SELECT u.id AS track_id, (u.idx - 1)::int AS pos
+    FROM unnest($2::uuid[]) WITH ORDINALITY AS u(id, idx)
+) ord
+WHERE pt.playlist_id = $1::uuid
+  AND pt.track_id = ord.track_id
+`
+
+type ReorderPlaylistTracksParams struct {
+	PlaylistID pgtype.UUID
+	TrackIds   []pgtype.UUID
+}
+
+// Réécriture complète de l'ordre : la position de chaque piste vient de son rang
+// dans le tableau fourni (WITH ORDINALITY). Le nombre de lignes touchées est
+// comparé à l'effectif de la playlist par le repo -> un id étranger à la
+// playlist fait échouer l'opération.
+func (q *Queries) ReorderPlaylistTracks(ctx context.Context, arg ReorderPlaylistTracksParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reorderPlaylistTracks, arg.PlaylistID, arg.TrackIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resequencePlaylistTracks = `-- name: ResequencePlaylistTracks :exec
+UPDATE playlist_tracks pt
+SET position = ranked.rn - 1
+FROM (
+    SELECT track_id, ROW_NUMBER() OVER (ORDER BY position) AS rn
+    FROM playlist_tracks
+    WHERE playlist_id = $1::uuid
+) ranked
+WHERE pt.playlist_id = $1::uuid
+  AND pt.track_id = ranked.track_id
+  AND pt.position <> ranked.rn - 1
+`
+
+// Recompacte les positions en 0..n-1 après un retrait, pour qu'aucun trou ne
+// subsiste (le réordonnancement suivant repartirait sur des index faussés).
+func (q *Queries) ResequencePlaylistTracks(ctx context.Context, playlistID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, resequencePlaylistTracks, playlistID)
+	return err
+}
+
+const touchPlaylist = `-- name: TouchPlaylist :exec
+UPDATE playlists SET updated_at = NOW() WHERE id = $1::uuid
+`
+
+// Met à jour updated_at de la playlist après une mutation de ses pistes.
+func (q *Queries) TouchPlaylist(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchPlaylist, id)
+	return err
 }
 
 const updatePlaylist = `-- name: UpdatePlaylist :one

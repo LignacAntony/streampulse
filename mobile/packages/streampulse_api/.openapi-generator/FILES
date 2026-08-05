@@ -18,6 +18,7 @@ lib/src/auth/basic_auth.dart
 lib/src/auth/bearer_auth.dart
 lib/src/auth/oauth.dart
 lib/src/deserialize.dart
+lib/src/model/add_playlist_track_request.dart
 lib/src/model/admin_stream_list_response.dart
 lib/src/model/admin_stream_response.dart
 lib/src/model/admin_user_list_response.dart
@@ -41,6 +42,7 @@ lib/src/model/playlist_track_response.dart
 lib/src/model/profile_response.dart
 lib/src/model/refresh_request.dart
 lib/src/model/register_request.dart
+lib/src/model/reorder_playlist_tracks_request.dart
 lib/src/model/reset_password_request.dart
 lib/src/model/review_request_input.dart
 lib/src/model/set_user_active_request.dart
@@ -48,6 +50,7 @@ lib/src/model/stream_response.dart
 lib/src/model/stream_stats_response.dart
 lib/src/model/stream_summary_response.dart
 lib/src/model/token_pair_response.dart
+lib/src/model/track_response.dart
 lib/src/model/update_playlist_request.dart
 lib/src/model/update_profile_request.dart
 lib/src/model/user_response.dart
