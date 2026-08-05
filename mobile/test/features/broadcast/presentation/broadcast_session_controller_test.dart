@@ -53,6 +53,10 @@ class _FakeRepository implements BroadcastRepository {
   }) async => _stream('new');
 
   @override
+  Future<BroadcastStream> rotateStreamKey(String id) =>
+      throw UnimplementedError();
+
+  @override
   Future<void> deleteStream(String id) async {}
 
   @override

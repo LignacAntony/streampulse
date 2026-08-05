@@ -78,6 +78,16 @@ class _FakeBroadcastRepository implements BroadcastRepository {
   }
 
   @override
+  Future<BroadcastStream> rotateStreamKey(String id) async {
+    rotatedIds.add(id);
+    if (rotateError != null) throw rotateError!;
+    return _stream(
+      id,
+      sourceUrl: 'http://localhost:8080/api/streams/ingest/cle-neuve-$id',
+    );
+  }
+
+  @override
   Future<void> deleteStream(String id) async {
     deletedIds.add(id);
   }
@@ -88,6 +98,10 @@ class _FakeBroadcastRepository implements BroadcastRepository {
 
   final List<String> deletedIds = [];
   final List<String> stoppedIds = [];
+  final List<String> rotatedIds = [];
+
+  /// Si non nul, `rotateStreamKey` échoue avec cette exception.
+  Object? rotateError;
   int listeners = 4;
   int peak = 9;
 }
@@ -549,6 +563,94 @@ void main() {
       // exposition inutile d'un secret.
       expect(find.byKey(const Key('dashboard_ingest_url_a')), findsNothing);
       expect(find.byKey(const Key('dashboard_ingest_url_b')), findsOneWidget);
+    });
+
+    testWidgets(
+      'régénérer la clé avertit puis remplace l\'URL d\'ingest',
+      (tester) async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        await tester.pumpWidget(_harness(repository));
+        await _settle(tester);
+
+        await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('dashboard_rotate_key_item_a')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Régénérer la clé de diffusion ?'), findsOneWidget);
+        // L'avertissement sur l'encodeur externe est le cœur de la
+        // confirmation : sans lui, le diffuseur découvre la coupure en direct.
+        expect(find.textContaining('reconfigurez-le'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('dashboard_confirm_rotate_key_button')),
+        );
+        await _settle(tester);
+
+        expect(repository.rotatedIds, ['a']);
+        // La tuile porte bien la clé neuve : révélée, l'URL le montre.
+        await tester.tap(find.byKey(const Key('dashboard_reveal_key_a')));
+        await _settle(tester);
+        expect(find.textContaining('cle-neuve-a'), findsOneWidget);
+
+        toastification.dismissAll(delayForAnimation: false);
+        await tester.pump(const Duration(milliseconds: 700));
+      },
+    );
+
+    testWidgets('annuler la confirmation ne régénère rien', (tester) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('dashboard_rotate_key_item_a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annuler'));
+      await _settle(tester);
+
+      expect(repository.rotatedIds, isEmpty);
+    });
+
+    // Le backend renvoie 409 sur un direct : plutôt que de laisser
+    // l'utilisateur le découvrir ainsi, l'entrée est visible mais inerte.
+    testWidgets('l\'entrée est neutralisée sur un flux en direct', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'live', startedAt: DateTime.now())],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
+      await tester.pumpAndSettle();
+
+      final item = tester.widget<PopupMenuItem<String>>(
+        find.byKey(const Key('dashboard_rotate_key_item_a')),
+      );
+      expect(item.enabled, isFalse);
+      expect(find.textContaining('arrêtez la diffusion'), findsOneWidget);
+    });
+
+    // Sur un flux terminé la clé n'est plus utilisable et l'URL n'est même pas
+    // affichée : proposer la rotation n'aurait aucun sens.
+    testWidgets('l\'entrée est absente sur un flux terminé', (tester) async {
+      final repository = _FakeBroadcastRepository(
+        streams: [_stream('a', status: 'ended')],
+      );
+      await tester.pumpWidget(_harness(repository));
+      await _settle(tester);
+
+      await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('dashboard_rotate_key_item_a')),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('dashboard_delete_item_a')), findsOneWidget);
     });
 
     testWidgets('supprimer un flux le retire après confirmation', (

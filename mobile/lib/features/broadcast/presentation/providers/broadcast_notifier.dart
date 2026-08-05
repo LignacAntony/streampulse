@@ -287,6 +287,27 @@ class BroadcastNotifier extends ChangeNotifier {
     }
   }
 
+  /// Remet une clé d'ingest neuve et invalide l'ancienne (US-06-04). Même
+  /// contrat de retour que [start].
+  ///
+  /// Pas de `_syncSubscription()` ici, contrairement aux autres mutations : la
+  /// rotation ne change pas le statut du flux, donc ni le direct suivi en SSE
+  /// ni la remontée d'audience ne bougent. Seule la tuile est réécrite.
+  Future<bool> rotateKey(String id) async {
+    if (_mutatingId != null) return false;
+    _mutatingId = id;
+    _safeNotify();
+    try {
+      final updated = await _repository.rotateStreamKey(id);
+      _replace(updated);
+      _clearError();
+      return true;
+    } finally {
+      _mutatingId = null;
+      _safeNotify();
+    }
+  }
+
   /// Archive le flux et le retire de la liste. Même contrat de retour que
   /// [start]. Sur un flux en direct, le backend termine la diffusion au
   /// passage — l'écran doit l'avoir annoncé avant d'appeler ceci.

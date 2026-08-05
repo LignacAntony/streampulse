@@ -267,6 +267,62 @@ class _DashboardBodyState extends State<_DashboardBody>
     }
   }
 
+  /// Régénère la clé d'ingest (US-06-04). L'ancienne cesse d'être acceptée
+  /// immédiatement : la confirmation le dit, et rappelle que tout encodeur
+  /// externe déjà configuré devra recevoir la nouvelle URL — sans quoi le
+  /// diffuseur découvrirait la coupure à son prochain direct.
+  Future<void> _onRotateKey(BroadcastStream stream) async {
+    final notifier = context.read<BroadcastNotifier>();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Régénérer la clé de diffusion ?'),
+        content: const Text(
+          'L\'ancienne clé cessera immédiatement de fonctionner. Si vous '
+          'diffusez depuis un encodeur externe (OBS, ffmpeg, Mixxx), '
+          'reconfigurez-le avec la nouvelle URL avant votre prochain direct.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            key: const Key('dashboard_confirm_rotate_key_button'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Régénérer'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    try {
+      final rotated = await notifier.rotateKey(stream.id);
+      if (!mounted) return;
+      if (rotated) showAuthSuccessToast(context, 'Nouvelle clé générée');
+    } on ConflictException {
+      // Le flux est passé en direct entre l'ouverture du menu et la
+      // confirmation : recharger réaligne l'écran sur la vérité serveur.
+      if (!mounted) return;
+      showAuthErrorToast(
+        context,
+        'Arrêtez la diffusion avant de régénérer la clé',
+      );
+      await notifier.refresh();
+    } on NetworkException {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Pas de connexion réseau');
+    } on ServerException catch (e) {
+      if (!mounted) return;
+      showAuthErrorToast(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      showAuthErrorToast(context, 'Échec de la régénération de la clé');
+    }
+  }
+
   /// Supprime un flux. Le backend fait une suppression douce (`archived_at`) et
   /// **termine la diffusion au passage** si le flux est en direct : la
   /// confirmation le dit explicitement plutôt que de laisser l'utilisateur
@@ -447,6 +503,7 @@ class _DashboardBodyState extends State<_DashboardBody>
           audioSupported: notifier.audioSupported,
           onStart: () => _onStart(stream),
           onStop: () => _onStop(stream),
+          onRotateKey: () => _onRotateKey(stream),
           onDelete: () => _onDelete(stream),
         );
       },
@@ -466,6 +523,7 @@ class _StreamCard extends StatelessWidget {
     required this.audioSupported,
     required this.onStart,
     required this.onStop,
+    required this.onRotateKey,
     required this.onDelete,
   });
 
@@ -485,6 +543,7 @@ class _StreamCard extends StatelessWidget {
   final bool audioSupported;
   final VoidCallback onStart;
   final VoidCallback onStop;
+  final VoidCallback onRotateKey;
   final VoidCallback onDelete;
 
   /// Vrai dès qu'une mutation touche cette carte ou une autre : dans les deux
@@ -514,9 +573,36 @@ class _StreamCard extends StatelessWidget {
                   enabled: !_busy,
                   tooltip: 'Actions',
                   onSelected: (value) {
+                    if (value == 'rotate-key') onRotateKey();
                     if (value == 'delete') onDelete();
                   },
                   itemBuilder: (context) => [
+                    // Rien à régénérer sur un flux terminé : sa clé n'est plus
+                    // utilisable (le backend n'autorise que idle -> live), et
+                    // l'URL d'ingest n'est même pas affichée. Sur un direct
+                    // l'entrée reste visible mais inerte : la règle se découvre
+                    // dans le menu plutôt que par un 409.
+                    if (!stream.isEnded)
+                      PopupMenuItem(
+                        key: Key('dashboard_rotate_key_item_${stream.id}'),
+                        value: 'rotate-key',
+                        enabled: !stream.isLive,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.key_outlined),
+                            const SizedBox(width: 12),
+                            // Expanded : le libellé du cas « en direct » est
+                            // plus long que la largeur naturelle du menu.
+                            Expanded(
+                              child: Text(
+                                stream.isLive
+                                    ? 'Régénérer la clé\n(arrêtez la diffusion)'
+                                    : 'Régénérer la clé',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     PopupMenuItem(
                       key: Key('dashboard_delete_item_${stream.id}'),
                       value: 'delete',
