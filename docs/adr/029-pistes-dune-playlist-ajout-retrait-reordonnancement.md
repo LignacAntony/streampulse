@@ -49,6 +49,19 @@ transaction sont libres, l'état final est garanti unique.
 Conséquence pratique : les mutations de pistes passent **toutes** par `inTx` (repository), et une
 violation remonte au `tx.Commit`, pas à l'`UPDATE` — c'est là qu'elle est traduite en 409.
 
+**Deux pièges rencontrés en QA, à connaître avant de toucher à `playlist_tracks` :**
+
+1. Une contrainte différée **ne peut pas servir d'arbitre à `ON CONFLICT`** (SQLSTATE 55000).
+   Un `ON CONFLICT DO NOTHING` **sans colonnes** oblige Postgres à considérer toutes les
+   contraintes uniques de la table comme arbitres possibles : il échoue donc dès que l'une d'elles
+   est différée. Tout `INSERT … ON CONFLICT` sur `playlist_tracks` doit **nommer explicitement**
+   `(playlist_id, track_id)`. Le seeder a été corrigé en ce sens.
+2. Le seed ne repeuple la playlist de démo **que si elle est vide**. Ré-insérer les positions
+   0..2 à chaque démarrage écraserait l'ordre choisi par l'utilisateur, et — une piste ayant pu
+   être retirée entre-temps — réattribuerait une position déjà prise : violation au COMMIT et API
+   en crash loop au boot. La contrainte a fait son travail en révélant un seed qui réécrivait des
+   données utilisateur.
+
 ### 3. L'ordre fourni doit couvrir **exactement** la playlist → sinon **409**
 
 Le repository compte les pistes de la playlist, compare à la taille de la liste reçue, exécute

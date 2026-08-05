@@ -271,6 +271,7 @@ l'utilisateur : actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle)
 - Tables `playlists` / `playlist_tracks` préexistantes (migration `000004`) ; contrainte `UNIQUE (user_id, name)` (`000006`).
 - Isolation : `GetPlaylist` compare `user_id` ; `ListTracks` réutilise `GetPlaylist` ; `Update`/`Delete` filtrent sur `(id, user_id)` en SQL (0 ligne → 404).
 - Ordre des pistes (US-05-03, [ADR 029](docs/adr/029-pistes-dune-playlist-ajout-retrait-reordonnancement.md)) : migration `000019` pose `UNIQUE (playlist_id, position)` **DEFERRABLE INITIALLY DEFERRED** — un réordonnancement réécrit toutes les positions dans une transaction, ses états intermédiaires contiennent forcément des doublons ; la contrainte n'est vérifiée qu'au COMMIT. Toutes les mutations de pistes passent donc par `inTx` (repository).
+- ⚠️ Sur `playlist_tracks`, un `INSERT … ON CONFLICT` doit **nommer ses colonnes** (`ON CONFLICT (playlist_id, track_id)`) : une contrainte différée ne peut pas servir d'arbitre, et un `ON CONFLICT DO NOTHING` nu les considère toutes → SQLSTATE 55000 au démarrage (ADR 029 §2).
 
 ### Routes admin existantes
 

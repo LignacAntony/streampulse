@@ -55,10 +55,13 @@ class _TrackPickerSheetState extends State<TrackPickerSheet> {
             ),
             const SizedBox(height: 12),
             // Hauteur bornée : la feuille ne doit pas dépasser la moitié de
-            // l'écran même avec une longue bibliothèque.
+            // l'écran même avec une longue bibliothèque. Les états spinner /
+            // vide / erreur se dimensionnent à leur contenu (cf. _PickerMessage)
+            // pour que la feuille reste courte quand il n'y a rien à lister.
             ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.5,
+                minWidth: double.infinity,
               ),
               child: FutureBuilder<List<Track>>(
                 future: _future,
@@ -66,7 +69,12 @@ class _TrackPickerSheetState extends State<TrackPickerSheet> {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Padding(
                       padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: CircularProgressIndicator()),
+                      // heightFactor: 1 → la hauteur suit le contenu, la largeur
+                      // reste pleine pour centrer horizontalement.
+                      child: Align(
+                        heightFactor: 1,
+                        child: CircularProgressIndicator(),
+                      ),
                     );
                   }
                   if (snapshot.hasError) {
@@ -125,9 +133,14 @@ class _PickerMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // Pas de `Center` : dans la ConstrainedBox de la feuille il s'étirerait à la
+    // hauteur maximale et laisserait une demi-page vide sous le message.
+    // `Align(heightFactor: 1)` garde la largeur pleine (texte centré) sans
+    // prendre la hauteur disponible.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Center(
+      child: Align(
+        heightFactor: 1,
         child: Text(
           message,
           textAlign: TextAlign.center,
