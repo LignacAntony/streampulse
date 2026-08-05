@@ -54,6 +54,9 @@ type stubService struct {
 	listFavErr   error
 	listMineRet  []Stream
 	listMineErr  error
+
+	rotateRet Stream
+	rotateErr error
 }
 
 func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Stream, error) {
@@ -97,6 +100,12 @@ func (s *stubService) StopStream(_ context.Context, id, requesterID string) (Str
 	s.gotID = id
 	s.gotRequester = requesterID
 	return s.stopRet, s.stopErr
+}
+
+func (s *stubService) RotateStreamKey(_ context.Context, id, requesterID string) (Stream, error) {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.rotateRet, s.rotateErr
 }
 
 func (s *stubService) AddFavorite(_ context.Context, streamID, requesterID string) error {
@@ -519,6 +528,65 @@ func TestHandler_Stop_Conflict(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// La nouvelle clé n'existe nulle part ailleurs : la réponse doit la porter,
+// ainsi que l'URL d'ingest reconstruite, sinon le diffuseur devrait faire un GET
+// de plus juste après l'avoir demandée.
+func TestHandler_RotateKey_OK(t *testing.T) {
+	stub := &stubService{rotateRet: Stream{ID: "s1", UserID: testUserID, Status: StatusIdle, StreamKey: "NOUVELLE"}}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPost, "s1", "", http.HandlerFunc(h.RotateKey), true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"stream_key":"NOUVELLE"`) {
+		t.Errorf("la nouvelle clé doit être rendue: %s", rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), testIngestURL+"/api/streams/ingest/NOUVELLE") {
+		t.Errorf("l'URL d'ingest doit refléter la nouvelle clé: %s", rec.Body)
+	}
+	if stub.gotRequester != testUserID {
+		t.Errorf("requester = %q, want %q", stub.gotRequester, testUserID)
+	}
+}
+
+func TestHandler_RotateKey_Live_Conflict(t *testing.T) {
+	stub := &stubService{rotateErr: apperror.Conflict("stream is live")}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPost, "s1", "", http.HandlerFunc(h.RotateKey), true)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_RotateKey_NotFound(t *testing.T) {
+	stub := &stubService{rotateErr: apperror.NotFound("stream not found")}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPost, "s1", "", http.HandlerFunc(h.RotateKey), true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_RotateKey_RequiresToken(t *testing.T) {
+	stub := &stubService{}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+	rec := doID(t, http.MethodPost, "s1", "", http.HandlerFunc(h.RotateKey), false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+	if stub.gotID != "" {
+		t.Error("le service ne doit pas être appelé sans identité")
 	}
 }
 

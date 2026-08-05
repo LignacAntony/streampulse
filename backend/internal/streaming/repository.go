@@ -181,6 +181,32 @@ func (r *pgRepository) StopStream(ctx context.Context, id, userID string) (Strea
 		row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
+// RotateStreamKey remplace le secret d'ingest par newKey. errNoRowAffected si le
+// flux est absent/archivé/pas au demandeur, ou s'il est en direct (cf. la query).
+//
+// Une collision sur uq_streams_stream_key n'est pas traitée à part, comme dans
+// Create : deux clés de 32 octets tirées d'un CSPRNG ne se rencontrent pas, et
+// si cela arrivait ce serait un incident interne, pas une erreur utilisateur.
+func (r *pgRepository) RotateStreamKey(ctx context.Context, id, userID, newKey string) (Stream, error) {
+	uid, ok := parseUUID(id)
+	if !ok {
+		return Stream{}, errNoRowAffected
+	}
+	row, err := r.q.RotateStreamKey(ctx, streamingdb.RotateStreamKeyParams{
+		StreamKey: newKey,
+		ID:        uid,
+		UserID:    uuidParam(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Stream{}, errNoRowAffected
+		}
+		return Stream{}, fmt.Errorf("repo: rotate stream key: %w", err)
+	}
+	return fullStream(row.ID, row.UserID, row.Title, row.Description, row.Category,
+		row.Status, row.IsPublic, row.StreamKey, row.StartedAt, row.EndedAt, row.CreatedAt, row.UpdatedAt), nil
+}
+
 // EndOrphanLiveStreams termine les flux restés 'live' en base sans session active
 // (réconciliation au démarrage après un redémarrage du process).
 func (r *pgRepository) EndOrphanLiveStreams(ctx context.Context) (int64, error) {

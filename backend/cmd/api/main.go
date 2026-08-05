@@ -41,6 +41,11 @@ var _ admin.LiveStopper = (*streaming.Service)(nil)
 // consomme pour interrompre un flux lors d'une action de modération (STR-192).
 var _ admin.StreamModerator = (*streaming.Service)(nil)
 
+// var _ vérifie à la compilation que le repository admin, seul à savoir écrire
+// dans audit_logs, satisfait streaming.AuditRecorder — l'interface étroite que
+// le domaine streaming consomme pour journaliser une rotation de clé (STR-228).
+var _ streaming.AuditRecorder = (admin.Repository)(nil)
+
 func main() {
 	if err := run(); err != nil {
 		// Avant config.Load le logger applicatif n'existe pas encore : le
@@ -163,6 +168,12 @@ func run() error {
 	adminSvc := admin.NewService(adminRepo, streamingSvc, streamingSvc)
 	adminHandler := admin.NewHandler(adminSvc)
 
+	// `audit_logs` appartient au domaine admin ; le streaming n'en connaît que
+	// l'interface étroite AuditRecorder, satisfaite ici par le repository admin
+	// (STR-228). Injecté après coup plutôt qu'au constructeur : adminRepo dépend
+	// lui-même de streamingSvc via NewService juste au-dessus.
+	streamingSvc.SetAuditRecorder(adminRepo)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -228,6 +239,18 @@ func run() error {
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Start))))
 	mux.Handle("PATCH /api/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.Stop))))
+	// Rotation du secret d'ingest (STR-228), propriétaire diffuseur uniquement.
+	//
+	// Le chemin porte un segment de plus que `{id}/rotate-key` proposé au
+	// ticket, pour la raison qui a imposé PUT aux favoris plus bas :
+	// POST /api/streams/{id}/rotate-key et POST /api/streams/ingest/{stream_key}
+	// ont quatre segments chacun et /api/streams/ingest/rotate-key matcherait les
+	// deux — le ServeMux refuse alors d'enregistrer les patterns. Départager par
+	// la longueur du chemin plutôt que par la méthode garde POST, qui est le bon
+	// verbe ici (chaque appel frappe une clé neuve, rien d'idempotent), et ne se
+	// recasse pas si un jour une autre méthode est montée sur `ingest/`.
+	mux.Handle("POST /api/streams/{id}/key/rotate", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("broadcaster", http.HandlerFunc(streamingHandler.RotateKey))))
 	// Favoris (US-04-05) : ajout/retrait d'un flux et liste « mes favoris ».
 	// Action de niveau utilisateur : RequireAuth seul (pas de rôle diffuseur).
 	// Ajout en PUT (idempotent) et non POST : un POST /api/streams/{id}/favorite

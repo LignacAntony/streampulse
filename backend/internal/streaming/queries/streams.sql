@@ -84,6 +84,22 @@ WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
 
+-- name: RotateStreamKey :one
+-- Remplace le secret d'ingest d'un flux (propriétaire, non archivé), invalidant
+-- l'ancien du même coup : la colonne est unique, il n'y a qu'une clé valide par
+-- flux à tout instant.
+--
+-- Le statut 'live' est exclu ici, en SQL, et pas seulement gardé dans le
+-- service : LiveSessions indexe la session par la clé au démarrage du direct.
+-- Une rotation pendant la diffusion désynchroniserait cet index — l'ancienne
+-- clé continuerait de router l'ingest, la nouvelle renverrait 404.
+UPDATE streams
+SET stream_key = sqlc.arg(stream_key), updated_at = NOW()
+WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid
+  AND status <> 'live' AND archived_at IS NULL
+RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
+          status, is_public, stream_key, started_at, ended_at, created_at, updated_at;
+
 -- name: EndOrphanLiveStreams :execrows
 -- Réconciliation au démarrage : les sessions LiveSessions sont en mémoire et
 -- reparties vides après un redémarrage ; on termine les flux restés 'live' en

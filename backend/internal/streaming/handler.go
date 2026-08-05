@@ -59,6 +59,7 @@ type StreamService interface {
 	RemoveFavorite(ctx context.Context, streamID, requesterID string) error
 	ListFavorites(ctx context.Context, requesterID string) ([]Stream, error)
 	ListMyStreams(ctx context.Context, requesterID string) ([]Stream, error)
+	RotateStreamKey(ctx context.Context, id, requesterID string) (Stream, error)
 }
 
 // StreamSessions expose au handler les opérations sur les sessions live :
@@ -444,6 +445,31 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode stop")
+	}
+}
+
+// RotateKey gère POST /api/streams/{id}/key/rotate : remet une clé d'ingest
+// neuve au propriétaire et invalide l'ancienne (STR-228). 404 si le flux est
+// absent ou appartient à un tiers ; 409 s'il est en direct.
+//
+// La réponse porte les secrets (`stream_key`, `stream_source_url`) comme
+// start/stop : la nouvelle clé n'existe nulle part ailleurs, ne pas la rendre
+// obligerait le client à un GET de plus juste après l'avoir demandée.
+func (h *Handler) RotateKey(w http.ResponseWriter, r *http.Request) {
+	requesterID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	stream, err := h.svc.RotateStreamKey(r.Context(), r.PathValue("id"), requesterID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, true)); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode rotate key")
 	}
 }
 
