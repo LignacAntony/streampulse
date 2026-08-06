@@ -1120,14 +1120,33 @@ paths:
       operationId: ingestStream
       summary: Push a live audio stream (broadcaster ingest).
       description: >-
-        Continuous AAC audio ingest for a live stream, authenticated by the
+        Continuous audio ingest for a live stream, authenticated by the
         `stream_key` in the path (no JWT). The request body is a continuous audio
         stream segmented into HLS by the backend (cf. ADR 015). The stream must be
         live (started) for the push to be accepted.
+
+
+        Any audio media type is accepted. `audio/aac` (raw ADTS) — and an absent
+        `Content-Type`, which is assumed to be the same — is muxed as-is with no
+        re-encoding. Every other format (MP3, OGG, WAV, FLAC, …) is transcoded to
+        AAC on the fly by an ffmpeg stage placed in front of the segmenter, adding
+        under 2 seconds of latency (cf. ADR 030). Listeners always receive AAC.
       requestBody:
         required: true
         content:
           audio/aac:
+            schema:
+              type: string
+              format: binary
+          audio/mpeg:
+            schema:
+              type: string
+              format: binary
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
+          audio/wav:
             schema:
               type: string
               format: binary
@@ -1148,9 +1167,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "415":
           description: >-
-            Content-Type present but not audio/* (a non-audio push would spin the
-            HLS demuxer without producing segments). An absent Content-Type is
-            accepted.
+            Either the Content-Type is present but not audio/* (a non-audio push
+            would spin the HLS demuxer without producing segments), or the body
+            could not be decoded as the announced format — bytes went in and no
+            AAC came out. An absent Content-Type is accepted.
           content:
             application/json:
               schema:

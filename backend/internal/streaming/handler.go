@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
 
@@ -722,18 +721,39 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	// Validation légère du Content-Type (après résolution de la clé pour préserver
-	// le 404 sur clé inconnue, avant io.Copy pour qu'aucun octet n'atteigne ffmpeg).
-	// Si présent, il doit être audio/* : coupe tôt un push manifestement non-audio
-	// (ex. curl --data-binary → application/x-www-form-urlencoded) qui ferait tourner
-	// ffmpeg dans le vide (le demuxer ADTS cherche des sync words sans jamais mourir).
-	// Un Content-Type absent reste accepté (clients bruts, cf. ADR 015).
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		if mt, _, perr := mime.ParseMediaType(ct); perr != nil || !strings.HasPrefix(mt, "audio/") {
-			httpjson.WriteError(w, r, httpjson.StatusError(
-				http.StatusUnsupportedMediaType, "unsupported_media_type", "content-type must be audio/aac"))
+	// Résolution du format d'entrée depuis le Content-Type (après résolution de la
+	// clé pour préserver le 404 sur clé inconnue, avant io.Copy pour qu'aucun octet
+	// n'atteigne ffmpeg). Seul audio/* est accepté : ça coupe tôt un push
+	// manifestement non-audio (ex. curl --data-binary → application/x-www-form-urlencoded)
+	// qui ferait tourner ffmpeg dans le vide (le demuxer ADTS cherche des sync words
+	// sans jamais mourir). Un Content-Type absent reste accepté (clients bruts, ADR 015).
+	format, ok := resolveIngestFormat(r.Header.Get("Content-Type"))
+	if !ok {
+		httpjson.WriteError(w, r, httpjson.StatusError(
+			http.StatusUnsupportedMediaType, "unsupported_media_type", "content-type must be audio/*"))
+		return
+	}
+
+	// Formats non-AAC (MP3, OGG, WAV, …) : un ffmpeg de transcodage est intercalé
+	// devant le segmenteur et convertit en AAC à la volée (STR-204, ADR 030). Un
+	// push AAC garde le chemin direct — aucun process ni ré-encodage en plus.
+	sink := writer
+	var trans *transcoder
+	if !format.passthrough {
+		trans, err = newTranscoder(writer, format.demuxer)
+		if err != nil {
+			zerolog.Ctx(r.Context()).Error().Err(err).
+				Str("media_type", format.mediaType).Msg("streaming: transcodeur indisponible")
+			httpjson.WriteError(w, r, apperror.Internal("transcoder unavailable", err))
 			return
 		}
+		// Filet de sécurité : close est idempotent, l'appel explicite plus bas
+		// reste celui qui décide du status de la réponse.
+		defer func() { _ = trans.close() }()
+		sink = trans
+		zerolog.Ctx(r.Context()).Info().
+			Str("media_type", format.mediaType).Str("demuxer", format.demuxer).
+			Msg("streaming: transcodage de l'ingest vers AAC")
 	}
 
 	// Push long : la deadline de lecture est glissante (renouvelée à chaque bloc
@@ -756,12 +776,31 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		controller: rc,
 		timeout:    h.ingestReconnectGrace,
 	}
-	if _, err := io.Copy(writer, reader); err != nil {
+	pushed, copyErr := io.Copy(sink, reader)
+
+	// Drainer le transcodeur AVANT de statuer : c'est lui qui explique un copyErr
+	// (ffmpeg mort d'une entrée indécodable → EPIPE côté io.Copy).
+	if trans != nil {
+		if cerr := trans.close(); cerr != nil {
+			zerolog.Ctx(r.Context()).Error().Err(cerr).
+				Str("media_type", format.mediaType).Msg("streaming: transcodage en échec")
+		}
+		if pushed > 0 && trans.produced() == 0 {
+			// Des octets sont entrés, aucun AAC n'en est sorti : le corps ne
+			// correspond pas au format annoncé. 415 plutôt qu'un 500 opaque.
+			httpjson.WriteError(w, r, httpjson.StatusError(
+				http.StatusUnsupportedMediaType, "unsupported_media_type",
+				"audio payload could not be decoded"))
+			return
+		}
+	}
+
+	if copyErr != nil {
 		// Push interrompu par une erreur : refléter l'échec plutôt qu'un 204
 		// trompeur (un broadcast avorté ≠ déconnexion propre). Ne jamais logger le
 		// stream_key (secret). Si le client est déjà parti, l'écriture est un no-op.
-		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: ingest interrompu")
-		httpjson.WriteError(w, r, apperror.Internal("ingest interrupted", err))
+		zerolog.Ctx(r.Context()).Error().Err(copyErr).Msg("streaming: ingest interrompu")
+		httpjson.WriteError(w, r, apperror.Internal("ingest interrupted", copyErr))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

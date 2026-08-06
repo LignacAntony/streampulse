@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -712,6 +713,95 @@ func TestHandler_Ingest_AllowsAbsentContentType(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("want 204 (content-type absent accepté), got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// US-09-05 : un diffuseur qui pousse du MP3 doit être accepté, et le segmenteur
+// ne doit recevoir que de l'AAC (il tourne en `-c:a copy`).
+func TestHandler_Ingest_TranscodesMP3ToAAC(t *testing.T) {
+	requireFFmpeg(t)
+
+	var received syncWriter
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func() (*hlsSegmenter, error) {
+		seg := fakeSegmenter(t)
+		seg.stdin = nopWriteCloser{&received}
+		return seg, nil
+	}
+	ls.Start("sid-mp3", "KEYMP3")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	mp3 := generateTestAudio(t, "mp3", "libmp3lame", 3)
+	req := httptest.NewRequest(http.MethodPost, "/api/streams/ingest/KEYMP3", bytes.NewReader(mp3))
+	req.SetPathValue("stream_key", "KEYMP3")
+	req.Header.Set("Content-Type", "audio/mpeg")
+	rec := httptest.NewRecorder()
+
+	h.Ingest(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204 pour un push MP3, got %d: %s", rec.Code, rec.Body)
+	}
+	out := received.Bytes()
+	if len(out) == 0 {
+		t.Fatal("le segmenteur n'a reçu aucun octet")
+	}
+	if !isADTS(out) {
+		t.Fatalf("le segmenteur doit recevoir de l'ADTS AAC, premiers octets %x", out[:min(4, len(out))])
+	}
+}
+
+// Un corps qui ne correspond pas au Content-Type annoncé produit zéro AAC : le
+// handler doit répondre 415 plutôt qu'un 500 opaque.
+func TestHandler_Ingest_RejectsUndecodablePayload(t *testing.T) {
+	requireFFmpeg(t)
+
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("sid-bad", "KEYBAD")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	body := strings.NewReader(strings.Repeat("pas de l'audio du tout", 4096))
+	req := httptest.NewRequest(http.MethodPost, "/api/streams/ingest/KEYBAD", body)
+	req.SetPathValue("stream_key", "KEYBAD")
+	req.Header.Set("Content-Type", "audio/mpeg")
+	rec := httptest.NewRecorder()
+
+	h.Ingest(rec, req)
+
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("want 415 pour un corps indécodable, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// Le chemin AAC reste inchangé : aucun transcodeur, l'audio arrive tel quel au
+// segmenteur (pas de ré-encodage, pas de latence ajoutée).
+func TestHandler_Ingest_AACIsPassedThroughUntouched(t *testing.T) {
+	var received syncWriter
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func() (*hlsSegmenter, error) {
+		seg := fakeSegmenter(t)
+		seg.stdin = nopWriteCloser{&received}
+		return seg, nil
+	}
+	ls.Start("sid-aac", "KEYAAC")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	payload := []byte("octets-opaques-cotes-diffuseur")
+	req := httptest.NewRequest(http.MethodPost, "/api/streams/ingest/KEYAAC", bytes.NewReader(payload))
+	req.SetPathValue("stream_key", "KEYAAC")
+	req.Header.Set("Content-Type", "audio/aac")
+	rec := httptest.NewRecorder()
+
+	h.Ingest(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if got := received.Bytes(); !bytes.Equal(got, payload) {
+		t.Fatalf("l'AAC doit arriver intact au segmenteur: got %q, want %q", got, payload)
 	}
 }
 
