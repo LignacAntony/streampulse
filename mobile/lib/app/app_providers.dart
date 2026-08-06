@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
+import '../core/audio/audio_playback_service.dart';
 import '../core/network/dio_client.dart';
 import '../core/storage/secure_storage.dart';
 import '../features/auth/data/datasources/auth_remote_data_source.dart';
@@ -21,6 +22,7 @@ import '../features/profile/presentation/providers/profile_controller.dart';
 import '../features/streams/data/datasources/stream_remote_data_source.dart';
 import '../features/streams/data/repositories/stream_repository_impl.dart';
 import '../features/streams/domain/repositories/stream_repository.dart';
+import '../features/streams/presentation/providers/audio_player_controller.dart';
 import '../features/streams/presentation/providers/discover_notifier.dart';
 import '../features/streams/presentation/providers/favorites_controller.dart';
 import '../features/streams/presentation/providers/stream_notifier.dart';
@@ -32,14 +34,22 @@ import '../features/streams/presentation/providers/stream_notifier.dart';
 /// dépendances via `context.read`, ce qui respecte le principe D (inversion
 /// de dépendances) : aucun concret n'est instancié en interne.
 class StreamPulseApp extends StatelessWidget {
-  const StreamPulseApp({super.key, required this.child});
+  const StreamPulseApp({
+    super.key,
+    required this.audioService,
+    required this.child,
+  });
 
+  /// Service de lecture partagé (STR-109), créé au démarrage dans `main()` puis
+  /// injecté ici : durée de vie = celle de l'application.
+  final AudioPlaybackService audioService;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        Provider<AudioPlaybackService>.value(value: audioService),
         Provider<SecureStorage>(create: (_) => SecureStorage()),
         Provider<DioClient>(
           create: (ctx) => DioClient(ctx.read<SecureStorage>()),
@@ -104,6 +114,15 @@ class StreamPulseApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<DiscoverNotifier>(
           create: (ctx) => DiscoverNotifier(ctx.read<StreamRepository>()),
+        ),
+        // Lecteur audio partagé (STR-109) : un seul contrôleur app-level pilote
+        // le service de premier plan ; le plein écran et le mini-player le lisent.
+        ChangeNotifierProvider<AudioPlayerController>(
+          create: (ctx) => AudioPlayerController(
+            service: ctx.read<AudioPlaybackService>(),
+            isManifestUnavailable:
+                ctx.read<StreamRepository>().isManifestUnavailable,
+          ),
         ),
       ],
       child: child,

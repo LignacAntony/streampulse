@@ -2,158 +2,152 @@ import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 
-/// Fake AudioPlayer just_audio : n'implémente que les membres utilisés par
-/// [AudioPlayerController] (les autres passent par [noSuchMethod], jamais
-/// appelé ici). Permet de piloter les échecs de lecture sans plateforme ni
-/// device — la sonde [StreamEndedProbe] étant injectable, tout le cœur de
-/// STR-118 (`_recover`) devient testable unitairement.
-class _FakeAudioPlayer implements AudioPlayer {
-  final _stateCtrl = StreamController<PlayerState>.broadcast();
-  final _eventCtrl = StreamController<PlaybackEvent>.broadcast();
+import '../../../../support/fake_audio_playback_service.dart';
 
-  /// Si non nul, [setAudioSource] lève cette erreur (simule une source error).
-  Object? setAudioSourceError;
-  int setAudioSourceCalls = 0;
-  bool disposed = false;
-  bool _playing = false;
+const _now = NowPlaying(streamId: 's1', title: 'Flux test', broadcaster: 'DJ');
 
-  void emitState(PlayerState state) {
-    if (!_stateCtrl.isClosed) _stateCtrl.add(state);
-  }
-
-  @override
-  Stream<PlayerState> get playerStateStream => _stateCtrl.stream;
-  @override
-  Stream<PlaybackEvent> get playbackEventStream => _eventCtrl.stream;
-  @override
-  bool get playing => _playing;
-
-  @override
-  Future<Duration?> setAudioSource(
-    AudioSource source, {
-    bool preload = true,
-    int? initialIndex,
-    Duration? initialPosition,
-  }) async {
-    setAudioSourceCalls++;
-    final err = setAudioSourceError;
-    if (err != null) throw err;
-    return null;
-  }
-
-  @override
-  Future<void> setVolume(double volume) async {}
-  @override
-  Future<void> play() async => _playing = true;
-  @override
-  Future<void> pause() async => _playing = false;
-
-  @override
-  Future<void> dispose() async {
-    disposed = true;
-    await _stateCtrl.close();
-    await _eventCtrl.close();
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+/// Amène le contrôleur à l'état `playing` (le manifeste a été servi au moins une
+/// fois → `_hasPlayed`).
+void _reachPlaying(FakeAudioPlaybackService service) {
+  service.emitState(PlayerState(true, ProcessingState.ready));
 }
 
 void main() {
-  group('AudioPlayerController._recover (STR-118)', () {
-    test('sonde vraie (fin de direct) → ended, aucun retry armé', () async {
-      final player = _FakeAudioPlayer()..setAudioSourceError = Exception('404');
-      final controller = AudioPlayerController(
-        player: player,
-        isStreamEnded: (_) async => true,
-      );
-      addTearDown(controller.dispose);
-
-      await controller.load('s1');
-      await pumpEventQueue(); // laisse _recover attendre la sonde puis poser l'état
-
-      expect(controller.status, PlaybackStatus.ended);
-      expect(controller.isEnded, isTrue);
-      // Fin de direct : on ne réarme pas de tentative → une seule source posée.
-      expect(player.setAudioSourceCalls, 1);
-    });
-
-    test(
-        'sonde vraie posée, puis état résiduel du player → ended non écrasé',
+  group('AudioPlayerController._recover (STR-118 / STR-109)', () {
+    test('lecture démarrée puis manifeste disparu → ended immédiat, notif retirée',
         () async {
-      final player = _FakeAudioPlayer()..setAudioSourceError = Exception('409');
+      final service = FakeAudioPlaybackService();
       final controller = AudioPlayerController(
-        player: player,
-        isStreamEnded: (_) async => true,
+        service: service,
+        isManifestUnavailable: (_) async => true,
       );
       addTearDown(controller.dispose);
 
-      await controller.load('s1');
+      await controller.load(_now);
+      _reachPlaying(service);
       await pumpEventQueue();
-      expect(controller.status, PlaybackStatus.ended);
+      expect(controller.status, PlaybackStatus.playing);
 
-      // ExoPlayer émet un `idle` résiduel après la source error : ne doit pas
-      // faire régresser « terminé » en « en pause » (garde dans _onPlayerState).
-      player.emitState(PlayerState(false, ProcessingState.idle));
+      // Le diffuseur arrête : le player émet une erreur, le manifeste ne répond
+      // plus. Comme la lecture avait démarré → fin de direct, sans reconnexion.
+      service.emitError(Exception('source error'));
       await pumpEventQueue();
+
       expect(controller.status, PlaybackStatus.ended);
+      expect(service.stopped, isTrue);
+      expect(service.loadCalls, 1);
     });
 
     test(
-        'sonde fausse (coupure réseau) → reconnecting, puis error après 3 tentatives',
-        () {
+        'démarrage jamais joué : manifeste 409 (pas prêt) → reconnexion, pas de faux « terminé »',
+        () async {
+      // Le manifeste répond 409 comme s'il était terminé, mais c'est la fenêtre
+      // de démarrage : `_hasPlayed` étant faux, on ne doit PAS conclure « ended ».
+      final service = FakeAudioPlaybackService()..loadError = Exception('409');
+      final controller = AudioPlayerController(
+        service: service,
+        isManifestUnavailable: (_) async => true,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load(_now);
+      await pumpEventQueue();
+
+      expect(controller.status, PlaybackStatus.reconnecting);
+      expect(controller.isEnded, isFalse);
+    });
+
+    test('jamais prêt : ended après épuisement des reconnexions', () {
       fakeAsync((async) {
-        final player = _FakeAudioPlayer()
-          ..setAudioSourceError = Exception('network');
+        final service = FakeAudioPlaybackService()..loadError = Exception('409');
         final controller = AudioPlayerController(
-          player: player,
-          isStreamEnded: (_) async => false,
+          service: service,
+          isManifestUnavailable: (_) async => true,
         );
 
-        controller.load('s1');
+        controller.load(_now);
         async.flushMicrotasks();
-        // 1re tentative initiale échouée → reconnexion programmée.
         expect(controller.status, PlaybackStatus.reconnecting);
-        expect(player.setAudioSourceCalls, 1);
+        expect(service.loadCalls, 1);
 
-        // Backoff 1s, 2s, 4s : chaque réveil relance _start (qui échoue encore).
-        async.elapse(const Duration(seconds: 1));
+        // Backoff 1+2+4+8 = 15 s ; à l'épuisement le manifeste répond toujours
+        // 409 → verdict « terminé » (flux jamais réellement servi).
+        async.elapse(const Duration(seconds: 15));
         async.flushMicrotasks();
-        expect(player.setAudioSourceCalls, 2);
-        expect(controller.status, PlaybackStatus.reconnecting);
 
-        async.elapse(const Duration(seconds: 2));
-        async.flushMicrotasks();
-        expect(player.setAudioSourceCalls, 3);
-        expect(controller.status, PlaybackStatus.reconnecting);
-
-        async.elapse(const Duration(seconds: 4));
-        async.flushMicrotasks();
-        // 4e échec : tentatives épuisées → erreur définitive, plus de timer.
-        expect(player.setAudioSourceCalls, 4);
-        expect(controller.status, PlaybackStatus.error);
-
-        async.elapse(const Duration(seconds: 10));
-        async.flushMicrotasks();
-        expect(player.setAudioSourceCalls, 4); // aucun timer résiduel
+        expect(service.loadCalls, 5); // 1 initial + 4 reconnexions
+        expect(controller.status, PlaybackStatus.ended);
+        expect(service.stopped, isTrue);
 
         controller.dispose();
       });
     });
 
-    test(
-        'dispose() pendant l\'attente de la sonde → aucune notification, aucun timer résiduel',
+    test('coupure réseau (sonde false) → error après épuisement', () {
+      fakeAsync((async) {
+        final service = FakeAudioPlaybackService()
+          ..loadError = Exception('network');
+        final controller = AudioPlayerController(
+          service: service,
+          isManifestUnavailable: (_) async => false,
+        );
+
+        controller.load(_now);
+        async.flushMicrotasks();
+        expect(controller.status, PlaybackStatus.reconnecting);
+
+        async.elapse(const Duration(seconds: 15));
+        async.flushMicrotasks();
+
+        expect(service.loadCalls, 5);
+        expect(controller.status, PlaybackStatus.error);
+        expect(service.stopped, isTrue);
+
+        async.elapse(const Duration(seconds: 10));
+        async.flushMicrotasks();
+        expect(service.loadCalls, 5); // aucun timer résiduel
+
+        controller.dispose();
+      });
+    });
+
+    test('état résiduel idle après ended → non écrasé', () async {
+      final service = FakeAudioPlaybackService();
+      final controller = AudioPlayerController(
+        service: service,
+        isManifestUnavailable: (_) async => true,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load(_now);
+      _reachPlaying(service);
+      await pumpEventQueue();
+      service.emitError(Exception('stop'));
+      await pumpEventQueue();
+      expect(controller.status, PlaybackStatus.ended);
+
+      // `idle` résiduel du player après la source error : ne doit pas faire
+      // régresser « terminé » (garde dans _onPlayerState).
+      service.emitState(PlayerState(false, ProcessingState.idle));
+      await pumpEventQueue();
+      expect(controller.status, PlaybackStatus.ended);
+    });
+
+    test('dispose() pendant l\'attente de la sonde → aucune notification',
         () async {
-      final player = _FakeAudioPlayer()..setAudioSourceError = Exception('x');
+      final service = FakeAudioPlaybackService();
       final probe = Completer<bool>();
       final controller = AudioPlayerController(
-        player: player,
-        isStreamEnded: (_) => probe.future,
+        service: service,
+        isManifestUnavailable: (_) => probe.future,
       );
+
+      await controller.load(_now);
+      _reachPlaying(service);
+      await pumpEventQueue();
 
       var notificationsAfterDispose = 0;
       var disposed = false;
@@ -161,19 +155,31 @@ void main() {
         if (disposed) notificationsAfterDispose++;
       });
 
-      await controller.load('s1');
-      await pumpEventQueue(); // _recover est maintenant bloqué sur la sonde
+      service.emitError(Exception('x')); // → _recover attend la sonde (hasPlayed)
+      await pumpEventQueue();
 
       disposed = true;
       controller.dispose();
 
-      // La sonde se résout après coup : le contrôleur détruit ne doit ni
-      // notifier ni armer de timer (garde _disposed).
       probe.complete(true);
       await pumpEventQueue();
 
       expect(notificationsAfterDispose, 0);
-      expect(player.disposed, isTrue);
+    });
+
+    test('stop() arrête le service et repasse à idle', () async {
+      final service = FakeAudioPlaybackService();
+      final controller = AudioPlayerController(service: service);
+      addTearDown(controller.dispose);
+
+      await controller.load(_now);
+      await pumpEventQueue();
+      expect(controller.nowPlaying, isNotNull);
+
+      await controller.stop();
+      expect(service.stopped, isTrue);
+      expect(controller.status, PlaybackStatus.idle);
+      expect(controller.nowPlaying, isNull);
     });
   });
 }

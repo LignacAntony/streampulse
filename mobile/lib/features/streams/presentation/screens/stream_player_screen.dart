@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/live_stream.dart';
-import '../../domain/repositories/stream_repository.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
 
 /// Lecteur audio HLS plein écran (STR-108/117, cf. ADR 023). L'audio est piloté
-/// par un [AudioPlayerController] scopé à cet écran (créé/détruit ici).
+/// par le [AudioPlayerController] **partagé** app-level (STR-109) : la lecture
+/// survit à la navigation et à l'arrière-plan ; l'écran ne le possède pas.
 class StreamPlayerScreen extends StatefulWidget {
   const StreamPlayerScreen({
     super.key,
@@ -21,8 +21,8 @@ class StreamPlayerScreen extends StatefulWidget {
   final String streamId;
   final LiveStream? stream;
 
-  /// Injecté par les widget tests (fake sans just_audio) ; en production, un
-  /// [AudioPlayerController] réel est créé et détruit par l'écran.
+  /// Injecté par les widget tests (fake sans just_audio) ; en production, le
+  /// [AudioPlayerController] **partagé** (app-level, STR-109) est lu du Provider.
   final PlaybackController? controller;
 
   @override
@@ -31,33 +31,28 @@ class StreamPlayerScreen extends StatefulWidget {
 
 class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   late final PlaybackController _audio;
-  late final bool _ownsController;
 
   @override
   void initState() {
     super.initState();
-    _ownsController = widget.controller == null;
-    // La sonde du manifeste public permet au lecteur de distinguer une fin de
-    // direct (404/409) d'une coupure réseau (STR-118). Injectée via le repo —
-    // uniquement quand l'écran crée le vrai contrôleur (les widget tests en
-    // injectent un fake et ne fournissent pas de StreamRepository).
-    _audio = widget.controller ??
-        AudioPlayerController(
-          isStreamEnded: context.read<StreamRepository>().isStreamEnded,
-        );
-    // Démarre la lecture du flux (autoplay). L'état des favoris est chargé pour
-    // afficher le bon état initial du cœur.
-    _audio.load(widget.streamId);
+    // Contrôleur partagé (le service audio survit à la navigation, STR-109) :
+    // l'écran ne le possède pas et ne le détruit pas.
+    _audio = widget.controller ?? context.read<AudioPlayerController>();
+    // (Re)démarre ce flux uniquement s'il n'est pas déjà en cours : revenir sur
+    // l'écran d'un flux en lecture ne le relance pas (autoplay sinon, STR-108).
+    if (_audio.nowPlaying?.streamId != widget.streamId) {
+      _audio.load(
+        NowPlaying(
+          streamId: widget.streamId,
+          title: widget.stream?.title ?? 'Flux',
+          broadcaster: widget.stream?.broadcasterName,
+        ),
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<FavoritesController>().ensureLoaded();
     });
-  }
-
-  @override
-  void dispose() {
-    if (_ownsController) _audio.dispose();
-    super.dispose();
   }
 
   Future<void> _toggleFavorite() async {
@@ -88,8 +83,11 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final title = widget.stream?.title ?? 'Flux';
-    final subtitle = widget.stream?.broadcasterName; // nom du diffuseur (design)
+    // Métadonnées : celles passées en navigation, sinon celles du flux en cours
+    // dans le contrôleur partagé (ouverture via le mini-player, sans `extra`).
+    final title = widget.stream?.title ?? _audio.nowPlaying?.title ?? 'Flux';
+    final subtitle =
+        widget.stream?.broadcasterName ?? _audio.nowPlaying?.broadcaster;
     final listeners = widget.stream?.listenerCount;
     final isFavorited =
         context.watch<FavoritesController>().isFavorited(widget.streamId);
@@ -131,8 +129,6 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                       ],
                       const SizedBox(height: 24),
                       _statusLine(colors, text),
-                      const SizedBox(height: 16),
-                      _volume(colors),
                       const SizedBox(height: 28),
                       _controls(colors, isFavorited),
                       const SizedBox(height: 24),
@@ -284,21 +280,6 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
         const SizedBox(width: 10),
         Text(label,
             style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
-      ],
-    );
-  }
-
-  Widget _volume(ColorScheme colors) {
-    return Row(
-      children: [
-        Icon(Icons.volume_down, color: colors.onSurfaceVariant),
-        Expanded(
-          child: Slider(
-            value: _audio.volume,
-            onChanged: _audio.setVolume,
-          ),
-        ),
-        Icon(Icons.volume_up, color: colors.onSurfaceVariant),
       ],
     );
   }

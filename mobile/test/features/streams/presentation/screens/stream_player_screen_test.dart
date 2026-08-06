@@ -30,13 +30,13 @@ class _FakePlaybackController extends PlaybackController {
   @override
   bool get isEnded => _status == PlaybackStatus.ended;
   @override
-  double get volume => 1;
+  NowPlaying? get nowPlaying => null;
   @override
-  Future<void> load(String streamId) async {}
+  Future<void> load(NowPlaying now) async {}
   @override
   Future<void> togglePlayPause() async {}
   @override
-  Future<void> setVolume(double value) async {}
+  Future<void> stop() async {}
 }
 
 /// Flux « réel » tel que renvoyé par le serveur (métadonnées complètes),
@@ -87,7 +87,7 @@ class _FakeStreamRepository implements StreamRepository {
       const [];
 
   @override
-  Future<bool> isStreamEnded(String streamId) async => false;
+  Future<bool> isManifestUnavailable(String streamId) async => false;
 }
 
 Widget _harness({

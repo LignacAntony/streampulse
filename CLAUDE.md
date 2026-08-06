@@ -377,6 +377,32 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 - **IP LAN (sans câble)** : `--dart-define=API_BASE_URL=http://192.168.x.x:8080` (IP locale du Mac, `ipconfig getifaddr en0`). Nécessite même Wi-Fi + bind Docker sur `0.0.0.0` + firewall macOS ouvert sur 8080.
 - Configurable via `--dart-define=API_BASE_URL=http://...` ou variable d'environnement
 
+### Lecture audio auditeur (STR-108/109)
+
+Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS) et
+[ADR 030](docs/adr/030-lecture-audio-en-arriere-plan.md) (arrière-plan).
+
+- **Service partagé, app-level** : un unique `AudioPlayer` vit dans `StreamAudioHandler`
+  (`core/audio/`, `audio_service` + just_audio), initialisé dans `main()` via `AudioService.init`
+  et fourni par `app_providers.dart`. La lecture **survit à la navigation** et à l'arrière-plan /
+  verrouillage (notification + contrôles système).
+- **DIP** : le `AudioPlayerController` (app-level, `ChangeNotifierProvider`) dépend de l'abstraction
+  `AudioPlaybackService`, jamais de just_audio/audio_service directement → testable avec un fake
+  (`test/support/fake_audio_playback_service.dart`).
+- **Répartition** : le handler mappe l'état → notification et **transmet** les erreurs ; le
+  contrôleur garde l'arbitrage STR-118 (reconnexion bornée 1/2/4/8 s, gardes `_disposed`/`ended`).
+  État terminal → `stop()` retire la notification.
+- **Ambiguïté du 409** : le manifeste renvoie 409 pour un flux **terminé** *comme* pour un flux live
+  **pas encore prêt** (démarrage ~10 s). Le contrôleur ne conclut « terminé » via
+  `isManifestUnavailable` que si la lecture avait démarré (`_hasPlayed`) ; sinon il reconnecte
+  d'abord. La sonde utilise `validateStatus` (<500) pour ne pas logger de faux « erreur ».
+- **Mini-player** : `MiniPlayer` (dans `MainShell`) lit le même contrôleur (titre/diffuseur,
+  play/pause, croix = `stop`), masqué à l'état `idle`. Le plein écran (`StreamPlayerScreen`) lit
+  aussi ce contrôleur partagé et **ne le détruit pas**.
+- **Natif** : `MainActivity` étend `AudioServiceActivity` ; le manifeste déclare
+  `com.ryanheise.audioservice.AudioService` (`mediaPlayback`) + `MediaButtonReceiver` ; iOS a
+  `UIBackgroundModes: audio`. L'arrière-plan ne se teste **que sur device** (pas sur web).
+
 ### Authentification (mobile)
 
 Voir [ADR 009](docs/adr/009-authentification-flutter.md) pour les décisions détaillées.

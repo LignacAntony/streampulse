@@ -83,7 +83,7 @@ class _FakeStreamRepository implements StreamRepository {
       const [];
 
   @override
-  Future<bool> isStreamEnded(String streamId) async => false;
+  Future<bool> isManifestUnavailable(String streamId) async => false;
 }
 
 class _FakeProfileRepository implements ProfileRepository {

@@ -45,17 +45,26 @@ class StreamRemoteDataSource {
     }
   }
 
-  /// Sonde le manifeste HLS **public** du flux pour déterminer s'il est terminé.
-  /// 200 → toujours en direct (`false`) ; 404/409 → le manifeste n'est plus
-  /// servi, le direct est terminé (`true`) ; toute autre issue (réseau, 5xx…) →
-  /// indéterminé (`false`), on laisse la reconnexion réseau opérer (STR-118).
-  Future<bool> isStreamEnded(String streamId) async {
+  /// Sonde le manifeste HLS **public** du flux : `true` si le manifeste n'est
+  /// plus servi (404/409), `false` sinon (200 en direct, ou réseau indéterminé).
+  ///
+  /// ⚠️ Le 409 est **ambigu** côté backend : il couvre aussi bien un flux
+  /// terminé qu'un flux live dont le manifeste n'est **pas encore prêt** (fenêtre
+  /// de démarrage ~10 s). L'appelant ([AudioPlayerController]) lève cette
+  /// ambiguïté en ne concluant « terminé » que si la lecture avait démarré.
+  ///
+  /// `validateStatus` accepte les <500 pour que 404/409 reviennent en réponse
+  /// normale (pas d'exception → pas de log d'erreur parasite ; STR-109).
+  Future<bool> isManifestUnavailable(String streamId) async {
     try {
-      await _api.streamPlaylist(id: streamId);
-      return false;
-    } on DioException catch (e) {
-      final code = e.response?.statusCode;
+      final response = await _api.streamPlaylist(
+        id: streamId,
+        validateStatus: (status) => status != null && status < 500,
+      );
+      final code = response.statusCode;
       return code == 404 || code == 409;
+    } on DioException {
+      return false; // réseau indéterminé → on ne conclut pas
     }
   }
 }

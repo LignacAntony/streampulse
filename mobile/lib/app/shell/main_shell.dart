@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/streams/presentation/widgets/mini_player.dart';
+
 /// Barre de navigation inférieure + `IndexedStack` des onglets
 /// (`StatefulShellRoute`) ; chaque onglet conserve son état.
 class MainShell extends StatelessWidget {
@@ -18,7 +20,14 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: navigationShell,
+      // Le mini-player (STR-109) se glisse entre le contenu de l'onglet et la
+      // barre de navigation ; masqué (SizedBox.shrink) quand rien ne joue.
+      body: Column(
+        children: [
+          Expanded(child: navigationShell),
+          const MiniPlayer(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: _onDestinationSelected,

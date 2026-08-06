@@ -34,10 +34,21 @@
                 <data android:scheme="streampulse" android:host="app"/>
             </intent-filter>
         </activity>
-        <!-- Service audio_service pour la lecture en arrière-plan -->
-        <service android:name="com.ryanheise.audioservice.AudioServiceFragment"
+        <!-- audio_service : service de premier plan + récepteur des boutons média
+             (casque / écran verrouillé) pour la lecture en arrière-plan (STR-109). -->
+        <service android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
-            android:exported="true"/>
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService"/>
+            </intent-filter>
+        </service>
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
