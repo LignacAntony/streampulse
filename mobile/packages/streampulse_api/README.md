@@ -84,11 +84,15 @@ Class | Method | HTTP request | Description
 [*BroadcasterApi*](doc/BroadcasterApi.md) | [**rejectBroadcasterRequest**](doc/BroadcasterApi.md#rejectbroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/reject | Reject a broadcaster request (admin only).
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**addPlaylistTrack**](doc/PlaylistApi.md#addplaylisttrack) | **POST** /api/playlists/{id}/tracks | Append a track to a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**createPlaylist**](doc/PlaylistApi.md#createplaylist) | **POST** /api/playlists | Create an empty playlist.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**deletePlaylist**](doc/PlaylistApi.md#deleteplaylist) | **DELETE** /api/playlists/{id} | Delete a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**getPlaylist**](doc/PlaylistApi.md#getplaylist) | **GET** /api/playlists/{id} | Get one of the user&#39;s playlists.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylistTracks**](doc/PlaylistApi.md#listplaylisttracks) | **GET** /api/playlists/{id}/tracks | List a playlist&#39;s tracks (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylists**](doc/PlaylistApi.md#listplaylists) | **GET** /api/playlists | List the authenticated user&#39;s playlists.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**listUserTracks**](doc/PlaylistApi.md#listusertracks) | **GET** /api/tracks | List the authenticated user&#39;s track library.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**removePlaylistTrack**](doc/PlaylistApi.md#removeplaylisttrack) | **DELETE** /api/playlists/{id}/tracks/{trackId} | Remove a track from a playlist (owner only).
+[*PlaylistApi*](doc/PlaylistApi.md) | [**reorderPlaylistTracks**](doc/PlaylistApi.md#reorderplaylisttracks) | **PUT** /api/playlists/{id}/tracks | Replace the playlist&#39;s track order (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**updatePlaylist**](doc/PlaylistApi.md#updateplaylist) | **PUT** /api/playlists/{id} | Rename a playlist (owner only).
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
 [*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
@@ -113,6 +117,7 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AddPlaylistTrackRequest](doc/AddPlaylistTrackRequest.md)
  - [AdminStreamListResponse](doc/AdminStreamListResponse.md)
  - [AdminStreamResponse](doc/AdminStreamResponse.md)
  - [AdminUserListResponse](doc/AdminUserListResponse.md)
@@ -136,6 +141,7 @@ Class | Method | HTTP request | Description
  - [ProfileResponse](doc/ProfileResponse.md)
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
+ - [ReorderPlaylistTracksRequest](doc/ReorderPlaylistTracksRequest.md)
  - [ResetPasswordRequest](doc/ResetPasswordRequest.md)
  - [ReviewRequestInput](doc/ReviewRequestInput.md)
  - [SetUserActiveRequest](doc/SetUserActiveRequest.md)
@@ -143,6 +149,7 @@ Class | Method | HTTP request | Description
  - [StreamStatsResponse](doc/StreamStatsResponse.md)
  - [StreamSummaryResponse](doc/StreamSummaryResponse.md)
  - [TokenPairResponse](doc/TokenPairResponse.md)
+ - [TrackResponse](doc/TrackResponse.md)
  - [UpdatePlaylistRequest](doc/UpdatePlaylistRequest.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
  - [UserResponse](doc/UserResponse.md)

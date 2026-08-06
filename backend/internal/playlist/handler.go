@@ -22,6 +22,10 @@ type PlaylistService interface {
 	UpdatePlaylist(ctx context.Context, id, requesterID string, in UpdateInput) (Playlist, error)
 	DeletePlaylist(ctx context.Context, id, requesterID string) error
 	ListTracks(ctx context.Context, id, requesterID string) ([]PlaylistTrack, error)
+	ListUserTracks(ctx context.Context, requesterID string) ([]Track, error)
+	AddTrack(ctx context.Context, playlistID, trackID, requesterID string) ([]PlaylistTrack, error)
+	RemoveTrack(ctx context.Context, playlistID, trackID, requesterID string) error
+	ReorderTracks(ctx context.Context, playlistID, requesterID string, trackIDs []string) ([]PlaylistTrack, error)
 }
 
 // Handler expose le domaine playlist en HTTP.
@@ -99,6 +103,27 @@ type trackResponse struct {
 // tags JSON n'affectent pas la convertibilité — cf. staticcheck S1016).
 func toTrackResponse(t PlaylistTrack) trackResponse {
 	return trackResponse(t)
+}
+
+// libraryTrackResponse est la vue d'une piste de la bibliothèque (sans position :
+// elle n'appartient à aucune playlist en particulier).
+type libraryTrackResponse struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Artist    *string `json:"artist"`
+	DurationS *int    `json:"duration_s"`
+}
+
+// addTrackRequest : pointeur pour distinguer « champ absent » de la chaîne vide.
+type addTrackRequest struct {
+	TrackID *string `json:"track_id"`
+}
+
+// reorderTracksRequest porte l'ordre complet souhaité (index 0 = première
+// piste). Pointeur pour distinguer un tableau absent d'un tableau vide (rejeté
+// par le service).
+type reorderTracksRequest struct {
+	TrackIDs *[]string `json:"track_ids"`
 }
 
 // Create gère POST /api/playlists : crée une playlist vide (201).
@@ -237,11 +262,114 @@ func (h *Handler) ListTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.writeTracks(w, r, http.StatusOK, tracks, "list")
+}
+
+// AddTrack gère POST /api/playlists/{id}/tracks : ajoute une piste en fin de
+// playlist et renvoie l'ordre résultant (201).
+func (h *Handler) AddTrack(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	var req addTrackRequest
+	if err := httpjson.Decode(w, r, &req, maxPlaylistBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	if req.TrackID == nil {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("missing required field: track_id"))
+		return
+	}
+
+	tracks, err := h.svc.AddTrack(r.Context(), r.PathValue("id"), *req.TrackID, userID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	h.writeTracks(w, r, http.StatusCreated, tracks, "add")
+}
+
+// RemoveTrack gère DELETE /api/playlists/{id}/tracks/{trackId} : retire la piste
+// et recompacte les positions (204).
+func (h *Handler) RemoveTrack(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	if err := h.svc.RemoveTrack(r.Context(), r.PathValue("id"), r.PathValue("trackId"), userID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReorderTracks gère PUT /api/playlists/{id}/tracks : remplace l'ordre complet
+// de la playlist et renvoie l'ordre persisté (200).
+func (h *Handler) ReorderTracks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	var req reorderTracksRequest
+	if err := httpjson.Decode(w, r, &req, maxPlaylistBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	if req.TrackIDs == nil {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("missing required field: track_ids"))
+		return
+	}
+
+	tracks, err := h.svc.ReorderTracks(r.Context(), r.PathValue("id"), userID, *req.TrackIDs)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	h.writeTracks(w, r, http.StatusOK, tracks, "reorder")
+}
+
+// ListUserTracks gère GET /api/tracks : bibliothèque de pistes du demandeur,
+// source du sélecteur « ajouter une piste » (200).
+func (h *Handler) ListUserTracks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	tracks, err := h.svc.ListUserTracks(r.Context(), userID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]libraryTrackResponse, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, libraryTrackResponse(t))
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("playlist: encode user tracks")
+	}
+}
+
+// writeTracks sérialise une liste de pistes de playlist (réponse commune à
+// list/add/reorder).
+func (h *Handler) writeTracks(w http.ResponseWriter, r *http.Request, status int, tracks []PlaylistTrack, op string) {
 	out := make([]trackResponse, 0, len(tracks))
 	for _, t := range tracks {
 		out = append(out, toTrackResponse(t))
 	}
-	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
-		zerolog.Ctx(r.Context()).Error().Err(err).Msg("playlist: encode tracks")
+	if err := httpjson.Write(w, status, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("playlist: encode tracks " + op)
 	}
 }

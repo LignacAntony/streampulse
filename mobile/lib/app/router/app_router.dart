@@ -9,6 +9,7 @@ import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/broadcast/presentation/screens/dashboard_screen.dart';
 import '../../features/broadcaster/presentation/screens/broadcaster_request_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/playlists/presentation/screens/playlist_detail_screen.dart';
 import '../../features/playlists/presentation/screens/playlists_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/streams/domain/entities/live_stream.dart';
@@ -104,6 +105,18 @@ GoRouter createAppRouter(SecureStorage storage) {
               GoRoute(
                 path: '/library',
                 builder: (context, state) => const PlaylistsScreen(),
+                routes: [
+                  // Sous-route de l'onglet : la barre de navigation reste
+                  // visible sur le détail d'une playlist. Non publique (les
+                  // routes API sont derrière RequireAuth).
+                  GoRoute(
+                    path: 'playlist/:id',
+                    builder: (context, state) => PlaylistDetailScreen(
+                      playlistId: state.pathParameters['id']!,
+                      playlistName: state.extra as String?,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

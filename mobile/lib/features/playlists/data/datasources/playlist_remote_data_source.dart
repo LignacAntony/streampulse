@@ -80,4 +80,57 @@ class PlaylistRemoteDataSource {
       throw mapDioException(e);
     }
   }
+
+  Future<List<TrackResponse>> libraryTracks() async {
+    try {
+      final response = await _api.listUserTracks();
+      return response.data?.toList() ?? const [];
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<PlaylistTrackResponse>> addTrack(
+    String playlistId,
+    String trackId,
+  ) async {
+    try {
+      final response = await _api.addPlaylistTrack(
+        id: playlistId,
+        addPlaylistTrackRequest: AddPlaylistTrackRequest(trackId: trackId),
+      );
+      return response.data?.toList() ?? const [];
+    } on DioException catch (e) {
+      // Pas de `conflictMessage` : les 409 des pistes portent toujours un
+      // message serveur, que `mapDioException` préfère de toute façon à un
+      // repli client. En poser un ici dupliquerait la chaîne backend sans
+      // jamais l'afficher.
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> removeTrack(String playlistId, String trackId) async {
+    try {
+      await _api.removePlaylistTrack(id: playlistId, trackId: trackId);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<PlaylistTrackResponse>> reorderTracks(
+    String playlistId,
+    List<String> trackIds,
+  ) async {
+    try {
+      final response = await _api.reorderPlaylistTracks(
+        id: playlistId,
+        reorderPlaylistTracksRequest: ReorderPlaylistTracksRequest(
+          trackIds: trackIds,
+        ),
+      );
+      return response.data?.toList() ?? const [];
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
 }

@@ -263,9 +263,15 @@ l'utilisateur : actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle)
 | PUT | `/api/playlists/{id}` | `Handler.Update` | Oui (JWT) — renommage/description, propriétaire uniquement ; **remplacement total** (omettre `description` l'efface) ; 409 sur nom en doublon |
 | DELETE | `/api/playlists/{id}` | `Handler.Delete` | Oui (JWT) — suppression définitive (cascade `playlist_tracks`), propriétaire uniquement ; 404 sinon |
 | GET | `/api/playlists/{id}/tracks` | `Handler.ListTracks` | Oui (JWT) — pistes ordonnées par `position` ; propriété vérifiée via `GetPlaylist` (404 si tiers) |
+| POST | `/api/playlists/{id}/tracks` | `Handler.AddTrack` | Oui (JWT) — ajoute une piste **du demandeur** en fin de playlist, renvoie l'ordre résultant (201) ; piste inconnue ou d'un tiers → 404 ; déjà présente → 409 (STR-132, ADR 029) |
+| PUT | `/api/playlists/{id}/tracks` | `Handler.ReorderTracks` | Oui (JWT) — **remplacement total** de l'ordre (`{track_ids: [...]}`, index 0 = première piste), renvoie l'ordre persisté ; doublon → 400, liste qui ne couvre pas exactement la playlist → 409 (STR-132, ADR 029) |
+| DELETE | `/api/playlists/{id}/tracks/{trackId}` | `Handler.RemoveTrack` | Oui (JWT) — retire la piste et **recompacte** les positions en 0..n-1 (204) ; piste absente → 404 (STR-132, ADR 029) |
+| GET | `/api/tracks` | `Handler.ListUserTracks` | Oui (JWT) — bibliothèque de pistes du demandeur, source du sélecteur d'ajout. **Vit temporairement dans le domaine playlist** : à déménager vers un domaine `track` quand US-05-01 (upload) arrivera (ADR 029 §7) |
 
-- Tables `playlists` / `playlist_tracks` préexistantes (migration `000004`) ; contrainte `UNIQUE (user_id, name)` (`000006`) → **pas de migration** pour cette US.
+- Tables `playlists` / `playlist_tracks` préexistantes (migration `000004`) ; contrainte `UNIQUE (user_id, name)` (`000006`).
 - Isolation : `GetPlaylist` compare `user_id` ; `ListTracks` réutilise `GetPlaylist` ; `Update`/`Delete` filtrent sur `(id, user_id)` en SQL (0 ligne → 404).
+- Ordre des pistes (US-05-03, [ADR 029](docs/adr/029-pistes-dune-playlist-ajout-retrait-reordonnancement.md)) : migration `000019` pose `UNIQUE (playlist_id, position)` **DEFERRABLE INITIALLY DEFERRED** — un réordonnancement réécrit toutes les positions dans une transaction, ses états intermédiaires contiennent forcément des doublons ; la contrainte n'est vérifiée qu'au COMMIT. Toutes les mutations de pistes passent donc par `inTx` (repository).
+- ⚠️ Sur `playlist_tracks`, un `INSERT … ON CONFLICT` doit **nommer ses colonnes** (`ON CONFLICT (playlist_id, track_id)`) : une contrainte différée ne peut pas servir d'arbitre, et un `ON CONFLICT DO NOTHING` nu les considère toutes → SQLSTATE 55000 au démarrage (ADR 029 §2).
 
 ### Routes admin existantes
 
@@ -561,7 +567,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `029-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `030-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

@@ -1,3 +1,4 @@
+import 'package:streampulse_api/src/model/add_playlist_track_request.dart';
 import 'package:streampulse_api/src/model/admin_stream_list_response.dart';
 import 'package:streampulse_api/src/model/admin_stream_response.dart';
 import 'package:streampulse_api/src/model/admin_user_list_response.dart';
@@ -21,6 +22,7 @@ import 'package:streampulse_api/src/model/playlist_track_response.dart';
 import 'package:streampulse_api/src/model/profile_response.dart';
 import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
+import 'package:streampulse_api/src/model/reorder_playlist_tracks_request.dart';
 import 'package:streampulse_api/src/model/reset_password_request.dart';
 import 'package:streampulse_api/src/model/review_request_input.dart';
 import 'package:streampulse_api/src/model/set_user_active_request.dart';
@@ -28,6 +30,7 @@ import 'package:streampulse_api/src/model/stream_response.dart';
 import 'package:streampulse_api/src/model/stream_stats_response.dart';
 import 'package:streampulse_api/src/model/stream_summary_response.dart';
 import 'package:streampulse_api/src/model/token_pair_response.dart';
+import 'package:streampulse_api/src/model/track_response.dart';
 import 'package:streampulse_api/src/model/update_playlist_request.dart';
 import 'package:streampulse_api/src/model/update_profile_request.dart';
 import 'package:streampulse_api/src/model/user_response.dart';
@@ -54,6 +57,9 @@ ReturnType deserialize<ReturnType, BaseType>(
       return (valueString == 'true' || valueString == '1') as ReturnType;
     case 'double':
       return (value is double ? value : double.parse('$value')) as ReturnType;
+    case 'AddPlaylistTrackRequest':
+      return AddPlaylistTrackRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'AdminStreamListResponse':
       return AdminStreamListResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -123,6 +129,11 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'RegisterRequest':
       return RegisterRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
+    case 'ReorderPlaylistTracksRequest':
+      return ReorderPlaylistTracksRequest.fromJson(
+            value as Map<String, dynamic>,
+          )
+          as ReturnType;
     case 'ResetPasswordRequest':
       return ResetPasswordRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -143,6 +154,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'TokenPairResponse':
       return TokenPairResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'TrackResponse':
+      return TrackResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'UpdatePlaylistRequest':
       return UpdatePlaylistRequest.fromJson(value as Map<String, dynamic>)

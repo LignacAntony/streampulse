@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
+import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlists_controller.dart';
 
@@ -63,6 +64,24 @@ class _FakePlaylistRepository implements PlaylistRepository {
 
   @override
   Future<List<PlaylistTrack>> tracks(String id) async => const [];
+
+  // US-05-03 : non sollicitées par PlaylistsController (écran de détail).
+  @override
+  Future<List<Track>> libraryTracks() async => const [];
+
+  @override
+  Future<List<PlaylistTrack>> addTrack(String playlistId, String trackId) async =>
+      const [];
+
+  @override
+  Future<void> removeTrack(String playlistId, String trackId) async {}
+
+  @override
+  Future<List<PlaylistTrack>> reorderTracks(
+    String playlistId,
+    List<String> trackIds,
+  ) async =>
+      const [];
 }
 
 void main() {
