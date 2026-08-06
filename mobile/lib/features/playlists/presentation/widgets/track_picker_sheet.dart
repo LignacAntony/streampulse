@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/track.dart';
+import '../track_labels.dart';
 
 /// Feuille modale de sélection d'une piste à ajouter à une playlist (US-05-03).
 ///
@@ -21,6 +22,9 @@ class TrackPickerSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      // Navigator racine : sans lui la feuille s'ouvre dans la branche du shell
+      // et la barre de navigation reste visible, non atténuée, sous le voile.
+      useRootNavigator: true,
       builder: (_) => TrackPickerSheet(loadTracks: loadTracks),
     );
   }
@@ -104,13 +108,14 @@ class _TrackPickerSheetState extends State<TrackPickerSheet> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: track.artist == null
-                            ? null
-                            : Text(
-                                track.artist!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                        subtitle: Text(
+                          trackSubtitle(
+                            artist: track.artist,
+                            durationS: track.durationS,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         onTap: () => Navigator.of(context).pop(track.id),
                       );
                     },

@@ -186,6 +186,12 @@ func (r *pgRepository) ListUserTracks(ctx context.Context, userID string) ([]Tra
 	return tracks, nil
 }
 
+// addTrackAttempts borne la reprise d'un ajout perdu à la course sur la position
+// (cf. AddTrack). Une seule reprise suffit : deux ajouts concurrents sur la même
+// playlist restent un cas rare (même utilisateur, deux appareils), et le perdant
+// relit un MAX(position) désormais à jour.
+const addTrackAttempts = 2
+
 func (r *pgRepository) AddTrack(ctx context.Context, p AddTrackParams) error {
 	playlistID, ok := parseUUID(p.PlaylistID)
 	if !ok {
@@ -195,23 +201,48 @@ func (r *pgRepository) AddTrack(ctx context.Context, p AddTrackParams) error {
 	if !ok {
 		return apperror.NotFound("track not found")
 	}
-	return r.inTx(ctx, func(q *playlistdb.Queries) error {
-		if _, err := q.AddTrackToPlaylist(ctx, playlistdb.AddTrackToPlaylistParams{
-			PlaylistID: playlistID,
-			TrackID:    trackID,
-			UserID:     uuidParam(p.UserID),
-		}); err != nil {
-			// Aucune ligne insérée : la piste n'existe pas ou appartient à un tiers.
-			if errors.Is(err, pgx.ErrNoRows) {
-				return apperror.NotFound("track not found")
+
+	// La position vient d'un MAX(position)+1 lu dans la transaction : deux ajouts
+	// simultanés lisent le même maximum et visent la même position. Le perdant
+	// échoue au COMMIT (contrainte différée) — on rejoue son insertion plutôt que
+	// de lui renvoyer un conflit qu'il n'a aucun moyen de résoudre.
+	var err error
+	for attempt := 0; attempt < addTrackAttempts; attempt++ {
+		err = r.inTx(ctx, func(q *playlistdb.Queries) error {
+			total, err := q.CountPlaylistTracks(ctx, playlistID)
+			if err != nil {
+				return fmt.Errorf("repo: count playlist tracks: %w", err)
 			}
-			if isUniqueViolation(err) {
-				return apperror.Conflict("Cette piste est déjà dans la playlist")
+			// Plafond aligné sur celui du réordonnancement : au-delà, le PUT
+			// (qui porte l'ordre complet) serait rejeté et la playlist
+			// deviendrait impossible à réordonner.
+			if total >= MaxTracksPerPlaylist {
+				return apperror.Conflict("Cette playlist a atteint sa taille maximale")
 			}
-			return fmt.Errorf("repo: add track: %w", err)
+			if _, err := q.AddTrackToPlaylist(ctx, playlistdb.AddTrackToPlaylistParams{
+				PlaylistID: playlistID,
+				TrackID:    trackID,
+				UserID:     uuidParam(p.UserID),
+			}); err != nil {
+				// Aucune ligne insérée : la piste n'existe pas ou appartient à un tiers.
+				if errors.Is(err, pgx.ErrNoRows) {
+					return apperror.NotFound("track not found")
+				}
+				// PK (playlist_id, track_id) : contrainte immédiate, elle lève
+				// ici et non au COMMIT — la piste est déjà dans la playlist.
+				if isUniqueViolation(err) {
+					return apperror.Conflict("Cette piste est déjà dans la playlist")
+				}
+				return fmt.Errorf("repo: add track: %w", err)
+			}
+			return q.TouchPlaylist(ctx, playlistID)
+		})
+		if !errors.Is(err, errPositionTaken) {
+			return err
 		}
-		return q.TouchPlaylist(ctx, playlistID)
-	})
+	}
+	// Reprises épuisées : message propre à l'ajout, pas celui du réordonnancement.
+	return apperror.Conflict("Ajout impossible pour le moment, réessaie")
 }
 
 func (r *pgRepository) RemoveTrack(ctx context.Context, playlistID, trackID string) error {
@@ -223,7 +254,7 @@ func (r *pgRepository) RemoveTrack(ctx context.Context, playlistID, trackID stri
 	if !ok {
 		return apperror.NotFound("track not found")
 	}
-	return r.inTx(ctx, func(q *playlistdb.Queries) error {
+	err := r.inTx(ctx, func(q *playlistdb.Queries) error {
 		if _, err := q.RemoveTrackFromPlaylist(ctx, playlistdb.RemoveTrackFromPlaylistParams{
 			PlaylistID: pid,
 			TrackID:    tid,
@@ -241,6 +272,10 @@ func (r *pgRepository) RemoveTrack(ctx context.Context, playlistID, trackID stri
 		}
 		return q.TouchPlaylist(ctx, pid)
 	})
+	if errors.Is(err, errPositionTaken) {
+		return apperror.Conflict("La playlist a changé, recharge-la")
+	}
+	return err
 }
 
 func (r *pgRepository) Reorder(ctx context.Context, playlistID string, trackIDs []string) error {
@@ -256,7 +291,7 @@ func (r *pgRepository) Reorder(ctx context.Context, playlistID string, trackIDs 
 		}
 		ids = append(ids, id)
 	}
-	return r.inTx(ctx, func(q *playlistdb.Queries) error {
+	err := r.inTx(ctx, func(q *playlistdb.Queries) error {
 		// L'ordre fourni doit couvrir exactement la playlist : on compare son
 		// effectif au nombre de lignes réellement repositionnées (un id absent
 		// de la playlist n'en touche aucune).
@@ -279,7 +314,20 @@ func (r *pgRepository) Reorder(ctx context.Context, playlistID string, trackIDs 
 		}
 		return q.TouchPlaylist(ctx, pid)
 	})
+	// Une position en double au COMMIT signifie qu'une écriture concurrente a
+	// bougé la playlist sous nos pieds : même conclusion qu'un effectif qui ne
+	// correspond plus.
+	if errors.Is(err, errPositionTaken) {
+		return apperror.Conflict("L'ordre fourni ne correspond plus à la playlist")
+	}
+	return err
 }
+
+// errPositionTaken signale qu'une transaction a échoué au COMMIT sur
+// uq_playlist_tracks_position : deux écritures concurrentes ont visé la même
+// position. Sentinelle interne — chaque appelant décide s'il rejoue (ajout) ou
+// s'il remonte un conflit à l'utilisateur (réordonnancement).
+var errPositionTaken = errors.New("playlist: position déjà prise")
 
 // inTx exécute fn dans une transaction et l'annule si fn renvoie une erreur.
 // Les contraintes différées (uq_playlist_tracks_position) ne sont vérifiées
@@ -296,7 +344,7 @@ func (r *pgRepository) inTx(ctx context.Context, fn func(*playlistdb.Queries) er
 	}
 	if err := tx.Commit(ctx); err != nil {
 		if isUniqueViolation(err) {
-			return apperror.Conflict("Ordre des pistes invalide")
+			return errPositionTaken
 		}
 		return fmt.Errorf("repo: commit tx: %w", err)
 	}

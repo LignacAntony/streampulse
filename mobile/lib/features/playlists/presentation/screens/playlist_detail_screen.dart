@@ -9,6 +9,7 @@ import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist_track.dart';
 import '../../domain/repositories/playlist_repository.dart';
 import '../providers/playlist_detail_controller.dart';
+import '../track_labels.dart';
 import '../widgets/track_picker_sheet.dart';
 
 /// Écran de détail d'une playlist (US-05-03) : pistes ordonnées, ajout depuis la
@@ -60,6 +61,21 @@ class _PlaylistDetailBody extends StatefulWidget {
 }
 
 class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
+  /// Recharge la liste et signale l'échec par un toast **quand des pistes sont
+  /// déjà affichées** : dans ce cas la vue d'erreur plein écran ne s'affiche pas
+  /// (elle ne remplace jamais une liste non vide), et sans toast le
+  /// `RefreshIndicator` se contenterait de s'arrêter — l'utilisateur croirait la
+  /// liste à jour alors qu'elle est périmée.
+  Future<void> _onRefresh() async {
+    final controller = context.read<PlaylistDetailController>();
+    final hadTracks = controller.tracks.isNotEmpty;
+    await controller.refresh();
+    if (!mounted || !hadTracks) return;
+
+    final error = controller.error;
+    if (error != null) showAuthErrorToast(context, error);
+  }
+
   Future<void> _onAdd() async {
     final controller = context.read<PlaylistDetailController>();
     final trackId = await TrackPickerSheet.show(
@@ -128,7 +144,7 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => context.read<PlaylistDetailController>().refresh(),
+          onRefresh: _onRefresh,
           child: _buildBody(controller),
         ),
       ),
@@ -152,15 +168,24 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
     }
 
     if (controller.tracks.isEmpty) {
-      return const _MessageView(
-        key: Key('playlist_tracks_empty'),
+      // Le « + » de l'AppBar est le seul point d'entrée : sur une playlist
+      // vide, un appel à l'action au centre rend le premier ajout trouvable.
+      return _MessageView(
+        key: const Key('playlist_tracks_empty'),
         icon: Icons.queue_music_outlined,
         message: 'Aucune piste dans cette playlist',
+        actionLabel: 'Ajouter une piste',
+        onAction: _onAdd,
       );
     }
 
     return ReorderableListView.builder(
       key: const Key('playlist_tracks_list'),
+      // Sans ce false, ReorderableListView ajoute ses propres déclencheurs :
+      // une seconde poignée à droite de chaque ligne sur desktop/web, et
+      // l'appui-long-n'importe-où sur mobile — soit exactement le conflit avec
+      // le défilement que la poignée explicite ci-dessous cherche à éviter.
+      buildDefaultDragHandles: false,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: controller.tracks.length,
@@ -239,7 +264,7 @@ class _TrackTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        _subtitle(track),
+        trackSubtitle(artist: track.artist, durationS: track.durationS),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -266,18 +291,6 @@ class _TrackTile extends StatelessWidget {
     );
   }
 
-  String _subtitle(PlaylistTrack track) {
-    final artist = track.artist ?? 'Artiste inconnu';
-    final duration = track.durationS;
-    if (duration == null) return artist;
-    return '$artist · ${_formatDuration(duration)}';
-  }
-
-  String _formatDuration(int seconds) {
-    final minutes = seconds ~/ 60;
-    final rest = (seconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$rest';
-  }
 }
 
 class _MessageView extends StatelessWidget {

@@ -35,7 +35,10 @@ piste), pas une opération `{from, to}`. Raisons :
   contrôle impossible avec un delta.
 
 Le prix assumé : une playlist de 1000 pistes envoie 1000 UUID (~37 Ko). Plafond explicite
-`MaxTracksPerPlaylist = 1000` côté service (400 au-delà).
+`MaxTracksPerPlaylist = 1000`, appliqué **des deux côtés** : le service rejette un ordre plus long
+(400), et l'ajout refuse d'insérer au-delà (409). Ne plafonner que le réordonnancement rendrait
+une playlist de plus de 1000 pistes **impossible à réordonner** — chaque PUT porte la liste
+complète et serait rejeté (revue de la PR #280).
 
 ### 2. Contrainte d'unicité `(playlist_id, position)` **DEFERRABLE INITIALLY DEFERRED**
 
@@ -85,6 +88,15 @@ source dans `tracks` filtrée sur `user_id` : une piste inconnue **ou appartenan
 produit aucune ligne → **404**, jamais 403 (même règle de non-divulgation que l'ADR 026 §1). Une
 piste déjà présente viole la PK `(playlist_id, track_id)` → `23505` → **409** ; on ne fait pas de
 `SELECT` préalable (course entre deux requêtes concurrentes), même logique que l'ADR 026 §3.
+
+**Course sur la position, rejouée plutôt que remontée.** Deux ajouts simultanés sur la même
+playlist lisent le même `MAX(position)` et visent la même position ; le perdant échoue au COMMIT
+sur la contrainte différée. Lui renvoyer un 409 serait inutile — il n'a rien à corriger — donc
+l'insertion est **rejouée une fois** (`addTrackAttempts`), le second essai relisant un maximum à
+jour. Le repository distingue les deux familles de conflit par l'endroit où elles surviennent :
+la PK est immédiate (elle lève à l'INSERT → « déjà dans la playlist »), la contrainte de position
+est différée (elle lève au COMMIT → sentinelle `errPositionTaken`, rejouée par l'ajout, traduite
+en « l'ordre ne correspond plus » par le réordonnancement).
 
 ### 6. Ajout et réordonnancement **renvoient la liste des pistes**, pas 204
 

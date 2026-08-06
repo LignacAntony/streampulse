@@ -24,7 +24,7 @@ class PlaylistApi {
   const PlaylistApi(this._dio);
 
   /// Append a track to a playlist (owner only).
-  /// Appends one of the user&#39;s own tracks at the end of the playlist (US-05-03) and returns the resulting order. A playlist or a track owned by someone else returns 404; a track already in the playlist returns 409.
+  /// Appends one of the user&#39;s own tracks at the end of the playlist (US-05-03) and returns the resulting order. A playlist or a track owned by someone else returns 404; a track already in the playlist returns 409, as does a playlist that already holds the maximum of 1000 tracks (the same cap the reorder endpoint enforces, so a playlist can never grow past the size it can be reordered at).
   ///
   /// Parameters:
   /// * [id]

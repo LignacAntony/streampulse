@@ -13,9 +13,6 @@ class PlaylistRemoteDataSource {
   final PlaylistApi _api;
 
   static const _duplicateNameMessage = 'Une playlist porte déjà ce nom';
-  static const _duplicateTrackMessage = 'Cette piste est déjà dans la playlist';
-  static const _staleOrderMessage =
-      'La playlist a changé, elle a été rechargée';
 
   Future<List<PlaylistResponse>> list() async {
     try {
@@ -104,7 +101,11 @@ class PlaylistRemoteDataSource {
       );
       return response.data?.toList() ?? const [];
     } on DioException catch (e) {
-      throw mapDioException(e, conflictMessage: _duplicateTrackMessage);
+      // Pas de `conflictMessage` : les 409 des pistes portent toujours un
+      // message serveur, que `mapDioException` préfère de toute façon à un
+      // repli client. En poser un ici dupliquerait la chaîne backend sans
+      // jamais l'afficher.
+      throw mapDioException(e);
     }
   }
 
@@ -129,7 +130,7 @@ class PlaylistRemoteDataSource {
       );
       return response.data?.toList() ?? const [];
     } on DioException catch (e) {
-      throw mapDioException(e, conflictMessage: _staleOrderMessage);
+      throw mapDioException(e);
     }
   }
 }

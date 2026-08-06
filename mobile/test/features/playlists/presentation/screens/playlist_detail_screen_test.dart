@@ -24,13 +24,17 @@ class _FakePlaylistRepository implements PlaylistRepository {
   List<PlaylistTrack> _tracks;
   List<Track> library = const [];
 
+  Object? tracksError;
   Object? reorderError;
   List<String>? lastOrder;
   int removeCalls = 0;
   String? addedTrackId;
 
   @override
-  Future<List<PlaylistTrack>> tracks(String id) async => _tracks;
+  Future<List<PlaylistTrack>> tracks(String id) async {
+    if (tracksError != null) throw tracksError!;
+    return _tracks;
+  }
 
   @override
   Future<List<Track>> libraryTracks() async => library;
@@ -84,9 +88,13 @@ class _FakePlaylistRepository implements PlaylistRepository {
   Future<void> delete(String id) => throw UnimplementedError();
 }
 
-Widget _harness(PlaylistRepository repository) {
+Widget _harness(PlaylistRepository repository, {TargetPlatform? platform}) {
   return ToastificationWrapper(
     child: MaterialApp(
+      // `ReorderableListView` choisit ses poignées par défaut d'après
+      // `Theme.of(context).platform` : le forcer permet de tester le rendu
+      // desktop.
+      theme: platform == null ? null : ThemeData(platform: platform),
       home: PlaylistDetailScreen(
         playlistId: 'p-1',
         playlistName: 'My Favorites',
@@ -134,11 +142,57 @@ void main() {
       expect(find.byKey(const Key('playlist_tracks_list')), findsOneWidget);
     });
 
-    testWidgets('playlist vide : message dédié', (tester) async {
+    testWidgets('playlist vide : message dédié + appel à l\'action',
+        (tester) async {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('playlist_tracks_empty')), findsOneWidget);
+
+      // Le CTA ouvre le même sélecteur que le « + » de l'AppBar.
+      await tester.tap(find.widgetWithText(FilledButton, 'Ajouter une piste'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ajouter une piste'), findsWidgets);
+      expect(find.byKey(const Key('track_picker_empty')), findsOneWidget);
+    });
+
+    testWidgets('une seule poignée de drag par ligne, y compris sur desktop',
+        (tester) async {
+      // Plateforme desktop forcée : c'est là que ReorderableListView ajoute sa
+      // propre poignée. Sans `buildDefaultDragHandles: false`, elle s'empile sur
+      // celle de la ligne et le test voit deux icônes.
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0)],
+      );
+      await tester.pumpWidget(
+        _harness(repo, platform: TargetPlatform.macOS),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.drag_handle), findsOneWidget);
+    });
+
+    testWidgets('échec d\'un pull-to-refresh sur liste non vide : toast',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0)],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      repo.tracksError = const NetworkException();
+      await tester.fling(
+        find.byKey(const Key('playlist_tracks_list')),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      // La liste reste affichée (la vue d'erreur ne remplace pas une liste
+      // non vide) : sans toast, l'échec passerait inaperçu.
+      expect(find.text('Midnight Drive'), findsOneWidget);
+      expect(find.text('Pas de connexion réseau'), findsOneWidget);
+      await _dismissToasts(tester);
     });
 
     testWidgets('le drag-and-drop persiste le nouvel ordre', (tester) async {

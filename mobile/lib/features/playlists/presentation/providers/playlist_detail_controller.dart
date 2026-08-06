@@ -25,6 +25,24 @@ class PlaylistDetailController extends ChangeNotifier {
   String? _error;
   bool _isNetworkError = false;
 
+  /// Le contrôleur est fourni par un `ChangeNotifierProvider` local à l'écran :
+  /// quitter l'écran le `dispose()`. Comme les mutations sont optimistes, un
+  /// appel réseau peut encore être en vol à ce moment-là et son `notifyListeners`
+  /// lèverait « used after being disposed ».
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  /// `notifyListeners` sûr après un `await`.
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
   List<PlaylistTrack> get tracks => _tracks;
   bool get loading => _loading;
   String? get error => _error;
@@ -34,14 +52,14 @@ class PlaylistDetailController extends ChangeNotifier {
   Future<void> load() async {
     _loading = true;
     _clearError();
-    notifyListeners();
+    _notify();
     try {
       _tracks = await _repository.tracks(playlistId);
     } catch (e) {
       _setError(e);
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -59,7 +77,7 @@ class PlaylistDetailController extends ChangeNotifier {
   /// attribue la position. Relaie l'exception (409 si déjà présente).
   Future<void> addTrack(String trackId) async {
     _tracks = await _repository.addTrack(playlistId, trackId);
-    notifyListeners();
+    _notify();
   }
 
   /// Retire une piste (optimiste + rollback). Le serveur recompacte les
@@ -67,12 +85,12 @@ class PlaylistDetailController extends ChangeNotifier {
   Future<void> removeTrack(String trackId) async {
     final previous = _tracks;
     _tracks = _reindex(_tracks.where((t) => t.id != trackId).toList());
-    notifyListeners();
+    _notify();
     try {
       await _repository.removeTrack(playlistId, trackId);
     } catch (e) {
       _tracks = previous;
-      notifyListeners();
+      _notify();
       rethrow;
     }
   }
@@ -90,14 +108,14 @@ class PlaylistDetailController extends ChangeNotifier {
 
     reordered.insert(target, reordered.removeAt(oldIndex));
     _tracks = _reindex(reordered);
-    notifyListeners();
+    _notify();
 
     try {
       _tracks = await _repository.reorderTracks(
         playlistId,
         reordered.map((t) => t.id).toList(),
       );
-      notifyListeners();
+      _notify();
     } catch (e) {
       // 409 : la playlist a changé ailleurs. Recharger donne l'état réel ;
       // pour toute autre erreur, l'ordre précédent reste la meilleure vérité
@@ -106,7 +124,7 @@ class PlaylistDetailController extends ChangeNotifier {
         await load();
       } else {
         _tracks = previous;
-        notifyListeners();
+        _notify();
       }
       rethrow;
     }
