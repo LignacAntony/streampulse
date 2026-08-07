@@ -29,6 +29,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/profiles"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 	"github.com/LignacAntony/streampulse/internal/streaming"
+	"github.com/LignacAntony/streampulse/internal/track"
 )
 
 // var _ vérifie à la compilation que *streaming.Service satisfait bien
@@ -161,6 +162,13 @@ func run() error {
 	playlistSvc := playlist.NewService(playlistRepo)
 	playlistHandler := playlist.NewHandler(playlistSvc)
 
+	// Bibliothèque de pistes (US-05-01) : upload + listing. Domaine extrait de
+	// playlist (ADR 030) ; le fichier est stocké hors répertoire servi.
+	trackStorage := track.NewFileStorage(cfg.StoragePath)
+	trackRepo := track.NewRepository(pool)
+	trackSvc := track.NewService(trackRepo, trackStorage)
+	trackHandler := track.NewHandler(trackSvc)
+
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
 	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
 	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
@@ -290,9 +298,11 @@ func run() error {
 		http.HandlerFunc(playlistHandler.ReorderTracks)))
 	mux.Handle("DELETE /api/playlists/{id}/tracks/{trackId}", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.RemoveTrack)))
-	// Bibliothèque de pistes du demandeur : source du sélecteur d'ajout.
+	// Bibliothèque de pistes du demandeur (US-05-01) : upload multipart + listing.
+	mux.Handle("POST /api/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.Upload)))
 	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
-		http.HandlerFunc(playlistHandler.ListUserTracks)))
+		http.HandlerFunc(trackHandler.ListUserTracks)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

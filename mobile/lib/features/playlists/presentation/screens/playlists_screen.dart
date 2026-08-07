@@ -40,7 +40,10 @@ class PlaylistsScreen extends StatelessWidget {
       create: (ctx) => PlaylistsController(
         repository ??
             PlaylistRepositoryImpl(
-              PlaylistRemoteDataSource(ctx.read<DioClient>().playlistApi),
+              PlaylistRemoteDataSource(
+                ctx.read<DioClient>().playlistApi,
+                ctx.read<DioClient>().trackApi,
+              ),
             ),
       ),
       child: _PlaylistsBody(forcedAuth: isAuthenticated),
@@ -79,6 +82,10 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   }
 
   Future<void> _onRefresh() => context.read<PlaylistsController>().refresh();
+
+  /// Ouvre l'écran d'upload d'une piste (US-05-01). La bibliothèque de pistes
+  /// alimente le sélecteur d'ajout des playlists : rien à recharger ici au retour.
+  Future<void> _onUpload() => context.push('/library/upload');
 
   Future<void> _onCreate() async {
     final result = await PlaylistFormSheet.show(
@@ -161,15 +168,22 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
       appBar: AppBar(
         title: const Text('Bibliothèque'),
         actions: [
-          // Le « + » n'existe que pour un utilisateur connecté : un invité ne
-          // peut pas posséder de playlist.
-          if (authenticated)
+          // Upload d'une piste et création de playlist : réservés à un
+          // utilisateur connecté (un invité ne possède ni pistes ni playlists).
+          if (authenticated) ...[
+            IconButton(
+              key: const Key('track_upload_button'),
+              icon: const Icon(Icons.upload_file_outlined),
+              tooltip: 'Uploader une piste',
+              onPressed: _onUpload,
+            ),
             IconButton(
               key: const Key('playlist_create_button'),
               icon: const Icon(Icons.add_circle_outline),
               tooltip: 'Nouvelle playlist',
               onPressed: _onCreate,
             ),
+          ],
         ],
       ),
       body: SafeArea(

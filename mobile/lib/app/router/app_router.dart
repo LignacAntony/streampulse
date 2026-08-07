@@ -13,6 +13,7 @@ import '../../features/playlists/presentation/screens/playlist_detail_screen.dar
 import '../../features/playlists/presentation/screens/playlists_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/streams/domain/entities/live_stream.dart';
+import '../../features/tracks/presentation/screens/upload_track_screen.dart';
 import '../../features/streams/presentation/screens/discover_screen.dart';
 import '../../features/streams/presentation/screens/stream_player_screen.dart';
 import '../shell/main_shell.dart';
@@ -115,6 +116,12 @@ GoRouter createAppRouter(SecureStorage storage) {
                       playlistId: state.pathParameters['id']!,
                       playlistName: state.extra as String?,
                     ),
+                  ),
+                  // Upload d'une piste dans la bibliothèque (US-05-01). Sous-route
+                  // de l'onglet : la barre de navigation reste visible.
+                  GoRoute(
+                    path: 'upload',
+                    builder: (context, state) => const UploadTrackScreen(),
                   ),
                 ],
               ),

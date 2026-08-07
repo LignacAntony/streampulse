@@ -266,12 +266,27 @@ l'utilisateur : actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle)
 | POST | `/api/playlists/{id}/tracks` | `Handler.AddTrack` | Oui (JWT) — ajoute une piste **du demandeur** en fin de playlist, renvoie l'ordre résultant (201) ; piste inconnue ou d'un tiers → 404 ; déjà présente → 409 (STR-132, ADR 029) |
 | PUT | `/api/playlists/{id}/tracks` | `Handler.ReorderTracks` | Oui (JWT) — **remplacement total** de l'ordre (`{track_ids: [...]}`, index 0 = première piste), renvoie l'ordre persisté ; doublon → 400, liste qui ne couvre pas exactement la playlist → 409 (STR-132, ADR 029) |
 | DELETE | `/api/playlists/{id}/tracks/{trackId}` | `Handler.RemoveTrack` | Oui (JWT) — retire la piste et **recompacte** les positions en 0..n-1 (204) ; piste absente → 404 (STR-132, ADR 029) |
-| GET | `/api/tracks` | `Handler.ListUserTracks` | Oui (JWT) — bibliothèque de pistes du demandeur, source du sélecteur d'ajout. **Vit temporairement dans le domaine playlist** : à déménager vers un domaine `track` quand US-05-01 (upload) arrivera (ADR 029 §7) |
 
 - Tables `playlists` / `playlist_tracks` préexistantes (migration `000004`) ; contrainte `UNIQUE (user_id, name)` (`000006`).
 - Isolation : `GetPlaylist` compare `user_id` ; `ListTracks` réutilise `GetPlaylist` ; `Update`/`Delete` filtrent sur `(id, user_id)` en SQL (0 ligne → 404).
 - Ordre des pistes (US-05-03, [ADR 029](docs/adr/029-pistes-dune-playlist-ajout-retrait-reordonnancement.md)) : migration `000019` pose `UNIQUE (playlist_id, position)` **DEFERRABLE INITIALLY DEFERRED** — un réordonnancement réécrit toutes les positions dans une transaction, ses états intermédiaires contiennent forcément des doublons ; la contrainte n'est vérifiée qu'au COMMIT. Toutes les mutations de pistes passent donc par `inTx` (repository).
 - ⚠️ Sur `playlist_tracks`, un `INSERT … ON CONFLICT` doit **nommer ses colonnes** (`ON CONFLICT (playlist_id, track_id)`) : une contrainte différée ne peut pas servir d'arbitre, et un `ON CONFLICT DO NOTHING` nu les considère toutes → SQLSTATE 55000 au démarrage (ADR 029 §2).
+
+### Routes tracks existantes
+
+Bibliothèque de pistes audio de l'utilisateur : domaine `internal/track/` (handler/service/
+repository), extrait du domaine playlist (US-05-01, [ADR 030](docs/adr/030-domaine-track-upload-audio.md)).
+Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « diffuseur **ou** utilisateur »).
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| POST | `/api/tracks` | `Handler.Upload` | Oui (JWT) — **upload multipart** (`file` + `title` requis, `artist`/`duration_s` optionnels) d'un audio MP3/AAC/OGG ≤ 50 Mo. MIME **sniffé côté serveur** (PDF renommé `.mp3` → 415) ; fichier stocké hors répertoire servi, piste référencée en base (201). 400 (titre/fichier manquant), 409 (titre en doublon `uq_tracks_user_title`), 413 (> 50 Mo), 415 (non-audio) |
+| GET | `/api/tracks` | `Handler.ListUserTracks` | Oui (JWT) — bibliothèque de pistes du demandeur, source du sélecteur d'ajout (US-05-03) |
+
+- Table `tracks` préexistante (migration `000003`) : `file_path`/`mime_type` (CHECK `audio/mpeg|aac|ogg`)/`file_size`/`duration_s` (CHECK `> 0`) ; contrainte `uq_tracks_user_title (user_id, title)` (`000006`). **Aucune migration** ajoutée par l'US-05-01.
+- Stockage : `track.FileStorage` écrit sous `STORAGE_PATH` (volume Docker `track_storage`, `/data/tracks`), nom = UUID + extension canonique (jamais le nom client → anti-traversal). Interface `track.Storage` (`Save`/`Remove`) pour découpler d'un futur stockage objet.
+- Validation MIME par **sniff de contenu** (`github.com/gabriel-vasile/mimetype`), normalisé vers la valeur canonique du CHECK DB. Durée = champ client optionnel (pas d'extraction ffprobe). Détails [ADR 030](docs/adr/030-domaine-track-upload-audio.md).
+- Contrat OpenAPI : ces routes portent le tag `Track` → côté client généré, `listUserTracks`/`uploadTrack` vivent dans `TrackApi` (le `DioClient` mobile expose `trackApi`).
 
 ### Routes admin existantes
 
@@ -500,6 +515,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
+| `STORAGE_PATH` | Répertoire racine des fichiers audio uploadés (US-05-01, ADR 030), hors répertoire servi. Volume Docker `track_storage` en conteneur ; chemin relatif au repo en `go run` local | `/data/tracks` |
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
 | `TRUST_PROXY_HEADERS` | Lire `X-Forwarded-For` pour identifier les auditeurs (comptage d'audience, ADR 025). `false` en local ; `true` **uniquement** derrière un reverse proxy, sinon le compteur sature à 1 | `false` |
 | `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
@@ -567,7 +583,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `030-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `031-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

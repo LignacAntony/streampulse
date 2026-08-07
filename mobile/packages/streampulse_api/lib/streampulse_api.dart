@@ -16,6 +16,7 @@ export 'package:streampulse_api/src/api/metrics_api.dart';
 export 'package:streampulse_api/src/api/playlist_api.dart';
 export 'package:streampulse_api/src/api/profile_api.dart';
 export 'package:streampulse_api/src/api/streaming_api.dart';
+export 'package:streampulse_api/src/api/track_api.dart';
 
 export 'package:streampulse_api/src/model/add_playlist_track_request.dart';
 export 'package:streampulse_api/src/model/admin_stream_list_response.dart';

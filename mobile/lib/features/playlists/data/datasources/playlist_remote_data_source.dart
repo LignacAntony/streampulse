@@ -7,10 +7,15 @@ import '../../../../core/network/dio_error_mapper.dart';
 /// Encapsule le `PlaylistApi` généré et traduit les `DioException` en
 /// exceptions typées (cf. `mapDioException`). Un 409 est étiqueté avec un
 /// message métier par défaut (nom déjà utilisé).
+///
+/// La bibliothèque de pistes (`libraryTracks`) passe par le `TrackApi` : depuis
+/// l'extraction du domaine track (US-05-01), `GET /api/tracks` n'appartient plus
+/// au tag Playlist du contrat OpenAPI.
 class PlaylistRemoteDataSource {
-  PlaylistRemoteDataSource(this._api);
+  PlaylistRemoteDataSource(this._api, this._trackApi);
 
   final PlaylistApi _api;
+  final TrackApi _trackApi;
 
   static const _duplicateNameMessage = 'Une playlist porte déjà ce nom';
 
@@ -83,7 +88,7 @@ class PlaylistRemoteDataSource {
 
   Future<List<TrackResponse>> libraryTracks() async {
     try {
-      final response = await _api.listUserTracks();
+      final response = await _trackApi.listUserTracks();
       return response.data?.toList() ?? const [];
     } on DioException catch (e) {
       throw mapDioException(e);

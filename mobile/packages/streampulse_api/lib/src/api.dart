@@ -15,6 +15,7 @@ import 'package:streampulse_api/src/api/metrics_api.dart';
 import 'package:streampulse_api/src/api/playlist_api.dart';
 import 'package:streampulse_api/src/api/profile_api.dart';
 import 'package:streampulse_api/src/api/streaming_api.dart';
+import 'package:streampulse_api/src/api/track_api.dart';
 
 class StreampulseApi {
   static const String basePath = r'http://localhost';
@@ -185,5 +186,11 @@ class StreampulseApi {
   /// by doing that all interceptors will not be executed
   StreamingApi getStreamingApi() {
     return StreamingApi(dio);
+  }
+
+  /// Get TrackApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  TrackApi getTrackApi() {
+    return TrackApi(dio);
   }
 }

@@ -15,7 +15,6 @@ import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/playlist_response.dart';
 import 'package:streampulse_api/src/model/playlist_track_response.dart';
 import 'package:streampulse_api/src/model/reorder_playlist_tracks_request.dart';
-import 'package:streampulse_api/src/model/track_response.dart';
 import 'package:streampulse_api/src/model/update_playlist_request.dart';
 
 class PlaylistApi {
@@ -494,81 +493,6 @@ class PlaylistApi {
     }
 
     return Response<List<PlaylistResponse>>(
-      data: _responseData,
-      headers: _response.headers,
-      isRedirect: _response.isRedirect,
-      requestOptions: _response.requestOptions,
-      redirects: _response.redirects,
-      statusCode: _response.statusCode,
-      statusMessage: _response.statusMessage,
-      extra: _response.extra,
-    );
-  }
-
-  /// List the authenticated user&#39;s track library.
-  /// Returns the tracks owned by the authenticated user, most recent first. It is the source of the \&quot;add a track\&quot; picker (US-05-03).
-  ///
-  /// Parameters:
-  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
-  /// * [headers] - Can be used to add additional headers to the request
-  /// * [extras] - Can be used to add flags to the request
-  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
-  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
-  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
-  ///
-  /// Returns a [Future] containing a [Response] with a [List<TrackResponse>] as data
-  /// Throws [DioException] if API call or serialization fails
-  Future<Response<List<TrackResponse>>> listUserTracks({
-    CancelToken? cancelToken,
-    Map<String, dynamic>? headers,
-    Map<String, dynamic>? extra,
-    ValidateStatus? validateStatus,
-    ProgressCallback? onSendProgress,
-    ProgressCallback? onReceiveProgress,
-  }) async {
-    final _path = r'/api/tracks';
-    final _options = Options(
-      method: r'GET',
-      headers: <String, dynamic>{...?headers},
-      extra: <String, dynamic>{
-        'secure': <Map<String, String>>[
-          {'type': 'http', 'scheme': 'bearer', 'name': 'bearerAuth'},
-        ],
-        ...?extra,
-      },
-      validateStatus: validateStatus,
-    );
-
-    final _response = await _dio.request<Object>(
-      _path,
-      options: _options,
-      cancelToken: cancelToken,
-      onSendProgress: onSendProgress,
-      onReceiveProgress: onReceiveProgress,
-    );
-
-    List<TrackResponse>? _responseData;
-
-    try {
-      final rawData = _response.data;
-      _responseData = rawData == null
-          ? null
-          : deserialize<List<TrackResponse>, TrackResponse>(
-              rawData,
-              'List<TrackResponse>',
-              growable: true,
-            );
-    } catch (error, stackTrace) {
-      throw DioException(
-        requestOptions: _response.requestOptions,
-        response: _response,
-        type: DioExceptionType.unknown,
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-
-    return Response<List<TrackResponse>>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

@@ -5,6 +5,7 @@ networks:
 volumes:
   postgres_data:
   grafana_data:
+  track_storage:
 
 services:
 
@@ -71,6 +72,11 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Export des traces vers Tempo (STR-164, ADR 020). Vide = tracing off.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      # Répertoire de stockage des fichiers audio uploadés (US-05-01, ADR 030),
+      # hors répertoire servi, persisté sur le volume track_storage.
+      STORAGE_PATH: ${STORAGE_PATH:-/data/tracks}
+    volumes:
+      - track_storage:/data/tracks
     depends_on:
       postgres:
         condition: service_healthy

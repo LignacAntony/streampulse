@@ -35,9 +35,6 @@ type stubService struct {
 	tracksRet []PlaylistTrack
 	tracksErr error
 
-	userTracksRet []Track
-	userTracksErr error
-
 	addRet     []PlaylistTrack
 	addErr     error
 	addCall    bool
@@ -89,11 +86,6 @@ func (s *stubService) ListTracks(_ context.Context, id, requesterID string) ([]P
 	s.gotID = id
 	s.gotRequester = requesterID
 	return s.tracksRet, s.tracksErr
-}
-
-func (s *stubService) ListUserTracks(_ context.Context, requesterID string) ([]Track, error) {
-	s.gotRequester = requesterID
-	return s.userTracksRet, s.userTracksErr
 }
 
 func (s *stubService) AddTrack(_ context.Context, playlistID, trackID, requesterID string) ([]PlaylistTrack, error) {
@@ -408,36 +400,6 @@ func TestReorderTracks_StaleOrder_409(t *testing.T) {
 		`{"track_ids":["t1"]}`, true)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status: got %d, want 409", rec.Code)
-	}
-}
-
-func TestListUserTracks_OK(t *testing.T) {
-	artist := "Neon Lights"
-	svc := &stubService{userTracksRet: []Track{{ID: testTrackID, Title: "Midnight Drive", Artist: &artist}}}
-	h := NewHandler(svc)
-
-	rec := do(t, h.ListUserTracks, http.MethodGet, "/api/tracks", "", "", true)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: got %d, want 200", rec.Code)
-	}
-	if svc.gotRequester != testUserID {
-		t.Errorf("requester: got %q, want %q", svc.gotRequester, testUserID)
-	}
-	var resp []libraryTrackResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(resp) != 1 || resp[0].Title != "Midnight Drive" || resp[0].DurationS != nil {
-		t.Errorf("unexpected response: %+v", resp)
-	}
-}
-
-func TestListUserTracks_EmptyLibrary_ReturnsEmptyArray(t *testing.T) {
-	h := NewHandler(&stubService{})
-
-	rec := do(t, h.ListUserTracks, http.MethodGet, "/api/tracks", "", "", true)
-	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
-		t.Errorf("body: got %q, want %q", body, "[]")
 	}
 }
 

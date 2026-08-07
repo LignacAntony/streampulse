@@ -43,15 +43,6 @@ type PlaylistTrack struct {
 	Position  int
 }
 
-// Track est une piste de la bibliothèque de l'utilisateur (source du sélecteur
-// « ajouter une piste »). Artist et DurationS sont nullables.
-type Track struct {
-	ID        string
-	Title     string
-	Artist    *string
-	DurationS *int
-}
-
 // AddTrackParams est la demande d'ajout adressée au Repository. UserID sert à
 // restreindre l'ajout aux pistes du demandeur.
 type AddTrackParams struct {
@@ -98,7 +89,6 @@ type Repository interface {
 	Update(ctx context.Context, p UpdateParams) (Playlist, error)
 	Delete(ctx context.Context, id, userID string) error
 	ListTracks(ctx context.Context, playlistID string) ([]PlaylistTrack, error)
-	ListUserTracks(ctx context.Context, userID string) ([]Track, error)
 	AddTrack(ctx context.Context, p AddTrackParams) error
 	RemoveTrack(ctx context.Context, playlistID, trackID string) error
 	Reorder(ctx context.Context, playlistID string, trackIDs []string) error
@@ -205,13 +195,6 @@ func (s *Service) ListTracks(ctx context.Context, id, requesterID string) ([]Pla
 		return nil, err
 	}
 	return s.repo.ListTracks(ctx, id)
-}
-
-// ListUserTracks retourne la bibliothèque de pistes du demandeur : elle alimente
-// le sélecteur d'ajout côté client. Aucune piste d'un tiers n'y figure (le filtre
-// porte sur le porteur du JWT).
-func (s *Service) ListUserTracks(ctx context.Context, requesterID string) ([]Track, error) {
-	return s.repo.ListUserTracks(ctx, requesterID)
 }
 
 // AddTrack ajoute une piste en fin de playlist et retourne l'ordre résultant.

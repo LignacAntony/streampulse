@@ -34,8 +34,6 @@ type fakeRepo struct {
 	tracksErr  error
 	tracksCall bool
 
-	userTracksRet []Track
-
 	addErr  error
 	addCall bool
 	gotAdd  AddTrackParams
@@ -81,10 +79,6 @@ func (f *fakeRepo) Delete(_ context.Context, id, userID string) error {
 func (f *fakeRepo) ListTracks(_ context.Context, _ string) ([]PlaylistTrack, error) {
 	f.tracksCall = true
 	return f.tracksRet, f.tracksErr
-}
-
-func (f *fakeRepo) ListUserTracks(_ context.Context, _ string) ([]Track, error) {
-	return f.userTracksRet, nil
 }
 
 func (f *fakeRepo) AddTrack(_ context.Context, p AddTrackParams) error {
@@ -347,18 +341,5 @@ func TestReorderTracks_ThirdPartyPlaylist_NotFound(t *testing.T) {
 	}
 	if repo.reorderCall {
 		t.Error("repo.Reorder must not be called for a third-party playlist")
-	}
-}
-
-func TestListUserTracks_ReturnsRequesterLibrary(t *testing.T) {
-	repo := &fakeRepo{userTracksRet: []Track{{ID: "t1", Title: "Song"}}}
-	svc := NewService(repo)
-
-	tracks, err := svc.ListUserTracks(context.Background(), ownerID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(tracks) != 1 || tracks[0].Title != "Song" {
-		t.Errorf("unexpected tracks: %+v", tracks)
 	}
 }
