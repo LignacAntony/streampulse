@@ -2,7 +2,7 @@
 // de l'utilisateur : upload d'un fichier (MP3/AAC/OGG) et listing (US-05-01).
 //
 // Il a été extrait du domaine playlist, où GET /api/tracks vivait temporairement
-// (cf. ADR 029 §7 / ADR 030). Le fichier est stocké hors répertoire servi (via
+// (cf. ADR 029 §7 / ADR 032). Le fichier est stocké hors répertoire servi (via
 // Storage), et seule sa référence + ses métadonnées vivent en base.
 package track
 
@@ -16,6 +16,7 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
@@ -24,6 +25,12 @@ import (
 // MaxUploadBytes borne la taille du fichier audio accepté (50 Mo, critère
 // d'acceptation de l'US-05-01). L'US fige cette valeur : pas de variable d'env.
 const MaxUploadBytes int64 = 50 << 20
+
+// MaxUserStorageBytes borne la taille CUMULÉE des fichiers d'un même compte
+// (500 Mo). Sans ce quota, un utilisateur pourrait boucler des uploads jusqu'à
+// saturer le volume — et donc le disque du VPS, qui héberge aussi la base. Une
+// constante suffit ici ; on pourra la passer en variable d'env si besoin.
+const MaxUserStorageBytes int64 = 500 << 20
 
 // Contraintes de validation du titre (aligné sur la logique playlist).
 const (
@@ -74,6 +81,11 @@ type CreateTrackParams struct {
 type Repository interface {
 	CreateTrack(ctx context.Context, p CreateTrackParams) (Track, error)
 	ListTracksByUser(ctx context.Context, userID string) ([]Track, error)
+	// SumFileSizeByUser retourne la taille cumulée des fichiers du user (quota).
+	SumFileSizeByUser(ctx context.Context, userID string) (int64, error)
+	// ListFilePathsByUser retourne les chemins disque des fichiers du user, pour
+	// les supprimer du stockage à la suppression de son compte.
+	ListFilePathsByUser(ctx context.Context, userID string) ([]string, error)
 }
 
 // Storage écrit/supprime le binaire audio hors de la base et hors répertoire
@@ -114,6 +126,21 @@ func (s *Service) Create(ctx context.Context, in CreateTrackInput) (Track, error
 		return Track{}, apperror.InvalidArgument("empty file")
 	}
 
+	// Quota de stockage par compte, vérifié AVANT d'écrire le fichier : borne le
+	// remplissage du volume (best-effort — deux uploads concurrents peuvent tous
+	// deux passer, une borne de concurrence globale suivra dans un ticket dédié).
+	used, err := s.repo.SumFileSizeByUser(ctx, in.UserID)
+	if err != nil {
+		return Track{}, err
+	}
+	if used+in.Size > MaxUserStorageBytes {
+		return Track{}, httpjson.StatusError(
+			http.StatusInsufficientStorage,
+			"storage_quota_exceeded",
+			"quota de stockage atteint",
+		)
+	}
+
 	mimeType, ext, err := detectAudio(in.Content)
 	if err != nil {
 		return Track{}, err
@@ -141,6 +168,25 @@ func (s *Service) Create(ctx context.Context, in CreateTrackInput) (Track, error
 		return Track{}, err
 	}
 	return track, nil
+}
+
+// PurgeUserTracks supprime du STOCKAGE tous les fichiers audio d'un utilisateur.
+// À appeler AVANT la suppression du compte (la cascade DB efface les lignes
+// tracks mais jamais les fichiers sur disque — sans ça le volume ne fait que
+// croître). Best-effort : l'échec de suppression d'un fichier est journalisé
+// mais n'interrompt pas la purge ni la suppression du compte.
+func (s *Service) PurgeUserTracks(ctx context.Context, userID string) error {
+	paths, err := s.repo.ListFilePathsByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if err := s.storage.Remove(p); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("path", p).
+				Msg("track: fichier orphelin non supprimé à la purge du compte")
+		}
+	}
+	return nil
 }
 
 // ListUserTracks retourne la bibliothèque de pistes du demandeur (le filtre

@@ -76,7 +76,7 @@ type Config struct {
 	StreamIngestBaseURL string `mapstructure:"STREAM_INGEST_BASE_URL"`
 
 	// StoragePath est le répertoire racine où sont stockés les fichiers audio
-	// uploadés (US-05-01, ADR 030). Hors de tout répertoire servi en HTTP ; en
+	// uploadés (US-05-01, ADR 032). Hors de tout répertoire servi en HTTP ; en
 	// Docker, monté sur un volume nommé pour la persistance.
 	StoragePath string `mapstructure:"STORAGE_PATH"`
 

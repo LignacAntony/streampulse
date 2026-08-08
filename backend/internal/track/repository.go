@@ -67,6 +67,22 @@ func (r *pgRepository) ListTracksByUser(ctx context.Context, userID string) ([]T
 	return tracks, nil
 }
 
+func (r *pgRepository) SumFileSizeByUser(ctx context.Context, userID string) (int64, error) {
+	total, err := r.q.SumTrackSizeByUser(ctx, uuidParam(userID))
+	if err != nil {
+		return 0, fmt.Errorf("repo: sum user file size: %w", err)
+	}
+	return total, nil
+}
+
+func (r *pgRepository) ListFilePathsByUser(ctx context.Context, userID string) ([]string, error) {
+	paths, err := r.q.ListFilePathsByUser(ctx, uuidParam(userID))
+	if err != nil {
+		return nil, fmt.Errorf("repo: list user file paths: %w", err)
+	}
+	return paths, nil
+}
+
 // uuidParam convertit un UUID de source interne (user_id issu du JWT). Une valeur
 // invalide signalerait un bug d'authentification, d'où le panic.
 func uuidParam(s string) pgtype.UUID {

@@ -1,4 +1,4 @@
-# ADR 030 — Domaine track : upload d'une piste audio
+# ADR 032 — Domaine track : upload d'une piste audio
 
 **Date** : 2026-08-07
 **Statut** : Accepté
@@ -87,6 +87,41 @@ déterminés et validés côté serveur — ce sont les données de confiance.
 
 Rôle requis : `RequireAuth` seul — l'US vise « diffuseur **ou** utilisateur », comme l'actuel
 `GET /api/tracks`.
+
+### 6. Quota de stockage par compte + mémoire multipart bornée
+
+Sans borne, un utilisateur authentifié peut boucler des uploads de 50 Mo jusqu'à saturer le volume
+— donc le disque du VPS, qui héberge aussi `postgres_data` : un disque plein ferait tomber la base,
+pas seulement l'upload. Deux garde-fous :
+
+- **Quota cumulé par utilisateur** : constante `MaxUserStorageBytes = 500 << 20` (500 Mo). Vérifié
+  **avant** `Storage.Save` via `SumFileSizeByUser` ; dépassement → **507** (`storage_quota_exceeded`).
+  Best-effort face à la concurrence (deux uploads simultanés peuvent tous deux passer) — une **borne
+  de concurrence globale** type `HLS_MAX_CONCURRENT` fera l'objet d'un ticket séparé.
+- **Mémoire multipart** : `ParseMultipartForm(1 << 20)` (et non 10 Mio) — au-delà, le corps déborde
+  sur un fichier temporaire (nettoyé par `net/http`). 10 Mio × N requêtes concurrentes saturerait le
+  heap (OOMKill du pod). 1 Mio garde l'empreinte mémoire basse, le disque temporaire absorbe le reste.
+
+### 7. Nettoyage des fichiers à la suppression d'un compte
+
+La FK `tracks.user_id` est `ON DELETE CASCADE` : supprimer un compte efface les **lignes** `tracks`
+mais **jamais** les fichiers sur le volume → sans action, le volume ne fait que croître.
+
+`track.Service.PurgeUserTracks(userID)` liste les chemins du user (`ListFilePathsByUser`) et les
+supprime via `Storage` (best-effort : un échec est journalisé, il ne bloque pas la suppression du
+compte). Elle est **appelée avant** le hard-delete (sinon la cascade a déjà effacé les lignes) par
+les deux chemins de suppression :
+
+- `admin.Service.DeleteUser` (suppression par un admin),
+- `auth.Service.DeleteAccount` (suppression de son propre compte).
+
+Injection par **setter** `SetTrackPurger` (interface étroite `UserTrackPurger` déclarée dans chaque
+domaine consommateur, ISP), câblée dans `main.go` — même motif que `SetAuditRecorder`/`SetMetrics`,
+et sans churn sur les constructeurs (donc sur les tests existants). `*track.Service` la satisfait
+(vérif `var _` dans `main.go`).
+
+> Il n'y a pas encore de `DELETE /api/tracks/{id}` (suppression d'une piste isolée) : hors périmètre
+> de l'US-05-01, à ouvrir dans un ticket dédié — il réutilisera `Storage.Remove`.
 
 ---
 

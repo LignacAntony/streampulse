@@ -107,14 +107,30 @@ type Mailer interface {
 	SendPasswordResetEmail(ctx context.Context, to, rawToken string) error
 }
 
+// UserTrackPurger supprime du stockage les fichiers audio d'un utilisateur.
+// Implémentée par track.Service ; injectée en setter (SetTrackPurger) pour que la
+// suppression de SON PROPRE compte n'abandonne pas de fichiers orphelins sur le
+// volume (la cascade DB efface les lignes tracks, pas les fichiers).
+type UserTrackPurger interface {
+	PurgeUserTracks(ctx context.Context, userID string) error
+}
+
 type Service struct {
 	repo      Repository
 	jwtSecret string
 	mailer    Mailer
+	// purger est optionnel (injecté en setter) : nil dans les tests.
+	purger UserTrackPurger
 }
 
 func NewService(repo Repository, jwtSecret string, mailer Mailer) *Service {
 	return &Service{repo: repo, jwtSecret: jwtSecret, mailer: mailer}
+}
+
+// SetTrackPurger branche la suppression des fichiers audio à la suppression du
+// compte (câblé dans main.go), même motif que le domaine admin.
+func (s *Service) SetTrackPurger(p UserTrackPurger) {
+	s.purger = p
 }
 
 func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -268,6 +284,16 @@ func (s *Service) DeleteAccount(ctx context.Context, in DeleteAccountInput) erro
 
 	if err := bcrypt.CompareHashAndPassword([]byte(uwh.PasswordHash), []byte(in.Password)); err != nil {
 		return apperror.Unauthorized("invalid credentials")
+	}
+
+	// Purge des fichiers audio AVANT le hard-delete : la cascade DB efface les
+	// lignes tracks mais jamais les fichiers. Best-effort — un échec ne bloque
+	// pas la suppression du compte (orphelins journalisés).
+	if s.purger != nil {
+		if err := s.purger.PurgeUserTracks(ctx, in.UserID); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("user_id", in.UserID).
+				Msg("auth: purge des fichiers audio échouée avant suppression du compte")
+		}
 	}
 
 	if err := s.repo.DeleteUserByID(ctx, in.UserID); err != nil {

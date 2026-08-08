@@ -28,6 +28,10 @@ type fakeRepo struct {
 	createRet    Track
 	createErr    error
 	listRet      []Track
+	sumRet       int64
+	sumErr       error
+	pathsRet     []string
+	pathsErr     error
 }
 
 func (f *fakeRepo) CreateTrack(_ context.Context, p CreateTrackParams) (Track, error) {
@@ -44,6 +48,14 @@ func (f *fakeRepo) CreateTrack(_ context.Context, p CreateTrackParams) (Track, e
 
 func (f *fakeRepo) ListTracksByUser(_ context.Context, _ string) ([]Track, error) {
 	return f.listRet, nil
+}
+
+func (f *fakeRepo) SumFileSizeByUser(_ context.Context, _ string) (int64, error) {
+	return f.sumRet, f.sumErr
+}
+
+func (f *fakeRepo) ListFilePathsByUser(_ context.Context, _ string) ([]string, error) {
+	return f.pathsRet, f.pathsErr
 }
 
 type stubStorage struct {
@@ -211,4 +223,54 @@ func TestCreate_RemovesOrphanOnRepoError(t *testing.T) {
 	if !storage.removeCalled || storage.removedPath != "/tmp/orphan.mp3" {
 		t.Errorf("orphan file must be removed, removeCalled=%v path=%q", storage.removeCalled, storage.removedPath)
 	}
+}
+
+// TestCreate_QuotaExceeded : le cumul existant + le nouveau fichier dépasse le
+// quota → 507, rien n'est écrit ni persisté.
+func TestCreate_QuotaExceeded(t *testing.T) {
+	repo := &fakeRepo{sumRet: MaxUserStorageBytes} // déjà au quota
+	storage := &stubStorage{}
+	svc := NewService(repo, storage)
+
+	_, err := svc.Create(context.Background(), CreateTrackInput{
+		UserID:  testUserID,
+		Title:   "Over quota",
+		Size:    int64(len(mp3Header)),
+		Content: bytes.NewReader(mp3Header),
+	})
+	var he *httpjson.Error
+	if !errors.As(err, &he) || he.Status != http.StatusInsufficientStorage {
+		t.Fatalf("expected 507 httpjson.Error, got %v", err)
+	}
+	if storage.saveCalled || repo.createCalled {
+		t.Error("nothing must be stored when quota is exceeded")
+	}
+}
+
+// TestPurgeUserTracks : supprime chaque fichier du user via le Storage.
+func TestPurgeUserTracks(t *testing.T) {
+	repo := &fakeRepo{pathsRet: []string{"/data/tracks/a.mp3", "/data/tracks/b.ogg"}}
+	storage := &recordingStorage{}
+	svc := NewService(repo, storage)
+
+	if err := svc.PurgeUserTracks(context.Background(), testUserID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(storage.removed) != 2 {
+		t.Fatalf("expected 2 files removed, got %v", storage.removed)
+	}
+}
+
+// recordingStorage capture les chemins supprimés (Save non utilisé ici).
+type recordingStorage struct {
+	removed []string
+}
+
+func (s *recordingStorage) Save(_ context.Context, _, _ string, _ io.Reader) (string, error) {
+	return "", nil
+}
+
+func (s *recordingStorage) Remove(path string) error {
+	s.removed = append(s.removed, path)
+	return nil
 }

@@ -47,6 +47,13 @@ var _ admin.StreamModerator = (*streaming.Service)(nil)
 // le domaine streaming consomme pour journaliser une rotation de clé (STR-228).
 var _ streaming.AuditRecorder = (admin.Repository)(nil)
 
+// var _ vérifie que *track.Service satisfait les purgers de fichiers consommés
+// par admin et auth à la suppression d'un compte (US-05-01, ADR 032).
+var (
+	_ admin.UserTrackPurger = (*track.Service)(nil)
+	_ auth.UserTrackPurger  = (*track.Service)(nil)
+)
+
 func main() {
 	if err := run(); err != nil {
 		// Avant config.Load le logger applicatif n'existe pas encore : le
@@ -163,7 +170,7 @@ func run() error {
 	playlistHandler := playlist.NewHandler(playlistSvc)
 
 	// Bibliothèque de pistes (US-05-01) : upload + listing. Domaine extrait de
-	// playlist (ADR 030) ; le fichier est stocké hors répertoire servi.
+	// playlist (ADR 032) ; le fichier est stocké hors répertoire servi.
 	trackStorage := track.NewFileStorage(cfg.StoragePath)
 	trackRepo := track.NewRepository(pool)
 	trackSvc := track.NewService(trackRepo, trackStorage)
@@ -175,6 +182,13 @@ func run() error {
 	adminRepo := admin.NewRepository(pool)
 	adminSvc := admin.NewService(adminRepo, streamingSvc, streamingSvc)
 	adminHandler := admin.NewHandler(adminSvc)
+
+	// Purge des fichiers audio à la suppression d'un compte (US-05-01, ADR 032) :
+	// la cascade DB efface les lignes tracks, jamais les fichiers sur le volume.
+	// Setter (comme SetAuditRecorder/SetMetrics) car trackSvc est construit après
+	// authSvc et sert deux domaines.
+	authSvc.SetTrackPurger(trackSvc)
+	adminSvc.SetTrackPurger(trackSvc)
 
 	// `audit_logs` appartient au domaine admin ; le streaming n'en connaît que
 	// l'interface étroite AuditRecorder, satisfaite ici par le repository admin

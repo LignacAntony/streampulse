@@ -66,6 +66,35 @@ func (q *Queries) CreateTrack(ctx context.Context, arg CreateTrackParams) (Creat
 	return i, err
 }
 
+const listFilePathsByUser = `-- name: ListFilePathsByUser :many
+SELECT file_path
+FROM tracks
+WHERE user_id = $1::uuid
+`
+
+// Chemins disque des fichiers du demandeur, pour les supprimer du stockage lors
+// de la suppression de son compte (la cascade DB efface les lignes, pas les
+// fichiers).
+func (q *Queries) ListFilePathsByUser(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listFilePathsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var file_path string
+		if err := rows.Scan(&file_path); err != nil {
+			return nil, err
+		}
+		items = append(items, file_path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTracksByUser = `-- name: ListTracksByUser :many
 SELECT id::text AS id, title, artist, duration_s
 FROM tracks
@@ -105,4 +134,19 @@ func (q *Queries) ListTracksByUser(ctx context.Context, userID pgtype.UUID) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const sumTrackSizeByUser = `-- name: SumTrackSizeByUser :one
+SELECT COALESCE(SUM(file_size), 0)::bigint AS total
+FROM tracks
+WHERE user_id = $1::uuid
+`
+
+// Taille cumulée des fichiers du demandeur, pour appliquer le quota de stockage
+// par compte avant un nouvel upload (borne le remplissage du volume).
+func (q *Queries) SumTrackSizeByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumTrackSizeByUser, userID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }

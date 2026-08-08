@@ -1623,6 +1623,18 @@ paths:
                     error:
                       code: unsupported_media_type
                       message: seuls les fichiers audio MP3, AAC ou OGG sont acceptés
+        "507":
+          description: The user's cumulated storage quota would be exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                quotaExceeded:
+                  value:
+                    error:
+                      code: storage_quota_exceeded
+                      message: quota de stockage atteint
         "500":
           $ref: "#/components/responses/InternalError"
 components:

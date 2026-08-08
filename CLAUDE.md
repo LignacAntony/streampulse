@@ -275,17 +275,19 @@ l'utilisateur : actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle)
 ### Routes tracks existantes
 
 Bibliothèque de pistes audio de l'utilisateur : domaine `internal/track/` (handler/service/
-repository), extrait du domaine playlist (US-05-01, [ADR 030](docs/adr/030-domaine-track-upload-audio.md)).
+repository), extrait du domaine playlist (US-05-01, [ADR 032](docs/adr/032-domaine-track-upload-audio.md)).
 Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « diffuseur **ou** utilisateur »).
 
 | Méthode | Route | Handler | Auth requise |
 |---|---|---|---|
-| POST | `/api/tracks` | `Handler.Upload` | Oui (JWT) — **upload multipart** (`file` + `title` requis, `artist`/`duration_s` optionnels) d'un audio MP3/AAC/OGG ≤ 50 Mo. MIME **sniffé côté serveur** (PDF renommé `.mp3` → 415) ; fichier stocké hors répertoire servi, piste référencée en base (201). 400 (titre/fichier manquant), 409 (titre en doublon `uq_tracks_user_title`), 413 (> 50 Mo), 415 (non-audio) |
+| POST | `/api/tracks` | `Handler.Upload` | Oui (JWT) — **upload multipart** (`file` + `title` requis, `artist`/`duration_s` optionnels) d'un audio MP3/AAC/OGG ≤ 50 Mo. MIME **sniffé côté serveur** (PDF renommé `.mp3` → 415) ; fichier stocké hors répertoire servi, piste référencée en base (201). 400 (titre/fichier manquant), 409 (titre en doublon `uq_tracks_user_title`), 413 (> 50 Mo), 415 (non-audio), 507 (quota de stockage/compte dépassé, `MaxUserStorageBytes` = 500 Mo) |
 | GET | `/api/tracks` | `Handler.ListUserTracks` | Oui (JWT) — bibliothèque de pistes du demandeur, source du sélecteur d'ajout (US-05-03) |
 
 - Table `tracks` préexistante (migration `000003`) : `file_path`/`mime_type` (CHECK `audio/mpeg|aac|ogg`)/`file_size`/`duration_s` (CHECK `> 0`) ; contrainte `uq_tracks_user_title (user_id, title)` (`000006`). **Aucune migration** ajoutée par l'US-05-01.
 - Stockage : `track.FileStorage` écrit sous `STORAGE_PATH` (volume Docker `track_storage`, `/data/tracks`), nom = UUID + extension canonique (jamais le nom client → anti-traversal). Interface `track.Storage` (`Save`/`Remove`) pour découpler d'un futur stockage objet.
-- Validation MIME par **sniff de contenu** (`github.com/gabriel-vasile/mimetype`), normalisé vers la valeur canonique du CHECK DB. Durée = champ client optionnel (pas d'extraction ffprobe). Détails [ADR 030](docs/adr/030-domaine-track-upload-audio.md).
+- Validation MIME par **sniff de contenu** (`github.com/gabriel-vasile/mimetype`), normalisé vers la valeur canonique du CHECK DB. Durée = champ client optionnel (pas d'extraction ffprobe). Détails [ADR 032](docs/adr/032-domaine-track-upload-audio.md).
+- **Quota** : `MaxUserStorageBytes` (500 Mo) vérifié avant écriture → 507 ; `ParseMultipartForm` borné à 1 Mio en mémoire (débordement disque temporaire) pour éviter l'OOM sous uploads concurrents. Une borne de concurrence globale (type `HLS_MAX_CONCURRENT`) reste à faire (ticket séparé).
+- **Nettoyage des fichiers** : la suppression d'un compte (`admin.DeleteUser` **et** `auth.DeleteAccount`) appelle `track.Service.PurgeUserTracks` (injecté par `SetTrackPurger`, interface `UserTrackPurger` — même motif que `LiveStopper`) **avant** le hard-delete : la cascade DB efface les lignes `tracks`, jamais les fichiers du volume. Best-effort. Pas encore de `DELETE /api/tracks/{id}` (hors périmètre US-05-01).
 - Contrat OpenAPI : ces routes portent le tag `Track` → côté client généré, `listUserTracks`/`uploadTrack` vivent dans `TrackApi` (le `DioClient` mobile expose `trackApi`).
 
 ### Routes admin existantes
@@ -515,7 +517,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `APP_BASE_URL` | Schéma URL pour les liens d'email (deep link mobile) | `streampulse://app` |
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules (en dev, localhost/127.0.0.1 autorisés d'office) | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL de stream source du diffuseur (cf. ADR 013) : `{base}/api/streams/ingest/{stream_key}` | `http://localhost:8080` |
-| `STORAGE_PATH` | Répertoire racine des fichiers audio uploadés (US-05-01, ADR 030), hors répertoire servi. Volume Docker `track_storage` en conteneur ; chemin relatif au repo en `go run` local | `/data/tracks` |
+| `STORAGE_PATH` | Répertoire racine des fichiers audio uploadés (US-05-01, ADR 032), hors répertoire servi. Volume Docker `track_storage` en conteneur ; chemin relatif au repo en `go run` local | `/data/tracks` |
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS simultanées servies aux auditeurs (0 = illimité) | `256` |
 | `TRUST_PROXY_HEADERS` | Lire `X-Forwarded-For` pour identifier les auditeurs (comptage d'audience, ADR 025). `false` en local ; `true` **uniquement** derrière un reverse proxy, sinon le compteur sature à 1 | `false` |
 | `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
@@ -583,7 +585,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `031-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `033-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

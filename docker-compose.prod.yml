@@ -73,7 +73,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # Export des traces vers Tempo (STR-164, ADR 020). Vide = tracing off.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
-      # Répertoire de stockage des fichiers audio uploadés (US-05-01, ADR 030),
+      # Répertoire de stockage des fichiers audio uploadés (US-05-01, ADR 032),
       # hors répertoire servi, persisté sur le volume track_storage — sinon les
       # pistes seraient perdues à chaque `docker compose pull && up` de la CD.
       STORAGE_PATH: ${STORAGE_PATH:-/data/tracks}

@@ -19,9 +19,11 @@ import (
 // corps entier est borné par MaxUploadBytes + cette marge.
 const maxFormOverhead int64 = 1 << 20 // 1 Mio
 
-// maxMultipartMemory borne la part gardée en mémoire par ParseMultipartForm ;
-// au-delà, elle déborde sur des fichiers temporaires.
-const maxMultipartMemory int64 = 10 << 20 // 10 Mio
+// maxMultipartMemory borne la part gardée EN MÉMOIRE par ParseMultipartForm ;
+// au-delà, le corps déborde sur un fichier temporaire (nettoyé par net/http en
+// fin de requête). Volontairement bas (1 Mio) : 10 Mio × N uploads concurrents
+// saturerait le heap (OOMKill du pod). Le disque temporaire absorbe le reste.
+const maxMultipartMemory int64 = 1 << 20 // 1 Mio
 
 // TrackService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type TrackService interface {

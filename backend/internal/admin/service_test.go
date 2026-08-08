@@ -296,6 +296,65 @@ func TestService_DeleteUser_StopsLiveBeforeDelete(t *testing.T) {
 	}
 }
 
+type fakePurger struct {
+	order    *[]string
+	gotID    string
+	callonce bool
+	err      error
+}
+
+func (f *fakePurger) PurgeUserTracks(_ context.Context, userID string) error {
+	f.callonce = true
+	f.gotID = userID
+	if f.order != nil {
+		*f.order = append(*f.order, "purger.PurgeUserTracks:"+userID)
+	}
+	return f.err
+}
+
+// 7b. DeleteUser purge les fichiers audio du user AVANT le delete repo (la
+// cascade DB effacerait sinon les lignes tracks en laissant les fichiers).
+func TestService_DeleteUser_PurgesTracksBeforeDelete(t *testing.T) {
+	var order []string
+	repo := seededRepo()
+	repo.order = &order
+	stopper := &fakeStopper{order: &order}
+	purger := &fakePurger{order: &order}
+
+	svc := NewService(repo, stopper, &fakeModerator{})
+	svc.SetTrackPurger(purger)
+
+	if err := svc.DeleteUser(context.Background(), testTargetUserID, testRequesterID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !purger.callonce || purger.gotID != testTargetUserID {
+		t.Fatalf("purger not called with target id, got %q (called=%v)", purger.gotID, purger.callonce)
+	}
+	// Ordre : stopper -> purger -> delete.
+	want := []string{
+		"stopper.StopLiveForUser:" + testTargetUserID,
+		"purger.PurgeUserTracks:" + testTargetUserID,
+		"repo.DeleteUser:" + testTargetUserID,
+	}
+	if len(order) != 3 || order[0] != want[0] || order[1] != want[1] || order[2] != want[2] {
+		t.Fatalf("wrong order: %v", order)
+	}
+}
+
+// 7c. Un échec de purge ne bloque pas la suppression du compte (best-effort).
+func TestService_DeleteUser_PurgeError_StillDeletes(t *testing.T) {
+	repo := seededRepo()
+	svc := NewService(repo, &fakeStopper{}, &fakeModerator{})
+	svc.SetTrackPurger(&fakePurger{err: errors.New("disk error")})
+
+	if err := svc.DeleteUser(context.Background(), testTargetUserID, testRequesterID); err != nil {
+		t.Fatalf("purge failure must not block deletion, got %v", err)
+	}
+	if repo.deleteCalls != 1 {
+		t.Errorf("want 1 delete call despite purge error, got %d", repo.deleteCalls)
+	}
+}
+
 // 8. DeleteUser : une erreur du stopper est propagée et le delete repo n'est
 // jamais appelé (on ne supprime pas un compte dont on n'a pas pu couper le live).
 func TestService_DeleteUser_StopperError_PropagatesAndSkipsDelete(t *testing.T) {

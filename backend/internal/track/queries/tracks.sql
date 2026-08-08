@@ -22,3 +22,18 @@ SELECT id::text AS id, title, artist, duration_s
 FROM tracks
 WHERE user_id = sqlc.arg(user_id)::uuid
 ORDER BY created_at DESC;
+
+-- name: SumTrackSizeByUser :one
+-- Taille cumulée des fichiers du demandeur, pour appliquer le quota de stockage
+-- par compte avant un nouvel upload (borne le remplissage du volume).
+SELECT COALESCE(SUM(file_size), 0)::bigint AS total
+FROM tracks
+WHERE user_id = sqlc.arg(user_id)::uuid;
+
+-- name: ListFilePathsByUser :many
+-- Chemins disque des fichiers du demandeur, pour les supprimer du stockage lors
+-- de la suppression de son compte (la cascade DB efface les lignes, pas les
+-- fichiers).
+SELECT file_path
+FROM tracks
+WHERE user_id = sqlc.arg(user_id)::uuid;
