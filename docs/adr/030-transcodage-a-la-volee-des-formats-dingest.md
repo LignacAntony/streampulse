@@ -76,6 +76,19 @@ Trois cas, dans cet ordre :
 conteneurs, pas de l'ADTS. Les laisser passer tels quels enverrait au segmenteur un flux qu'il ne
 sait pas muxer — un test les garde du bon côté de la frontière.
 
+#### Formats acceptés : les conteneurs sont best-effort
+
+L'ingest est un pipe non seekable, ce qui restreint en théorie les conteneurs à leurs variantes
+fragmentées : un MP4 classique écrit son index (`moov`) en fin de fichier, donc après l'audio.
+
+En pratique, mesuré plutôt que supposé : ffmpeg démuxe sans problème un MP4 non fragmenté poussé
+sur `pipe:0`, tant que l'entrée tient dans ce qu'il bufferise. Le cas qui casse est une entrée trop
+grande pour ça — et il casse **proprement**, en 415, jamais en blocage. Un test fixe cet invariant
+(le push se termine ; ce qui sort est de l'ADTS ou rien).
+
+Ces types restent donc acceptés : les retirer priverait les diffuseurs qui poussent du fMP4 ou du
+WebM en direct, cas courant, pour se prémunir d'un échec déjà géré.
+
 ### 3. Le budget de latence est tenu par des bornes explicites
 
 Les valeurs par défaut de ffmpeg (`probesize` 5 Mo, `analyzeduration` 5 s) suffisent à elles seules
@@ -104,6 +117,22 @@ est en cause, pas le serveur, et le diffuseur peut agir. Le stderr de ffmpeg est
 tampon borné (8 Kio, les derniers octets) et journalisé — un direct de plusieurs heures ne doit pas
 accumuler ses warnings en mémoire.
 
+Le signal « zéro octet produit » ne suffit pourtant pas seul, et c'est le piège : un diffuseur coupé
+par le réseau **avant la première frame AAC** présente exactement la même signature — des octets
+entrés, aucun sorti — alors que la cause est le transport. Répondre 415 lui annoncerait que son
+audio est invalide, quand il lui suffisait de réessayer.
+
+Le discriminant ne peut pas être `copyErr` : sur une entrée indécodable un peu longue, ffmpeg meurt
+avant la fin du corps et l'écriture suivante rend un EPIPE, donc `copyErr` est non nul pour un push
+dont la cause est bien le payload. `ingestDeadlineReader` mémorise donc séparément les échecs de
+**lecture** du corps (hors EOF). Le 415 exige `readErr == nil` ; sinon c'est un 500 « interrupted ».
+
+| Situation | `readErr` | `produced` | Réponse |
+|---|---|---|---|
+| corps indécodable, court ou long | nil | 0 | 415 |
+| coupure réseau avant la 1ʳᵉ frame | non nil | 0 | 500 |
+| push sain | nil | > 0 | 204 |
+
 ### 5. `cmd.Wait` après la recopie, pas en parallèle
 
 Détail d'implémentation qui mérite d'être écrit parce qu'il se casse silencieusement : `cmd.Wait`
@@ -111,6 +140,23 @@ ferme le pipe de sortie. L'appeler pendant que la goroutine de recopie lit encor
 derniers octets AAC. `close` attend donc l'EOF de stdout, puis `Wait` — et le délai de grâce n'est
 plus un `select` sur `Wait` mais un `time.AfterFunc` qui tue le process, ce qui ferme son stdout et
 débloque la recopie par le même chemin.
+
+### 6. L'attente du relais est bornée
+
+Tuer ffmpeg débloque une recopie coincée en **lecture** de son stdout. Ça ne débloque pas une
+recopie coincée en **écriture** vers le segmenteur — cas d'un segmenteur vivant qui ne consomme
+plus, dont le tampon de pipe est plein. `close` attendrait alors indéfiniment : le handler ne
+retournerait jamais, `release()` ne s'exécuterait pas, et le slot d'ingest du flux resterait pris
+jusqu'au redémarrage.
+
+En pratique un segmenteur mort rend un EPIPE et tout se débloque, et le risque préexiste sur le
+chemin passthrough — mais le transcodage ajoute un maillon `io.Copy` sur ce chemin, et surtout une
+attente là où le handler rendait la main. L'attente est donc bornée à `2 × hlsShutdownGrace`, avec
+récolte différée du process (`Wait` ne peut pas être appelé tant que la goroutine lit encore).
+
+Le dépassement remonte `errTranscodeRelayStalled`, que le handler traduit en **500** : c'est une
+défaillance serveur, pas un corps invalide, et la maquiller en 415 renverrait le diffuseur chercher
+un problème chez lui.
 
 ## Alternatives écartées
 

@@ -1171,6 +1171,10 @@ paths:
             would spin the HLS demuxer without producing segments), or the body
             could not be decoded as the announced format — bytes went in and no
             AAC came out. An absent Content-Type is accepted.
+
+            A push cut short by the network is *not* reported here even when it
+            produced no AAC: that is a transport failure and returns 500, so a
+            client can tell "your audio is invalid" from "retry".
           content:
             application/json:
               schema:

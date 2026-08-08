@@ -3,6 +3,7 @@ package streaming
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -772,6 +773,54 @@ func TestHandler_Ingest_RejectsUndecodablePayload(t *testing.T) {
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("want 415 pour un corps indécodable, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// errReader rend `payload` puis échoue : simule un diffuseur coupé par le
+// réseau en plein push (la lecture du corps casse, pas le corps lui-même).
+type errReader struct {
+	payload []byte
+	off     int
+	err     error
+}
+
+func (r *errReader) Read(p []byte) (int, error) {
+	if r.off >= len(r.payload) {
+		return 0, r.err
+	}
+	n := copy(p, r.payload[r.off:])
+	r.off += n
+	return n, nil
+}
+
+// Une coupure réseau avant la première frame AAC produit la même signature
+// qu'un corps indécodable — des octets entrés, aucun sorti — mais la cause est
+// le transport. Elle doit ressortir en 500, sinon on annonce à un client que
+// son audio est invalide alors qu'il lui suffisait de réessayer.
+func TestHandler_Ingest_TransportErrorIsNotReportedAs415(t *testing.T) {
+	requireFFmpeg(t)
+
+	ls := sessionsWithFakeSeg(t)
+	ls.Start("sid-cut", "KEYCUT")
+	defer ls.StopAll()
+	h := NewHandler(&stubService{}, testIngestURL, ls)
+
+	body := &errReader{
+		payload: bytes.Repeat([]byte{0x00}, 512),
+		err:     errors.New("connexion réinitialisée"),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/streams/ingest/KEYCUT", body)
+	req.SetPathValue("stream_key", "KEYCUT")
+	req.Header.Set("Content-Type", "audio/mpeg")
+	rec := httptest.NewRecorder()
+
+	h.Ingest(rec, req)
+
+	if rec.Code == http.StatusUnsupportedMediaType {
+		t.Fatalf("une coupure réseau ne doit pas être maquillée en 415: %s", rec.Body)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 pour un push interrompu, got %d: %s", rec.Code, rec.Body)
 	}
 }
 

@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,7 +34,21 @@ const (
 	// Taille max du stderr ffmpeg conservé pour le diagnostic (les warnings
 	// d'un push de plusieurs heures ne doivent pas gonfler la mémoire).
 	transcodeStderrMaxBytes = 8 << 10
+
+	// Borne l'attente de fin du relais stdout -> segmenteur dans close().
+	// Tuer ffmpeg ferme son stdout et débloque une recopie coincée en LECTURE,
+	// mais pas une recopie coincée en ÉCRITURE vers un segmenteur vivant qui ne
+	// consomme plus (le tampon du pipe est plein). Sans cette borne, close() ne
+	// rendrait jamais la main : le handler ne retournerait pas, release() ne
+	// s'exécuterait pas, et le slot d'ingest du flux resterait pris.
+	transcodeRelayTimeout = 2 * hlsShutdownGrace
 )
+
+// errTranscodeRelayStalled signale que le relais vers le segmenteur n'a pas pu
+// être drainé dans les temps. C'est une défaillance serveur — le corps du
+// diffuseur n'est pas en cause — d'où un traitement distinct du payload
+// indécodable côté handler.
+var errTranscodeRelayStalled = errors.New("transcode: relais vers le segmenteur bloqué")
 
 // ingestFormat décrit comment traiter le corps d'un push d'ingest.
 //
@@ -50,6 +66,14 @@ type ingestFormat struct {
 // correspondant. Forcer `-f` plutôt que laisser ffmpeg sonder évite une attente
 // d'analyse au démarrage du flux, et garantit que la ligne de commande ne
 // contient que des constantes serveur (cf. le #nosec de newTranscoder).
+//
+// Les entrées conteneur (mp4, webm, matroska) sont **best-effort** : l'ingest
+// est un pipe non-seekable, seules leurs variantes fragmentées y sont lisibles.
+// Un MP4 classique, dont l'index (`moov`) est écrit en fin de fichier, échoue
+// donc — proprement, en 415 « audio payload could not be decoded », jamais en
+// blocage. C'est le comportement voulu : refuser d'avance ces types priverait
+// les diffuseurs qui poussent du fMP4 ou du WebM en direct, cas parfaitement
+// courant (cf. ADR 030 § « Formats acceptés »).
 var ingestDemuxers = map[string]string{
 	"audio/mpeg":     "mp3",
 	"audio/mp3":      "mp3",
@@ -124,9 +148,15 @@ type transcoder struct {
 	stdin  io.WriteCloser
 	stderr *tailBuffer
 
-	copied  chan struct{} // fermé quand la recopie stdout -> dst est terminée
-	copyN   int64         // octets AAC produits (lu après <-copied)
-	copyErr error
+	copied chan struct{} // fermé quand la recopie stdout -> dst est terminée
+	// Atomique : sur relais bloqué, close() rend la main avant la fin de la
+	// goroutine de recopie, et le handler lit produced() pendant qu'elle tourne.
+	copyN   atomic.Int64
+	copyErr error // écrit avant close(copied), à ne lire qu'ensuite
+
+	// relayTimeout vaut transcodeRelayTimeout ; surchargeable par les tests
+	// pour ne pas leur imposer d'attendre le délai de production.
+	relayTimeout time.Duration
 
 	closeOnce sync.Once
 	closeErr  error
@@ -178,10 +208,18 @@ func newTranscoder(dst io.Writer, demuxer string) (*transcoder, error) {
 		return nil, fmt.Errorf("transcode: start ffmpeg: %w", err)
 	}
 
-	t := &transcoder{cmd: cmd, stdin: stdin, stderr: stderr, copied: make(chan struct{})}
+	t := &transcoder{
+		cmd:          cmd,
+		stdin:        stdin,
+		stderr:       stderr,
+		copied:       make(chan struct{}),
+		relayTimeout: transcodeRelayTimeout,
+	}
 	go func() {
 		defer close(t.copied)
-		t.copyN, t.copyErr = io.Copy(dst, stdout)
+		n, err := io.Copy(dst, stdout)
+		t.copyN.Store(n)
+		t.copyErr = err
 	}()
 	return t, nil
 }
@@ -191,8 +229,8 @@ func newTranscoder(dst io.Writer, demuxer string) (*transcoder, error) {
 func (t *transcoder) Write(p []byte) (int, error) { return t.stdin.Write(p) }
 
 // produced retourne le nombre d'octets AAC effectivement transmis au
-// segmenteur. Valide seulement après close ; zéro sur un push non décodable.
-func (t *transcoder) produced() int64 { return t.copyN }
+// segmenteur. À lire après close ; zéro sur un push non décodable.
+func (t *transcoder) produced() int64 { return t.copyN.Load() }
 
 // close termine le transcodage : fermeture de stdin (ffmpeg vide ses tampons et
 // s'arrête), attente bornée du process puis de la recopie de sortie. L'entrée du
@@ -207,15 +245,32 @@ func (t *transcoder) close() error {
 		// attend donc l'EOF de stdout, qu'un ffmpeg bloqué se voit imposer par le
 		// kill différé (fermer son stdout débloque la recopie).
 		kill := time.AfterFunc(hlsShutdownGrace, func() { _ = t.cmd.Process.Kill() })
-		<-t.copied
-		kill.Stop()
-		err := t.cmd.Wait()
 
-		switch {
-		case err != nil:
-			t.closeErr = fmt.Errorf("transcode: ffmpeg: %w: %s", err, t.stderr.String())
-		case t.copyErr != nil:
-			t.closeErr = fmt.Errorf("transcode: relais vers le segmenteur: %w", t.copyErr)
+		select {
+		case <-t.copied:
+			kill.Stop()
+			err := t.cmd.Wait()
+			switch {
+			case err != nil:
+				t.closeErr = fmt.Errorf("transcode: ffmpeg: %w: %s", err, t.stderr.String())
+			case t.copyErr != nil:
+				t.closeErr = fmt.Errorf("transcode: relais vers le segmenteur: %w", t.copyErr)
+			}
+
+		case <-time.After(t.relayTimeout):
+			// Le kill n'a pas suffi : la recopie est bloquée en écriture vers un
+			// segmenteur qui ne consomme plus. On rend la main pour libérer le
+			// slot d'ingest plutôt que de tenir le handler indéfiniment.
+			kill.Stop()
+			_ = t.cmd.Process.Kill()
+			t.closeErr = errTranscodeRelayStalled
+			// Récolte différée : appeler Wait ici fermerait le pipe pendant que
+			// la goroutine y lit encore. Le process est récolté dès que
+			// l'écriture se débloque (typiquement à la mort du segmenteur).
+			go func() {
+				<-t.copied
+				_ = t.cmd.Wait()
+			}()
 		}
 	})
 	return t.closeErr

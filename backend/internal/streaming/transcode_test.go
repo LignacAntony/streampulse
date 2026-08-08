@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -196,6 +197,105 @@ func TestTranscoder_UndecodablePayloadProducesNothing(t *testing.T) {
 	}
 	if tr.produced() != 0 {
 		t.Errorf("produced() = %d, want 0 pour une entrée indécodable", tr.produced())
+	}
+}
+
+// Les entrées conteneur sont annoncées best-effort : l'ingest est un pipe non
+// seekable. Ce test fixe l'invariant qui compte — le push se termine, il ne
+// bloque pas — et documente le comportement réel, qui est meilleur qu'attendu :
+// ffmpeg démuxe un MP4 non fragmenté (index `moov` en fin) tant qu'il tient
+// dans ce qu'il peut bufferiser, et produit bien de l'ADTS. Le cas où ça casse
+// (entrée trop grande pour être bufferisée) ressort en 415, couvert par
+// TestTranscoder_UndecodablePayloadProducesNothing.
+func TestTranscoder_NonStreamableContainerTerminates(t *testing.T) {
+	requireFFmpeg(t)
+
+	// -f mp4 vers un fichier : l'index `moov` est écrit à la fin, donc illisible
+	// en flux. C'est exactement ce qu'enverrait un diffuseur qui pousse un .m4a.
+	path := filepath.Join(t.TempDir(), "sample.m4a")
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+		"-c:a", "aac", "-b:a", "128k", "-f", "mp4", path)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("génération du mp4 de test: %v", err)
+	}
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("lecture du mp4 de test: %v", err)
+	}
+
+	var dst syncWriter
+	tr, err := newTranscoder(&dst, "mp4")
+	if err != nil {
+		t.Fatalf("newTranscoder: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(tr, bytes.NewReader(src))
+		_ = tr.close()
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("le push d'un conteneur non seekable a bloqué au lieu de se terminer")
+	}
+
+	// Rien produit = échec propre, que le handler traduit en 415. Sinon, ce qui
+	// sort doit être de l'ADTS : le segmenteur tourne en `-c:a copy`, un
+	// conteneur relayé tel quel le casserait.
+	if out := dst.Bytes(); len(out) > 0 && !isADTS(out) {
+		t.Fatalf("sortie non-ADTS pour un conteneur mp4 (premiers octets %x)", out[:min(4, len(out))])
+	}
+}
+
+// Le relais vers le segmenteur peut se bloquer en ÉCRITURE (segmenteur vivant
+// qui ne consomme plus) : tuer ffmpeg ne débloque que la LECTURE de son stdout.
+// close() doit alors rendre la main sur un délai borné, sinon le handler ne
+// retourne jamais et le slot d'ingest du flux reste pris.
+func TestTranscoder_StalledRelayDoesNotHangClose(t *testing.T) {
+	requireFFmpeg(t)
+
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) }) // libère la goroutine de recopie en fin de test
+
+	blocked := make(chan struct{}, 1)
+	dst := writerFunc(func(p []byte) (int, error) {
+		select {
+		case blocked <- struct{}{}:
+		default:
+		}
+		<-release // ne consomme jamais : simule un segmenteur figé
+		return len(p), nil
+	})
+
+	tr, err := newTranscoder(dst, "wav")
+	if err != nil {
+		t.Fatalf("newTranscoder: %v", err)
+	}
+	tr.relayTimeout = 300 * time.Millisecond // évite d'attendre la borne de production
+
+	if _, err := io.Copy(tr, bytes.NewReader(generateTestAudio(t, "wav", "pcm_s16le", 2))); err != nil {
+		t.Fatalf("copie vers le transcodeur: %v", err)
+	}
+	select {
+	case <-blocked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("le transcodeur n'a rien écrit vers le segmenteur : test non concluant")
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- tr.close() }()
+
+	select {
+	case err := <-closed:
+		if !errors.Is(err, errTranscodeRelayStalled) {
+			t.Fatalf("close: want errTranscodeRelayStalled, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("close() ne rend pas la main sur un relais bloqué (slot d'ingest tenu)")
 	}
 }
 
