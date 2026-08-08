@@ -67,4 +67,27 @@ void main() {
     expect(service.stopped, isTrue);
     expect(find.text('Radio Nova'), findsNothing); // idle → masqué
   });
+
+  testWidgets('flux terminé → affiche « Le direct est terminé » + replay',
+      (tester) async {
+    final service = FakeAudioPlaybackService();
+    final controller = AudioPlayerController(
+      service: service,
+      isManifestUnavailable: (_) async => true,
+    );
+    addTearDown(controller.dispose);
+    addTearDown(service.dispose);
+
+    await controller.load(_now);
+    service.emitState(PlayerState(true, ProcessingState.ready)); // → playing
+    await tester.pumpWidget(_host(controller));
+    await tester.pump();
+
+    service.emitError(Exception('ended')); // manifeste disparu → ended
+    await tester.pumpAndSettle();
+
+    expect(find.text('Le direct est terminé'), findsOneWidget);
+    expect(find.byIcon(Icons.replay), findsOneWidget);
+    expect(find.text('DJ Qa'), findsNothing); // le statut prime sur le diffuseur
+  });
 }

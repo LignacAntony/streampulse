@@ -52,7 +52,7 @@ abstract class PlaybackController extends ChangeNotifier {
 typedef ManifestUnavailableProbe = Future<bool> Function(String streamId);
 
 /// Contrôleur du lecteur audio HLS, **hissé au niveau application** (STR-109,
-/// cf. [ADR 030]). Pilote un [AudioPlaybackService] partagé (service de premier
+/// cf. [ADR 031]). Pilote un [AudioPlaybackService] partagé (service de premier
 /// plan `audio_service`) : la lecture survit à la navigation et à la mise en
 /// arrière-plan. Expose un état applicatif simple + play/pause (le volume est
 /// délégué au système, boutons matériels — pas de contrôle in-app), et gère
@@ -232,7 +232,9 @@ class AudioPlayerController extends PlaybackController {
       final manifestGone = probe != null &&
           (_hasPlayed || retriesExhausted) &&
           await probe(id);
-      if (_disposed) return;
+      // La sonde est asynchrone : si entre-temps l'utilisateur a fermé le
+      // lecteur (`stop()`) ou lancé un autre flux, cette reprise est caduque.
+      if (_disposed || _nowPlaying?.streamId != id) return;
 
       // La lecture avait démarré et le manifeste a disparu → fin de direct.
       if (manifestGone && _hasPlayed) {

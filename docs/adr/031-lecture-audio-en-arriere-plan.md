@@ -1,4 +1,4 @@
-# ADR 030 — Lecture audio en arrière-plan (audio_service)
+# ADR 031 — Lecture audio en arrière-plan (audio_service)
 
 **Date** : 2026-08-06
 **Statut** : Accepté
@@ -60,8 +60,12 @@ contrôleur partagé (titre + diffuseur, play/pause, croix = `stop`), et se masq
 
 - **Android** : `MainActivity` étend `AudioServiceActivity` ; le manifeste déclare
   `com.ryanheise.audioservice.AudioService` (`foregroundServiceType="mediaPlayback"`) + un
-  `MediaButtonReceiver`. Les permissions `FOREGROUND_SERVICE`/`FOREGROUND_SERVICE_MEDIA_PLAYBACK`
-  étaient déjà présentes.
+  `MediaButtonReceiver` ; permissions `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` /
+  `POST_NOTIFICATIONS` (cette dernière requise sur Android 13+ pour afficher la notification média).
+- **Contrainte SDK (important)** : `audio_service` 0.18.18 compile en `compileSdk 35` et n'appelle pas
+  `startForeground()` sous les règles de service de premier plan d'Android 16 (`targetSdk 36`) → ANR +
+  kill en arrière-plan. `targetSdk` est donc **épinglé à 35** (`android/app/build.gradle.kts`) le temps
+  que le plugin supporte le SDK 36. À relever quand ce sera le cas.
 - **iOS** : `UIBackgroundModes: audio` (déjà présent) suffit avec la session `playback` gérée par
   audio_service.
 

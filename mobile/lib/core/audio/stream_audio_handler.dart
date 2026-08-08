@@ -6,7 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'audio_playback_service.dart';
 
 /// Implémentation de [AudioPlaybackService] via `audio_service` + `just_audio`
-/// (STR-109, cf. ADR 030). Enveloppe **un seul** [AudioPlayer] hébergé par le
+/// (STR-109, cf. ADR 031). Enveloppe **un seul** [AudioPlayer] hébergé par le
 /// service de premier plan `audio_service` : la lecture survit à la mise en
 /// arrière-plan / au verrouillage, et les transitions du lecteur alimentent la
 /// notification et les contrôles écran verrouillé (play/pause/stop).
@@ -81,13 +81,17 @@ class StreamAudioHandler extends BaseAudioHandler
         MediaAction.stop,
       },
       androidCompactActionIndices: const [0, 1],
+      // `?? idle` : une valeur d'enum ajoutée par une future version de
+      // just_audio ne doit pas lever dans ce listener (ça tuerait le flux de
+      // playbackState → notification figée).
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
         ProcessingState.buffering: AudioProcessingState.buffering,
         ProcessingState.ready: AudioProcessingState.ready,
         ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
+      }[_player.processingState] ??
+          AudioProcessingState.idle,
       playing: playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,

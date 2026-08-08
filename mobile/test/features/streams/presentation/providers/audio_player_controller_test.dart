@@ -181,5 +181,30 @@ void main() {
       expect(controller.status, PlaybackStatus.idle);
       expect(controller.nowPlaying, isNull);
     });
+
+    test('stop() pendant la sonde → la reprise caduque ne rebloque pas l\'état',
+        () async {
+      final service = FakeAudioPlaybackService();
+      final probe = Completer<bool>();
+      final controller = AudioPlayerController(
+        service: service,
+        isManifestUnavailable: (_) => probe.future,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.load(_now);
+      _reachPlaying(service);
+      await pumpEventQueue();
+      service.emitError(Exception('x')); // _recover attend la sonde (hasPlayed)
+      await pumpEventQueue();
+
+      await controller.stop(); // l'utilisateur ferme le lecteur pendant la sonde
+      probe.complete(false); // la sonde se résout après coup
+      await pumpEventQueue();
+
+      // La reprise doit avorter (flux courant changé) et laisser l'état à idle,
+      // pas le rebloquer sur « reconnexion ».
+      expect(controller.status, PlaybackStatus.idle);
+    });
   });
 }

@@ -380,7 +380,7 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 ### Lecture audio auditeur (STR-108/109)
 
 Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS) et
-[ADR 030](docs/adr/030-lecture-audio-en-arriere-plan.md) (arrière-plan).
+[ADR 031](docs/adr/031-lecture-audio-en-arriere-plan.md) (arrière-plan).
 
 - **Service partagé, app-level** : un unique `AudioPlayer` vit dans `StreamAudioHandler`
   (`core/audio/`, `audio_service` + just_audio), initialisé dans `main()` via `AudioService.init`
@@ -594,7 +594,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `031-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `032-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

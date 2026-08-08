@@ -21,6 +21,16 @@ class MiniPlayer extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
+    // Sous-titre contextuel : l'état (terminé / indisponible / reconnexion)
+    // prime sur le nom du diffuseur, sinon le mini-player resterait muet en fin
+    // de direct (icône replay seule).
+    final (String? subtitle, Color subtitleColor) = switch (audio.status) {
+      PlaybackStatus.ended => ('Le direct est terminé', colors.error),
+      PlaybackStatus.error => ('Flux indisponible', colors.error),
+      PlaybackStatus.reconnecting => ('Reconnexion…', colors.onSurfaceVariant),
+      _ => (now.broadcaster, colors.onSurfaceVariant),
+    };
+
     return Material(
       color: colors.surfaceContainerHighest,
       child: InkWell(
@@ -44,13 +54,13 @@ class MiniPlayer extends StatelessWidget {
                       style: text.titleSmall
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    if (now.broadcaster != null && now.broadcaster!.isNotEmpty)
+                    if (subtitle != null && subtitle.isNotEmpty)
                       Text(
-                        now.broadcaster!,
+                        subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: text.bodySmall
-                            ?.copyWith(color: colors.onSurfaceVariant),
+                        style:
+                            text.bodySmall?.copyWith(color: subtitleColor),
                       ),
                   ],
                 ),
