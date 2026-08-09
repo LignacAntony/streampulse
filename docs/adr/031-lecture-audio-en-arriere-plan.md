@@ -60,12 +60,16 @@ contrôleur partagé (titre + diffuseur, play/pause, croix = `stop`), et se masq
 
 - **Android** : `MainActivity` étend `AudioServiceActivity` ; le manifeste déclare
   `com.ryanheise.audioservice.AudioService` (`foregroundServiceType="mediaPlayback"`) + un
-  `MediaButtonReceiver` ; permissions `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` /
-  `POST_NOTIFICATIONS` (cette dernière requise sur Android 13+ pour afficher la notification média).
-- **Contrainte SDK (important)** : `audio_service` 0.18.18 compile en `compileSdk 35` et n'appelle pas
-  `startForeground()` sous les règles de service de premier plan d'Android 16 (`targetSdk 36`) → ANR +
-  kill en arrière-plan. `targetSdk` est donc **épinglé à 35** (`android/app/build.gradle.kts`) le temps
-  que le plugin supporte le SDK 36. À relever quand ce sera le cas.
+  `MediaButtonReceiver`.
+- **Permissions Android (pièges vérifiés sur device)** :
+  - `WAKE_LOCK` — **indispensable** : `audio_service` prend un wake lock dans `enterPlayingState()` ;
+    sans cette permission (déclarée ni par le plugin ni implicitement), le check lève une
+    `RemoteException`, `startForeground()` n'est jamais appelé, et le système tue le process en
+    arrière-plan (~20 s). C'était la cause réelle du kill (pas la version de SDK).
+  - `POST_NOTIFICATIONS` (Android 13+) — déclarée **et demandée au runtime**
+    (`ensureNotificationPermission()` à l'ouverture du lecteur, via `permission_handler`) : sans la
+    demande, l'utilisateur ne l'accorde jamais → aucune notification ni contrôle écran verrouillé.
+  - `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` — déjà présentes.
 - **iOS** : `UIBackgroundModes: audio` (déjà présent) suffit avec la session `playback` gérée par
   audio_service.
 

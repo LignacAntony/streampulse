@@ -25,11 +25,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        // Épinglé à 35 : audio_service 0.18.18 compile en compileSdk 35 et
-        // n'appelle pas startForeground() sous les règles de service de premier
-        // plan d'Android 16 (SDK 36) → ANR + kill en arrière-plan (STR-109).
-        // À relever quand le plugin supportera le SDK 36 (cf. ADR 031).
-        targetSdk = 35
+        targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

@@ -3,8 +3,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- audio_service prend un wake lock dans enterPlayingState() : sans cette
+         permission, le check lève une RemoteException, startForeground() n'est
+         jamais appelé, et le système tue le process en arrière-plan (STR-109). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Android 13+ : requise pour afficher la notification média (contrôles
-         lecture / écran verrouillé) du service de premier plan (STR-109). -->
+         lecture / écran verrouillé) du service de premier plan. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application

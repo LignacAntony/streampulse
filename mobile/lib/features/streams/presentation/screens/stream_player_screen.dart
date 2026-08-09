@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
+import '../../../../core/permissions/notification_permission.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/live_stream.dart';
 import '../providers/audio_player_controller.dart';
@@ -38,6 +41,9 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     // Contrôleur partagé (le service audio survit à la navigation, STR-109) :
     // l'écran ne le possède pas et ne le détruit pas.
     _audio = widget.controller ?? context.read<AudioPlayerController>();
+    // Ouvrir le lecteur = intention d'écouter → on demande (Android 13+) la
+    // permission notifications pour que les contrôles média soient visibles.
+    unawaited(ensureNotificationPermission());
     // (Re)démarre ce flux uniquement s'il n'est pas déjà en cours : revenir sur
     // l'écran d'un flux en lecture ne le relance pas (autoplay sinon, STR-108).
     if (_audio.nowPlaying?.streamId != widget.streamId) {
