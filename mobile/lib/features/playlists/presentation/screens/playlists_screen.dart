@@ -9,8 +9,10 @@ import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
+import '../../domain/entities/track.dart';
 import '../../domain/repositories/playlist_repository.dart';
 import '../providers/playlists_controller.dart';
+import '../track_labels.dart';
 import '../widgets/playlist_form_sheet.dart';
 
 /// Écran « Bibliothèque » : liste des playlists de l'utilisateur avec création,
@@ -40,7 +42,10 @@ class PlaylistsScreen extends StatelessWidget {
       create: (ctx) => PlaylistsController(
         repository ??
             PlaylistRepositoryImpl(
-              PlaylistRemoteDataSource(ctx.read<DioClient>().playlistApi),
+              PlaylistRemoteDataSource(
+                ctx.read<DioClient>().playlistApi,
+                ctx.read<DioClient>().trackApi,
+              ),
             ),
       ),
       child: _PlaylistsBody(forcedAuth: isAuthenticated),
@@ -79,6 +84,14 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   }
 
   Future<void> _onRefresh() => context.read<PlaylistsController>().refresh();
+
+  /// Ouvre l'écran d'upload d'une piste (US-05-01), puis recharge : la piste
+  /// fraîchement uploadée doit apparaître dans la section « Mes pistes ».
+  Future<void> _onUpload() async {
+    await context.push('/library/upload');
+    if (!mounted) return;
+    await context.read<PlaylistsController>().refresh();
+  }
 
   Future<void> _onCreate() async {
     final result = await PlaylistFormSheet.show(
@@ -161,15 +174,22 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
       appBar: AppBar(
         title: const Text('Bibliothèque'),
         actions: [
-          // Le « + » n'existe que pour un utilisateur connecté : un invité ne
-          // peut pas posséder de playlist.
-          if (authenticated)
+          // Upload d'une piste et création de playlist : réservés à un
+          // utilisateur connecté (un invité ne possède ni pistes ni playlists).
+          if (authenticated) ...[
+            IconButton(
+              key: const Key('track_upload_button'),
+              icon: const Icon(Icons.upload_file_outlined),
+              tooltip: 'Uploader une piste',
+              onPressed: _onUpload,
+            ),
             IconButton(
               key: const Key('playlist_create_button'),
               icon: const Icon(Icons.add_circle_outline),
               tooltip: 'Nouvelle playlist',
               onPressed: _onCreate,
             ),
+          ],
         ],
       ),
       body: SafeArea(
@@ -213,34 +233,100 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
       );
     }
 
-    if (controller.playlists.isEmpty) {
+    if (controller.playlists.isEmpty && controller.tracks.isEmpty) {
       return const _MessageView(
         icon: Icons.library_music_outlined,
-        message: 'Aucune playlist pour le moment',
+        message: 'Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste',
       );
     }
 
-    return GridView.builder(
-      key: const Key('playlists_list'),
+    return _buildLibrary(context, controller);
+  }
+
+  /// Contenu de la bibliothèque : la grille des playlists, puis la section
+  /// « Mes pistes » (US-05-01). Un seul `ListView` scrollable englobe les deux ;
+  /// la grille interne est `shrinkWrap` + non-scrollable pour se laisser porter.
+  Widget _buildLibrary(BuildContext context, PlaylistsController controller) {
+    final text = Theme.of(context).textTheme;
+    final colors = Theme.of(context).colorScheme;
+
+    return ListView(
+      key: const Key('library_list'),
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 20,
-        childAspectRatio: 0.80,
+      children: [
+        if (controller.playlists.isNotEmpty) ...[
+          Text('Playlists',
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          GridView.builder(
+            key: const Key('playlists_list'),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 20,
+              childAspectRatio: 0.80,
+            ),
+            itemCount: controller.playlists.length,
+            itemBuilder: (context, index) {
+              final playlist = controller.playlists[index];
+              return _PlaylistCard(
+                playlist: playlist,
+                index: index,
+                onRename: _onRename,
+                onDelete: _onDelete,
+                onOpen: _onOpen,
+              );
+            },
+          ),
+          const SizedBox(height: 28),
+        ],
+        Text('Mes pistes',
+            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        if (controller.tracks.isEmpty)
+          Padding(
+            key: const Key('tracks_empty'),
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              'Aucune piste — utilise l\'icône d\'upload en haut',
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          )
+        else
+          ...controller.tracks.map((track) => _TrackTile(track: track)),
+      ],
+    );
+  }
+}
+
+/// Ligne d'une piste de la bibliothèque (section « Mes pistes »). Lecture seule
+/// pour l'US-05-01 : ni menu ni lecture (hors périmètre).
+class _TrackTile extends StatelessWidget {
+  const _TrackTile({required this.track});
+
+  final Track track;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return ListTile(
+      key: Key('track_tile_${track.id}'),
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: colors.surfaceContainerHighest,
+        child: Icon(Icons.music_note, color: colors.onSurfaceVariant),
       ),
-      itemCount: controller.playlists.length,
-      itemBuilder: (context, index) {
-        final playlist = controller.playlists[index];
-        return _PlaylistCard(
-          playlist: playlist,
-          index: index,
-          onRename: _onRename,
-          onDelete: _onDelete,
-          onOpen: _onOpen,
-        );
-      },
+      title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        trackSubtitle(artist: track.artist, durationS: track.durationS),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }

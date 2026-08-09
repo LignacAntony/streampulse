@@ -60,14 +60,6 @@ JOIN tracks t ON t.id = pt.track_id
 WHERE pt.playlist_id = sqlc.arg(playlist_id)::uuid
 ORDER BY pt.position;
 
--- name: ListTracksByUser :many
--- Bibliothèque de pistes du demandeur : source du sélecteur « ajouter une
--- piste » côté mobile. Les plus récentes d'abord.
-SELECT id::text AS id, title, artist, duration_s
-FROM tracks
-WHERE user_id = sqlc.arg(user_id)::uuid
-ORDER BY created_at DESC;
-
 -- name: AddTrackToPlaylist :one
 -- Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur :
 -- une piste inconnue ou appartenant à un tiers ne produit aucune ligne -> le

@@ -90,7 +90,6 @@ Class | Method | HTTP request | Description
 [*PlaylistApi*](doc/PlaylistApi.md) | [**getPlaylist**](doc/PlaylistApi.md#getplaylist) | **GET** /api/playlists/{id} | Get one of the user&#39;s playlists.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylistTracks**](doc/PlaylistApi.md#listplaylisttracks) | **GET** /api/playlists/{id}/tracks | List a playlist&#39;s tracks (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylists**](doc/PlaylistApi.md#listplaylists) | **GET** /api/playlists | List the authenticated user&#39;s playlists.
-[*PlaylistApi*](doc/PlaylistApi.md) | [**listUserTracks**](doc/PlaylistApi.md#listusertracks) | **GET** /api/tracks | List the authenticated user&#39;s track library.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**removePlaylistTrack**](doc/PlaylistApi.md#removeplaylisttrack) | **DELETE** /api/playlists/{id}/tracks/{trackId} | Remove a track from a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**reorderPlaylistTracks**](doc/PlaylistApi.md#reorderplaylisttracks) | **PUT** /api/playlists/{id}/tracks | Replace the playlist&#39;s track order (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**updatePlaylist**](doc/PlaylistApi.md#updateplaylist) | **PUT** /api/playlists/{id} | Rename a playlist (owner only).
@@ -113,6 +112,8 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**streamPlaylist**](doc/StreamingApi.md#streamplaylist) | **GET** /api/streams/{id}/playlist.m3u8 | Get the live HLS media playlist (manifest).
 [*StreamingApi*](doc/StreamingApi.md) | [**streamSegment**](doc/StreamingApi.md#streamsegment) | **GET** /api/streams/{id}/segments/{segment} | Get an HLS media segment (.ts).
 [*StreamingApi*](doc/StreamingApi.md) | [**updateStream**](doc/StreamingApi.md#updatestream) | **PUT** /api/streams/{id} | Update a stream (owner only).
+[*TrackApi*](doc/TrackApi.md) | [**listUserTracks**](doc/TrackApi.md#listusertracks) | **GET** /api/tracks | List the authenticated user&#39;s track library.
+[*TrackApi*](doc/TrackApi.md) | [**uploadTrack**](doc/TrackApi.md#uploadtrack) | **POST** /api/tracks | Upload an audio file to the personal library.
 
 
 ## Documentation For Models

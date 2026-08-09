@@ -145,3 +145,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
+
+# Fichiers audio uploadés en local (STORAGE_PATH par défaut ./data/tracks,
+# créés par `go run ./cmd/api` depuis backend/). En prod/conteneur : volume Docker.
+backend/data/

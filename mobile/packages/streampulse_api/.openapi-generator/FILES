@@ -12,6 +12,7 @@ lib/src/api/metrics_api.dart
 lib/src/api/playlist_api.dart
 lib/src/api/profile_api.dart
 lib/src/api/streaming_api.dart
+lib/src/api/track_api.dart
 lib/src/auth/api_key_auth.dart
 lib/src/auth/auth.dart
 lib/src/auth/basic_auth.dart

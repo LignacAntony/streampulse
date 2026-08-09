@@ -29,6 +29,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/profiles"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 	"github.com/LignacAntony/streampulse/internal/streaming"
+	"github.com/LignacAntony/streampulse/internal/track"
 )
 
 // var _ vérifie à la compilation que *streaming.Service satisfait bien
@@ -45,6 +46,13 @@ var _ admin.StreamModerator = (*streaming.Service)(nil)
 // dans audit_logs, satisfait streaming.AuditRecorder — l'interface étroite que
 // le domaine streaming consomme pour journaliser une rotation de clé (STR-228).
 var _ streaming.AuditRecorder = (admin.Repository)(nil)
+
+// var _ vérifie que *track.Service satisfait les purgers de fichiers consommés
+// par admin et auth à la suppression d'un compte (US-05-01, ADR 032).
+var (
+	_ admin.UserTrackPurger = (*track.Service)(nil)
+	_ auth.UserTrackPurger  = (*track.Service)(nil)
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -161,12 +169,26 @@ func run() error {
 	playlistSvc := playlist.NewService(playlistRepo)
 	playlistHandler := playlist.NewHandler(playlistSvc)
 
+	// Bibliothèque de pistes (US-05-01) : upload + listing. Domaine extrait de
+	// playlist (ADR 032) ; le fichier est stocké hors répertoire servi.
+	trackStorage := track.NewFileStorage(cfg.StoragePath)
+	trackRepo := track.NewRepository(pool)
+	trackSvc := track.NewService(trackRepo, trackStorage)
+	trackHandler := track.NewHandler(trackSvc)
+
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
 	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
 	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
 	adminRepo := admin.NewRepository(pool)
 	adminSvc := admin.NewService(adminRepo, streamingSvc, streamingSvc)
 	adminHandler := admin.NewHandler(adminSvc)
+
+	// Purge des fichiers audio à la suppression d'un compte (US-05-01, ADR 032) :
+	// la cascade DB efface les lignes tracks, jamais les fichiers sur le volume.
+	// Setter (comme SetAuditRecorder/SetMetrics) car trackSvc est construit après
+	// authSvc et sert deux domaines.
+	authSvc.SetTrackPurger(trackSvc)
+	adminSvc.SetTrackPurger(trackSvc)
 
 	// `audit_logs` appartient au domaine admin ; le streaming n'en connaît que
 	// l'interface étroite AuditRecorder, satisfaite ici par le repository admin
@@ -290,9 +312,11 @@ func run() error {
 		http.HandlerFunc(playlistHandler.ReorderTracks)))
 	mux.Handle("DELETE /api/playlists/{id}/tracks/{trackId}", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.RemoveTrack)))
-	// Bibliothèque de pistes du demandeur : source du sélecteur d'ajout.
+	// Bibliothèque de pistes du demandeur (US-05-01) : upload multipart + listing.
+	mux.Handle("POST /api/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.Upload)))
 	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
-		http.HandlerFunc(playlistHandler.ListUserTracks)))
+		http.HandlerFunc(trackHandler.ListUserTracks)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

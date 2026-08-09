@@ -22,7 +22,6 @@ type PlaylistService interface {
 	UpdatePlaylist(ctx context.Context, id, requesterID string, in UpdateInput) (Playlist, error)
 	DeletePlaylist(ctx context.Context, id, requesterID string) error
 	ListTracks(ctx context.Context, id, requesterID string) ([]PlaylistTrack, error)
-	ListUserTracks(ctx context.Context, requesterID string) ([]Track, error)
 	AddTrack(ctx context.Context, playlistID, trackID, requesterID string) ([]PlaylistTrack, error)
 	RemoveTrack(ctx context.Context, playlistID, trackID, requesterID string) error
 	ReorderTracks(ctx context.Context, playlistID, requesterID string, trackIDs []string) ([]PlaylistTrack, error)
@@ -103,15 +102,6 @@ type trackResponse struct {
 // tags JSON n'affectent pas la convertibilité — cf. staticcheck S1016).
 func toTrackResponse(t PlaylistTrack) trackResponse {
 	return trackResponse(t)
-}
-
-// libraryTrackResponse est la vue d'une piste de la bibliothèque (sans position :
-// elle n'appartient à aucune playlist en particulier).
-type libraryTrackResponse struct {
-	ID        string  `json:"id"`
-	Title     string  `json:"title"`
-	Artist    *string `json:"artist"`
-	DurationS *int    `json:"duration_s"`
 }
 
 // addTrackRequest : pointeur pour distinguer « champ absent » de la chaîne vide.
@@ -336,30 +326,6 @@ func (h *Handler) ReorderTracks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeTracks(w, r, http.StatusOK, tracks, "reorder")
-}
-
-// ListUserTracks gère GET /api/tracks : bibliothèque de pistes du demandeur,
-// source du sélecteur « ajouter une piste » (200).
-func (h *Handler) ListUserTracks(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.UserIDFromContext(r.Context())
-	if !ok {
-		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
-		return
-	}
-
-	tracks, err := h.svc.ListUserTracks(r.Context(), userID)
-	if err != nil {
-		httpjson.WriteError(w, r, err)
-		return
-	}
-
-	out := make([]libraryTrackResponse, 0, len(tracks))
-	for _, t := range tracks {
-		out = append(out, libraryTrackResponse(t))
-	}
-	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
-		zerolog.Ctx(r.Context()).Error().Err(err).Msg("playlist: encode user tracks")
-	}
 }
 
 // writeTracks sérialise une liste de pistes de playlist (réponse commune à

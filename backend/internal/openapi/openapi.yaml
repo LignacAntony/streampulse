@@ -22,6 +22,8 @@ tags:
       supervision/moderation (STR-192).
   - name: Playlist
     description: Personal playlist management (US-05-02).
+  - name: Track
+    description: Personal audio track library — upload and listing (US-05-01).
 paths:
   /health:
     get:
@@ -1551,7 +1553,7 @@ paths:
   /api/tracks:
     get:
       tags:
-        - Playlist
+        - Track
       operationId: listUserTracks
       summary: List the authenticated user's track library.
       description: >-
@@ -1570,6 +1572,93 @@ paths:
                   $ref: "#/components/schemas/TrackResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Track
+      operationId: uploadTrack
+      summary: Upload an audio file to the personal library.
+      description: >-
+        Uploads an audio file (MP3/AAC/OGG, ≤ 50 MB) to the authenticated user's
+        library (US-05-01). The real MIME type is sniffed server-side (a
+        non-audio file, e.g. a PDF renamed .mp3, is rejected with 415); the file
+        is stored outside any served directory and referenced in the database
+        with its metadata. Duration is optional and supplied by the client.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - title
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The audio file (MP3, AAC or OGG), ≤ 50 MB.
+                title:
+                  type: string
+                  description: Track title.
+                artist:
+                  type: string
+                  description: Optional artist name.
+                duration_s:
+                  type: integer
+                  description: Optional track duration in seconds (positive).
+      responses:
+        "201":
+          description: The created track.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The user's cumulated storage quota would be exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                quotaExceeded:
+                  value:
+                    error:
+                      code: storage_quota_exceeded
+                      message: quota de stockage atteint
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          description: The uploaded file exceeds the 50 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                tooLarge:
+                  value:
+                    error:
+                      code: file_too_large
+                      message: le fichier dépasse la taille maximale de 50 Mo
+        "415":
+          description: The file is not an accepted audio type (MP3/AAC/OGG).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notAudio:
+                  value:
+                    error:
+                      code: unsupported_media_type
+                      message: seuls les fichiers audio MP3, AAC ou OGG sont acceptés
         "500":
           $ref: "#/components/responses/InternalError"
 components:

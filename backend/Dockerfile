@@ -29,6 +29,12 @@ COPY --from=builder /app/api       /app/api
 # Les migrations sont lues depuis /app/migrations au démarrage (file://migrations)
 COPY --from=builder /build/migrations /app/migrations
 
+# Répertoire de stockage des pistes uploadées (US-05-01, STORAGE_PATH=/data/tracks).
+# Créé et approprié à appuser AVANT le montage : Docker recopie ces droits dans le
+# volume track_storage lors de sa première initialisation (sinon écriture refusée,
+# le conteneur tournant en non-root).
+RUN mkdir -p /data/tracks && chown -R appuser:appgroup /data
+
 USER appuser
 
 EXPOSE 8080

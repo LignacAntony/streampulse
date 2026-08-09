@@ -60,6 +60,17 @@ type StreamModerator interface {
 	ForceStopStream(ctx context.Context, streamID string) error
 }
 
+// UserTrackPurger orchestre la suppression du compte pour supprimer aussi les
+// fichiers audio du user (la cascade DB efface les lignes tracks, pas les
+// fichiers). deleteUser est le hard-delete lui-même : le purger relève d'abord
+// les chemins, exécute deleteUser, puis supprime les fichiers — ainsi un delete
+// qui échoue ne laisse pas de lignes pointant vers des fichiers disparus.
+// Implémentée par track.Service ; injectée en setter (SetTrackPurger). Interface
+// étroite (ISP), même logique que LiveStopper.
+type UserTrackPurger interface {
+	PurgeUserTracks(ctx context.Context, userID string, deleteUser func() error) error
+}
+
 // Repository est le miroir des requêtes SQL du domaine admin (queries/admin.sql).
 type Repository interface {
 	ListUsers(ctx context.Context, in ListUsersInput) ([]AdminUser, int64, error)
@@ -75,10 +86,20 @@ type Service struct {
 	repo      Repository
 	stopper   LiveStopper
 	moderator StreamModerator
+	// purger est optionnel (injecté en setter) : nil dans les tests qui ne
+	// couvrent pas la suppression de fichiers.
+	purger UserTrackPurger
 }
 
 func NewService(repo Repository, stopper LiveStopper, moderator StreamModerator) *Service {
 	return &Service{repo: repo, stopper: stopper, moderator: moderator}
+}
+
+// SetTrackPurger branche la suppression des fichiers audio d'un utilisateur lors
+// de la suppression de son compte (câblé dans main.go). Suit le motif setter des
+// collaborateurs inter-domaines tardifs (cf. streaming SetMetrics).
+func (s *Service) SetTrackPurger(p UserTrackPurger) {
+	s.purger = p
 }
 
 // ListUsers délègue entièrement au repository : filtres et pagination sont
@@ -113,7 +134,15 @@ func (s *Service) DeleteUser(ctx context.Context, targetID, requesterID string) 
 	if err := s.stopper.StopLiveForUser(ctx, targetID); err != nil {
 		return err
 	}
-	return s.repo.DeleteUser(ctx, targetID)
+	// Le purger séquence : relève les chemins → hard-delete (cascade) → supprime
+	// les fichiers. La cascade DB efface les lignes tracks mais jamais les fichiers
+	// du volume ; supprimer les fichiers seulement après un delete réussi évite les
+	// lignes fantômes.
+	deleteUser := func() error { return s.repo.DeleteUser(ctx, targetID) }
+	if s.purger != nil {
+		return s.purger.PurgeUserTracks(ctx, targetID, deleteUser)
+	}
+	return deleteUser()
 }
 
 // ListLiveStreams retourne la liste de modération (tous les live) + total.

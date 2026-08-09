@@ -18,7 +18,9 @@ void main() {
   setUp(() {
     dio = Dio(BaseOptions(baseUrl: 'https://api.test'));
     adapter = DioAdapter(dio: dio);
-    repository = PlaylistRepositoryImpl(PlaylistRemoteDataSource(PlaylistApi(dio)));
+    repository = PlaylistRepositoryImpl(
+      PlaylistRemoteDataSource(PlaylistApi(dio), TrackApi(dio)),
+    );
   });
 
   group('list', () {

@@ -263,47 +263,6 @@ func (q *Queries) ListPlaylistsByUser(ctx context.Context, userID pgtype.UUID) (
 	return items, nil
 }
 
-const listTracksByUser = `-- name: ListTracksByUser :many
-SELECT id::text AS id, title, artist, duration_s
-FROM tracks
-WHERE user_id = $1::uuid
-ORDER BY created_at DESC
-`
-
-type ListTracksByUserRow struct {
-	ID        string
-	Title     string
-	Artist    pgtype.Text
-	DurationS pgtype.Int4
-}
-
-// Bibliothèque de pistes du demandeur : source du sélecteur « ajouter une
-// piste » côté mobile. Les plus récentes d'abord.
-func (q *Queries) ListTracksByUser(ctx context.Context, userID pgtype.UUID) ([]ListTracksByUserRow, error) {
-	rows, err := q.db.Query(ctx, listTracksByUser, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListTracksByUserRow
-	for rows.Next() {
-		var i ListTracksByUserRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Artist,
-			&i.DurationS,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const removeTrackFromPlaylist = `-- name: RemoveTrackFromPlaylist :one
 DELETE FROM playlist_tracks
 WHERE playlist_id = $1::uuid

@@ -169,23 +169,6 @@ func (r *pgRepository) ListTracks(ctx context.Context, playlistID string) ([]Pla
 	return tracks, nil
 }
 
-func (r *pgRepository) ListUserTracks(ctx context.Context, userID string) ([]Track, error) {
-	rows, err := r.q.ListTracksByUser(ctx, uuidParam(userID))
-	if err != nil {
-		return nil, fmt.Errorf("repo: list user tracks: %w", err)
-	}
-	tracks := make([]Track, 0, len(rows))
-	for _, row := range rows {
-		tracks = append(tracks, Track{
-			ID:        row.ID,
-			Title:     row.Title,
-			Artist:    textValue(row.Artist),
-			DurationS: int4Value(row.DurationS),
-		})
-	}
-	return tracks, nil
-}
-
 // addTrackAttempts borne la reprise d'un ajout perdu à la course sur la position
 // (cf. AddTrack). Une seule reprise suffit : deux ajouts concurrents sur la même
 // playlist restent un cas rare (même utilisateur, deux appareils), et le perdant

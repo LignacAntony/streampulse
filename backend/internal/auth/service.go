@@ -107,14 +107,31 @@ type Mailer interface {
 	SendPasswordResetEmail(ctx context.Context, to, rawToken string) error
 }
 
+// UserTrackPurger orchestre la suppression du compte pour supprimer aussi les
+// fichiers audio du user. deleteUser est le hard-delete lui-même : le purger
+// relève les chemins, exécute deleteUser, puis supprime les fichiers (les
+// fichiers ne partent qu'après un delete réussi → pas de ligne fantôme).
+// Implémentée par track.Service ; injectée en setter (SetTrackPurger).
+type UserTrackPurger interface {
+	PurgeUserTracks(ctx context.Context, userID string, deleteUser func() error) error
+}
+
 type Service struct {
 	repo      Repository
 	jwtSecret string
 	mailer    Mailer
+	// purger est optionnel (injecté en setter) : nil dans les tests.
+	purger UserTrackPurger
 }
 
 func NewService(repo Repository, jwtSecret string, mailer Mailer) *Service {
 	return &Service{repo: repo, jwtSecret: jwtSecret, mailer: mailer}
+}
+
+// SetTrackPurger branche la suppression des fichiers audio à la suppression du
+// compte (câblé dans main.go), même motif que le domaine admin.
+func (s *Service) SetTrackPurger(p UserTrackPurger) {
+	s.purger = p
 }
 
 func (s *Service) Register(ctx context.Context, in RegisterInput) (User, error) {
@@ -270,8 +287,21 @@ func (s *Service) DeleteAccount(ctx context.Context, in DeleteAccountInput) erro
 		return apperror.Unauthorized("invalid credentials")
 	}
 
-	if err := s.repo.DeleteUserByID(ctx, in.UserID); err != nil {
-		return apperror.Internal("could not delete account", err)
+	// Le purger séquence : relève les chemins → hard-delete (cascade) → supprime
+	// les fichiers du volume. Les fichiers ne sont retirés qu'après un delete
+	// réussi (pas de ligne fantôme). Si aucun purger n'est câblé, delete direct.
+	deleteUser := func() error {
+		if err := s.repo.DeleteUserByID(ctx, in.UserID); err != nil {
+			return apperror.Internal("could not delete account", err)
+		}
+		return nil
+	}
+	if s.purger != nil {
+		if err := s.purger.PurgeUserTracks(ctx, in.UserID, deleteUser); err != nil {
+			return err
+		}
+	} else if err := deleteUser(); err != nil {
+		return err
 	}
 
 	zerolog.Ctx(ctx).Info().Str("user_id", in.UserID).Msg("auth: compte supprimé")

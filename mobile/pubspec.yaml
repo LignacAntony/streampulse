@@ -26,6 +26,9 @@ dependencies:
   # Capture microphone AAC/ADTS pour l'ingest du direct (STR-156)
   record: ^6.2.1
 
+  # Sélection de fichier audio pour l'upload d'une piste (US-05-01)
+  file_picker: ^8.1.2
+
   # Stockage sécurisé (tokens JWT)
   flutter_secure_storage: ^9.0.0
 

@@ -42,7 +42,10 @@ class PlaylistDetailScreen extends StatelessWidget {
       create: (ctx) => PlaylistDetailController(
         repository ??
             PlaylistRepositoryImpl(
-              PlaylistRemoteDataSource(ctx.read<DioClient>().playlistApi),
+              PlaylistRemoteDataSource(
+                ctx.read<DioClient>().playlistApi,
+                ctx.read<DioClient>().trackApi,
+              ),
             ),
         playlistId,
       )..load(),

@@ -24,6 +24,7 @@ const (
 	defaultDBHost                      = "localhost"
 	defaultDBPort                      = "5432"
 	defaultStreamIngestBaseURL         = "http://localhost:8080"
+	defaultStoragePath                 = "./data/tracks"
 	defaultHLSMaxConcurrent            = 256
 	defaultIngestReconnectGraceSeconds = 45
 	defaultIngestStopTimeoutSeconds    = 10
@@ -74,6 +75,11 @@ type Config struct {
 	// (cf. ADR 013) : {StreamIngestBaseURL}/api/streams/ingest/{stream_key}.
 	StreamIngestBaseURL string `mapstructure:"STREAM_INGEST_BASE_URL"`
 
+	// StoragePath est le répertoire racine où sont stockés les fichiers audio
+	// uploadés (US-05-01, ADR 032). Hors de tout répertoire servi en HTTP ; en
+	// Docker, monté sur un volume nommé pour la persistance.
+	StoragePath string `mapstructure:"STORAGE_PATH"`
+
 	// HLSMaxConcurrent borne le nombre de requêtes HLS (playlist + segments)
 	// servies simultanément — STR-88. <= 0 désactive la borne.
 	HLSMaxConcurrent int `mapstructure:"HLS_MAX_CONCURRENT"`
@@ -122,6 +128,7 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_HOST", defaultDBHost)
 	v.SetDefault("DB_PORT", defaultDBPort)
 	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
+	v.SetDefault("STORAGE_PATH", defaultStoragePath)
 	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
 	v.SetDefault("INGEST_RECONNECT_GRACE_SECONDS", defaultIngestReconnectGraceSeconds)
 	v.SetDefault("INGEST_STOP_TIMEOUT_SECONDS", defaultIngestStopTimeoutSeconds)
@@ -152,6 +159,7 @@ func Load() (*Config, error) {
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
 		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
+		"STORAGE_PATH",
 		"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
 		"INGEST_STOP_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_PRETTY",
 		"OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -217,6 +225,9 @@ func (c *Config) applyDefaultsForEmpty() {
 	}
 	if c.StreamIngestBaseURL == "" {
 		c.StreamIngestBaseURL = defaultStreamIngestBaseURL
+	}
+	if strings.TrimSpace(c.StoragePath) == "" {
+		c.StoragePath = defaultStoragePath
 	}
 	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))
 	if c.LogLevel == "" {

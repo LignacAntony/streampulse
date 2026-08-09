@@ -22,6 +22,7 @@ class _FakePlaylistRepository implements PlaylistRepository {
   _FakePlaylistRepository({List<Playlist>? initial}) : playlists = initial ?? [];
 
   List<Playlist> playlists;
+  List<Track> libraryTracksList = const [];
   Object? createError;
   Object? deleteError;
   Object? renameError;
@@ -61,9 +62,8 @@ class _FakePlaylistRepository implements PlaylistRepository {
   @override
   Future<List<PlaylistTrack>> tracks(String id) async => const [];
 
-  // US-05-03 : sollicitées depuis l'écran de détail uniquement.
   @override
-  Future<List<Track>> libraryTracks() async => const [];
+  Future<List<Track>> libraryTracks() async => libraryTracksList;
 
   @override
   Future<List<PlaylistTrack>> addTrack(String playlistId, String trackId) async =>
@@ -108,11 +108,28 @@ void main() {
       expect(find.byKey(const Key('playlist_card_p-1')), findsOneWidget);
     });
 
-    testWidgets('état vide quand aucune playlist', (tester) async {
+    testWidgets('état vide quand ni playlist ni piste', (tester) async {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Aucune playlist pour le moment'), findsOneWidget);
+      expect(
+        find.text('Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('affiche la bibliothèque de pistes sous les playlists',
+        (tester) async {
+      final repo = _FakePlaylistRepository()
+        ..libraryTracksList = const [
+          Track(id: 't-1', title: 'Midnight Drive', artist: 'Neon', durationS: 214),
+        ];
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Mes pistes'), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+      expect(find.text('Midnight Drive'), findsOneWidget);
     });
 
     testWidgets('invité : pas de bouton +, invitation à se connecter',

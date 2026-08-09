@@ -296,6 +296,77 @@ func TestService_DeleteUser_StopsLiveBeforeDelete(t *testing.T) {
 	}
 }
 
+// fakePurger simule track.Service : il enrobe le hard-delete (deleteUser) —
+// trace avant/après pour vérifier le séquencement stopper → delete → (remove).
+type fakePurger struct {
+	order    *[]string
+	gotID    string
+	callonce bool
+}
+
+func (f *fakePurger) PurgeUserTracks(_ context.Context, userID string, deleteUser func() error) error {
+	f.callonce = true
+	f.gotID = userID
+	if f.order != nil {
+		*f.order = append(*f.order, "purger.before:"+userID)
+	}
+	err := deleteUser()
+	if f.order != nil {
+		*f.order = append(*f.order, "purger.after:"+userID)
+	}
+	return err
+}
+
+// 7b. DeleteUser enrobe le hard-delete dans le purger : stopper, puis le purger
+// relève les chemins (before), exécute le delete, puis supprime les fichiers
+// (after). L'ordre prouve que la suppression des fichiers encadre bien le delete.
+func TestService_DeleteUser_PurgesAroundDelete(t *testing.T) {
+	var order []string
+	repo := seededRepo()
+	repo.order = &order
+	stopper := &fakeStopper{order: &order}
+	purger := &fakePurger{order: &order}
+
+	svc := NewService(repo, stopper, &fakeModerator{})
+	svc.SetTrackPurger(purger)
+
+	if err := svc.DeleteUser(context.Background(), testTargetUserID, testRequesterID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !purger.callonce || purger.gotID != testTargetUserID {
+		t.Fatalf("purger not called with target id, got %q (called=%v)", purger.gotID, purger.callonce)
+	}
+	// Ordre : stopper -> purger.before -> repo.DeleteUser -> purger.after.
+	want := []string{
+		"stopper.StopLiveForUser:" + testTargetUserID,
+		"purger.before:" + testTargetUserID,
+		"repo.DeleteUser:" + testTargetUserID,
+		"purger.after:" + testTargetUserID,
+	}
+	if len(order) != len(want) {
+		t.Fatalf("wrong order: %v", order)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("wrong order at %d: got %v", i, order)
+		}
+	}
+}
+
+// 7c. Sans purger câblé, DeleteUser supprime quand même le compte (le purger est
+// optionnel, injecté en setter).
+func TestService_DeleteUser_NoPurger_StillDeletes(t *testing.T) {
+	repo := seededRepo()
+	svc := NewService(repo, &fakeStopper{}, &fakeModerator{})
+
+	if err := svc.DeleteUser(context.Background(), testTargetUserID, testRequesterID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.deleteCalls != 1 {
+		t.Errorf("want 1 delete call, got %d", repo.deleteCalls)
+	}
+}
+
 // 8. DeleteUser : une erreur du stopper est propagée et le delete repo n'est
 // jamais appelé (on ne supprime pas un compte dont on n'a pas pu couper le live).
 func TestService_DeleteUser_StopperError_PropagatesAndSkipsDelete(t *testing.T) {

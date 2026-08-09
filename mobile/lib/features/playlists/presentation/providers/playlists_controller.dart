@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../domain/entities/playlist.dart';
+import '../../domain/entities/track.dart';
 import '../../domain/repositories/playlist_repository.dart';
 
-/// Pilote `PlaylistsScreen` : liste des playlists de l'utilisateur et mutations
-/// (création, renommage, suppression).
+/// Pilote `PlaylistsScreen` : playlists de l'utilisateur **et** sa bibliothèque
+/// de pistes (affichée sous les playlists, US-05-01), plus les mutations
+/// (création, renommage, suppression de playlist).
 ///
 /// Les mutations ne sont PAS optimistes : elles appellent le repository puis
 /// rechargent la liste, et relaient l'exception à l'appelant (l'écran) pour
@@ -17,22 +19,30 @@ class PlaylistsController extends ChangeNotifier {
   final PlaylistRepository _repository;
 
   List<Playlist> _playlists = const [];
+  List<Track> _tracks = const [];
   bool _loading = false;
   String? _error;
   bool _isNetworkError = false;
 
   List<Playlist> get playlists => _playlists;
+  List<Track> get tracks => _tracks;
   bool get loading => _loading;
   String? get error => _error;
   bool get isNetworkError => _isNetworkError;
 
-  /// (Re)charge la liste des playlists.
+  /// (Re)charge les playlists et la bibliothèque de pistes en parallèle. Les deux
+  /// dépendent du même backend/auth : on les traite comme un seul chargement.
   Future<void> load() async {
     _loading = true;
     _clearError();
     notifyListeners();
     try {
-      _playlists = await _repository.list();
+      final results = await Future.wait([
+        _repository.list(),
+        _repository.libraryTracks(),
+      ]);
+      _playlists = results[0] as List<Playlist>;
+      _tracks = results[1] as List<Track>;
     } catch (e) {
       _setError(e);
     } finally {
@@ -87,6 +97,6 @@ class PlaylistsController extends ChangeNotifier {
 
   String _messageFor(Object error) {
     if (error is NetworkException) return 'Pas de connexion réseau';
-    return 'Impossible de charger les playlists';
+    return 'Impossible de charger la bibliothèque';
   }
 }
