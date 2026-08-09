@@ -296,25 +296,31 @@ func TestService_DeleteUser_StopsLiveBeforeDelete(t *testing.T) {
 	}
 }
 
+// fakePurger simule track.Service : il enrobe le hard-delete (deleteUser) —
+// trace avant/après pour vérifier le séquencement stopper → delete → (remove).
 type fakePurger struct {
 	order    *[]string
 	gotID    string
 	callonce bool
-	err      error
 }
 
-func (f *fakePurger) PurgeUserTracks(_ context.Context, userID string) error {
+func (f *fakePurger) PurgeUserTracks(_ context.Context, userID string, deleteUser func() error) error {
 	f.callonce = true
 	f.gotID = userID
 	if f.order != nil {
-		*f.order = append(*f.order, "purger.PurgeUserTracks:"+userID)
+		*f.order = append(*f.order, "purger.before:"+userID)
 	}
-	return f.err
+	err := deleteUser()
+	if f.order != nil {
+		*f.order = append(*f.order, "purger.after:"+userID)
+	}
+	return err
 }
 
-// 7b. DeleteUser purge les fichiers audio du user AVANT le delete repo (la
-// cascade DB effacerait sinon les lignes tracks en laissant les fichiers).
-func TestService_DeleteUser_PurgesTracksBeforeDelete(t *testing.T) {
+// 7b. DeleteUser enrobe le hard-delete dans le purger : stopper, puis le purger
+// relève les chemins (before), exécute le delete, puis supprime les fichiers
+// (after). L'ordre prouve que la suppression des fichiers encadre bien le delete.
+func TestService_DeleteUser_PurgesAroundDelete(t *testing.T) {
 	var order []string
 	repo := seededRepo()
 	repo.order = &order
@@ -330,28 +336,34 @@ func TestService_DeleteUser_PurgesTracksBeforeDelete(t *testing.T) {
 	if !purger.callonce || purger.gotID != testTargetUserID {
 		t.Fatalf("purger not called with target id, got %q (called=%v)", purger.gotID, purger.callonce)
 	}
-	// Ordre : stopper -> purger -> delete.
+	// Ordre : stopper -> purger.before -> repo.DeleteUser -> purger.after.
 	want := []string{
 		"stopper.StopLiveForUser:" + testTargetUserID,
-		"purger.PurgeUserTracks:" + testTargetUserID,
+		"purger.before:" + testTargetUserID,
 		"repo.DeleteUser:" + testTargetUserID,
+		"purger.after:" + testTargetUserID,
 	}
-	if len(order) != 3 || order[0] != want[0] || order[1] != want[1] || order[2] != want[2] {
+	if len(order) != len(want) {
 		t.Fatalf("wrong order: %v", order)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("wrong order at %d: got %v", i, order)
+		}
 	}
 }
 
-// 7c. Un échec de purge ne bloque pas la suppression du compte (best-effort).
-func TestService_DeleteUser_PurgeError_StillDeletes(t *testing.T) {
+// 7c. Sans purger câblé, DeleteUser supprime quand même le compte (le purger est
+// optionnel, injecté en setter).
+func TestService_DeleteUser_NoPurger_StillDeletes(t *testing.T) {
 	repo := seededRepo()
 	svc := NewService(repo, &fakeStopper{}, &fakeModerator{})
-	svc.SetTrackPurger(&fakePurger{err: errors.New("disk error")})
 
 	if err := svc.DeleteUser(context.Background(), testTargetUserID, testRequesterID); err != nil {
-		t.Fatalf("purge failure must not block deletion, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if repo.deleteCalls != 1 {
-		t.Errorf("want 1 delete call despite purge error, got %d", repo.deleteCalls)
+		t.Errorf("want 1 delete call, got %d", repo.deleteCalls)
 	}
 }
 

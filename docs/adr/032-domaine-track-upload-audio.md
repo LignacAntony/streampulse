@@ -95,9 +95,17 @@ Sans borne, un utilisateur authentifié peut boucler des uploads de 50 Mo jusqu'
 pas seulement l'upload. Deux garde-fous :
 
 - **Quota cumulé par utilisateur** : constante `MaxUserStorageBytes = 500 << 20` (500 Mo). Vérifié
-  **avant** `Storage.Save` via `SumFileSizeByUser` ; dépassement → **507** (`storage_quota_exceeded`).
+  **avant** `Storage.Save` via `SumFileSizeByUser` ; dépassement → **403** (`storage_quota_exceeded`).
+  Le **403** (et non 507) est délibéré : c'est une condition **côté client** que réessayer ne résout
+  pas (il faut libérer de l'espace), et il garde la réponse **hors du bucket 5xx** qui déclenche
+  l'alerte critique 5xx>5% (ADR 021). Le contrôle du quota est placé **après** `detectAudio` : un
+  fichier non-audio reçoit 415 (le bon diagnostic) même si le compte est au-dessus du quota.
   Best-effort face à la concurrence (deux uploads simultanés peuvent tous deux passer) — une **borne
   de concurrence globale** type `HLS_MAX_CONCURRENT` fera l'objet d'un ticket séparé.
+- **Croissance globale non refermée** : le quota par compte ralentit mais ne borne pas `500 Mo × N`
+  comptes. La parade — une **alerte sur l'espace disque du volume** (node_exporter est déjà déployé)
+  et/ou un **cap de stockage global** — est laissée à un ticket de suivi : hors périmètre US-05-01, et
+  une règle d'alerting Grafana provisionnée mérite d'être validée en rendu, pas ajoutée à l'aveugle.
 - **Mémoire multipart** : `ParseMultipartForm(1 << 20)` (et non 10 Mio) — au-delà, le corps déborde
   sur un fichier temporaire (nettoyé par `net/http`). 10 Mio × N requêtes concurrentes saturerait le
   heap (OOMKill du pod). 1 Mio garde l'empreinte mémoire basse, le disque temporaire absorbe le reste.
@@ -107,10 +115,18 @@ pas seulement l'upload. Deux garde-fous :
 La FK `tracks.user_id` est `ON DELETE CASCADE` : supprimer un compte efface les **lignes** `tracks`
 mais **jamais** les fichiers sur le volume → sans action, le volume ne fait que croître.
 
-`track.Service.PurgeUserTracks(userID)` liste les chemins du user (`ListFilePathsByUser`) et les
-supprime via `Storage` (best-effort : un échec est journalisé, il ne bloque pas la suppression du
-compte). Elle est **appelée avant** le hard-delete (sinon la cascade a déjà effacé les lignes) par
-les deux chemins de suppression :
+`track.Service.PurgeUserTracks(userID, deleteUser func() error)` **enrobe** le hard-delete pour
+garantir NI fichier orphelin NI ligne fantôme, en trois temps :
+
+1. relève les chemins des fichiers du user (`ListFilePathsByUser`) — avant que la cascade ne les
+   rende introuvables ;
+2. exécute `deleteUser` (le hard-delete, qui déclenche la cascade sur `tracks`) ;
+3. **seulement si (2) a réussi**, supprime les fichiers du `Storage` (best-effort : un échec est
+   journalisé, pas propagé).
+
+Ce séquençage (et non « supprimer les fichiers puis le compte ») évite qu'un `deleteUser` en échec
+laisse la bibliothèque lister des pistes dont le binaire a déjà disparu. Les deux chemins de
+suppression fournissent leur propre `deleteUser` :
 
 - `admin.Service.DeleteUser` (suppression par un admin),
 - `auth.Service.DeleteAccount` (suppression de son propre compte).

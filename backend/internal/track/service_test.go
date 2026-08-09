@@ -226,7 +226,7 @@ func TestCreate_RemovesOrphanOnRepoError(t *testing.T) {
 }
 
 // TestCreate_QuotaExceeded : le cumul existant + le nouveau fichier dépasse le
-// quota → 507, rien n'est écrit ni persisté.
+// quota → 403 (hors bucket 5xx), rien n'est écrit ni persisté.
 func TestCreate_QuotaExceeded(t *testing.T) {
 	repo := &fakeRepo{sumRet: MaxUserStorageBytes} // déjà au quota
 	storage := &stubStorage{}
@@ -239,25 +239,78 @@ func TestCreate_QuotaExceeded(t *testing.T) {
 		Content: bytes.NewReader(mp3Header),
 	})
 	var he *httpjson.Error
-	if !errors.As(err, &he) || he.Status != http.StatusInsufficientStorage {
-		t.Fatalf("expected 507 httpjson.Error, got %v", err)
+	if !errors.As(err, &he) || he.Status != http.StatusForbidden {
+		t.Fatalf("expected 403 httpjson.Error, got %v", err)
+	}
+	if he.Code != "storage_quota_exceeded" {
+		t.Errorf("code: got %q, want storage_quota_exceeded", he.Code)
 	}
 	if storage.saveCalled || repo.createCalled {
 		t.Error("nothing must be stored when quota is exceeded")
 	}
 }
 
-// TestPurgeUserTracks : supprime chaque fichier du user via le Storage.
-func TestPurgeUserTracks(t *testing.T) {
+// TestCreate_NonAudioWinsOverQuota : au-dessus du quota, un fichier non-audio doit
+// recevoir 415 (le bon diagnostic), pas 403 — detectAudio passe avant le quota.
+func TestCreate_NonAudioWinsOverQuota(t *testing.T) {
+	repo := &fakeRepo{sumRet: MaxUserStorageBytes} // déjà au quota
+	svc := NewService(repo, &stubStorage{})
+
+	_, err := svc.Create(context.Background(), CreateTrackInput{
+		UserID:  testUserID,
+		Title:   "PDF over quota",
+		Size:    int64(len(pdfHeader)),
+		Content: bytes.NewReader(pdfHeader),
+	})
+	var he *httpjson.Error
+	if !errors.As(err, &he) || he.Status != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415 (not audio) to win over 403 (quota), got %v", err)
+	}
+}
+
+// TestPurgeUserTracks_RemovesAfterDelete : ordre list → delete → remove. Les
+// fichiers ne sont supprimés qu'APRÈS un delete réussi.
+func TestPurgeUserTracks_RemovesAfterDelete(t *testing.T) {
 	repo := &fakeRepo{pathsRet: []string{"/data/tracks/a.mp3", "/data/tracks/b.ogg"}}
 	storage := &recordingStorage{}
 	svc := NewService(repo, storage)
 
-	if err := svc.PurgeUserTracks(context.Background(), testUserID); err != nil {
+	deleted := false
+	err := svc.PurgeUserTracks(context.Background(), testUserID, func() error {
+		// Au moment du delete, aucun fichier ne doit encore avoir été supprimé.
+		if len(storage.removed) != 0 {
+			t.Error("files must not be removed before the account delete")
+		}
+		deleted = true
+		return nil
+	})
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if !deleted {
+		t.Fatal("deleteUser must be called")
+	}
 	if len(storage.removed) != 2 {
-		t.Fatalf("expected 2 files removed, got %v", storage.removed)
+		t.Fatalf("expected 2 files removed after delete, got %v", storage.removed)
+	}
+}
+
+// TestPurgeUserTracks_DeleteFails_KeepsFiles : si le delete échoue, aucun fichier
+// n'est supprimé (pas de ligne fantôme) et l'erreur remonte.
+func TestPurgeUserTracks_DeleteFails_KeepsFiles(t *testing.T) {
+	repo := &fakeRepo{pathsRet: []string{"/data/tracks/a.mp3"}}
+	storage := &recordingStorage{}
+	svc := NewService(repo, storage)
+
+	wantErr := errors.New("delete failed")
+	err := svc.PurgeUserTracks(context.Background(), testUserID, func() error {
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("delete error must propagate, got %v", err)
+	}
+	if len(storage.removed) != 0 {
+		t.Errorf("no file must be removed when delete fails, got %v", storage.removed)
 	}
 }
 

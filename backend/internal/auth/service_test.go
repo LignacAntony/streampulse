@@ -598,16 +598,17 @@ func assertAppError(t *testing.T, err error, code apperror.Code, message string)
 	}
 }
 
-// fakeTrackPurger capture l'appel de purge (self-suppression de compte).
+// fakeTrackPurger simule track.Service : il enrobe le hard-delete (deleteUser)
+// et le relaie, comme le vrai purger le ferait après avoir relevé les chemins.
 type fakeTrackPurger struct {
 	called bool
 	gotID  string
 }
 
-func (f *fakeTrackPurger) PurgeUserTracks(_ context.Context, userID string) error {
+func (f *fakeTrackPurger) PurgeUserTracks(_ context.Context, userID string, deleteUser func() error) error {
 	f.called = true
 	f.gotID = userID
-	return nil
+	return deleteUser()
 }
 
 // DeleteAccount purge les fichiers audio du user avant le hard-delete (US-05-01,

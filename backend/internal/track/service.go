@@ -126,24 +126,30 @@ func (s *Service) Create(ctx context.Context, in CreateTrackInput) (Track, error
 		return Track{}, apperror.InvalidArgument("empty file")
 	}
 
+	// Le vrai type MIME est contrôlé AVANT le quota : un fichier non-audio doit
+	// recevoir 415 (le bon diagnostic) même si l'utilisateur est au-dessus du
+	// quota — ré-uploader un PDF ne franchira jamais le quota de toute façon.
+	mimeType, ext, err := detectAudio(in.Content)
+	if err != nil {
+		return Track{}, err
+	}
+
 	// Quota de stockage par compte, vérifié AVANT d'écrire le fichier : borne le
 	// remplissage du volume (best-effort — deux uploads concurrents peuvent tous
 	// deux passer, une borne de concurrence globale suivra dans un ticket dédié).
+	// 403 (et non 507) : c'est une condition côté client que réessayer ne résout
+	// pas (il faut libérer de l'espace), et ça garde la réponse hors du bucket 5xx
+	// qui déclenche l'alerte critique (ADR 021).
 	used, err := s.repo.SumFileSizeByUser(ctx, in.UserID)
 	if err != nil {
 		return Track{}, err
 	}
 	if used+in.Size > MaxUserStorageBytes {
 		return Track{}, httpjson.StatusError(
-			http.StatusInsufficientStorage,
+			http.StatusForbidden,
 			"storage_quota_exceeded",
 			"quota de stockage atteint",
 		)
-	}
-
-	mimeType, ext, err := detectAudio(in.Content)
-	if err != nil {
-		return Track{}, err
 	}
 
 	id := uuid.NewString()
@@ -170,14 +176,27 @@ func (s *Service) Create(ctx context.Context, in CreateTrackInput) (Track, error
 	return track, nil
 }
 
-// PurgeUserTracks supprime du STOCKAGE tous les fichiers audio d'un utilisateur.
-// À appeler AVANT la suppression du compte (la cascade DB efface les lignes
-// tracks mais jamais les fichiers sur disque — sans ça le volume ne fait que
-// croître). Best-effort : l'échec de suppression d'un fichier est journalisé
-// mais n'interrompt pas la purge ni la suppression du compte.
-func (s *Service) PurgeUserTracks(ctx context.Context, userID string) error {
+// PurgeUserTracks orchestre la suppression du compte pour ne laisser NI fichier
+// orphelin NI ligne fantôme. En trois temps :
+//  1. relève les chemins des fichiers du user (avant que la cascade DB ne les
+//     rende introuvables) ;
+//  2. exécute deleteUser (le hard-delete, qui déclenche la cascade sur tracks) ;
+//  3. seulement si (2) a réussi, supprime les fichiers du stockage.
+//
+// Si deleteUser échoue, on ne supprime aucun fichier : lignes et fichiers restent
+// cohérents (mieux qu'une bibliothèque listant des pistes au binaire disparu).
+// La suppression des fichiers est best-effort (un échec est journalisé, pas
+// propagé) ; un échec du listing (1) n'empêche pas la suppression du compte.
+func (s *Service) PurgeUserTracks(ctx context.Context, userID string, deleteUser func() error) error {
 	paths, err := s.repo.ListFilePathsByUser(ctx, userID)
 	if err != nil {
+		// On n'a pas pu relever les chemins : on privilégie la suppression du
+		// compte (les fichiers resteront orphelins, journalisés).
+		zerolog.Ctx(ctx).Warn().Err(err).Str("user_id", userID).
+			Msg("track: chemins introuvables avant la purge du compte")
+		return deleteUser()
+	}
+	if err := deleteUser(); err != nil {
 		return err
 	}
 	for _, p := range paths {

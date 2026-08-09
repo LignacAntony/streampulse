@@ -60,13 +60,15 @@ type StreamModerator interface {
 	ForceStopStream(ctx context.Context, streamID string) error
 }
 
-// UserTrackPurger supprime du stockage les fichiers audio d'un utilisateur.
-// Implémentée par track.Service ; injectée en setter (SetTrackPurger) pour ne pas
-// laisser d'orphaned files sur le volume quand un compte est hard-delete (la
-// cascade DB efface les lignes tracks, pas les fichiers). Interface étroite (ISP),
-// même logique que LiveStopper.
+// UserTrackPurger orchestre la suppression du compte pour supprimer aussi les
+// fichiers audio du user (la cascade DB efface les lignes tracks, pas les
+// fichiers). deleteUser est le hard-delete lui-même : le purger relève d'abord
+// les chemins, exécute deleteUser, puis supprime les fichiers — ainsi un delete
+// qui échoue ne laisse pas de lignes pointant vers des fichiers disparus.
+// Implémentée par track.Service ; injectée en setter (SetTrackPurger). Interface
+// étroite (ISP), même logique que LiveStopper.
 type UserTrackPurger interface {
-	PurgeUserTracks(ctx context.Context, userID string) error
+	PurgeUserTracks(ctx context.Context, userID string, deleteUser func() error) error
 }
 
 // Repository est le miroir des requêtes SQL du domaine admin (queries/admin.sql).
@@ -132,16 +134,15 @@ func (s *Service) DeleteUser(ctx context.Context, targetID, requesterID string) 
 	if err := s.stopper.StopLiveForUser(ctx, targetID); err != nil {
 		return err
 	}
-	// Purge des fichiers audio AVANT le hard-delete : la cascade DB efface les
-	// lignes tracks mais jamais les fichiers. Best-effort — un échec de purge ne
-	// doit pas empêcher la suppression du compte (les orphelins sont journalisés).
+	// Le purger séquence : relève les chemins → hard-delete (cascade) → supprime
+	// les fichiers. La cascade DB efface les lignes tracks mais jamais les fichiers
+	// du volume ; supprimer les fichiers seulement après un delete réussi évite les
+	// lignes fantômes.
+	deleteUser := func() error { return s.repo.DeleteUser(ctx, targetID) }
 	if s.purger != nil {
-		if err := s.purger.PurgeUserTracks(ctx, targetID); err != nil {
-			zerolog.Ctx(ctx).Warn().Err(err).Str("target_id", targetID).
-				Msg("admin: purge des fichiers audio échouée avant suppression du compte")
-		}
+		return s.purger.PurgeUserTracks(ctx, targetID, deleteUser)
 	}
-	return s.repo.DeleteUser(ctx, targetID)
+	return deleteUser()
 }
 
 // ListLiveStreams retourne la liste de modération (tous les live) + total.
