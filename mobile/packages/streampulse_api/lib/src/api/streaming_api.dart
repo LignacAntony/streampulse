@@ -382,7 +382,7 @@ class StreamingApi {
   }
 
   /// Push a live audio stream (broadcaster ingest).
-  /// Continuous AAC audio ingest for a live stream, authenticated by the &#x60;stream_key&#x60; in the path (no JWT). The request body is a continuous audio stream segmented into HLS by the backend (cf. ADR 015). The stream must be live (started) for the push to be accepted.
+  /// Continuous audio ingest for a live stream, authenticated by the &#x60;stream_key&#x60; in the path (no JWT). The request body is a continuous audio stream segmented into HLS by the backend (cf. ADR 015). The stream must be live (started) for the push to be accepted.  Any audio media type is accepted. &#x60;audio/aac&#x60; (raw ADTS) — and an absent &#x60;Content-Type&#x60;, which is assumed to be the same — is muxed as-is with no re-encoding. Every other format (MP3, OGG, WAV, FLAC, …) is transcoded to AAC on the fly by an ffmpeg stage placed in front of the segmenter, adding under 2 seconds of latency (cf. ADR 030). Listeners always receive AAC.
   ///
   /// Parameters:
   /// * [streamKey] - The broadcaster's secret stream key (from stream_source_url).

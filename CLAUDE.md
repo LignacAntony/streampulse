@@ -240,11 +240,12 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | GET | `/api/users/me/streams` | `Handler.ListMine` | Oui (JWT) — tableau de bord diffuseur : **mes** flux (tous statuts, non archivés), **avec** `stream_key`/`stream_source_url` (le filtre porte sur le porteur du JWT) ; `[]` si aucun flux, jamais 403 (STR-153, ADR 024) |
 | GET | `/api/streams/{id}/stats` | `Handler.Stats` | Oui (JWT) — audience du flux : auditeurs **estimés**, pic, durée. Propriétaire uniquement → 404 sinon ; flux non live → 200 avec compteurs à zéro (STR-154, ADR 025) |
 | POST | `/api/streams/{id}/key/rotate` | `Handler.RotateKey` | Oui — rôle `broadcaster`, owner ; remet une `stream_key` neuve et invalide l'ancienne, 409 si le flux est **live** (l'index `byKey` de `LiveSessions` pointerait sur l'ancienne clé). Chemin en `key/rotate` et **non** `rotate-key` : ce dernier entre en conflit ServeMux avec `ingest/{stream_key}` (STR-228, ADR 028) |
-| POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio AAC segmenté en HLS (STR-70/71) |
+| POST | `/api/streams/ingest/{stream_key}` | `Handler.Ingest` | **Non (JWT)** — auth par `stream_key` dans le path ; push audio segmenté en HLS (STR-70/71). Tout `audio/*` est accepté : l'AAC (et un `Content-Type` absent) part direct dans le segmenteur, tout autre format (MP3, OGG, WAV, …) passe par un ffmpeg de transcodage intercalé devant (STR-204, ADR 030) ; 415 si le corps est indécodable |
 | GET | `/api/streams/{id}/playlist.m3u8` | `Handler.Playlist` | **Public** (`OptionalAuth`) — flux publics servis à un anonyme, privé → 404 ; owner authentifié voit ses flux privés — manifeste HLS, 409 si pas live/pas prêt (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
 | GET | `/api/streams/{id}/segments/{segment}` | `Handler.Segment` | **Public** (`OptionalAuth`) — idem playlist — segment `.ts` (nom validé anti-traversal) (STR-108) ; 503 si capacité atteinte (`HLS_MAX_CONCURRENT`, STR-88) |
 
 - Moteur HLS (STR-70) : le diffuseur pousse de l'AAC sur `ingest/{stream_key}` (auth par clé, 100 % mémoire) ; **ffmpeg** (`-c:a copy`) segmente en `.ts` de ~10 s + manifeste `.m3u8` glissant servi aux auditeurs. Un segmenteur par session live, tué + répertoire nettoyé à l'arrêt. Détails [ADR 015](docs/adr/015-moteur-hls-segmentation-ffmpeg.md).
+- Transcodage d'ingest (STR-204, [ADR 030](docs/adr/030-transcodage-a-la-volee-des-formats-dingest.md)) : un **second** ffmpeg (`-c:a aac -f adts`) est intercalé devant le segmenteur quand le `Content-Type` n'est pas de l'AAC, et vit le temps du push. Le segmenteur reste en `-c:a copy` — le chemin AAC ne paie ni process ni ré-encodage. Le démultiplexeur `-f` vient d'une table close (`resolveIngestFormat`), jamais d'une chaîne du diffuseur. Des octets entrés sans AAC en sortie → **415** (corps indécodable), pas 500.
 - Cycle de vie du direct (STR-77) : `start`/`stop` = endpoints dédiés (le PUT ne touche pas au statut) ; **un seul flux live par diffuseur** ; goroutines gérées par `LiveSessions` (context + mutex). Détails [ADR 013](docs/adr/013-domaine-streaming.md) §7.
 - Titre **non unique** (contrainte retirée en `000015`) : pas de 409 sur le titre.
 - `stream_key` (32 octets base64url, en clair) jamais exposé à un tiers ; URL source = `{STREAM_INGEST_BASE_URL}/api/streams/ingest/{stream_key}`.
@@ -567,7 +568,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `030-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `031-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
