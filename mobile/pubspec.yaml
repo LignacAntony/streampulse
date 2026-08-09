@@ -33,6 +33,9 @@ dependencies:
   just_audio: ^0.9.40
   audio_service: ^0.18.12
 
+  # Session audio : focus / interruptions (appels, notifications, casque) — STR-110
+  audio_session: ^0.1.25
+
   # Permission notifications (Android 13+) pour la notification média (STR-109)
   permission_handler: ^11.3.1
 
