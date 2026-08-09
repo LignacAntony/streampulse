@@ -29,7 +29,10 @@ Future<void> main() async {
 
   runApp(
     StreamPulseApp(
+      // Le même handler sous ses deux rôles : direct (STR-109) et file d'attente
+      // (US-05-04) partagent un unique lecteur natif, donc un unique service.
       audioService: audioHandler,
+      queueService: audioHandler,
       child: const App(),
     ),
   );

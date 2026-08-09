@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
@@ -7,7 +8,10 @@ import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
+import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlist_detail_screen.dart';
+
+import '../../../../support/fake_queue_playback_service.dart';
 
 PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
       id: id,
@@ -88,17 +92,35 @@ class _FakePlaylistRepository implements PlaylistRepository {
   Future<void> delete(String id) => throw UnimplementedError();
 }
 
-Widget _harness(PlaylistRepository repository, {TargetPlatform? platform}) {
-  return ToastificationWrapper(
-    child: MaterialApp(
-      // `ReorderableListView` choisit ses poignées par défaut d'après
-      // `Theme.of(context).platform` : le forcer permet de tester le rendu
-      // desktop.
-      theme: platform == null ? null : ThemeData(platform: platform),
-      home: PlaylistDetailScreen(
-        playlistId: 'p-1',
-        playlistName: 'My Favorites',
-        repository: repository,
+/// Contrôleur de file d'attente pour les tests d'écran : le service est un fake,
+/// le token une constante (l'écran ne fait que déclencher la lecture).
+PlaylistQueueController _queueController(FakeQueuePlaybackService service) {
+  return PlaylistQueueController(
+    service: service,
+    token: ({bool forceRefresh = false}) async => 'jwt',
+  );
+}
+
+Widget _harness(
+  PlaylistRepository repository, {
+  TargetPlatform? platform,
+  PlaylistQueueController? queue,
+}) {
+  // L'écran lit la file d'attente app-level (US-05-04) pour lancer la lecture et
+  // souligner la piste en cours : elle doit exister au-dessus de lui.
+  return ChangeNotifierProvider<PlaylistQueueController>.value(
+    value: queue ?? _queueController(FakeQueuePlaybackService()),
+    child: ToastificationWrapper(
+      child: MaterialApp(
+        // `ReorderableListView` choisit ses poignées par défaut d'après
+        // `Theme.of(context).platform` : le forcer permet de tester le rendu
+        // desktop.
+        theme: platform == null ? null : ThemeData(platform: platform),
+        home: PlaylistDetailScreen(
+          playlistId: 'p-1',
+          playlistName: 'My Favorites',
+          repository: repository,
+        ),
       ),
     ),
   );
@@ -140,6 +162,57 @@ void main() {
       expect(find.text('1'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.byKey(const Key('playlist_tracks_list')), findsOneWidget);
+    });
+
+    testWidgets('le bouton Lire lance la playlist depuis le début (US-05-04)',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('playlist_play_button')));
+      await tester.pumpAndSettle();
+
+      expect(service.lastItems.map((i) => i.id).toList(), ['t1', 't2']);
+      expect(service.lastInitialIndex, 0);
+      expect(queue.playlistName, 'My Favorites');
+      // La ligne en cours est repérable : son numéro cède la place à l'icône.
+      expect(find.byIcon(Icons.graphic_eq), findsOneWidget);
+    });
+
+    testWidgets('un appui sur une piste démarre la file à cette piste',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sunrise'));
+      await tester.pumpAndSettle();
+
+      // Toute la playlist est chargée — on démarre juste plus loin dedans.
+      expect(service.lastItems.map((i) => i.id).toList(), ['t1', 't2']);
+      expect(service.lastInitialIndex, 1);
+      expect(queue.currentIndex, 1);
+    });
+
+    testWidgets('playlist vide : ni bouton Lire, ni file lancée',
+        (tester) async {
+      await tester.pumpWidget(_harness(_FakePlaylistRepository()));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('playlist_play_button')), findsNothing);
     });
 
     testWidgets('playlist vide : message dédié + appel à l\'action',

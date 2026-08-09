@@ -1661,6 +1661,71 @@ paths:
                       message: seuls les fichiers audio MP3, AAC ou OGG sont acceptés
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/tracks/{id}/stream:
+    get:
+      tags:
+        - Track
+      operationId: streamTrack
+      summary: Stream the audio file of one of the user's tracks.
+      description: >-
+        Serves the raw audio bytes of a track owned by the authenticated user
+        (US-05-04), so the mobile player can play a playlist queue. Range
+        requests are honoured (`Accept-Ranges: bytes`), which lets the player
+        resume or seek within a track without downloading it again. A track that
+        belongs to somebody else is reported as 404, exactly like an unknown one:
+        the status code never reveals that it exists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Track identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The audio file.
+          headers:
+            Accept-Ranges:
+              description: Always `bytes` — the player may request slices.
+              schema:
+                type: string
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: The requested byte range of the audio file.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:

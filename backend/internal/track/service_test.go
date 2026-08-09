@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -32,6 +33,10 @@ type fakeRepo struct {
 	sumErr       error
 	pathsRet     []string
 	pathsErr     error
+	fileRet      TrackFile
+	fileErr      error
+	gotFileTrack string
+	gotFileUser  string
 }
 
 func (f *fakeRepo) CreateTrack(_ context.Context, p CreateTrackParams) (Track, error) {
@@ -50,6 +55,15 @@ func (f *fakeRepo) ListTracksByUser(_ context.Context, _ string) ([]Track, error
 	return f.listRet, nil
 }
 
+func (f *fakeRepo) GetTrackFileByUser(_ context.Context, trackID, userID string) (TrackFile, error) {
+	f.gotFileTrack = trackID
+	f.gotFileUser = userID
+	if f.fileErr != nil {
+		return TrackFile{}, f.fileErr
+	}
+	return f.fileRet, nil
+}
+
 func (f *fakeRepo) SumFileSizeByUser(_ context.Context, _ string) (int64, error) {
 	return f.sumRet, f.sumErr
 }
@@ -66,6 +80,10 @@ type stubStorage struct {
 	savePath     string
 	removeCalled bool
 	removedPath  string
+	openContent  []byte
+	openErr      error
+	openedPath   string
+	openedFile   *stubStoredFile
 }
 
 func (s *stubStorage) Save(_ context.Context, id, ext string, r io.Reader) (string, error) {
@@ -82,9 +100,30 @@ func (s *stubStorage) Save(_ context.Context, id, ext string, r io.Reader) (stri
 	return s.savePath, nil
 }
 
+func (s *stubStorage) Open(path string) (StoredFile, error) {
+	s.openedPath = path
+	if s.openErr != nil {
+		return nil, s.openErr
+	}
+	s.openedFile = &stubStoredFile{Reader: bytes.NewReader(s.openContent)}
+	return s.openedFile, nil
+}
+
 func (s *stubStorage) Remove(path string) error {
 	s.removeCalled = true
 	s.removedPath = path
+	return nil
+}
+
+// stubStoredFile est un binaire en mémoire qui note sa fermeture (le handler
+// doit refermer le fichier servi, sinon les descripteurs fuient).
+type stubStoredFile struct {
+	*bytes.Reader
+	closed bool
+}
+
+func (f *stubStoredFile) Close() error {
+	f.closed = true
 	return nil
 }
 
@@ -323,7 +362,75 @@ func (s *recordingStorage) Save(_ context.Context, _, _ string, _ io.Reader) (st
 	return "", nil
 }
 
+func (s *recordingStorage) Open(_ string) (StoredFile, error) {
+	return nil, os.ErrNotExist
+}
+
 func (s *recordingStorage) Remove(path string) error {
 	s.removed = append(s.removed, path)
 	return nil
+}
+
+// TestOpenTrackFile_OK : le service relaie l'identité du demandeur au repository
+// (c'est lui qui filtre sur user_id) et ouvre le chemin qu'il en reçoit.
+func TestOpenTrackFile_OK(t *testing.T) {
+	repo := &fakeRepo{fileRet: TrackFile{
+		Path:     "/data/tracks/abc.mp3",
+		MimeType: "audio/mpeg",
+		Size:     42,
+	}}
+	storage := &stubStorage{openContent: mp3Header}
+	svc := NewService(repo, storage)
+
+	opened, err := svc.OpenTrackFile(context.Background(), "track-1", testUserID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = opened.Content.Close() }()
+
+	if repo.gotFileUser != testUserID || repo.gotFileTrack != "track-1" {
+		t.Fatalf("repo must be queried with (track, user), got (%q, %q)",
+			repo.gotFileTrack, repo.gotFileUser)
+	}
+	if storage.openedPath != "/data/tracks/abc.mp3" {
+		t.Fatalf("storage must open the path from the DB, got %q", storage.openedPath)
+	}
+	if opened.MimeType != "audio/mpeg" {
+		t.Fatalf("expected the MIME type frozen at upload, got %q", opened.MimeType)
+	}
+	got, err := io.ReadAll(opened.Content)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if !bytes.Equal(got, mp3Header) {
+		t.Fatal("the served content must be the stored file")
+	}
+}
+
+// TestOpenTrackFile_NotOwned : la piste d'un tiers (ou inexistante) remonte du
+// repository en 404 — le service ne la transforme pas en 403.
+func TestOpenTrackFile_NotOwned(t *testing.T) {
+	repo := &fakeRepo{fileErr: apperror.NotFound("track not found")}
+	storage := &stubStorage{}
+	svc := NewService(repo, storage)
+
+	_, err := svc.OpenTrackFile(context.Background(), "track-1", testUserID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+	if storage.openedPath != "" {
+		t.Fatal("the storage must not be touched when the track is not the requester's")
+	}
+}
+
+// TestOpenTrackFile_MissingBinary : ligne en base mais fichier absent du volume
+// → 404 (il n'y a rien à servir), pas 500.
+func TestOpenTrackFile_MissingBinary(t *testing.T) {
+	repo := &fakeRepo{fileRet: TrackFile{Path: "/data/tracks/gone.mp3", MimeType: "audio/mpeg"}}
+	svc := NewService(repo, &stubStorage{openErr: os.ErrNotExist})
+
+	_, err := svc.OpenTrackFile(context.Background(), "track-1", testUserID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected not found for a missing binary, got %v", err)
+	}
 }

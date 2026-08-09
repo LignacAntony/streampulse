@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -29,6 +30,7 @@ const maxMultipartMemory int64 = 1 << 20 // 1 Mio
 type TrackService interface {
 	Create(ctx context.Context, in CreateTrackInput) (Track, error)
 	ListUserTracks(ctx context.Context, requesterID string) ([]Track, error)
+	OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error)
 }
 
 // Handler expose le domaine track en HTTP.
@@ -134,6 +136,43 @@ func (h *Handler) ListUserTracks(w http.ResponseWriter, r *http.Request) {
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("track: encode user tracks")
 	}
+}
+
+// StreamTrack gère GET /api/tracks/{id}/stream : sert le binaire audio d'une
+// piste **du demandeur** au lecteur mobile (US-05-04).
+//
+// Le fichier est délégué à http.ServeContent, qui gère les requêtes Range : le
+// lecteur peut reprendre une piste ou y avancer sans retélécharger depuis le
+// début, et enchaîner la piste suivante de la file sans à-coup. Le type MIME
+// vient de la base (figé à l'upload, déjà validé par sniff) : on ne laisse pas
+// ServeContent le deviner depuis un nom de fichier.
+func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	file, err := h.svc.OpenTrackFile(r.Context(), r.PathValue("id"), userID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	defer func() {
+		if err := file.Content.Close(); err != nil {
+			zerolog.Ctx(r.Context()).Warn().Err(err).Msg("track: close streamed file")
+		}
+	}()
+
+	w.Header().Set("Content-Type", file.MimeType)
+	// Contenu privé de l'utilisateur : jamais dans un cache partagé, et pas de
+	// recompression par un intermédiaire (elle casserait les octets audio).
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// modtime nul : le binaire d'une piste est immuable une fois uploadé, il n'y
+	// a pas de revalidation conditionnelle à proposer (ServeContent omet alors
+	// Last-Modified et ignore If-Modified-Since).
+	http.ServeContent(w, r, "", time.Time{}, file.Content)
 }
 
 // tooLargeError construit la réponse 413 commune (dépassement de taille).

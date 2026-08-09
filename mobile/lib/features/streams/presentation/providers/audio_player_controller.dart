@@ -6,21 +6,8 @@ import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import '../../../../core/audio/audio_playback_service.dart';
 import '../../../../core/constants/api_constants.dart';
 
-export '../../../../core/audio/audio_playback_service.dart' show NowPlaying;
-
-/// État applicatif du lecteur, mappé depuis just_audio et exposé à l'UI.
-/// `reconnecting` = une erreur transitoire est en cours de reprise automatique
-/// (STR-118) ; `error` = échec définitif (après épuisement des tentatives).
-enum PlaybackStatus {
-  idle,
-  loading,
-  buffering,
-  playing,
-  paused,
-  reconnecting,
-  ended,
-  error,
-}
+export '../../../../core/audio/audio_playback_service.dart'
+    show NowPlaying, PlaybackStatus;
 
 /// Abstraction du lecteur exposée à l'UI (Dependency Inversion) : les écrans et
 /// le mini-player dépendent de cette interface, jamais directement de
@@ -109,10 +96,18 @@ class AudioPlayerController extends PlaybackController {
   NowPlaying? get nowPlaying => _nowPlaying;
   Object? get error => _error;
 
+  /// Appelé **avant** que le direct ne reprenne le lecteur partagé, pour que la
+  /// file d'attente d'une playlist (US-05-04) libère son état : les deux
+  /// sources se partagent un unique lecteur natif, celle qui perd la main doit
+  /// cesser de prétendre jouer. Posé après construction (le contrôleur de file
+  /// est créé plus tard dans l'arbre de providers).
+  void Function()? onTakeOver;
+
   /// Charge le flux [now] et démarre la lecture (autoplay, STR-108). Réinitialise
   /// le compteur de reconnexions (action utilisateur).
   @override
   Future<void> load(NowPlaying now) async {
+    onTakeOver?.call();
     _nowPlaying = now;
     _retryCount = 0;
     _hasPlayed = false;
@@ -173,6 +168,11 @@ class AudioPlayerController extends PlaybackController {
   }
 
   void _onPlayerState(PlayerState state) {
+    // Aucun flux chargé : les états reçus décrivent une **autre** source (la
+    // file d'attente d'une playlist joue sur le même lecteur natif, US-05-04).
+    // Sans ce garde, ce contrôleur se croirait en lecture alors qu'il n'a rien
+    // à jouer.
+    if (_nowPlaying == null) return;
     // États applicatifs terminaux/transitoires : on n'écrase pas avec un état
     // résiduel du player. `ended` en fait partie car _recover() est asynchrone
     // (attente de la sonde HTTP) et le player peut émettre un `idle` juste après
@@ -203,7 +203,9 @@ class AudioPlayerController extends PlaybackController {
 
   /// Échec de lecture : déclenche la reprise (au plus une à la fois). STR-118.
   void _fail(Object e) {
-    if (_disposed) return;
+    // Même raison que dans [_onPlayerState] : sans flux chargé, l'erreur vient
+    // de l'autre source du lecteur partagé et ne nous concerne pas.
+    if (_disposed || _nowPlaying == null) return;
     _error = e;
     if (kDebugMode) {
       debugPrint('AudioPlayerController: erreur de lecture: $e');

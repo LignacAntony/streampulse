@@ -317,6 +317,10 @@ func run() error {
 		http.HandlerFunc(trackHandler.Upload)))
 	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.ListUserTracks)))
+	// Lecture du binaire d'une piste (US-05-04) : réservée à son propriétaire,
+	// requêtes Range honorées pour le lecteur audio de la file d'attente.
+	mux.Handle("GET /api/tracks/{id}/stream", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.StreamTrack)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))

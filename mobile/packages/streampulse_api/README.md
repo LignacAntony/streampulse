@@ -113,6 +113,7 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**streamSegment**](doc/StreamingApi.md#streamsegment) | **GET** /api/streams/{id}/segments/{segment} | Get an HLS media segment (.ts).
 [*StreamingApi*](doc/StreamingApi.md) | [**updateStream**](doc/StreamingApi.md#updatestream) | **PUT** /api/streams/{id} | Update a stream (owner only).
 [*TrackApi*](doc/TrackApi.md) | [**listUserTracks**](doc/TrackApi.md#listusertracks) | **GET** /api/tracks | List the authenticated user&#39;s track library.
+[*TrackApi*](doc/TrackApi.md) | [**streamTrack**](doc/TrackApi.md#streamtrack) | **GET** /api/tracks/{id}/stream | Stream the audio file of one of the user&#39;s tracks.
 [*TrackApi*](doc/TrackApi.md) | [**uploadTrack**](doc/TrackApi.md#uploadtrack) | **POST** /api/tracks | Upload an audio file to the personal library.
 
 

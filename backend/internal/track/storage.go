@@ -49,6 +49,19 @@ func (s *FileStorage) Save(_ context.Context, id, ext string, r io.Reader) (stri
 	return path, nil
 }
 
+// Open ouvre en lecture un fichier précédemment écrit, pour le servir à son
+// propriétaire (US-05-04). Le chemin vient toujours de la base (colonne
+// file_path écrite par Save), jamais du client : il n'y a donc rien à assainir
+// ici. Un fichier absent (volume purgé, restauration partielle) remonte tel quel
+// — le service le traduit en 404.
+func (s *FileStorage) Open(path string) (StoredFile, error) {
+	f, err := os.Open(path) // #nosec G304 -- chemin issu de la base, écrit par Save
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
 // Remove supprime un fichier précédemment écrit (best-effort côté service, pour
 // nettoyer un orphelin quand l'INSERT en base échoue après l'écriture disque).
 func (s *FileStorage) Remove(path string) error {

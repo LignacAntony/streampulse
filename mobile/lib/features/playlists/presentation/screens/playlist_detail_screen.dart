@@ -9,6 +9,7 @@ import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist_track.dart';
 import '../../domain/repositories/playlist_repository.dart';
 import '../providers/playlist_detail_controller.dart';
+import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
 import '../widgets/track_picker_sheet.dart';
 
@@ -112,6 +113,23 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
     }
   }
 
+  /// Lance la playlist à partir de [startIndex] (US-05-04). La file d'attente
+  /// est une **photo** des pistes affichées : le contrôleur de file vit au
+  /// niveau application, il ne peut pas suivre les mutations d'un écran qu'on
+  /// quitte. Réordonner ou retirer une piste ne change donc pas ce qui joue
+  /// tant que l'utilisateur n'a pas relancé la lecture.
+  Future<void> _onPlay({int startIndex = 0}) async {
+    final controller = context.read<PlaylistDetailController>();
+    if (controller.tracks.isEmpty) return;
+
+    await context.read<PlaylistQueueController>().play(
+          playlistId: controller.playlistId,
+          playlistName: widget.title,
+          tracks: controller.tracks,
+          startIndex: startIndex,
+        );
+  }
+
   Future<void> _onReorder(int oldIndex, int newIndex) async {
     final controller = context.read<PlaylistDetailController>();
     try {
@@ -151,6 +169,16 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
           child: _buildBody(controller),
         ),
       ),
+      // Point d'entrée principal de la lecture : sans lui, seul un appui sur une
+      // ligne lancerait la playlist — trouvable seulement par tâtonnement.
+      floatingActionButton: controller.tracks.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              key: const Key('playlist_play_button'),
+              onPressed: _onPlay,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Lire'),
+            ),
     );
   }
 
@@ -190,7 +218,8 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       // le défilement que la poignée explicite ci-dessous cherche à éviter.
       buildDefaultDragHandles: false,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 24),
+      // Assez de marge pour que la dernière ligne ne se cache pas sous le FAB.
+      padding: const EdgeInsets.only(bottom: 88),
       itemCount: controller.tracks.length,
       onReorder: _onReorder,
       itemBuilder: (context, index) {
@@ -201,7 +230,9 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
           key: Key('playlist_track_${track.id}'),
           track: track,
           index: index,
+          playlistId: controller.playlistId,
           onRemove: _onRemove,
+          onPlay: () => _onPlay(startIndex: index),
         );
       },
     );
@@ -242,29 +273,47 @@ class _TrackTile extends StatelessWidget {
     super.key,
     required this.track,
     required this.index,
+    required this.playlistId,
     required this.onRemove,
+    required this.onPlay,
   });
 
   final PlaylistTrack track;
   final int index;
+  final String playlistId;
   final ValueChanged<PlaylistTrack> onRemove;
+  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // Comparaison par id et non par index : l'ordre local peut différer de
+    // celui figé dans la file (réordonnancement après le lancement).
+    final isCurrent = context.select<PlaylistQueueController, bool>(
+      (queue) =>
+          queue.hasQueue &&
+          queue.playlistId == playlistId &&
+          queue.currentTrack?.id == track.id,
+    );
 
     return ListTile(
-      leading: Text(
-        '${index + 1}',
-        style: Theme.of(context)
-            .textTheme
-            .titleMedium
-            ?.copyWith(color: colors.onSurfaceVariant),
-      ),
+      onTap: onPlay,
+      leading: isCurrent
+          ? Icon(Icons.graphic_eq, color: colors.primary)
+          : Text(
+              '${index + 1}',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
+            ),
       title: Text(
         track.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: isCurrent
+            ? TextStyle(color: colors.primary, fontWeight: FontWeight.w600)
+            : null,
       ),
       subtitle: Text(
         trackSubtitle(artist: track.artist, durationS: track.durationS),
