@@ -31,6 +31,6 @@ class StreamRepositoryImpl implements StreamRepository {
       _remote.removeFavorite(streamId);
 
   @override
-  Future<bool> isStreamEnded(String streamId) =>
-      _remote.isStreamEnded(streamId);
+  Future<bool> isManifestUnavailable(String streamId) =>
+      _remote.isManifestUnavailable(streamId);
 }

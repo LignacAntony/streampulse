@@ -38,7 +38,7 @@ class _FakeRepository implements StreamRepository {
       const [];
 
   @override
-  Future<bool> isStreamEnded(String streamId) async => false;
+  Future<bool> isManifestUnavailable(String streamId) async => false;
 }
 
 void main() {

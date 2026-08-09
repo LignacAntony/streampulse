@@ -12,8 +12,9 @@ abstract class StreamRepository {
   /// Retire le flux des favoris (idempotent côté serveur).
   Future<void> removeFavorite(String streamId);
 
-  /// `true` si le direct est terminé (manifeste HLS public 404/409), `false`
-  /// sinon. Sert à distinguer une fin de direct d'une coupure réseau côté
-  /// lecteur (STR-118).
-  Future<bool> isStreamEnded(String streamId);
+  /// `true` si le manifeste HLS public n'est plus servi (404/409), `false` sinon
+  /// (200 en direct, ou réseau indéterminé). Le 409 étant ambigu (fin de direct
+  /// **ou** démarrage pas encore prêt), c'est le lecteur qui lève l'ambiguïté
+  /// (STR-118/109).
+  Future<bool> isManifestUnavailable(String streamId);
 }
