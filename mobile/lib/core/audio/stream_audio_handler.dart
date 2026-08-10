@@ -29,7 +29,6 @@ class StreamAudioHandler extends BaseAudioHandler
       (event) => playbackState.add(_transform(event)),
       onError: (Object e, StackTrace _) => _errors.add(e),
     );
-    unawaited(_configureSession());
   }
 
   final AudioPlayer _player;
@@ -37,8 +36,12 @@ class StreamAudioHandler extends BaseAudioHandler
   final _interruptions = InterruptionPolicy();
 
   /// Volume appliqué pendant l'atténuation (ducking) d'une interruption
-  /// transitoire (notification) — restauré à 1.0 à la fin.
+  /// transitoire (notification).
   static const double _duckVolume = 0.4;
+
+  /// Volume à restaurer après un ducking (capturé juste avant, pour ne pas
+  /// écraser un réglage éventuel plutôt que de remettre 1.0 en dur).
+  double _preDuckVolume = 1;
 
   @override
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
@@ -78,7 +81,11 @@ class StreamAudioHandler extends BaseAudioHandler
   /// Configure la session audio (catégorie `music`) et branche la gestion des
   /// interruptions (STR-110). Le player est en `handleInterruptions: false` :
   /// c'est [InterruptionPolicy] qui décide, ici on ne fait que traduire.
-  Future<void> _configureSession() async {
+  ///
+  /// **Public et appelé explicitement depuis `main()`** (pas dans le
+  /// constructeur) : effet de bord plateforme à ordonner et dont l'erreur doit
+  /// être rattrapée par l'appelant.
+  Future<void> configureSession() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
     // Appel entrant / autre app (pause ou ducking) + fin d'interruption.
@@ -87,6 +94,7 @@ class StreamAudioHandler extends BaseAudioHandler
         _interruptions.onInterruption(
           begin: event.begin,
           isDuck: event.type == AudioInterruptionType.duck,
+          canResume: event.type == AudioInterruptionType.pause,
           isPlaying: _player.playing,
         ),
       );
@@ -102,11 +110,14 @@ class StreamAudioHandler extends BaseAudioHandler
       case InterruptionAction.pause:
         unawaited(_player.pause());
       case InterruptionAction.resume:
+        // Défensif : si un `unduck` s'était perdu, on ne reprend pas à 0.4.
+        unawaited(_player.setVolume(_preDuckVolume));
         unawaited(_player.play());
       case InterruptionAction.duck:
+        _preDuckVolume = _player.volume; // capture avant d'atténuer
         unawaited(_player.setVolume(_duckVolume));
       case InterruptionAction.unduck:
-        unawaited(_player.setVolume(1));
+        unawaited(_player.setVolume(_preDuckVolume));
       case InterruptionAction.none:
         break;
     }

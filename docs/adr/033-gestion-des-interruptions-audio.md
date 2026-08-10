@@ -32,9 +32,13 @@ nous (explicite et testable, pas de double gestion).
 Une machine à états **sans dépendance plateforme** décide de l'action
 (`pause` / `resume` / `duck` / `unduck` / `none`) :
 
-- **appel / interruption `pause`** pendant la lecture → `pause`, mémorisée ; à la fin → `resume`
-  **seulement si c'est nous qui avions mis en pause** (jamais si l'utilisateur avait déjà mis en pause
-  avant l'appel) ;
+- **appel / interruption** pendant la lecture → `pause`, mémorisée ; à la fin → `resume`
+  **seulement si (a)** c'est nous qui avions mis en pause (jamais si l'utilisateur avait déjà mis en
+  pause avant l'appel) **et (b)** l'OS autorise la reprise. Ce dernier point est clé : `audio_session`
+  mappe une fin d'interruption iOS avec `shouldResume` sur le type `pause` et **sans** `shouldResume`
+  (ou une perte de focus permanente Android) sur `unknown`. La politique reçoit donc un `canResume`
+  (`type == pause`) et **ne relance pas** sur `unknown` — même comportement que le
+  `handleInterruptions` de just_audio qu'on remplace ;
 - **notification (`duck`)** → `duck` (baisse le volume à 0.4) puis `unduck` (restaure 1.0) — pas de
   coupure franche pour une interruption transitoire ;
 - **casque débranché (`becomingNoisy`)** → `pause`, **sans** reprise automatique (le son ne doit pas
@@ -56,7 +60,13 @@ Le handler ne fait que **traduire** l'action en appel lecteur. La propagation d'
 - Comportement conforme à l'US, avec en bonus le ducking des notifications et la pause au débranchement
   du casque.
 - La **politique** est couverte par des tests unitaires ; le **branchement** session→politique→player
-  reste vérifié sur device (un vrai appel entrant ne se simule pas en test).
+  reste vérifié sur device (un vrai appel entrant ne se simule pas en test). `configureSession()` est
+  **publique et appelée depuis `main()`** (try/catch), pas dans le constructeur du handler : ordre
+  explicite, erreur rattrapée, et le handler reste constructible en test sans toucher la plateforme.
+- **Limite connue** : si l'utilisateur met en pause *pendant* l'interruption, la politique ne peut pas
+  le distinguer (l'événement de fin la ferait quand même reprendre, `_pausedByInterruption` restant
+  armé) — elle ne voit que les événements de focus, pas les actions utilisateur. Acceptable pour l'US ;
+  à traiter si besoin en désarmant la reprise sur une action `pause`/`stop` explicite du contrôleur.
 - Pas de conflit avec le micro diffuseur : écoute et diffusion ne sont jamais simultanées, et `record`
   repose sa propre catégorie de session.
 

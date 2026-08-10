@@ -7,51 +7,124 @@ void main() {
       final policy = InterruptionPolicy();
 
       expect(
-        policy.onInterruption(begin: true, isDuck: false, isPlaying: true),
+        policy.onInterruption(
+          begin: true,
+          isDuck: false,
+          canResume: false,
+          isPlaying: true,
+        ),
         InterruptionAction.pause,
       );
-      // Fin de l'appel : on reprend (c'est nous qui avions mis en pause).
+      // Fin de l'appel avec autorisation de reprise (iOS `shouldResume`).
       expect(
-        policy.onInterruption(begin: false, isDuck: false, isPlaying: false),
+        policy.onInterruption(
+          begin: false,
+          isDuck: false,
+          canResume: true,
+          isPlaying: false,
+        ),
         InterruptionAction.resume,
+      );
+    });
+
+    test('fin d\'interruption non reprenable → aucune reprise', () {
+      final policy = InterruptionPolicy();
+
+      policy.onInterruption(
+        begin: true,
+        isDuck: false,
+        canResume: false,
+        isPlaying: true,
+      ); // pause armée
+      // L'OS ne permet pas la reprise (iOS sans `shouldResume`, perte de focus
+      // permanente Android → `unknown`) : on ne relance pas.
+      expect(
+        policy.onInterruption(
+          begin: false,
+          isDuck: false,
+          canResume: false,
+          isPlaying: false,
+        ),
+        InterruptionAction.none,
       );
     });
 
     test('interruption alors qu\'on est déjà en pause → aucune reprise auto', () {
       final policy = InterruptionPolicy();
 
-      // Rien ne jouait quand l'appel arrive → on ne touche à rien.
       expect(
-        policy.onInterruption(begin: true, isDuck: false, isPlaying: false),
+        policy.onInterruption(
+          begin: true,
+          isDuck: false,
+          canResume: false,
+          isPlaying: false,
+        ),
         InterruptionAction.none,
       );
-      // ...donc à la fin non plus (l'utilisateur avait mis en pause lui-même).
       expect(
-        policy.onInterruption(begin: false, isDuck: false, isPlaying: false),
+        policy.onInterruption(
+          begin: false,
+          isDuck: false,
+          canResume: true,
+          isPlaying: false,
+        ),
         InterruptionAction.none,
       );
     });
 
-    test('notification transitoire → duck puis unduck (pas de pause)', () {
+    test('notification transitoire en lecture → duck puis unduck', () {
       final policy = InterruptionPolicy();
 
       expect(
-        policy.onInterruption(begin: true, isDuck: true, isPlaying: true),
+        policy.onInterruption(
+          begin: true,
+          isDuck: true,
+          canResume: false,
+          isPlaying: true,
+        ),
         InterruptionAction.duck,
       );
       expect(
-        policy.onInterruption(begin: false, isDuck: true, isPlaying: true),
+        policy.onInterruption(
+          begin: false,
+          isDuck: true,
+          canResume: false,
+          isPlaying: true,
+        ),
         InterruptionAction.unduck,
       );
     });
 
-    test('un duck ne déclenche pas de reprise (n\'arme pas la pause)', () {
+    test('notification alors que rien ne joue → aucune atténuation', () {
       final policy = InterruptionPolicy();
 
-      policy.onInterruption(begin: true, isDuck: true, isPlaying: true); // duck
-      // Fin d'une interruption « pause » qui n'a jamais eu lieu → rien.
       expect(
-        policy.onInterruption(begin: false, isDuck: false, isPlaying: false),
+        policy.onInterruption(
+          begin: true,
+          isDuck: true,
+          canResume: false,
+          isPlaying: false,
+        ),
+        InterruptionAction.none,
+      );
+    });
+
+    test('un duck n\'arme pas la reprise', () {
+      final policy = InterruptionPolicy();
+
+      policy.onInterruption(
+        begin: true,
+        isDuck: true,
+        canResume: false,
+        isPlaying: true,
+      ); // duck
+      expect(
+        policy.onInterruption(
+          begin: false,
+          isDuck: false,
+          canResume: true,
+          isPlaying: false,
+        ),
         InterruptionAction.none,
       );
     });
@@ -65,7 +138,12 @@ void main() {
       );
       // Une fin d'interruption ne doit pas relancer le son sur le haut-parleur.
       expect(
-        policy.onInterruption(begin: false, isDuck: false, isPlaying: false),
+        policy.onInterruption(
+          begin: false,
+          isDuck: false,
+          canResume: true,
+          isPlaying: false,
+        ),
         InterruptionAction.none,
       );
     });

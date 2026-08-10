@@ -1,4 +1,5 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
@@ -26,6 +27,17 @@ Future<void> main() async {
       androidStopForegroundOnPause: true,
     ),
   );
+
+  // Configuration de la session + gestion des interruptions (STR-110, ADR 033) :
+  // ordonnée explicitement après l'init, et l'échec (ex. plateforme sans plugin)
+  // ne doit pas empêcher l'app de démarrer.
+  try {
+    await audioHandler.configureSession();
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('main: configuration de la session audio échouée: $e');
+    }
+  }
 
   runApp(
     StreamPulseApp(

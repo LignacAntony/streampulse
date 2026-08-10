@@ -13,25 +13,32 @@ class InterruptionPolicy {
 
   /// Interruption « focus » (appel, notification…). [begin] distingue le début
   /// de la fin ; [isDuck] = transitoire pouvant être simplement atténuée (sinon
-  /// pause franche) ; [isPlaying] = état de lecture au moment de l'événement.
+  /// pause franche) ; [canResume] = l'OS autorise la reprise à la fin (iOS
+  /// `shouldResume` → type `pause`, sinon `unknown` = **non** reprenable ;
+  /// Android perte de focus permanente = `unknown`) ; [isPlaying] = état de
+  /// lecture au moment de l'événement.
   InterruptionAction onInterruption({
     required bool begin,
     required bool isDuck,
+    required bool canResume,
     required bool isPlaying,
   }) {
     if (begin) {
-      if (isDuck) return InterruptionAction.duck;
+      if (isDuck) return isPlaying ? InterruptionAction.duck : InterruptionAction.none;
       if (isPlaying) {
         _pausedByInterruption = true;
         return InterruptionAction.pause;
       }
       return InterruptionAction.none;
     }
-    // Fin d'interruption.
+    // Fin d'interruption. On ne reprend que si c'est nous qui avions mis en
+    // pause ET si l'OS le permet (`canResume`) — sinon une interruption non
+    // reprenable (iOS sans `shouldResume`, perte de focus permanente) relancerait
+    // le son à tort. On désarme dans tous les cas.
     if (isDuck) return InterruptionAction.unduck;
     if (_pausedByInterruption) {
       _pausedByInterruption = false;
-      return InterruptionAction.resume;
+      return canResume ? InterruptionAction.resume : InterruptionAction.none;
     }
     return InterruptionAction.none;
   }
