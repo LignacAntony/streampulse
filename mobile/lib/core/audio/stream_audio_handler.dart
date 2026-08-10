@@ -70,6 +70,7 @@ class StreamAudioHandler extends BaseAudioHandler
         isLive: true,
       ),
     );
+    _hasSource = true;
     await _player.setAudioSource(AudioSource.uri(Uri.parse(url)));
   }
 
@@ -90,6 +91,7 @@ class StreamAudioHandler extends BaseAudioHandler
     _queueItems = [for (final item in items) _toMediaItem(item)];
     queue.add(_queueItems);
     mediaItem.add(_queueItems[start]);
+    _hasSource = true;
 
     await _player.setAudioSource(
       // L'enchaînement piste → piste suivante est délégué au lecteur natif :
@@ -110,22 +112,45 @@ class StreamAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> skipToIndex(int index) async {
-    if (index < 0 || index >= _queueItems.length) return;
+    if (!_hasSource || index < 0 || index >= _queueItems.length) return;
     await _player.seek(Duration.zero, index: index);
   }
 
+  /// Refuse les commandes de transport quand plus rien n'est chargé.
+  ///
+  /// Android garde une carte média (« reprise ») après l'arrêt, et son bouton
+  /// lecture rejoue le dernier `MediaItem` : sans ce garde, appuyer dessus
+  /// relancerait la piste alors que l'application a **déjà** vidé sa file et
+  /// masqué son lecteur — l'OS jouerait ce que l'app dit ne pas jouer.
+  bool _hasSource = false;
+
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    if (!_hasSource) return;
+    await _player.play();
+  }
 
   @override
   Future<void> pause() => _player.pause();
 
   @override
   Future<void> stop() async {
+    _hasSource = false;
     await _player.stop();
     _queueItems = const [];
     queue.add(const []);
     mediaItem.add(null); // retire la notification
+    // État terminal publié explicitement : le dernier événement du lecteur peut
+    // arriver après coup, et `audio_service` ne retire sa notification qu'en
+    // voyant un état `idle` sans contrôle.
+    playbackState.add(
+      PlaybackState(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+        controls: const [],
+        systemActions: const {},
+      ),
+    );
     await super.stop();
   }
 
@@ -134,16 +159,25 @@ class StreamAudioHandler extends BaseAudioHandler
   /// contrôleur applicatif suit ensuite via `currentIndexStream`, ce qui évite
   /// deux sources de vérité sur la position dans la file.
   @override
-  Future<void> skipToNext() => _player.seekToNext();
+  Future<void> skipToNext() async {
+    if (!_hasSource) return;
+    await _player.seekToNext();
+  }
 
   @override
-  Future<void> skipToPrevious() => _player.seekToPrevious();
+  Future<void> skipToPrevious() async {
+    if (!_hasSource) return;
+    await _player.seekToPrevious();
+  }
 
   @override
   Future<void> skipToQueueItem(int index) => skipToIndex(index);
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) async {
+    if (!_hasSource) return;
+    await _player.seek(position);
+  }
 
   MediaItem _toMediaItem(QueueItem item) => MediaItem(
         id: item.id,
