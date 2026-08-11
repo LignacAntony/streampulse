@@ -39,7 +39,8 @@ Une machine à états **sans dépendance plateforme** décide de l'action
   (ou une perte de focus permanente Android) sur `unknown`. La politique reçoit donc un `canResume`
   (`type == pause`) et **ne relance pas** sur `unknown` — même comportement que le
   `handleInterruptions` de just_audio qu'on remplace ;
-- **notification (`duck`)** → `duck` (baisse le volume à 0.4) puis `unduck` (restaure 1.0) — pas de
+- **notification (`duck`)** → `duck` (baisse le volume à 0.4) puis restauration du **volume d'avant
+  l'atténuation** (capturé au moment du duck, et seulement si on avait effectivement atténué) — pas de
   coupure franche pour une interruption transitoire ;
 - **casque débranché (`becomingNoisy`)** → `pause`, **sans** reprise automatique (le son ne doit pas
   repartir tout seul sur le haut-parleur).

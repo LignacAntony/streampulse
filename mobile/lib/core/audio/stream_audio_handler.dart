@@ -43,6 +43,10 @@ class StreamAudioHandler extends BaseAudioHandler
   /// écraser un réglage éventuel plutôt que de remettre 1.0 en dur).
   double _preDuckVolume = 1;
 
+  /// Vrai entre un `duck` et sa restauration : on ne touche au volume qu'après
+  /// avoir réellement atténué (sinon une reprise écraserait un réglage éventuel).
+  bool _ducked = false;
+
   @override
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
   @override
@@ -110,17 +114,25 @@ class StreamAudioHandler extends BaseAudioHandler
       case InterruptionAction.pause:
         unawaited(_player.pause());
       case InterruptionAction.resume:
-        // Défensif : si un `unduck` s'était perdu, on ne reprend pas à 0.4.
-        unawaited(_player.setVolume(_preDuckVolume));
+        _restoreVolumeIfDucked(); // défensif : un `unduck` a pu se perdre
         unawaited(_player.play());
       case InterruptionAction.duck:
         _preDuckVolume = _player.volume; // capture avant d'atténuer
+        _ducked = true;
         unawaited(_player.setVolume(_duckVolume));
       case InterruptionAction.unduck:
-        unawaited(_player.setVolume(_preDuckVolume));
+        _restoreVolumeIfDucked();
       case InterruptionAction.none:
         break;
     }
+  }
+
+  /// Restaure le volume d'avant l'atténuation **uniquement** si on avait
+  /// effectivement atténué — sinon on ne touche pas à un réglage éventuel.
+  void _restoreVolumeIfDucked() {
+    if (!_ducked) return;
+    _ducked = false;
+    unawaited(_player.setVolume(_preDuckVolume));
   }
 
   /// Mappe un événement just_audio vers l'état `audio_service` qui pilote la
