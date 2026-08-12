@@ -28,7 +28,7 @@ ORDER BY created_at DESC;
 -- (US-05-04). Le filtre porte sur (id, user_id) : la piste d'un tiers ne se
 -- distingue pas d'une piste inexistante (0 ligne -> 404), donc l'API ne révèle
 -- pas l'existence de la bibliothèque d'autrui.
-SELECT file_path, mime_type, file_size
+SELECT file_path, mime_type
 FROM tracks
 WHERE id = sqlc.arg(id)::uuid
   AND user_id = sqlc.arg(user_id)::uuid;

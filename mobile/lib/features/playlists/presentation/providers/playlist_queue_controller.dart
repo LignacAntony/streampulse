@@ -40,9 +40,14 @@ class PlaylistQueueController extends ChangeNotifier {
   /// mini-player continuerait d'annoncer un flux qui ne joue plus.
   final Future<void> Function()? _stopLive;
 
+  /// Nombre de reprises automatiques avant d'abandonner, avec backoff 1/2/4 s
+  /// (même discipline que le direct, STR-118).
+  static const int _maxAutoRetries = 3;
+
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<int?>? _indexSub;
   StreamSubscription<Object>? _errorSub;
+  Timer? _retryTimer;
 
   List<PlaylistTrack> _tracks = const [];
   String? _playlistId;
@@ -51,10 +56,15 @@ class PlaylistQueueController extends ChangeNotifier {
   PlaybackStatus _status = PlaybackStatus.idle;
   bool _disposed = false;
 
-  /// Une reprise après échec a-t-elle déjà été tentée pour cette file ? Borne la
-  /// reprise à **une** tentative : au-delà, l'échec n'est pas une histoire de
-  /// token périmé et réessayer en boucle ne ferait que masquer l'erreur.
-  bool _authRetried = false;
+  /// Reprises déjà tentées sur la piste courante.
+  ///
+  /// Remis à zéro sur une **action utilisateur** (lancement, saut) et sur un
+  /// **changement de piste** — c'est-à-dire quand la file a réellement avancé.
+  /// Volontairement pas à chaque `ready` : une piste qui s'ouvre puis
+  /// re-échoue en boucle (réseau instable) rearmerait indéfiniment le compteur,
+  /// et l'auditeur verrait la même piste repartir sans fin au lieu d'une erreur
+  /// franche qu'il peut relancer lui-même.
+  int _retryCount = 0;
 
   /// Numéro de la file courante. Un chargement asynchrone dont le numéro n'est
   /// plus le bon (l'utilisateur a lancé une autre playlist entre-temps) est
@@ -80,6 +90,7 @@ class PlaylistQueueController extends ChangeNotifier {
       _status == PlaybackStatus.loading || _status == PlaybackStatus.buffering;
   bool get hasError => _status == PlaybackStatus.error;
   bool get isEnded => _status == PlaybackStatus.ended;
+  bool get isReconnecting => _status == PlaybackStatus.reconnecting;
   bool get hasNext => _index < _tracks.length - 1;
   bool get hasPrevious => _index > 0;
 
@@ -96,6 +107,11 @@ class PlaylistQueueController extends ChangeNotifier {
     // abandonnée entre-temps (clear/stop). Sans ce jeton, une playlist annulée
     // pendant la bascule se remettrait à jouer.
     final generation = ++_generation;
+    // Statut posé **avant** d'arrêter le direct : `stopLive` fait émettre un
+    // `idle` au lecteur partagé alors que la file précédente est encore
+    // affichée. Sans ce `loading`, `hasQueue` passerait à false le temps d'un
+    // battement et le mini-player clignoterait à chaque relancement.
+    _setStatus(PlaybackStatus.loading);
     await _stopLive?.call();
     if (_disposed || generation != _generation) return;
 
@@ -103,7 +119,7 @@ class PlaylistQueueController extends ChangeNotifier {
     _playlistId = playlistId;
     _playlistName = playlistName;
     _index = startIndex.clamp(0, tracks.length - 1);
-    _authRetried = false;
+    _retryCount = 0;
     await _load(fromIndex: _index);
   }
 
@@ -114,10 +130,12 @@ class PlaylistQueueController extends ChangeNotifier {
     // exploitable : on la recharge à la piste demandée plutôt que d'y sauter.
     if (isEnded || hasError) {
       _index = index;
-      _authRetried = false;
+      _retryCount = 0;
       await _load(fromIndex: index);
       return;
     }
+    _retryCount = 0; // action utilisateur : on réarme les reprises
+    _retryTimer?.cancel();
     _setIndex(index);
     await _service.skipToIndex(index);
     await _service.play();
@@ -130,11 +148,11 @@ class PlaylistQueueController extends ChangeNotifier {
   Future<void> togglePlayPause() async {
     if (_tracks.isEmpty) return;
     if (isEnded || hasError) {
-      _authRetried = false;
+      _retryCount = 0;
       await _load(fromIndex: isEnded ? 0 : _index);
       return;
     }
-    if (isBusy) return;
+    if (isBusy || isReconnecting) return;
     if (_service.playing) {
       await _service.pause();
     } else {
@@ -160,9 +178,14 @@ class PlaylistQueueController extends ChangeNotifier {
     _reset();
   }
 
-  /// (Re)charge la file dans le lecteur à partir de [fromIndex].
-  /// [refreshToken] force une rotation de l'access token (reprise après échec).
-  Future<void> _load({required int fromIndex, bool refreshToken = false}) async {
+  /// (Re)charge la file dans le lecteur à partir de [fromIndex], à [position]
+  /// dans cette piste. [refreshToken] force une rotation de l'access token
+  /// (première reprise après échec).
+  Future<void> _load({
+    required int fromIndex,
+    Duration position = Duration.zero,
+    bool refreshToken = false,
+  }) async {
     final generation = ++_generation;
     _setStatus(PlaybackStatus.loading);
     try {
@@ -183,6 +206,7 @@ class PlaylistQueueController extends ChangeNotifier {
             ),
         ],
         initialIndex: fromIndex,
+        initialPosition: position,
         headers: token == null ? const {} : {'Authorization': 'Bearer $token'},
       );
       if (_disposed || generation != _generation) return;
@@ -195,9 +219,23 @@ class PlaylistQueueController extends ChangeNotifier {
 
   void _onPlayerState(PlayerState state) {
     if (_tracks.isEmpty) return;
-    // `error` est un état terminal décidé par [_onError] : un état résiduel du
-    // lecteur ne doit pas le repeindre en « en pause ».
-    if (_status == PlaybackStatus.error) return;
+    // États décidés par le contrôleur, pas par le lecteur : `error` et `ended`
+    // sont terminaux, `reconnecting` est une transition qu'une reprise en cours
+    // pilote. Un événement résiduel du lecteur ne doit repeindre aucun des
+    // trois — sinon un `idle` arrivant juste après `completed` ferait
+    // disparaître le mini-player « File d'attente terminée », et avec lui le
+    // bouton de relance.
+    if (_status == PlaybackStatus.error ||
+        _status == PlaybackStatus.ended ||
+        _status == PlaybackStatus.reconnecting) {
+      return;
+    }
+    // Pendant un (re)chargement, l'`idle` émis par le lecteur en libérant sa
+    // source précédente n'est pas un état à afficher.
+    if (_status == PlaybackStatus.loading &&
+        state.processingState == ProcessingState.idle) {
+      return;
+    }
     switch (state.processingState) {
       case ProcessingState.idle:
         _setStatus(PlaybackStatus.idle);
@@ -206,9 +244,6 @@ class PlaylistQueueController extends ChangeNotifier {
       case ProcessingState.buffering:
         _setStatus(PlaybackStatus.buffering);
       case ProcessingState.ready:
-        // Une piste s'est ouverte : le token était bon, on réarme la reprise
-        // pour un éventuel échec plus loin dans la file.
-        _authRetried = false;
         _setStatus(
           state.playing ? PlaybackStatus.playing : PlaybackStatus.paused,
         );
@@ -224,34 +259,58 @@ class PlaylistQueueController extends ChangeNotifier {
   void _onIndexChanged(int? index) {
     if (index == null || _tracks.isEmpty) return;
     if (index < 0 || index >= _tracks.length) return;
+    // La file a réellement avancé : les reprises consommées sur la piste
+    // précédente ne doivent pas peser sur la suivante.
+    if (index != _index) _retryCount = 0;
     _setIndex(index);
   }
 
-  /// Échec de lecture. Le cas de loin le plus probable sur une longue file est
-  /// l'access token expiré en cours de route (15 min) : on retente **une** fois
-  /// après rotation, à la piste courante. Tout autre échec — ou un second —
-  /// devient un état d'erreur que l'utilisateur relance explicitement.
+  /// Échec de lecture : reprise automatique **bornée**, backoff 1/2/4 s, en
+  /// repartant de la position atteinte dans la piste courante — une coupure
+  /// réseau brève ne doit pas faire recommencer le morceau.
+  ///
+  /// Seule la **première** tentative force une rotation de l'access token :
+  /// c'est le remède à une expiration en cours de file (15 min), et si une
+  /// rotation n'a pas suffi, en enchaîner d'autres ne changera rien. Tentatives
+  /// épuisées → état d'erreur, que l'utilisateur relance explicitement.
   void _onError(Object error) {
     if (_disposed || _tracks.isEmpty) return;
     if (kDebugMode) {
       debugPrint('PlaylistQueueController: erreur de lecture: $error');
     }
-    if (_authRetried) {
+    if (_retryCount >= _maxAutoRetries) {
       _setStatus(PlaybackStatus.error);
       return;
     }
-    _authRetried = true;
-    unawaited(_load(fromIndex: _index, refreshToken: true));
+
+    // Position relevée maintenant : après le délai, le lecteur aura pu être
+    // réinitialisé et l'aurait perdue.
+    final resumeAt = _service.position;
+    final refreshToken = _retryCount == 0;
+    _retryCount++;
+    _setStatus(PlaybackStatus.reconnecting);
+
+    final delay = Duration(seconds: 1 << (_retryCount - 1));
+    _retryTimer?.cancel();
+    _retryTimer = Timer(delay, () {
+      if (_disposed || _tracks.isEmpty) return;
+      unawaited(_load(
+        fromIndex: _index,
+        position: resumeAt,
+        refreshToken: refreshToken,
+      ));
+    });
   }
 
   /// Vide la file et repasse à `idle`. Le `_generation++` invalide un chargement
   /// encore en vol : sans lui, une file arrêtée pourrait se remettre à jouer.
   void _reset() {
+    _retryTimer?.cancel();
     _tracks = const [];
     _playlistId = null;
     _playlistName = null;
     _index = 0;
-    _authRetried = false;
+    _retryCount = 0;
     _generation++;
     _status = PlaybackStatus.idle;
     if (!_disposed) notifyListeners();
@@ -274,6 +333,7 @@ class PlaylistQueueController extends ChangeNotifier {
     // Contrôleur app-level : on libère nos abonnements, mais **pas** le service
     // partagé (sa durée de vie est celle d'`audio_service`, gérée à part).
     _disposed = true;
+    _retryTimer?.cancel();
     _stateSub?.cancel();
     _indexSub?.cancel();
     _errorSub?.cancel();

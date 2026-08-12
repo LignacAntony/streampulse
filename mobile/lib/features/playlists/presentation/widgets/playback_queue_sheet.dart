@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
+import 'queue_track_visuals.dart';
 
 /// File d'attente en cours de lecture (US-05-04), en feuille modale.
 ///
@@ -32,7 +33,18 @@ class PlaybackQueueSheet extends StatelessWidget {
     // que d'afficher une liste vide sans explication.
     if (!queue.hasQueue) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.of(context).maybePop();
+        if (!context.mounted) return;
+        // On vise **cette** route et pas le sommet de la pile : une autre route
+        // a pu être poussée par-dessus entre-temps, et un `maybePop()` nu la
+        // fermerait à la place de la feuille. Quand la feuille est au sommet on
+        // passe quand même par `maybePop` pour garder l'animation de sortie.
+        final route = ModalRoute.of(context);
+        final navigator = Navigator.of(context);
+        if (route == null || route.isCurrent) {
+          navigator.maybePop();
+        } else {
+          navigator.removeRoute(route);
+        }
       });
       return const SizedBox.shrink();
     }
@@ -66,23 +78,16 @@ class PlaybackQueueSheet extends StatelessWidget {
                 return ListTile(
                   key: Key('queue_item_${track.id}'),
                   selected: isCurrent,
-                  leading: isCurrent
-                      ? Icon(Icons.graphic_eq, color: colors.primary)
-                      : Text(
-                          '${index + 1}',
-                          style: text.titleMedium
-                              ?.copyWith(color: colors.onSurfaceVariant),
-                        ),
+                  leading: queueTrackLeading(
+                    context,
+                    index: index,
+                    isCurrent: isCurrent,
+                  ),
                   title: Text(
                     track.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: isCurrent
-                        ? text.titleMedium?.copyWith(
-                            color: colors.primary,
-                            fontWeight: FontWeight.w600,
-                          )
-                        : null,
+                    style: queueTrackTitleStyle(context, isCurrent: isCurrent),
                   ),
                   subtitle: Text(
                     trackSubtitle(

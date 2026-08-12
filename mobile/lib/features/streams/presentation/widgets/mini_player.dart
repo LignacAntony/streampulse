@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/widgets/mini_player_shell.dart';
 import '../providers/audio_player_controller.dart';
 
 /// Mini-player persistant (STR-109) : surface de contrôle in-app du flux en
@@ -19,7 +20,6 @@ class MiniPlayer extends StatelessWidget {
     }
 
     final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
 
     // Sous-titre contextuel : l'état (terminé / indisponible / reconnexion)
     // prime sur le nom du diffuseur, sinon le mini-player resterait muet en fin
@@ -31,79 +31,25 @@ class MiniPlayer extends StatelessWidget {
       _ => (now.broadcaster, colors.onSurfaceVariant),
     };
 
-    return Material(
-      color: colors.surfaceContainerHighest,
-      child: InkWell(
-        onTap: () => context.push('/stream/${now.streamId}'),
-        child: SizedBox(
-          height: 60,
-          child: Row(
-            children: [
-              const SizedBox(width: 14),
-              Icon(Icons.graphic_eq, color: colors.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      now.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    if (subtitle != null && subtitle.isNotEmpty)
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            text.bodySmall?.copyWith(color: subtitleColor),
-                      ),
-                  ],
-                ),
-              ),
-              _playPause(audio, colors),
-              IconButton(
-                onPressed: audio.stop,
-                icon: const Icon(Icons.close),
-                tooltip: 'Arrêter',
-              ),
-              const SizedBox(width: 4),
-            ],
-          ),
+    return MiniPlayerShell(
+      icon: Icons.graphic_eq,
+      title: now.title,
+      subtitle: subtitle,
+      subtitleColor: subtitleColor,
+      onTap: () => context.push('/stream/${now.streamId}'),
+      actions: [
+        PlaybackToggleButton(
+          isBusy: audio.isBusy || audio.isReconnecting,
+          showReplay: audio.hasError || audio.isEnded,
+          isPlaying: audio.isPlaying,
+          onPressed: audio.togglePlayPause,
         ),
-      ),
-    );
-  }
-
-  Widget _playPause(AudioPlayerController audio, ColorScheme colors) {
-    if (audio.isBusy || audio.isReconnecting) {
-      return const Padding(
-        padding: EdgeInsets.all(14),
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
+        IconButton(
+          onPressed: audio.stop,
+          icon: const Icon(Icons.close),
+          tooltip: 'Arrêter',
         ),
-      );
-    }
-    final IconData icon;
-    if (audio.hasError || audio.isEnded) {
-      icon = Icons.replay;
-    } else if (audio.isPlaying) {
-      icon = Icons.pause;
-    } else {
-      icon = Icons.play_arrow;
-    }
-    return IconButton(
-      onPressed: audio.togglePlayPause,
-      color: colors.primary,
-      iconSize: 30,
-      icon: Icon(icon),
-      tooltip: audio.isPlaying ? 'Pause' : 'Lecture',
+      ],
     );
   }
 }

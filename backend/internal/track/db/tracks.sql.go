@@ -67,7 +67,7 @@ func (q *Queries) CreateTrack(ctx context.Context, arg CreateTrackParams) (Creat
 }
 
 const getTrackFileByUser = `-- name: GetTrackFileByUser :one
-SELECT file_path, mime_type, file_size
+SELECT file_path, mime_type
 FROM tracks
 WHERE id = $1::uuid
   AND user_id = $2::uuid
@@ -81,7 +81,6 @@ type GetTrackFileByUserParams struct {
 type GetTrackFileByUserRow struct {
 	FilePath string
 	MimeType string
-	FileSize int64
 }
 
 // Localise le binaire d'une piste **du demandeur**, pour le servir en lecture
@@ -91,7 +90,7 @@ type GetTrackFileByUserRow struct {
 func (q *Queries) GetTrackFileByUser(ctx context.Context, arg GetTrackFileByUserParams) (GetTrackFileByUserRow, error) {
 	row := q.db.QueryRow(ctx, getTrackFileByUser, arg.ID, arg.UserID)
 	var i GetTrackFileByUserRow
-	err := row.Scan(&i.FilePath, &i.MimeType, &i.FileSize)
+	err := row.Scan(&i.FilePath, &i.MimeType)
 	return i, err
 }
 

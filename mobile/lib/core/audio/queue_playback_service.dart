@@ -40,14 +40,20 @@ abstract class QueuePlaybackService implements PlaybackTransport {
   /// chargée. Émet à chaque passage automatique comme à chaque saut manuel.
   Stream<int?> get currentIndexStream;
 
-  /// Charge [items] et positionne la lecture sur [initialIndex]. Ne démarre pas
-  /// la lecture (le contrôleur enchaîne), pour la même raison que `loadUri`.
+  /// Position dans la piste en cours. Relevée avant une reprise après erreur
+  /// pour repartir d'où l'auditeur en était, plutôt que du début de la piste.
+  Duration get position;
+
+  /// Charge [items] et positionne la lecture sur [initialIndex], à
+  /// [initialPosition] dans cette piste. Ne démarre pas la lecture (le
+  /// contrôleur enchaîne), pour la même raison que `loadUri`.
   ///
   /// [headers] est envoyé avec **chaque** requête de piste : les fichiers audio
   /// d'une bibliothèque sont privés, le lecteur natif doit s'authentifier.
   Future<void> loadQueue(
     List<QueueItem> items, {
     int initialIndex = 0,
+    Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
   });
 

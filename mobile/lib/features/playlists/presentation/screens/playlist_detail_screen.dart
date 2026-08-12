@@ -11,6 +11,7 @@ import '../../domain/repositories/playlist_repository.dart';
 import '../providers/playlist_detail_controller.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
+import '../widgets/queue_track_visuals.dart';
 import '../widgets/track_picker_sheet.dart';
 
 /// Écran de détail d'une playlist (US-05-03) : pistes ordonnées, ajout depuis la
@@ -286,7 +287,6 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     // Comparaison par id et non par index : l'ordre local peut différer de
     // celui figé dans la file (réordonnancement après le lancement).
     final isCurrent = context.select<PlaylistQueueController, bool>(
@@ -298,22 +298,12 @@ class _TrackTile extends StatelessWidget {
 
     return ListTile(
       onTap: onPlay,
-      leading: isCurrent
-          ? Icon(Icons.graphic_eq, color: colors.primary)
-          : Text(
-              '${index + 1}',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(color: colors.onSurfaceVariant),
-            ),
+      leading: queueTrackLeading(context, index: index, isCurrent: isCurrent),
       title: Text(
         track.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: isCurrent
-            ? TextStyle(color: colors.primary, fontWeight: FontWeight.w600)
-            : null,
+        style: queueTrackTitleStyle(context, isCurrent: isCurrent),
       ),
       subtitle: Text(
         trackSubtitle(artist: track.artist, durationS: track.durationS),

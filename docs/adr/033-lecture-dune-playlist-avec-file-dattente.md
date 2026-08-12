@@ -90,11 +90,22 @@ pas les intercepteurs de `DioClient` — personne ne rafraîchit son token.
 D'où :
 
 - `DioClient.refreshTokens()` devient public (même verrou sérialisé que l'intercepteur) ;
-- `PlaybackAuth.token({forceRefresh})` fournit l'access token au contrôleur de file ;
-- sur un échec de lecture, le contrôleur retente **une** fois après rotation, à la piste courante.
-  Une file peut durer plus que les 15 min d'un access token : sans cette reprise, elle casserait au
-  milieu. Un second échec devient un état d'erreur explicite — réessayer en boucle ne ferait que le
-  masquer.
+- `PlaybackAuth.token({forceRefresh})` fournit l'access token au contrôleur de file.
+
+**La reprise ne suppose pas la cause de l'échec.** On ne peut pas distinguer de façon fiable un 401
+d'une coupure réseau : just_audio remonte un `PlayerException` dont le code est celui du lecteur
+natif, pas le statut HTTP (mesuré sur device : `(0) Source error` pour une API injoignable), et le
+proxy local qui injecte les en-têtes sur Android brouille encore la trace. Le contrôleur applique
+donc une **reprise bornée** valable dans les deux cas, calquée sur celle du direct (STR-118) :
+
+- 3 tentatives au plus, backoff 1/2/4 s, statut `reconnecting` pendant l'attente ;
+- **position conservée** (`QueuePlaybackService.position` → `initialPosition`) : une coupure brève ne
+  fait pas recommencer le morceau ;
+- **seule la première** tentative force une rotation de token — c'est le remède à une expiration en
+  cours de file (15 min), et si une rotation n'a pas suffi, en enchaîner d'autres ne changera rien ;
+- le compteur ne se réarme qu'à une **action utilisateur** ou à un **changement de piste**, jamais
+  sur un simple `ready`. Sans cela, une piste qui s'ouvre puis ré-échoue en boucle (réseau instable)
+  relancerait indéfiniment le même morceau au lieu de rendre une erreur franche.
 
 Le token voyage en en-tête, jamais en paramètre d'URL (il finirait dans les logs d'accès).
 
@@ -130,7 +141,8 @@ tête ?). L'utilisateur relance quand il veut la nouvelle version.
 **Négatives / limites assumées**
 
 - La file ne suit pas les mutations de la playlist (cf. §6).
-- Un échec autre qu'un token périmé n'est pas retenté automatiquement (une seule reprise, volontaire).
+- La reprise est bornée à 3 tentatives : au-delà, l'auditeur relance lui-même. Elle ne cible pas la
+  cause de l'échec (cf. §5), donc une panne durable consomme ses trois essais avant de le dire.
 - Le serveur lit le fichier depuis le volume local : le passage à un stockage objet demandera une
   redirection ou un proxy, prévu par l'interface `Storage`.
 - L'arrière-plan ne se teste que sur device (comme l'ADR 031).

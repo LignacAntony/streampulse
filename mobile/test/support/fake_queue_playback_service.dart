@@ -21,6 +21,11 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   bool stopped = false;
   List<QueueItem> lastItems = const [];
   int? lastInitialIndex;
+  Duration? lastInitialPosition;
+
+  /// Position simulée du lecteur, relevée par le contrôleur avant une reprise.
+  @override
+  Duration position = Duration.zero;
   Map<String, String> lastHeaders = const {};
   final List<int> skips = [];
   bool _playing = false;
@@ -50,11 +55,13 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   Future<void> loadQueue(
     List<QueueItem> items, {
     int initialIndex = 0,
+    Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
   }) async {
     loadCalls++;
     lastItems = items;
     lastInitialIndex = initialIndex;
+    lastInitialPosition = initialPosition;
     lastHeaders = headers;
     final err = loadError;
     if (err != null) throw err;

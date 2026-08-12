@@ -443,8 +443,12 @@ Voir [ADR 033](docs/adr/033-lecture-dune-playlist-avec-file-dattente.md).
 - **Auth du lecteur natif** : le binaire d'une piste est privé, chaque `AudioSource` porte un
   `Authorization`. just_audio ouvrant ses propres connexions HTTP, il ne traverse pas les
   intercepteurs de `DioClient` : `PlaybackAuth` (`core/audio/`) fournit le token, et
-  `DioClient.refreshTokens()` (public) permet **une** reprise après rotation quand la file dure plus
-  que les 15 min d'un access token. Jamais de token en paramètre d'URL.
+  `DioClient.refreshTokens()` (public) alimente la reprise. Jamais de token en paramètre d'URL.
+- **Reprise après échec** : bornée à 3 tentatives, backoff 1/2/4 s, position conservée, et **seule
+  la première** force une rotation de token (une expiration se règle en une rotation). Le compteur
+  ne se réarme qu'à une action utilisateur ou à un changement de piste — pas sur `ready`, sinon un
+  réseau instable relancerait la même piste sans fin. La cause de l'échec n'est pas devinée :
+  just_audio ne remonte pas le statut HTTP (ADR 033 §5).
 - **UI** : bouton « Lire » + appui sur une ligne dans `PlaylistDetailScreen` (démarre à cette
   piste), `QueueMiniPlayer` (précédent/play/suivant/croix), `PlaybackQueueSheet` (file visible,
   appui = saut). La file est une **photo** des pistes au lancement : réordonner la playlist ne

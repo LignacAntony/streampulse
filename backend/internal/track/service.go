@@ -66,12 +66,12 @@ type CreateTrackInput struct {
 	Content   io.ReadSeeker
 }
 
-// TrackFile localise le binaire d'une piste et décrit ce qu'il faut pour le
-// servir (type MIME et taille, tous deux figés à l'upload).
+// TrackFile localise le binaire d'une piste et porte son type MIME, figé à
+// l'upload. Pas de taille : http.ServeContent la déduit du Seek, la relire en
+// base n'apporterait qu'une source de vérité concurrente du fichier servi.
 type TrackFile struct {
 	Path     string
 	MimeType string
-	Size     int64
 }
 
 // OpenedTrackFile est un binaire de piste prêt à être servi : le contenu est

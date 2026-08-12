@@ -161,7 +161,6 @@ func TestStreamTrack_OK(t *testing.T) {
 	repo := &fakeRepo{fileRet: TrackFile{
 		Path:     "/data/tracks/abc.mp3",
 		MimeType: "audio/mpeg",
-		Size:     int64(len(mp3Header)),
 	}}
 	storage := &stubStorage{openContent: mp3Header}
 	h := NewHandler(NewService(repo, storage))

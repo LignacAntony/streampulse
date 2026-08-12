@@ -90,7 +90,6 @@ func (r *pgRepository) GetTrackFileByUser(ctx context.Context, trackID, userID s
 	return TrackFile{
 		Path:     row.FilePath,
 		MimeType: row.MimeType,
-		Size:     row.FileSize,
 	}, nil
 }
 

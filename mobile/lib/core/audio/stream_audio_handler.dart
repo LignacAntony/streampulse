@@ -54,6 +54,8 @@ class StreamAudioHandler extends BaseAudioHandler
   @override
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
   @override
+  Duration get position => _player.position;
+  @override
   bool get playing => _player.playing;
 
   @override
@@ -78,6 +80,7 @@ class StreamAudioHandler extends BaseAudioHandler
   Future<void> loadQueue(
     List<QueueItem> items, {
     int initialIndex = 0,
+    Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
   }) async {
     if (items.isEmpty) {
@@ -106,7 +109,7 @@ class StreamAudioHandler extends BaseAudioHandler
         ],
       ),
       initialIndex: start,
-      initialPosition: Duration.zero,
+      initialPosition: initialPosition,
     );
   }
 

@@ -377,7 +377,6 @@ func TestOpenTrackFile_OK(t *testing.T) {
 	repo := &fakeRepo{fileRet: TrackFile{
 		Path:     "/data/tracks/abc.mp3",
 		MimeType: "audio/mpeg",
-		Size:     42,
 	}}
 	storage := &stubStorage{openContent: mp3Header}
 	svc := NewService(repo, storage)
