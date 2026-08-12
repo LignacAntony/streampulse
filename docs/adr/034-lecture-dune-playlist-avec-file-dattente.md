@@ -1,4 +1,4 @@
-# ADR 033 — Lecture d'une playlist avec file d'attente (queue)
+# ADR 034 — Lecture d'une playlist avec file d'attente (queue)
 
 **Date** : 2026-08-09
 **Statut** : Accepté

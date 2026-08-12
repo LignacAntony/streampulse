@@ -12,7 +12,7 @@ export '../../../../core/audio/queue_playback_service.dart' show PlaybackStatus;
 
 /// Lecture d'une playlist avec file d'attente (US-05-04), hissée au niveau
 /// application comme le lecteur de direct : la file survit à la navigation et à
-/// la mise en arrière-plan (cf. ADR 031/033).
+/// la mise en arrière-plan (cf. ADR 031/034).
 ///
 /// L'enchaînement des pistes n'est **pas** piloté ici : il est délégué au
 /// lecteur natif, qui précharge la piste suivante. Ce contrôleur suit

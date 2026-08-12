@@ -283,7 +283,7 @@ Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « d
 |---|---|---|---|
 | POST | `/api/tracks` | `Handler.Upload` | Oui (JWT) — **upload multipart** (`file` + `title` requis, `artist`/`duration_s` optionnels) d'un audio MP3/AAC/OGG ≤ 50 Mo. MIME **sniffé côté serveur** (PDF renommé `.mp3` → 415) ; fichier stocké hors répertoire servi, piste référencée en base (201). 400 (titre/fichier manquant), 403 (quota de stockage/compte dépassé, `MaxUserStorageBytes` = 500 Mo — **403 et non 507** : condition client, hors bucket 5xx/alerte), 409 (titre en doublon `uq_tracks_user_title`), 413 (> 50 Mo), 415 (non-audio, prioritaire sur le quota) |
 | GET | `/api/tracks` | `Handler.ListUserTracks` | Oui (JWT) — bibliothèque de pistes du demandeur, source du sélecteur d'ajout (US-05-03) |
-| GET | `/api/tracks/{id}/stream` | `Handler.StreamTrack` | Oui (JWT) — sert le **binaire audio** d'une piste au lecteur mobile (US-05-04, [ADR 033](docs/adr/033-lecture-dune-playlist-avec-file-dattente.md)). Propriété vérifiée en SQL → piste d'un tiers = **404** (jamais 403 : ne pas révéler son existence) ; `http.ServeContent` honore les requêtes `Range` (206) ; `Content-Type` pris en base (jamais deviné) ; `Cache-Control: private, no-store`. Fichier absent du volume alors que la ligne existe → 404 + log `error` |
+| GET | `/api/tracks/{id}/stream` | `Handler.StreamTrack` | Oui (JWT) — sert le **binaire audio** d'une piste au lecteur mobile (US-05-04, [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md)). Propriété vérifiée en SQL → piste d'un tiers = **404** (jamais 403 : ne pas révéler son existence) ; `http.ServeContent` honore les requêtes `Range` (206) ; `Content-Type` pris en base (jamais deviné) ; `Cache-Control: private, no-store`. Fichier absent du volume alors que la ligne existe → 404 + log `error` |
 
 - Table `tracks` préexistante (migration `000003`) : `file_path`/`mime_type` (CHECK `audio/mpeg|aac|ogg`)/`file_size`/`duration_s` (CHECK `> 0`) ; contrainte `uq_tracks_user_title (user_id, title)` (`000006`). **Aucune migration** ajoutée par l'US-05-01.
 - Stockage : `track.FileStorage` écrit sous `STORAGE_PATH` (volume Docker `track_storage`, `/data/tracks`), nom = UUID + extension canonique (jamais le nom client → anti-traversal). Interface `track.Storage` (`Save`/`Open`/`Remove`) pour découpler d'un futur stockage objet ; `Open` renvoie un `StoredFile` (`ReadSeeker` + `Closer` — le `Seek` est ce qui rend les requêtes `Range` possibles).
@@ -395,17 +395,18 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 - **IP LAN (sans câble)** : `--dart-define=API_BASE_URL=http://192.168.x.x:8080` (IP locale du Mac, `ipconfig getifaddr en0`). Nécessite même Wi-Fi + bind Docker sur `0.0.0.0` + firewall macOS ouvert sur 8080.
 - Configurable via `--dart-define=API_BASE_URL=http://...` ou variable d'environnement
 
-### Lecture audio auditeur (STR-108/109)
+### Lecture audio auditeur (STR-108/109/110)
 
 Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
 [ADR 031](docs/adr/031-lecture-audio-en-arriere-plan.md) (arrière-plan) et
-[ADR 033](docs/adr/033-lecture-dune-playlist-avec-file-dattente.md) (file d'attente).
+[ADR 033](docs/adr/033-gestion-des-interruptions-audio.md) (interruptions) et
+[ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md) (file d'attente).
 
 - **Service partagé, app-level** : un unique `AudioPlayer` vit dans `StreamAudioHandler`
   (`core/audio/`, `audio_service` + just_audio), initialisé dans `main()` via `AudioService.init`
   et fourni par `app_providers.dart`. La lecture **survit à la navigation** et à l'arrière-plan /
   verrouillage (notification + contrôles système).
-- **Deux interfaces sur ce lecteur unique** (ISP, ADR 033) : `PlaybackTransport` (play/pause/stop +
+- **Deux interfaces sur ce lecteur unique** (ISP, ADR 034) : `PlaybackTransport` (play/pause/stop +
   flux d'état/erreurs) est étendu par `AudioPlaybackService` (`loadUri`, direct) et
   `QueuePlaybackService` (`loadQueue`/`skipToIndex`/`currentIndexStream`, file d'attente).
   `StreamAudioHandler` implémente les deux ; `main()` l'injecte sous ses deux rôles.
@@ -424,12 +425,19 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
   pas**. Dans `MainShell`, c'est `PlayerBar` (`app/shell/`) qui choisit entre ce mini-player et
   celui de la file d'attente.
 - **Natif** : `MainActivity` étend `AudioServiceActivity` ; le manifeste déclare
-  `com.ryanheise.audioservice.AudioService` (`mediaPlayback`) + `MediaButtonReceiver` ; iOS a
-  `UIBackgroundModes: audio`. L'arrière-plan ne se teste **que sur device** (pas sur web).
+  `com.ryanheise.audioservice.AudioService` (`mediaPlayback`) + `MediaButtonReceiver`, et les
+  permissions `WAKE_LOCK` (sinon `startForeground()` n'est jamais appelé → kill) + `POST_NOTIFICATIONS`
+  (demandée au runtime via `ensureNotificationPermission()`) ; iOS a `UIBackgroundModes: audio`.
+  L'arrière-plan ne se teste **que sur device** (pas sur web).
+- **Interruptions (STR-110, ADR 033)** : le handler configure l'`AudioSession` (`music`), crée le
+  player en `handleInterruptions: false`, et applique une `InterruptionPolicy` **pure/testable**
+  (`core/audio/`) : appel → pause puis reprise (si c'est nous qui avions mis en pause) ; notification
+  → duck/unduck ; casque débranché → pause sans reprise. L'état se propage au mini-player/notification
+  via `playerStateStream` (aucun changement contrôleur/UI).
 
 ### Lecture d'une playlist avec file d'attente (US-05-04)
 
-Voir [ADR 033](docs/adr/033-lecture-dune-playlist-avec-file-dattente.md).
+Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
 
 - **`PlaylistQueueController`** (app-level, `features/playlists/presentation/providers/`) : lance une
   playlist, expose la file et l'index courant. L'**enchaînement est délégué au lecteur natif**
@@ -448,7 +456,7 @@ Voir [ADR 033](docs/adr/033-lecture-dune-playlist-avec-file-dattente.md).
   la première** force une rotation de token (une expiration se règle en une rotation). Le compteur
   ne se réarme qu'à une action utilisateur ou à un changement de piste — pas sur `ready`, sinon un
   réseau instable relancerait la même piste sans fin. La cause de l'échec n'est pas devinée :
-  just_audio ne remonte pas le statut HTTP (ADR 033 §5).
+  just_audio ne remonte pas le statut HTTP (ADR 034 §5).
 - **UI** : bouton « Lire » + appui sur une ligne dans `PlaylistDetailScreen` (démarre à cette
   piste), `QueueMiniPlayer` (précédent/play/suivant/croix), `PlaybackQueueSheet` (file visible,
   appui = saut). La file est une **photo** des pistes au lancement : réordonner la playlist ne
@@ -646,7 +654,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `034-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `035-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 
