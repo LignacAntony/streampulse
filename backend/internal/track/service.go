@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -238,13 +239,14 @@ func normalizeArtist(raw *string) (*string, error) {
 	return &a, nil
 }
 
-// normalizeDuration valide la durée fournie par le client : positive si présente
-// (la table impose CHECK duration_s > 0).
+// normalizeDuration valide la durée fournie par le client : positive et tenant
+// dans la colonne int4 si présente (la table impose CHECK duration_s > 0). La
+// borne haute écarte une valeur absurde qui déborderait la conversion int32.
 func normalizeDuration(d *int) (*int, error) {
 	if d == nil {
 		return nil, nil
 	}
-	if *d <= 0 {
+	if *d <= 0 || *d > math.MaxInt32 {
 		return nil, apperror.InvalidArgument("invalid duration")
 	}
 	return d, nil
