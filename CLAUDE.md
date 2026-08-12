@@ -394,10 +394,11 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 - **IP LAN (sans câble)** : `--dart-define=API_BASE_URL=http://192.168.x.x:8080` (IP locale du Mac, `ipconfig getifaddr en0`). Nécessite même Wi-Fi + bind Docker sur `0.0.0.0` + firewall macOS ouvert sur 8080.
 - Configurable via `--dart-define=API_BASE_URL=http://...` ou variable d'environnement
 
-### Lecture audio auditeur (STR-108/109)
+### Lecture audio auditeur (STR-108/109/110)
 
-Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS) et
-[ADR 031](docs/adr/031-lecture-audio-en-arriere-plan.md) (arrière-plan).
+Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
+[ADR 031](docs/adr/031-lecture-audio-en-arriere-plan.md) (arrière-plan) et
+[ADR 033](docs/adr/033-gestion-des-interruptions-audio.md) (interruptions).
 
 - **Service partagé, app-level** : un unique `AudioPlayer` vit dans `StreamAudioHandler`
   (`core/audio/`, `audio_service` + just_audio), initialisé dans `main()` via `AudioService.init`
@@ -417,8 +418,15 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS) et
   play/pause, croix = `stop`), masqué à l'état `idle`. Le plein écran (`StreamPlayerScreen`) lit
   aussi ce contrôleur partagé et **ne le détruit pas**.
 - **Natif** : `MainActivity` étend `AudioServiceActivity` ; le manifeste déclare
-  `com.ryanheise.audioservice.AudioService` (`mediaPlayback`) + `MediaButtonReceiver` ; iOS a
-  `UIBackgroundModes: audio`. L'arrière-plan ne se teste **que sur device** (pas sur web).
+  `com.ryanheise.audioservice.AudioService` (`mediaPlayback`) + `MediaButtonReceiver`, et les
+  permissions `WAKE_LOCK` (sinon `startForeground()` n'est jamais appelé → kill) + `POST_NOTIFICATIONS`
+  (demandée au runtime via `ensureNotificationPermission()`) ; iOS a `UIBackgroundModes: audio`.
+  L'arrière-plan ne se teste **que sur device** (pas sur web).
+- **Interruptions (STR-110, ADR 033)** : le handler configure l'`AudioSession` (`music`), crée le
+  player en `handleInterruptions: false`, et applique une `InterruptionPolicy` **pure/testable**
+  (`core/audio/`) : appel → pause puis reprise (si c'est nous qui avions mis en pause) ; notification
+  → duck/unduck ; casque débranché → pause sans reprise. L'état se propage au mini-player/notification
+  via `playerStateStream` (aucun changement contrôleur/UI).
 
 ### Authentification (mobile)
 
@@ -612,7 +620,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `033-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `034-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

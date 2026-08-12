@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'audio_playback_service.dart';
+import 'interruption_policy.dart';
 
 /// Implémentation de [AudioPlaybackService] via `audio_service` + `just_audio`
 /// (STR-109, cf. ADR 031). Enveloppe **un seul** [AudioPlayer] hébergé par le
@@ -17,7 +19,8 @@ import 'audio_playback_service.dart';
 /// (STR-118), qui pilote ensuite `play`/`stop`.
 class StreamAudioHandler extends BaseAudioHandler
     implements AudioPlaybackService {
-  StreamAudioHandler({AudioPlayer? player}) : _player = player ?? AudioPlayer() {
+  StreamAudioHandler({AudioPlayer? player})
+    : _player = player ?? AudioPlayer(handleInterruptions: false) {
     // Chaque événement du lecteur → un PlaybackState pour la notification. Les
     // erreurs sont routées vers [playbackErrors] (le contrôleur les gère), et
     // ne cassent pas le flux de la notification. Le handler vit aussi longtemps
@@ -30,6 +33,19 @@ class StreamAudioHandler extends BaseAudioHandler
 
   final AudioPlayer _player;
   final _errors = StreamController<Object>.broadcast();
+  final _interruptions = InterruptionPolicy();
+
+  /// Volume appliqué pendant l'atténuation (ducking) d'une interruption
+  /// transitoire (notification).
+  static const double _duckVolume = 0.4;
+
+  /// Volume à restaurer après un ducking (capturé juste avant, pour ne pas
+  /// écraser un réglage éventuel plutôt que de remettre 1.0 en dur).
+  double _preDuckVolume = 1;
+
+  /// Vrai entre un `duck` et sa restauration : on ne touche au volume qu'après
+  /// avoir réellement atténué (sinon une reprise écraserait un réglage éventuel).
+  bool _ducked = false;
 
   @override
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
@@ -64,6 +80,59 @@ class StreamAudioHandler extends BaseAudioHandler
     await _player.stop();
     mediaItem.add(null); // retire la notification
     await super.stop();
+  }
+
+  /// Configure la session audio (catégorie `music`) et branche la gestion des
+  /// interruptions (STR-110). Le player est en `handleInterruptions: false` :
+  /// c'est [InterruptionPolicy] qui décide, ici on ne fait que traduire.
+  ///
+  /// **Public et appelé explicitement depuis `main()`** (pas dans le
+  /// constructeur) : effet de bord plateforme à ordonner et dont l'erreur doit
+  /// être rattrapée par l'appelant.
+  Future<void> configureSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+    // Appel entrant / autre app (pause ou ducking) + fin d'interruption.
+    session.interruptionEventStream.listen((event) {
+      _apply(
+        _interruptions.onInterruption(
+          begin: event.begin,
+          isDuck: event.type == AudioInterruptionType.duck,
+          canResume: event.type == AudioInterruptionType.pause,
+          isPlaying: _player.playing,
+        ),
+      );
+    });
+    // Casque / sortie audio débranché.
+    session.becomingNoisyEventStream.listen((_) {
+      _apply(_interruptions.onBecomingNoisy(isPlaying: _player.playing));
+    });
+  }
+
+  void _apply(InterruptionAction action) {
+    switch (action) {
+      case InterruptionAction.pause:
+        unawaited(_player.pause());
+      case InterruptionAction.resume:
+        _restoreVolumeIfDucked(); // défensif : un `unduck` a pu se perdre
+        unawaited(_player.play());
+      case InterruptionAction.duck:
+        _preDuckVolume = _player.volume; // capture avant d'atténuer
+        _ducked = true;
+        unawaited(_player.setVolume(_duckVolume));
+      case InterruptionAction.unduck:
+        _restoreVolumeIfDucked();
+      case InterruptionAction.none:
+        break;
+    }
+  }
+
+  /// Restaure le volume d'avant l'atténuation **uniquement** si on avait
+  /// effectivement atténué — sinon on ne touche pas à un réglage éventuel.
+  void _restoreVolumeIfDucked() {
+    if (!_ducked) return;
+    _ducked = false;
+    unawaited(_player.setVolume(_preDuckVolume));
   }
 
   /// Mappe un événement just_audio vers l'état `audio_service` qui pilote la
