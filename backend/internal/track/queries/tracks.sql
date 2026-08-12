@@ -23,6 +23,16 @@ FROM tracks
 WHERE user_id = sqlc.arg(user_id)::uuid
 ORDER BY created_at DESC;
 
+-- name: GetTrackFileByUser :one
+-- Localise le binaire d'une piste **du demandeur**, pour le servir en lecture
+-- (US-05-04). Le filtre porte sur (id, user_id) : la piste d'un tiers ne se
+-- distingue pas d'une piste inexistante (0 ligne -> 404), donc l'API ne révèle
+-- pas l'existence de la bibliothèque d'autrui.
+SELECT file_path, mime_type
+FROM tracks
+WHERE id = sqlc.arg(id)::uuid
+  AND user_id = sqlc.arg(user_id)::uuid;
+
 -- name: SumTrackSizeByUser :one
 -- Taille cumulée des fichiers du demandeur, pour appliquer le quota de stockage
 -- par compte avant un nouvel upload (borne le remplissage du volume).

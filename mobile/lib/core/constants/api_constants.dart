@@ -30,6 +30,12 @@ class ApiConstants {
   // Tracks
   static const String tracks = '/api/tracks';
 
+  /// URL du binaire audio d'une piste de la bibliothèque (US-05-04). Passée au
+  /// player natif via `AudioSource.uri` — contrairement au manifeste HLS
+  /// public, elle exige un en-tête `Authorization` (contenu privé).
+  static String trackStream(String trackId) =>
+      '$baseUrl/api/tracks/$trackId/stream';
+
   // Utilisateur connecté
   static const String me = '/api/users/me';
 }

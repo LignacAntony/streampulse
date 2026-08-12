@@ -283,9 +283,10 @@ Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « d
 |---|---|---|---|
 | POST | `/api/tracks` | `Handler.Upload` | Oui (JWT) — **upload multipart** (`file` + `title` requis, `artist`/`duration_s` optionnels) d'un audio MP3/AAC/OGG ≤ 50 Mo. MIME **sniffé côté serveur** (PDF renommé `.mp3` → 415) ; fichier stocké hors répertoire servi, piste référencée en base (201). 400 (titre/fichier manquant), 403 (quota de stockage/compte dépassé, `MaxUserStorageBytes` = 500 Mo — **403 et non 507** : condition client, hors bucket 5xx/alerte), 409 (titre en doublon `uq_tracks_user_title`), 413 (> 50 Mo), 415 (non-audio, prioritaire sur le quota) |
 | GET | `/api/tracks` | `Handler.ListUserTracks` | Oui (JWT) — bibliothèque de pistes du demandeur, source du sélecteur d'ajout (US-05-03) |
+| GET | `/api/tracks/{id}/stream` | `Handler.StreamTrack` | Oui (JWT) — sert le **binaire audio** d'une piste au lecteur mobile (US-05-04, [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md)). Propriété vérifiée en SQL → piste d'un tiers = **404** (jamais 403 : ne pas révéler son existence) ; `http.ServeContent` honore les requêtes `Range` (206) ; `Content-Type` pris en base (jamais deviné) ; `Cache-Control: private, no-store`. Fichier absent du volume alors que la ligne existe → 404 + log `error` |
 
 - Table `tracks` préexistante (migration `000003`) : `file_path`/`mime_type` (CHECK `audio/mpeg|aac|ogg`)/`file_size`/`duration_s` (CHECK `> 0`) ; contrainte `uq_tracks_user_title (user_id, title)` (`000006`). **Aucune migration** ajoutée par l'US-05-01.
-- Stockage : `track.FileStorage` écrit sous `STORAGE_PATH` (volume Docker `track_storage`, `/data/tracks`), nom = UUID + extension canonique (jamais le nom client → anti-traversal). Interface `track.Storage` (`Save`/`Remove`) pour découpler d'un futur stockage objet.
+- Stockage : `track.FileStorage` écrit sous `STORAGE_PATH` (volume Docker `track_storage`, `/data/tracks`), nom = UUID + extension canonique (jamais le nom client → anti-traversal). Interface `track.Storage` (`Save`/`Open`/`Remove`) pour découpler d'un futur stockage objet ; `Open` renvoie un `StoredFile` (`ReadSeeker` + `Closer` — le `Seek` est ce qui rend les requêtes `Range` possibles).
 - Validation MIME par **sniff de contenu** (`github.com/gabriel-vasile/mimetype`), normalisé vers la valeur canonique du CHECK DB. Durée = champ client optionnel (pas d'extraction ffprobe). Détails [ADR 032](docs/adr/032-domaine-track-upload-audio.md).
 - **Quota** : `MaxUserStorageBytes` (500 Mo) vérifié après `detectAudio` et avant écriture → **403** (`storage_quota_exceeded`, hors bucket 5xx) ; `ParseMultipartForm` borné à 1 Mio en mémoire (débordement disque temporaire) pour éviter l'OOM sous uploads concurrents. Borne de concurrence globale + alerte disque/cap global : tickets séparés.
 - **Nettoyage des fichiers** : la suppression d'un compte (`admin.DeleteUser` **et** `auth.DeleteAccount`) passe par `track.Service.PurgeUserTracks(userID, deleteUser)` (injecté par `SetTrackPurger`, interface `UserTrackPurger`). Il **enrobe** le hard-delete : relève les chemins → exécute `deleteUser` (cascade DB sur `tracks`) → supprime les fichiers du volume **seulement si le delete a réussi** (pas de ligne fantôme). Best-effort. Pas encore de `DELETE /api/tracks/{id}` (hors périmètre US-05-01).
@@ -398,12 +399,17 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 
 Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
 [ADR 031](docs/adr/031-lecture-audio-en-arriere-plan.md) (arrière-plan) et
-[ADR 033](docs/adr/033-gestion-des-interruptions-audio.md) (interruptions).
+[ADR 033](docs/adr/033-gestion-des-interruptions-audio.md) (interruptions) et
+[ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md) (file d'attente).
 
 - **Service partagé, app-level** : un unique `AudioPlayer` vit dans `StreamAudioHandler`
   (`core/audio/`, `audio_service` + just_audio), initialisé dans `main()` via `AudioService.init`
   et fourni par `app_providers.dart`. La lecture **survit à la navigation** et à l'arrière-plan /
   verrouillage (notification + contrôles système).
+- **Deux interfaces sur ce lecteur unique** (ISP, ADR 034) : `PlaybackTransport` (play/pause/stop +
+  flux d'état/erreurs) est étendu par `AudioPlaybackService` (`loadUri`, direct) et
+  `QueuePlaybackService` (`loadQueue`/`skipToIndex`/`currentIndexStream`, file d'attente).
+  `StreamAudioHandler` implémente les deux ; `main()` l'injecte sous ses deux rôles.
 - **DIP** : le `AudioPlayerController` (app-level, `ChangeNotifierProvider`) dépend de l'abstraction
   `AudioPlaybackService`, jamais de just_audio/audio_service directement → testable avec un fake
   (`test/support/fake_audio_playback_service.dart`).
@@ -414,9 +420,10 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
   **pas encore prêt** (démarrage ~10 s). Le contrôleur ne conclut « terminé » via
   `isManifestUnavailable` que si la lecture avait démarré (`_hasPlayed`) ; sinon il reconnecte
   d'abord. La sonde utilise `validateStatus` (<500) pour ne pas logger de faux « erreur ».
-- **Mini-player** : `MiniPlayer` (dans `MainShell`) lit le même contrôleur (titre/diffuseur,
-  play/pause, croix = `stop`), masqué à l'état `idle`. Le plein écran (`StreamPlayerScreen`) lit
-  aussi ce contrôleur partagé et **ne le détruit pas**.
+- **Mini-player** : `MiniPlayer` (titre/diffuseur, play/pause, croix = `stop`) est masqué à l'état
+  `idle`. Le plein écran (`StreamPlayerScreen`) lit aussi ce contrôleur partagé et **ne le détruit
+  pas**. Dans `MainShell`, c'est `PlayerBar` (`app/shell/`) qui choisit entre ce mini-player et
+  celui de la file d'attente.
 - **Natif** : `MainActivity` étend `AudioServiceActivity` ; le manifeste déclare
   `com.ryanheise.audioservice.AudioService` (`mediaPlayback`) + `MediaButtonReceiver`, et les
   permissions `WAKE_LOCK` (sinon `startForeground()` n'est jamais appelé → kill) + `POST_NOTIFICATIONS`
@@ -427,6 +434,33 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
   (`core/audio/`) : appel → pause puis reprise (si c'est nous qui avions mis en pause) ; notification
   → duck/unduck ; casque débranché → pause sans reprise. L'état se propage au mini-player/notification
   via `playerStateStream` (aucun changement contrôleur/UI).
+
+### Lecture d'une playlist avec file d'attente (US-05-04)
+
+Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
+
+- **`PlaylistQueueController`** (app-level, `features/playlists/presentation/providers/`) : lance une
+  playlist, expose la file et l'index courant. L'**enchaînement est délégué au lecteur natif**
+  (`ConcatenatingAudioSource`, qui précharge la suivante) ; le contrôleur suit
+  `currentIndexStream` — un saut fait depuis la notification système remonte donc par le même
+  chemin qu'un appui dans l'app, sans seconde source de vérité.
+- **Un lecteur pour deux sources** : démarrer une file appelle `stopLive` (→ `AudioPlayerController
+  .stop`) ; démarrer un direct appelle `onTakeOver` (→ `PlaylistQueueController.clear`, qui vide la
+  file **sans** toucher au lecteur — l'arrêter couperait le direct). Câblage croisé dans
+  `app_providers.dart`, arbitrage d'affichage dans `PlayerBar`.
+- **Auth du lecteur natif** : le binaire d'une piste est privé, chaque `AudioSource` porte un
+  `Authorization`. just_audio ouvrant ses propres connexions HTTP, il ne traverse pas les
+  intercepteurs de `DioClient` : `PlaybackAuth` (`core/audio/`) fournit le token, et
+  `DioClient.refreshTokens()` (public) alimente la reprise. Jamais de token en paramètre d'URL.
+- **Reprise après échec** : bornée à 3 tentatives, backoff 1/2/4 s, position conservée, et **seule
+  la première** force une rotation de token (une expiration se règle en une rotation). Le compteur
+  ne se réarme qu'à une action utilisateur ou à un changement de piste — pas sur `ready`, sinon un
+  réseau instable relancerait la même piste sans fin. La cause de l'échec n'est pas devinée :
+  just_audio ne remonte pas le statut HTTP (ADR 034 §5).
+- **UI** : bouton « Lire » + appui sur une ligne dans `PlaylistDetailScreen` (démarre à cette
+  piste), `QueueMiniPlayer` (précédent/play/suivant/croix), `PlaybackQueueSheet` (file visible,
+  appui = saut). La file est une **photo** des pistes au lancement : réordonner la playlist ne
+  change pas ce qui joue tant qu'on ne relance pas.
 
 ### Authentification (mobile)
 
@@ -620,7 +654,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `034-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `035-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

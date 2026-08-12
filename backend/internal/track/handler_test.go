@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
+	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
 const testSecret = "test-secret-which-is-at-least-32-bytes!!"
@@ -125,6 +126,104 @@ func TestUpload_Unauthenticated(t *testing.T) {
 	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
 
 	rec := upload(t, h, map[string]string{"title": "Demo"}, "demo.mp3", mp3Header, false)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+// streamTrack fait passer GET /api/tracks/{id}/stream par la vraie chaîne
+// RequireAuth + ServeMux (le handler lit {id} via PathValue, qui n'est renseigné
+// que par le routeur). rangeHeader vide = requête complète.
+func streamTrack(t *testing.T, h *Handler, trackID, rangeHeader string, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/tracks/{id}/stream",
+		auth.RequireAuth(testSecret, http.HandlerFunc(h.StreamTrack)))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tracks/"+trackID+"/stream", nil)
+	if rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
+	if withToken {
+		token, err := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestStreamTrack_OK(t *testing.T) {
+	repo := &fakeRepo{fileRet: TrackFile{
+		Path:     "/data/tracks/abc.mp3",
+		MimeType: "audio/mpeg",
+	}}
+	storage := &stubStorage{openContent: mp3Header}
+	h := NewHandler(NewService(repo, storage))
+
+	rec := streamTrack(t, h, "abc", "", true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "audio/mpeg" {
+		t.Errorf("content-type must come from the DB, got %q", ct)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), mp3Header) {
+		t.Error("the whole file must be served")
+	}
+	// Sans Accept-Ranges, le lecteur ne peut ni reprendre ni avancer dans la piste.
+	if ar := rec.Header().Get("Accept-Ranges"); ar != "bytes" {
+		t.Errorf("Accept-Ranges: got %q, want bytes", ar)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "private, no-store" {
+		t.Errorf("Cache-Control: got %q, want private, no-store", cc)
+	}
+	if storage.openedFile == nil || !storage.openedFile.closed {
+		t.Error("the served file must be closed (descriptor leak otherwise)")
+	}
+}
+
+// TestStreamTrack_Range : le lecteur audio demande des tranches (reprise, avance).
+func TestStreamTrack_Range(t *testing.T) {
+	repo := &fakeRepo{fileRet: TrackFile{Path: "/p", MimeType: "audio/mpeg"}}
+	h := NewHandler(NewService(repo, &stubStorage{openContent: mp3Header}))
+
+	rec := streamTrack(t, h, "abc", "bytes=4-9", true)
+
+	if rec.Code != http.StatusPartialContent {
+		t.Fatalf("status: got %d, want 206 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.Bytes(); !bytes.Equal(got, mp3Header[4:10]) {
+		t.Errorf("body: got %v, want the requested slice", got)
+	}
+}
+
+// TestStreamTrack_NotOwned : la piste d'un tiers renvoie 404 (jamais 403 : le
+// code ne doit pas révéler qu'elle existe) et rien n'est lu sur le volume.
+func TestStreamTrack_NotOwned(t *testing.T) {
+	repo := &fakeRepo{fileErr: apperror.NotFound("track not found")}
+	storage := &stubStorage{}
+	h := NewHandler(NewService(repo, storage))
+
+	rec := streamTrack(t, h, "abc", "", true)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if storage.openedPath != "" {
+		t.Error("no file must be opened for a track the requester does not own")
+	}
+}
+
+func TestStreamTrack_Unauthenticated(t *testing.T) {
+	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
+
+	rec := streamTrack(t, h, "abc", "", false)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status: got %d, want 401", rec.Code)

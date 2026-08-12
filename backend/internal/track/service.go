@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"unicode/utf8"
 
@@ -65,6 +66,22 @@ type CreateTrackInput struct {
 	Content   io.ReadSeeker
 }
 
+// TrackFile localise le binaire d'une piste et porte son type MIME, figé à
+// l'upload. Pas de taille : http.ServeContent la déduit du Seek, la relire en
+// base n'apporterait qu'une source de vérité concurrente du fichier servi.
+type TrackFile struct {
+	Path     string
+	MimeType string
+}
+
+// OpenedTrackFile est un binaire de piste prêt à être servi : le contenu est
+// repositionnable (http.ServeContent a besoin de Seek pour honorer les requêtes
+// Range du lecteur audio) et doit être fermé par l'appelant.
+type OpenedTrackFile struct {
+	TrackFile
+	Content StoredFile
+}
+
 // CreateTrackParams est la demande de persistance adressée au Repository (champs
 // validés + chemin/MIME/taille déterminés côté serveur).
 type CreateTrackParams struct {
@@ -81,6 +98,9 @@ type CreateTrackParams struct {
 type Repository interface {
 	CreateTrack(ctx context.Context, p CreateTrackParams) (Track, error)
 	ListTracksByUser(ctx context.Context, userID string) ([]Track, error)
+	// GetTrackFileByUser localise le binaire d'une piste du demandeur. La piste
+	// d'un tiers est traitée comme inexistante (apperror.NotFound).
+	GetTrackFileByUser(ctx context.Context, trackID, userID string) (TrackFile, error)
 	// SumFileSizeByUser retourne la taille cumulée des fichiers du user (quota).
 	SumFileSizeByUser(ctx context.Context, userID string) (int64, error)
 	// ListFilePathsByUser retourne les chemins disque des fichiers du user, pour
@@ -88,10 +108,20 @@ type Repository interface {
 	ListFilePathsByUser(ctx context.Context, userID string) ([]string, error)
 }
 
-// Storage écrit/supprime le binaire audio hors de la base et hors répertoire
+// StoredFile est un binaire ouvert depuis le stockage. Seek est requis :
+// http.ServeContent s'en sert pour honorer les requêtes Range du lecteur audio
+// (reprise, avance dans la piste) sans relire le fichier depuis le début.
+type StoredFile interface {
+	io.ReadSeeker
+	io.Closer
+}
+
+// Storage écrit/lit/supprime le binaire audio hors de la base et hors répertoire
 // servi (implémenté par FileStorage). Save renvoie le chemin persistant.
 type Storage interface {
 	Save(ctx context.Context, id, ext string, r io.Reader) (string, error)
+	// Open ouvre en lecture un fichier écrit par Save (lecture d'une piste).
+	Open(path string) (StoredFile, error)
 	Remove(path string) error
 }
 
@@ -212,6 +242,32 @@ func (s *Service) PurgeUserTracks(ctx context.Context, userID string, deleteUser
 // porte sur le porteur du JWT — aucune piste d'un tiers n'y figure).
 func (s *Service) ListUserTracks(ctx context.Context, requesterID string) ([]Track, error) {
 	return s.repo.ListTracksByUser(ctx, requesterID)
+}
+
+// OpenTrackFile ouvre le binaire d'une piste **du demandeur** pour le servir en
+// lecture (US-05-04). L'appelant DOIT fermer OpenedTrackFile.Content.
+//
+// La propriété est vérifiée en SQL (filtre sur user_id) : la piste d'un tiers
+// renvoie 404, jamais 403 — le code ne doit pas révéler qu'elle existe. Un
+// fichier référencé en base mais absent du volume donne également 404 : la
+// ligne est là, le contenu ne l'est pas, il n'y a rien à servir et rien qu'un
+// réessai résoudrait (c'est une incohérence à journaliser, pas une panne).
+func (s *Service) OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error) {
+	file, err := s.repo.GetTrackFileByUser(ctx, trackID, requesterID)
+	if err != nil {
+		return OpenedTrackFile{}, err
+	}
+
+	content, err := s.storage.Open(file.Path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			zerolog.Ctx(ctx).Error().Str("track_id", trackID).Str("path", file.Path).
+				Msg("track: fichier introuvable sur le volume alors que la piste existe en base")
+			return OpenedTrackFile{}, apperror.NotFound("track not found")
+		}
+		return OpenedTrackFile{}, apperror.Internal("track: open file", err)
+	}
+	return OpenedTrackFile{TrackFile: file, Content: content}, nil
 }
 
 // normalizeTitle trime le titre et valide sa longueur (1-200).

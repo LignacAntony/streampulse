@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -67,6 +68,31 @@ func (r *pgRepository) ListTracksByUser(ctx context.Context, userID string) ([]T
 	return tracks, nil
 }
 
+func (r *pgRepository) GetTrackFileByUser(ctx context.Context, trackID, userID string) (TrackFile, error) {
+	// L'id vient du path : un UUID malformé n'est pas une erreur serveur, c'est
+	// une piste qui n'existe pas.
+	id, ok := parseUUID(trackID)
+	if !ok {
+		return TrackFile{}, apperror.NotFound("track not found")
+	}
+	row, err := r.q.GetTrackFileByUser(ctx, trackdb.GetTrackFileByUserParams{
+		ID:     id,
+		UserID: uuidParam(userID),
+	})
+	if err != nil {
+		// 0 ligne = piste inconnue OU piste d'un tiers : même réponse, l'API ne
+		// divulgue pas l'existence de la bibliothèque d'autrui.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TrackFile{}, apperror.NotFound("track not found")
+		}
+		return TrackFile{}, fmt.Errorf("repo: get track file: %w", err)
+	}
+	return TrackFile{
+		Path:     row.FilePath,
+		MimeType: row.MimeType,
+	}, nil
+}
+
 func (r *pgRepository) SumFileSizeByUser(ctx context.Context, userID string) (int64, error) {
 	total, err := r.q.SumTrackSizeByUser(ctx, uuidParam(userID))
 	if err != nil {
@@ -91,6 +117,15 @@ func uuidParam(s string) pgtype.UUID {
 		panic("track: invalid UUID from internal source: " + s)
 	}
 	return u
+}
+
+// parseUUID convertit un UUID fourni par l'utilisateur (path param) sans paniquer.
+func parseUUID(s string) (pgtype.UUID, bool) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return u, false
+	}
+	return u, true
 }
 
 func textParam(s *string) pgtype.Text {
