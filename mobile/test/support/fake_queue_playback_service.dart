@@ -30,6 +30,14 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   final List<int> skips = [];
   bool _playing = false;
 
+  bool shuffleEnabled = false;
+  QueueRepeatMode repeatMode = QueueRepeatMode.off;
+
+  /// Ordre rendu quand l'aléatoire est actif. Fixé (et non tiré au sort) pour
+  /// que les tests décrivent un ordre précis ; à défaut, l'ordre inverse suffit
+  /// à distinguer « mélangé » de « naturel ».
+  List<int>? shuffledOrder;
+
   void emitState(PlayerState state) {
     if (!_stateCtrl.isClosed) _stateCtrl.add(state);
   }
@@ -66,6 +74,23 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
     final err = loadError;
     if (err != null) throw err;
   }
+
+  /// Ordre de lecture simulé : naturel, ou mélangé quand l'aléatoire est actif
+  /// — comme le lecteur natif, qui tire son ordre au chargement.
+  @override
+  PlaybackOrder get playbackOrder {
+    if (!shuffleEnabled) return PlaybackOrder.natural(lastItems.length);
+    return PlaybackOrder(
+      shuffledOrder ??
+          List.generate(lastItems.length, (i) => lastItems.length - 1 - i),
+    );
+  }
+
+  @override
+  Future<void> setShuffleEnabled(bool enabled) async => shuffleEnabled = enabled;
+
+  @override
+  Future<void> setRepeat(QueueRepeatMode mode) async => repeatMode = mode;
 
   @override
   Future<void> skipToIndex(int index) async => skips.add(index);

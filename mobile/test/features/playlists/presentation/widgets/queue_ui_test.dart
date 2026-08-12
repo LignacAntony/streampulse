@@ -159,6 +159,43 @@ void main() {
       expect(t.controller.currentIndex, 2);
     });
 
+    testWidgets('les modes de lecture sont réglables depuis la file (US-05-05)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+
+      expect(find.byKey(const Key('queue_shuffle_button')), findsOneWidget);
+      expect(find.text('Répétition'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('queue_repeat_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Répéter la file'), findsOneWidget);
+      expect(t.service.repeatMode, QueueRepeatMode.all);
+
+      await tester.tap(find.byKey(const Key('queue_repeat_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Répéter la piste'), findsOneWidget);
+    });
+
+    testWidgets('en aléatoire, la file affiche l\'ordre réellement joué',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      // Le lecteur jouera t2, t3, t1.
+      t.service.shuffledOrder = [1, 2, 0];
+      await _openQueueSheet(tester);
+
+      await tester.tap(find.byKey(const Key('queue_shuffle_button')));
+      await tester.pumpAndSettle();
+
+      expect(t.service.shuffleEnabled, isTrue);
+      double y(String id) =>
+          tester.getTopLeft(find.byKey(Key('queue_item_$id'))).dy;
+      expect(y('t2'), lessThan(y('t3')));
+      expect(y('t3'), lessThan(y('t1')));
+      // La piste en cours (t1) n'est plus la 1re jouée mais la dernière.
+      expect(t.controller.positionInOrder, 2);
+    });
+
     testWidgets('la feuille se referme si la file s\'arrête pendant', (
       tester,
     ) async {

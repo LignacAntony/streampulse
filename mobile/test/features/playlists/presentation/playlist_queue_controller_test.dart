@@ -46,12 +46,14 @@ Future<void> _play(
   PlaylistQueueController controller, {
   int startIndex = 0,
   List<PlaylistTrack>? tracks,
+  bool? shuffle,
 }) {
   return controller.play(
     playlistId: 'p-1',
     playlistName: 'My Favorites',
     tracks: tracks ?? _tracks,
     startIndex: startIndex,
+    shuffle: shuffle,
   );
 }
 
@@ -389,6 +391,141 @@ void main() {
 
       expect(t.controller.hasQueue, isFalse);
       expect(t.controller.status, PlaybackStatus.idle);
+    });
+  });
+
+  group('PlaylistQueueController — lecture aléatoire (US-05-05)', () {
+    test('sans shuffle, l\'ordre de lecture est celui de la playlist',
+        () async {
+      final t = _build();
+
+      await _play(t.controller);
+
+      expect(t.controller.shuffleEnabled, isFalse);
+      expect(t.controller.playbackOrder, [0, 1, 2]);
+      expect(t.service.shuffleEnabled, isFalse);
+    });
+
+    test('lancer en aléatoire mélange la file dès le chargement', () async {
+      final t = _build();
+      t.service.shuffledOrder = [2, 0, 1];
+
+      await _play(t.controller, startIndex: 2, shuffle: true);
+
+      expect(t.service.shuffleEnabled, isTrue);
+      expect(t.controller.playbackOrder, [2, 0, 1]);
+      // La piste de départ est bien la première **jouée** (« 1/3 »).
+      expect(t.controller.positionInOrder, 0);
+    });
+
+    test('la bascule en cours de lecture relève le nouvel ordre', () async {
+      final t = _build();
+      await _play(t.controller);
+      t.service.shuffledOrder = [1, 2, 0];
+
+      await t.controller.toggleShuffle();
+
+      expect(t.controller.shuffleEnabled, isTrue);
+      expect(t.service.shuffleEnabled, isTrue);
+      expect(t.controller.playbackOrder, [1, 2, 0]);
+    });
+
+    test('« suivant » suit l\'ordre mélangé, pas l\'index de la playlist',
+        () async {
+      final t = _build();
+      t.service.shuffledOrder = [1, 2, 0];
+      await _play(t.controller, startIndex: 1, shuffle: true);
+
+      await t.controller.next();
+
+      // Depuis la piste 1 (1re jouée), la suivante est la 2 — pas la 2 par
+      // hasard : c'est l'ordre mélangé qui le dit, l'index+1 aurait donné 2
+      // aussi, d'où le second saut ci-dessous qui les départage.
+      expect(t.service.skips, [2]);
+      await t.controller.next();
+      expect(t.service.skips, [2, 0]);
+      expect(t.controller.currentIndex, 0);
+    });
+
+    test('la dernière piste jouée n\'a pas de suivante', () async {
+      final t = _build();
+      t.service.shuffledOrder = [1, 2, 0];
+      await _play(t.controller, startIndex: 0, shuffle: true);
+
+      // La piste 0 est la dernière de l'ordre mélangé, bien que première de la
+      // playlist.
+      expect(t.controller.hasNext, isFalse);
+      expect(t.controller.hasPrevious, isTrue);
+    });
+
+    test('le mode survit à l\'arrêt : c\'est une préférence d\'écoute',
+        () async {
+      final t = _build();
+      await _play(t.controller);
+      await t.controller.toggleShuffle();
+
+      await t.controller.stop();
+
+      expect(t.controller.shuffleEnabled, isTrue);
+    });
+  });
+
+  group('PlaylistQueueController — répétition (US-05-05)', () {
+    test('le bouton fait défiler aucune → file → piste → aucune', () async {
+      final t = _build();
+      await _play(t.controller);
+
+      await t.controller.cycleRepeat();
+      expect(t.controller.repeatMode, QueueRepeatMode.all);
+      expect(t.service.repeatMode, QueueRepeatMode.all);
+
+      await t.controller.cycleRepeat();
+      expect(t.controller.repeatMode, QueueRepeatMode.one);
+
+      await t.controller.cycleRepeat();
+      expect(t.controller.repeatMode, QueueRepeatMode.off);
+    });
+
+    test('répéter la file : la dernière piste a une suivante, qui reboucle',
+        () async {
+      final t = _build();
+      await _play(t.controller, startIndex: 2);
+      expect(t.controller.hasNext, isFalse);
+
+      await t.controller.cycleRepeat(); // → all
+
+      expect(t.controller.hasNext, isTrue);
+      await t.controller.next();
+      expect(t.service.skips, [0]);
+    });
+
+    test('répéter la piste ne bloque pas le saut manuel', () async {
+      final t = _build();
+      await _play(t.controller);
+      await t.controller.cycleRepeat(); // all
+      await t.controller.cycleRepeat(); // one
+
+      await t.controller.next();
+
+      // just_audio ferait redémarrer la piste courante ; un bouton « suivant »
+      // qui ne change pas de piste passerait pour une panne.
+      expect(t.service.skips, [1]);
+    });
+
+    test('les modes sont réappliqués au lecteur à chaque chargement', () async {
+      final t = _build();
+      await _play(t.controller);
+      await t.controller.cycleRepeat(); // → all
+      await t.controller.toggleShuffle(); // → aléatoire
+
+      // Le direct a pu prendre le lecteur entre-temps et remettre ses modes à
+      // zéro : relancer une file doit les rétablir.
+      t.service.repeatMode = QueueRepeatMode.off;
+      t.service.shuffleEnabled = false;
+      await _play(t.controller);
+
+      expect(t.service.repeatMode, QueueRepeatMode.all);
+      expect(t.service.shuffleEnabled, isTrue);
     });
   });
 }

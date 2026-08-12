@@ -76,8 +76,47 @@ class StreamAudioHandler extends BaseAudioHandler
   @override
   bool get playing => _player.playing;
 
+  /// Ordre de lecture effectif tel que le lecteur natif le tient (US-05-05).
+  /// `effectiveIndices` vaut `null` tant qu'aucune source n'est chargée : on
+  /// rend alors l'ordre naturel plutôt que rien, pour que l'appelant n'ait pas
+  /// de cas nul à traiter avant le premier chargement.
+  @override
+  PlaybackOrder get playbackOrder {
+    final indices = _player.effectiveIndices;
+    if (indices == null) return PlaybackOrder.natural(_queueItems.length);
+    return PlaybackOrder(List.unmodifiable(indices));
+  }
+
+  @override
+  Future<void> setShuffleEnabled(bool enabled) async {
+    // `shuffle()` **avant** l'activation : il tire l'ordre à partir de la piste
+    // courante et la place en tête, si bien qu'activer l'aléatoire ne coupe pas
+    // ce qui joue. Sans source chargée il n'y a rien à mélanger — le prochain
+    // `loadQueue` s'en chargera.
+    if (enabled && _hasSource) await _player.shuffle();
+    await _player.setShuffleModeEnabled(enabled);
+  }
+
+  /// Applique le mode de répétition au lecteur natif.
+  ///
+  /// Nommée `setRepeat` et non `setRepeatMode` : `BaseAudioHandler` réserve
+  /// déjà ce nom pour la commande système (`AudioServiceRepeatMode`), qui n'est
+  /// pas le même vocabulaire.
+  @override
+  Future<void> setRepeat(QueueRepeatMode mode) => _player.setLoopMode(
+        const {
+          QueueRepeatMode.off: LoopMode.off,
+          QueueRepeatMode.one: LoopMode.one,
+          QueueRepeatMode.all: LoopMode.all,
+        }[mode]!,
+      );
+
   @override
   Future<void> loadUri(String url, {required NowPlaying now}) async {
+    // Un direct n'a ni file ni fin : les modes hérités d'une écoute de playlist
+    // n'ont plus de sens ici (et `LoopMode.one` rejouerait un segment).
+    await _player.setShuffleModeEnabled(false);
+    await _player.setLoopMode(LoopMode.off);
     // Métadonnées de l'écran verrouillé / notification. Un flux live n'a pas de
     // durée : `isLive` masque la barre de progression côté OS.
     _queueItems = const [];
@@ -129,6 +168,11 @@ class StreamAudioHandler extends BaseAudioHandler
       initialIndex: start,
       initialPosition: initialPosition,
     );
+
+    // Chaque source neuve arrive avec un ordre de mélange neuf, donc naturel :
+    // sans ce tirage, relancer une playlist en mode aléatoire la rejouerait
+    // dans l'ordre. `shuffle()` garde la piste de départ en tête.
+    if (_player.shuffleModeEnabled) await _player.shuffle();
   }
 
   @override
@@ -180,15 +224,29 @@ class StreamAudioHandler extends BaseAudioHandler
   /// contrôleur applicatif suit ensuite via `currentIndexStream`, ce qui évite
   /// deux sources de vérité sur la position dans la file.
   @override
-  Future<void> skipToNext() async {
-    if (!_hasSource) return;
-    await _player.seekToNext();
-  }
+  Future<void> skipToNext() => _skipRelative(1);
 
   @override
-  Future<void> skipToPrevious() async {
+  Future<void> skipToPrevious() => _skipRelative(-1);
+
+  /// Saut manuel d'un rang dans l'**ordre de lecture** (mélangé ou non).
+  ///
+  /// Volontairement pas `_player.seekToNext()` : sous `LoopMode.one`, just_audio
+  /// y renvoie la piste courante, et le bouton « suivant » de la notification
+  /// ne ferait que la redémarrer. La répétition d'une piste ne concerne que
+  /// l'enchaînement automatique — d'où le passage par [PlaybackOrder], partagé
+  /// avec les boutons de l'application.
+  Future<void> _skipRelative(int offset) async {
     if (!_hasSource) return;
-    await _player.seekToPrevious();
+    final current = _player.currentIndex;
+    if (current == null) return;
+    final target = playbackOrder.relative(
+      current,
+      offset,
+      wrap: _player.loopMode == LoopMode.all,
+    );
+    if (target == null) return;
+    await _player.seek(Duration.zero, index: target);
   }
 
   @override
