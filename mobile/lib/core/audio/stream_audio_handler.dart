@@ -139,6 +139,7 @@ class StreamAudioHandler extends BaseAudioHandler
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
+    PlaybackOrder? order,
   }) async {
     if (items.isEmpty) {
       await stop();
@@ -153,6 +154,13 @@ class StreamAudioHandler extends BaseAudioHandler
     mediaItem.add(_queueItems[start]);
     _hasSource = true;
 
+    // Ordre imposé (rechargement subi) : le lecteur le reçoit tel quel et ne
+    // tire rien. Le vérifier ici plutôt que de faire confiance à l'appelant —
+    // un ordre qui ne couvre pas exactement la file désordonnerait la lecture.
+    final keep = order != null && _coversQueue(order, items.length)
+        ? _FixedShuffleOrder(order.indices)
+        : null;
+
     await _player.setAudioSource(
       // L'enchaînement piste → piste suivante est délégué au lecteur natif :
       // c'est lui qui préchargera la suivante, sans blanc entre les deux.
@@ -164,6 +172,7 @@ class StreamAudioHandler extends BaseAudioHandler
               headers: headers.isEmpty ? null : headers,
             ),
         ],
+        shuffleOrder: keep,
       ),
       initialIndex: start,
       initialPosition: initialPosition,
@@ -171,8 +180,22 @@ class StreamAudioHandler extends BaseAudioHandler
 
     // Chaque source neuve arrive avec un ordre de mélange neuf, donc naturel :
     // sans ce tirage, relancer une playlist en mode aléatoire la rejouerait
-    // dans l'ordre. `shuffle()` garde la piste de départ en tête.
-    if (_player.shuffleModeEnabled) await _player.shuffle();
+    // dans l'ordre. `shuffle()` garde la piste de départ en tête. Sauté quand un
+    // ordre est imposé, sinon il l'écraserait aussitôt.
+    if (_player.shuffleModeEnabled && keep == null) await _player.shuffle();
+  }
+
+  /// Un ordre n'est réutilisable que s'il est une permutation exacte de la file
+  /// à charger : à un élément près, il laisserait des pistes injouables ou
+  /// pointerait hors de la file.
+  static bool _coversQueue(PlaybackOrder order, int length) {
+    if (order.indices.length != length) return false;
+    final seen = List.filled(length, false);
+    for (final index in order.indices) {
+      if (index < 0 || index >= length || seen[index]) return false;
+      seen[index] = true;
+    }
+    return true;
   }
 
   @override
@@ -374,4 +397,52 @@ class StreamAudioHandler extends BaseAudioHandler
       queueIndex: _player.currentIndex,
     );
   }
+}
+
+/// Ordre de lecture **imposé** : rend la permutation qu'on lui donne et ignore
+/// les demandes de mélange.
+///
+/// Sert aux rechargements subis (reprise après erreur) : le lecteur repart d'une
+/// source neuve, mais la suite annoncée à l'auditeur ne doit pas changer parce
+/// que le réseau a hoqueté.
+///
+/// `ConcatenatingAudioSource` appelle `insert(0, n)` depuis son constructeur
+/// pour déclarer ses enfants : c'est là qu'on pose la permutation. Les autres
+/// mutations n'arrivent pas dans cette application (une file n'est jamais
+/// modifiée en place, elle est rechargée entière) ; elles sont quand même
+/// traitées, en ordre naturel, plutôt que de laisser des index incohérents.
+class _FixedShuffleOrder extends ShuffleOrder {
+  _FixedShuffleOrder(this._fixed);
+
+  final List<int> _fixed;
+
+  @override
+  final indices = <int>[];
+
+  @override
+  void shuffle({int? initialIndex}) {}
+
+  @override
+  void insert(int index, int count) {
+    if (index == 0 && indices.isEmpty && count == _fixed.length) {
+      indices.addAll(_fixed);
+      return;
+    }
+    for (var i = 0; i < indices.length; i++) {
+      if (indices[i] >= index) indices[i] += count;
+    }
+    indices.insertAll(index, List.generate(count, (i) => index + i));
+  }
+
+  @override
+  void removeRange(int start, int end) {
+    final count = end - start;
+    indices.removeWhere((i) => i >= start && i < end);
+    for (var i = 0; i < indices.length; i++) {
+      if (indices[i] >= end) indices[i] -= count;
+    }
+  }
+
+  @override
+  void clear() => indices.clear();
 }

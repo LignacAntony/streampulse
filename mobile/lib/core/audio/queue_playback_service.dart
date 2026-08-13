@@ -72,11 +72,17 @@ abstract class QueuePlaybackService implements PlaybackTransport {
   ///
   /// [headers] est envoyé avec **chaque** requête de piste : les fichiers audio
   /// d'une bibliothèque sont privés, le lecteur natif doit s'authentifier.
+  ///
+  /// [order] réapplique un ordre de lecture existant au lieu d'en faire tirer un
+  /// neuf. Sert aux rechargements **subis** (reprise après erreur) : sans lui,
+  /// une coupure réseau réécrirait la suite de la file alors que l'auditeur n'a
+  /// rien demandé. `null` = nouveau tirage si l'aléatoire est actif.
   Future<void> loadQueue(
     List<QueueItem> items, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
+    PlaybackOrder? order,
   });
 
   /// Saute à la piste [index] de la file et repart de son début.

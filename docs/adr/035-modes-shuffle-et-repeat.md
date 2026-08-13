@@ -35,6 +35,16 @@ introduit un second ordre à garder en phase avec celui que le lecteur applique 
 - après chaque chargement, parce qu'une source neuve arrive avec un ordre de mélange neuf, c'est-à-
   dire naturel : sans ce tirage, relancer une playlist en mode aléatoire la rejouerait dans l'ordre.
 
+**Sauf sur un rechargement subi.** Le lecteur ne tire un ordre que lorsque l'auditeur a demandé
+quelque chose : `play()`. Une reprise après erreur ou la relance d'une file terminée rechargent la
+source sans que personne ne l'ait demandé, et `loadQueue` reçoit alors l'ordre courant à réappliquer
+(`_FixedShuffleOrder`, une `ShuffleOrder` qui rend la permutation qu'on lui donne et ignore les
+demandes de mélange). Ce n'est pas un détail de confort : l'access token embarqué dans les
+`AudioSource` expire au bout de 15 minutes (ADR 034 §5), donc sans cette conservation la suite
+annoncée serait réécrite à ce rythme sur toute écoute un peu longue. Le handler vérifie que l'ordre
+reçu est une permutation exacte de la file avant de l'appliquer — à un élément près, il laisserait
+des pistes injouables.
+
 ### 2. `PlaybackOrder` — un objet pur pour la règle du saut
 
 Un désaccord existe entre just_audio et l'attente d'un auditeur : sous `LoopMode.one`,
@@ -119,8 +129,9 @@ affichée sous les toggles qui rend leur effet lisible.
 **Négatives / limites assumées**
 
 - Les modes sont perdus au redémarrage de l'application (§3).
-- Une reprise après erreur recharge la source, donc tire un nouvel ordre : la suite annoncée avant
-  la coupure n'est pas celle qui reprendra (la piste courante, elle, est conservée).
+- L'ordre conservé lors d'un rechargement subi (§1) suppose que la file rechargée est bien la même :
+  le handler le vérifie (permutation exacte) et retombe sur un tirage neuf sinon, plutôt que de
+  jouer un ordre qui ne correspond plus.
 - L'ordre de lecture n'est pas exposé aux commandes système : le tableau de bord d'une voiture
   affichera « lecture normale » même en aléatoire.
 - Comme en US-05-04, la file reste une **photo** des pistes au lancement : réordonner la playlist ne

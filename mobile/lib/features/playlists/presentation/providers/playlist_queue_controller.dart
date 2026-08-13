@@ -163,7 +163,9 @@ class PlaylistQueueController extends ChangeNotifier {
     // chargement — et survivrait à un chargement qui échoue.
     _order = PlaybackOrder.natural(_tracks.length);
     if (shuffle != null) _shuffleEnabled = shuffle;
-    await _load(fromIndex: _index);
+    // Seul lancement **demandé** : c'est le seul endroit où un nouvel ordre
+    // aléatoire doit être tiré.
+    await _load(fromIndex: _index, keepOrder: false);
   }
 
   /// Bascule la lecture aléatoire (US-05-05). Le lecteur tire un nouvel ordre
@@ -258,10 +260,17 @@ class PlaylistQueueController extends ChangeNotifier {
   /// (Re)charge la file dans le lecteur à partir de [fromIndex], à [position]
   /// dans cette piste. [refreshToken] force une rotation de l'access token
   /// (première reprise après échec).
+  ///
+  /// [keepOrder] conserve l'ordre de lecture courant au lieu d'en faire tirer un
+  /// neuf. Vrai par défaut : tous les rechargements sauf [play] sont **subis**
+  /// (reprise après erreur, relance d'une file terminée), et l'auditeur n'a pas
+  /// demandé que la suite change. Une expiration d'access token survenant toutes
+  /// les 15 minutes, sans ça la file se réarrangerait à ce rythme.
   Future<void> _load({
     required int fromIndex,
     Duration position = Duration.zero,
     bool refreshToken = false,
+    bool keepOrder = true,
   }) async {
     final generation = ++_generation;
     _setStatus(PlaybackStatus.loading);
@@ -293,6 +302,9 @@ class PlaylistQueueController extends ChangeNotifier {
         initialIndex: fromIndex,
         initialPosition: position,
         headers: token == null ? const {} : {'Authorization': 'Bearer $token'},
+        // Un ordre naturel n'a rien à imposer : le laisser à `null` évite de
+        // figer une file qui n'est pas mélangée.
+        order: keepOrder && _shuffleEnabled && !_order.isEmpty ? _order : null,
       );
       if (_disposed || generation != _generation) return;
       _refreshOrder();

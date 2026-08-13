@@ -42,6 +42,13 @@ final _tracks = [
   return (controller: controller, service: service);
 }
 
+/// Laisse filer le backoff (1/2/4 s) sans attendre en temps réel. Partagé par
+/// les tests de reprise et ceux de l'ordre de lecture, qui reposent dessus.
+void elapse(FakeAsync async, {int seconds = 10}) {
+  async.elapse(Duration(seconds: seconds));
+  async.flushMicrotasks();
+}
+
 Future<void> _play(
   PlaylistQueueController controller, {
   int startIndex = 0,
@@ -236,12 +243,6 @@ void main() {
   });
 
   group('PlaylistQueueController — reprise après erreur', () {
-    /// Laisse filer le backoff (1/2/4 s) sans attendre en temps réel.
-    Future<void> elapse(FakeAsync async, {int seconds = 10}) async {
-      async.elapse(Duration(seconds: seconds));
-      async.flushMicrotasks();
-    }
-
     test('la reprise attend le backoff, force UN refresh et garde la position',
         () {
       fakeAsync((async) {
@@ -456,6 +457,57 @@ void main() {
       // playlist.
       expect(t.controller.hasNext, isFalse);
       expect(t.controller.hasPrevious, isTrue);
+    });
+
+    test('une reprise après erreur rejoue le même ordre (retour de revue)', () {
+      fakeAsync((async) {
+        final t = _build();
+        t.service.shuffledOrder = [2, 0, 1];
+        _play(t.controller, shuffle: true);
+        async.flushMicrotasks();
+        expect(t.controller.playbackOrder, [2, 0, 1]);
+        expect(t.service.lastOrder, isNull,
+            reason: 'un lancement demandé tire un ordre neuf');
+
+        // Coupure réseau / access token expiré (toutes les 15 min en pratique).
+        t.service.emitError(Exception('coupure'));
+        async.flushMicrotasks();
+        elapse(async);
+
+        expect(t.service.loadCalls, 2);
+        expect(t.service.lastOrder?.indices, [2, 0, 1],
+            reason: 'le rechargement subi impose l\'ordre en cours');
+        expect(t.controller.playbackOrder, [2, 0, 1],
+            reason: 'la suite annoncée ne doit pas bouger sous l\'auditeur');
+      });
+    });
+
+    test('relancer volontairement la playlist retire un ordre', () async {
+      final t = _build();
+      t.service.shuffledOrder = [1, 2, 0];
+      await _play(t.controller, shuffle: true);
+
+      await _play(t.controller);
+
+      expect(t.service.lastOrder, isNull);
+      expect(t.controller.playbackOrder, [1, 2, 0],
+          reason: 'nouvel ordre relevé auprès du lecteur, pas celui d\'avant');
+    });
+
+    test('une file non mélangée n\'impose aucun ordre au rechargement', () {
+      fakeAsync((async) {
+        final t = _build();
+        _play(t.controller);
+        async.flushMicrotasks();
+
+        t.service.emitError(Exception('coupure'));
+        async.flushMicrotasks();
+        elapse(async);
+
+        expect(t.service.loadCalls, 2);
+        expect(t.service.lastOrder, isNull,
+            reason: 'rien à figer sur une lecture dans l\'ordre');
+      });
     });
 
     test('le mode survit à l\'arrêt : c\'est une préférence d\'écoute',

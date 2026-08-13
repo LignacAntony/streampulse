@@ -471,6 +471,10 @@ Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).
   l'application règle le mode et **lit** l'ordre obtenu (`effectiveIndices`). `shuffle()` est appelé
   avant l'activation (il garde la piste courante en tête → la lecture n'est pas coupée) et après
   chaque `loadQueue` (une source neuve arrive avec un ordre naturel).
+- ⚠️ **Un ordre n'est tiré que sur demande de l'auditeur** (`play`). Un rechargement **subi**
+  (reprise après erreur, relance d'une file terminée) passe l'ordre courant à `loadQueue`, que le
+  handler réapplique via `_FixedShuffleOrder` : sans ça, l'expiration d'access token (15 min,
+  ADR 034 §5) réécrirait la suite de la file à ce rythme.
 - **`PlaybackOrder`** (`core/audio/playback_order.dart`) : objet **pur** (comme `InterruptionPolicy`)
   portant `positionOf` et `relative(current, ±1, wrap:)`. Utilisé par le contrôleur **et** par
   `StreamAudioHandler._skipRelative` (boutons de la notification) → une seule règle.

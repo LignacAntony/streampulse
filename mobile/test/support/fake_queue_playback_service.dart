@@ -38,6 +38,13 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   /// à distinguer « mélangé » de « naturel ».
   List<int>? shuffledOrder;
 
+  /// Ordre imposé au dernier [loadQueue] (`null` = nouveau tirage demandé).
+  PlaybackOrder? lastOrder;
+
+  /// Ordre effectivement conservé par le lecteur simulé, comme le vrai handler :
+  /// un ordre imposé prime sur le tirage.
+  List<int>? _keptOrder;
+
   void emitState(PlayerState state) {
     if (!_stateCtrl.isClosed) _stateCtrl.add(state);
   }
@@ -65,12 +72,15 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
+    PlaybackOrder? order,
   }) async {
     loadCalls++;
     lastItems = items;
     lastInitialIndex = initialIndex;
     lastInitialPosition = initialPosition;
     lastHeaders = headers;
+    lastOrder = order;
+    _keptOrder = order == null ? null : List.of(order.indices);
     final err = loadError;
     if (err != null) throw err;
   }
@@ -80,6 +90,8 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   @override
   PlaybackOrder get playbackOrder {
     if (!shuffleEnabled) return PlaybackOrder.natural(lastItems.length);
+    final kept = _keptOrder;
+    if (kept != null) return PlaybackOrder(kept);
     return PlaybackOrder(
       shuffledOrder ??
           List.generate(lastItems.length, (i) => lastItems.length - 1 - i),
@@ -87,7 +99,11 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   }
 
   @override
-  Future<void> setShuffleEnabled(bool enabled) async => shuffleEnabled = enabled;
+  Future<void> setShuffleEnabled(bool enabled) async {
+    shuffleEnabled = enabled;
+    // Comme le vrai handler : activer l'aléatoire tire un ordre neuf.
+    if (enabled) _keptOrder = null;
+  }
 
   @override
   Future<void> setRepeat(QueueRepeatMode mode) async => repeatMode = mode;
