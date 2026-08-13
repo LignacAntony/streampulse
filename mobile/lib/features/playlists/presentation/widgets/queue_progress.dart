@@ -38,7 +38,10 @@ class QueueProgressLine extends StatelessWidget {
             children: [
               LinearProgressIndicator(
                 value: _fraction(buffered, duration),
-                backgroundColor: colors.surfaceContainerHighest,
+                // `outlineVariant` et non la couleur du bandeau : celui-ci est
+                // déjà en `surfaceContainerHighest`, la portion restante y
+                // serait invisible (retour de revue #292).
+                backgroundColor: colors.outlineVariant,
                 color: colors.primary.withValues(alpha: 0.25),
               ),
               LinearProgressIndicator(
@@ -69,11 +72,15 @@ class _QueueProgressSliderState extends State<QueueProgressSlider> {
   Duration? _dragging;
 
   Future<void> _onChangeEnd(Duration target) async {
-    await context.read<PlaylistQueueController>().seek(target);
-    if (!mounted) return;
-    // Relâchée seulement après le déplacement : l'effacer avant ferait revenir
-    // le pouce à l'ancienne position le temps que le lecteur rattrape.
-    setState(() => _dragging = null);
+    try {
+      await context.read<PlaylistQueueController>().seek(target);
+    } finally {
+      // Relâchée seulement après le déplacement : l'effacer avant ferait revenir
+      // le pouce à l'ancienne position le temps que le lecteur rattrape. Mais
+      // relâchée **quoi qu'il arrive** : un `seek` qui échoue laisserait sinon
+      // le curseur figé jusqu'au changement de piste (retour de revue #292).
+      if (mounted) setState(() => _dragging = null);
+    }
   }
 
   @override
@@ -81,11 +88,17 @@ class _QueueProgressSliderState extends State<QueueProgressSlider> {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
 
+    // La poignée se neutralise exactement quand le contrôleur refuserait le
+    // déplacement (file terminée, en erreur, en reprise) : une poignée qui
+    // glisse sans rien déplacer est pire que pas de poignée (revue #292).
+    final canSeek =
+        context.select<PlaylistQueueController, bool>((q) => q.canSeek);
+
     return _ProgressBuilder(
       builder: (context, position, buffered, duration) {
         final total = duration ?? Duration.zero;
         final shown = _dragging ?? position;
-        final enabled = total > Duration.zero;
+        final enabled = total > Duration.zero && canSeek;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -171,19 +184,30 @@ class _ProgressBuilder extends StatefulWidget {
 
 class _ProgressBuilderState extends State<_ProgressBuilder> {
   final _subscriptions = <StreamSubscription<Object?>>[];
+  late final PlaylistQueueController _queue;
 
   Duration _position = Duration.zero;
   Duration _buffered = Duration.zero;
   Duration? _duration;
 
+  /// Piste à laquelle [_duration] se rapporte. Le lecteur n'émet une durée
+  /// qu'une fois par piste : sans ce repère, celle de la piste précédente
+  /// resterait affichée le temps que la nouvelle soit lue (revue #292).
+  String? _durationTrackId;
+
   @override
   void initState() {
     super.initState();
-    final queue = context.read<PlaylistQueueController>();
+    _queue = context.read<PlaylistQueueController>();
     _subscriptions.addAll([
-      queue.positionStream.listen((v) => _set(() => _position = v)),
-      queue.bufferedPositionStream.listen((v) => _set(() => _buffered = v)),
-      queue.durationStream.listen((v) => _set(() => _duration = v)),
+      _queue.positionStream.listen((v) => _set(() => _position = v)),
+      _queue.bufferedPositionStream.listen((v) => _set(() => _buffered = v)),
+      _queue.durationStream.listen(
+        (v) => _set(() {
+          _duration = v;
+          _durationTrackId = _queue.currentTrack?.id;
+        }),
+      ),
     ]);
   }
 
@@ -207,14 +231,17 @@ class _ProgressBuilderState extends State<_ProgressBuilder> {
     // Durée déclarée de la piste : valeur d'attente le temps que le lecteur
     // lise la vraie dans le fichier. Suivie par `watch` pour se rafraîchir au
     // changement de piste.
-    final declared =
-        context.watch<PlaylistQueueController>().currentTrack?.durationS;
+    final track = context.watch<PlaylistQueueController>().currentTrack;
+    final declared = track?.durationS;
+    // Une durée qui décrit la piste précédente est fausse : on retombe sur la
+    // valeur déclarée en attendant celle du lecteur.
+    final measured = _durationTrackId == track?.id ? _duration : null;
 
     return widget.builder(
       context,
       _position,
       _buffered,
-      _duration ?? (declared == null ? null : Duration(seconds: declared)),
+      measured ?? (declared == null ? null : Duration(seconds: declared)),
     );
   }
 }

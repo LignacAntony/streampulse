@@ -259,6 +259,52 @@ void main() {
       expect(slider.max, 214000);
     });
 
+    testWidgets('file terminée : la poignée est neutralisée (revue #292)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+      t.service.emitDuration(const Duration(seconds: 200));
+      await tester.pump();
+      await tester.pump();
+
+      t.service.emitState(PlayerState(false, ProcessingState.completed));
+      await tester.pumpAndSettle();
+
+      final slider = tester.widget<Slider>(
+        find.byKey(const Key('queue_progress_slider')),
+      );
+      // `seek` refuserait de toute façon : une poignée qui glisse sans rien
+      // déplacer est pire que pas de poignée.
+      expect(slider.onChanged, isNull);
+    });
+
+    testWidgets('changement de piste : pas de durée périmée (revue #292)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+      t.service.emitDuration(const Duration(seconds: 200));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const Key('queue_progress_slider')))
+            .max,
+        200000,
+      );
+
+      // Piste suivante : le lecteur n'a pas encore lu sa durée.
+      t.service.emitIndex(1);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const Key('queue_progress_slider')))
+            .max,
+        214000,
+        reason: 'la durée déclarée de la nouvelle piste, pas celle d\'avant',
+      );
+    });
+
     testWidgets('la feuille se referme si la file s\'arrête pendant', (
       tester,
     ) async {
