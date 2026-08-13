@@ -462,6 +462,12 @@ Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
   piste), `QueueMiniPlayer` (précédent/play/suivant/croix), `PlaybackQueueSheet` (file visible,
   appui = saut). La file est une **photo** des pistes au lancement : réordonner la playlist ne
   change pas ce qui joue tant qu'on ne relance pas.
+- **Avancement et navigation dans la piste (STR-230)** : `positionStream` / `bufferedPositionStream`
+  / `durationStream` / `seek` vivent sur `QueuePlaybackService` **et pas** sur `PlaybackTransport`
+  (un direct n'a pas de position). Rendu par `queue_progress.dart` : trait de 2 px sur le bandeau,
+  `Slider` manipulable dans la feuille (le bandeau fait 60 px, on n'y vise pas au pouce). Durée lue
+  dans le **lecteur**, `duration_s` de la base ne servant que de valeur d'attente (déclaré par le
+  client à l'upload, il peut mentir). Le serveur ne coûte rien : `Range` déjà géré (ADR 034 §1).
 
 ### Modes shuffle et repeat (US-05-05)
 
@@ -536,6 +542,14 @@ Choisir **le plus simple qui suffit**, dans cet ordre :
 - `context.watch<T>()` dans `build()` uniquement — reconstruit à chaque `notifyListeners()`
 - `context.read<T>()` dans les callbacks (`onPressed`, `_onSubmit`) uniquement — ne reconstruit pas
 - `notifyListeners()` après chaque mutation d'un notifier
+- ⚠️ **Un flux haute fréquence ne traverse jamais un `ChangeNotifier` app-level.** Position de
+  lecture, niveau audio, chrono : à ~5 Hz, un `notifyListeners()` reconstruit tout l'arbre sous le
+  contrôleur. Le contrôleur expose le `Stream` tel quel, le widget qui l'affiche s'y abonne seul
+  (exemple : `queue_progress.dart`, STR-230).
+- ⚠️ **Un getter de `Stream` rend souvent un objet neuf à chaque accès** (`StreamController.stream`
+  le fait) : un `StreamBuilder` branché dessus se réabonne à chaque reconstruction. Sans conséquence
+  sur un flux continu, fatal sur un flux qui n'émet qu'une fois (une durée de piste). S'abonner une
+  fois dans `initState` quand la valeur compte.
 
 ### Conventions Flutter — Async & cycle de vie
 
