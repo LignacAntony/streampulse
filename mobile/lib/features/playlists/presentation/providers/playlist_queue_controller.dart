@@ -8,7 +8,8 @@ import '../../../../core/audio/queue_playback_service.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../domain/entities/playlist_track.dart';
 
-export '../../../../core/audio/queue_playback_service.dart' show PlaybackStatus;
+export '../../../../core/audio/queue_playback_service.dart'
+    show PlaybackStatus, QueueRepeatMode;
 
 /// Lecture d'une playlist avec file d'attente (US-05-04), hissée au niveau
 /// application comme le lecteur de direct : la file survit à la navigation et à
@@ -56,6 +57,19 @@ class PlaylistQueueController extends ChangeNotifier {
   PlaybackStatus _status = PlaybackStatus.idle;
   bool _disposed = false;
 
+  /// Modes de lecture (US-05-05). Ils appartiennent au contrôleur et non au
+  /// lecteur : celui-ci est partagé avec le direct, qui les remet à zéro en
+  /// prenant la main. Les réappliquer à chaque chargement les rend insensibles
+  /// à cette bascule.
+  bool _shuffleEnabled = false;
+  QueueRepeatMode _repeatMode = QueueRepeatMode.off;
+
+  /// Ordre de lecture effectif, relevé auprès du lecteur après chaque
+  /// chargement ou changement de mode. Photographié plutôt que lu à la volée :
+  /// l'UI le parcourt à chaque frame, et un ordre qui changerait sans
+  /// `notifyListeners` afficherait une file désynchronisée du son.
+  PlaybackOrder _order = PlaybackOrder.empty;
+
   /// Reprises déjà tentées sur la piste courante.
   ///
   /// Remis à zéro sur une **action utilisateur** (lancement, saut) et sur un
@@ -76,6 +90,20 @@ class PlaylistQueueController extends ChangeNotifier {
   String? get playlistName => _playlistName;
   int get currentIndex => _index;
   PlaybackStatus get status => _status;
+  bool get shuffleEnabled => _shuffleEnabled;
+  QueueRepeatMode get repeatMode => _repeatMode;
+
+  /// Index de [tracks] dans l'ordre où ils seront joués (US-05-05). C'est cet
+  /// ordre que la file d'attente affiche : montrer l'ordre de la playlist
+  /// pendant une lecture aléatoire annoncerait une suite qui n'arrivera pas.
+  List<int> get playbackOrder => _order.indices;
+
+  /// Rang de la piste courante dans l'ordre de lecture (base 0), pour l'affichage
+  /// « n/total ». Retombe sur l'index brut si l'ordre n'est pas encore connu.
+  int get positionInOrder {
+    final position = _order.positionOf(_index);
+    return position < 0 ? _index : position;
+  }
 
   /// La file est-elle active ? Faux à l'arrêt : le mini-player s'efface et rend
   /// la place au direct.
@@ -91,15 +119,25 @@ class PlaylistQueueController extends ChangeNotifier {
   bool get hasError => _status == PlaybackStatus.error;
   bool get isEnded => _status == PlaybackStatus.ended;
   bool get isReconnecting => _status == PlaybackStatus.reconnecting;
-  bool get hasNext => _index < _tracks.length - 1;
-  bool get hasPrevious => _index > 0;
+  bool get hasNext => _relative(1) != null;
+  bool get hasPrevious => _relative(-1) != null;
+
+  /// Piste à jouer [offset] rangs plus loin dans l'ordre de lecture, ou `null`
+  /// s'il n'y en a pas. La répétition de la file (`all`) reboucle aux deux
+  /// extrémités ; celle d'une piste (`one`) ne bloque pas les sauts manuels.
+  int? _relative(int offset) =>
+      _order.relative(_index, offset, wrap: _repeatMode == QueueRepeatMode.all);
 
   /// Lance [tracks] à partir de [startIndex] et démarre la lecture.
+  ///
+  /// [shuffle] force la lecture aléatoire (entrée « Lire en aléatoire ») ;
+  /// omis, le mode courant est conservé d'une playlist à l'autre.
   Future<void> play({
     required String playlistId,
     required String playlistName,
     required List<PlaylistTrack> tracks,
     int startIndex = 0,
+    bool? shuffle,
   }) async {
     if (tracks.isEmpty) return;
 
@@ -120,7 +158,40 @@ class PlaylistQueueController extends ChangeNotifier {
     _playlistName = playlistName;
     _index = startIndex.clamp(0, tracks.length - 1);
     _retryCount = 0;
-    await _load(fromIndex: _index);
+    // Ordre provisoire, remplacé par celui du lecteur une fois la file chargée.
+    // Sans lui, l'ordre de la playlist précédente resterait affiché le temps du
+    // chargement — et survivrait à un chargement qui échoue.
+    _order = PlaybackOrder.natural(_tracks.length);
+    if (shuffle != null) _shuffleEnabled = shuffle;
+    // Seul lancement **demandé** : c'est le seul endroit où un nouvel ordre
+    // aléatoire doit être tiré.
+    await _load(fromIndex: _index, keepOrder: false);
+  }
+
+  /// Bascule la lecture aléatoire (US-05-05). Le lecteur tire un nouvel ordre
+  /// en gardant la piste courante en tête : ce qu'on écoute n'est pas coupé,
+  /// seule la suite change.
+  Future<void> toggleShuffle() async {
+    _shuffleEnabled = !_shuffleEnabled;
+    if (!_disposed) notifyListeners();
+    if (_tracks.isEmpty) return;
+    await _service.setShuffleEnabled(_shuffleEnabled);
+    _refreshOrder();
+  }
+
+  /// Fait défiler les modes de répétition : aucune → toute la file → la piste.
+  ///
+  /// Un seul bouton pour trois états plutôt que deux boutons : c'est la
+  /// convention des lecteurs audio, et les trois modes sont exclusifs.
+  Future<void> cycleRepeat() async {
+    _repeatMode = switch (_repeatMode) {
+      QueueRepeatMode.off => QueueRepeatMode.all,
+      QueueRepeatMode.all => QueueRepeatMode.one,
+      QueueRepeatMode.one => QueueRepeatMode.off,
+    };
+    if (!_disposed) notifyListeners();
+    if (_tracks.isEmpty) return;
+    await _service.setRepeat(_repeatMode);
   }
 
   /// Saute à la piste [index] de la file (« sauter à n'importe quelle piste »).
@@ -141,15 +212,23 @@ class PlaylistQueueController extends ChangeNotifier {
     await _service.play();
   }
 
-  Future<void> next() => hasNext ? skipTo(_index + 1) : Future.value();
-  Future<void> previous() => hasPrevious ? skipTo(_index - 1) : Future.value();
+  Future<void> next() => _skipRelative(1);
+  Future<void> previous() => _skipRelative(-1);
+
+  Future<void> _skipRelative(int offset) {
+    final target = _relative(offset);
+    return target == null ? Future.value() : skipTo(target);
+  }
 
   /// Bascule lecture/pause ; relance la file si elle est terminée ou en erreur.
   Future<void> togglePlayPause() async {
     if (_tracks.isEmpty) return;
     if (isEnded || hasError) {
       _retryCount = 0;
-      await _load(fromIndex: isEnded ? 0 : _index);
+      // Relancer une file terminée repart de sa **première piste jouée**, pas
+      // de la première de la playlist : en aléatoire, les deux diffèrent.
+      final first = _order.isEmpty ? 0 : _order.indices.first;
+      await _load(fromIndex: isEnded ? first : _index);
       return;
     }
     if (isBusy || isReconnecting) return;
@@ -181,15 +260,30 @@ class PlaylistQueueController extends ChangeNotifier {
   /// (Re)charge la file dans le lecteur à partir de [fromIndex], à [position]
   /// dans cette piste. [refreshToken] force une rotation de l'access token
   /// (première reprise après échec).
+  ///
+  /// [keepOrder] conserve l'ordre de lecture courant au lieu d'en faire tirer un
+  /// neuf. Vrai par défaut : tous les rechargements sauf [play] sont **subis**
+  /// (reprise après erreur, relance d'une file terminée), et l'auditeur n'a pas
+  /// demandé que la suite change. Une expiration d'access token survenant toutes
+  /// les 15 minutes, sans ça la file se réarrangerait à ce rythme.
   Future<void> _load({
     required int fromIndex,
     Duration position = Duration.zero,
     bool refreshToken = false,
+    bool keepOrder = true,
   }) async {
     final generation = ++_generation;
     _setStatus(PlaybackStatus.loading);
     try {
       final token = await _token(forceRefresh: refreshToken);
+      if (_disposed || generation != _generation) return;
+
+      // Modes réappliqués avant chaque chargement : le lecteur est partagé avec
+      // le direct, qui les remet à zéro en prenant la main. Et l'aléatoire doit
+      // être actif **avant** que la file n'arrive, pour que le lecteur mélange
+      // la source neuve au lieu de l'enchaîner dans l'ordre.
+      await _service.setRepeat(_repeatMode);
+      await _service.setShuffleEnabled(_shuffleEnabled);
       if (_disposed || generation != _generation) return;
 
       await _service.loadQueue(
@@ -208,13 +302,28 @@ class PlaylistQueueController extends ChangeNotifier {
         initialIndex: fromIndex,
         initialPosition: position,
         headers: token == null ? const {} : {'Authorization': 'Bearer $token'},
+        // Un ordre naturel n'a rien à imposer : le laisser à `null` évite de
+        // figer une file qui n'est pas mélangée.
+        order: keepOrder && _shuffleEnabled && !_order.isEmpty ? _order : null,
       );
       if (_disposed || generation != _generation) return;
+      _refreshOrder();
       await _service.play();
     } catch (e) {
       if (generation != _generation) return;
       _onError(e);
     }
+  }
+
+  /// Relève l'ordre de lecture auprès du lecteur (il vient de le tirer). Un
+  /// ordre qui ne couvre pas exactement la file est ignoré au profit de l'ordre
+  /// naturel : mieux vaut afficher la playlist en clair qu'une file trouée.
+  void _refreshOrder() {
+    final order = _service.playbackOrder;
+    _order = order.indices.length == _tracks.length
+        ? order
+        : PlaybackOrder.natural(_tracks.length);
+    if (!_disposed) notifyListeners();
   }
 
   void _onPlayerState(PlayerState state) {
@@ -310,6 +419,9 @@ class PlaylistQueueController extends ChangeNotifier {
     _playlistId = null;
     _playlistName = null;
     _index = 0;
+    // Les modes de lecture survivent : ce sont des préférences d'écoute, pas
+    // l'état d'une file. Seul l'ordre, qui décrit cette file, disparaît avec elle.
+    _order = PlaybackOrder.empty;
     _retryCount = 0;
     _generation++;
     _status = PlaybackStatus.idle;

@@ -399,8 +399,9 @@ Créer l'arborescence suivante dans `mobile/lib/features/<nom>/` :
 
 Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
 [ADR 031](docs/adr/031-lecture-audio-en-arriere-plan.md) (arrière-plan) et
-[ADR 033](docs/adr/033-gestion-des-interruptions-audio.md) (interruptions) et
-[ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md) (file d'attente).
+[ADR 033](docs/adr/033-gestion-des-interruptions-audio.md) (interruptions),
+[ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md) (file d'attente) et
+[ADR 035](docs/adr/035-modes-shuffle-et-repeat.md) (shuffle/repeat).
 
 - **Service partagé, app-level** : un unique `AudioPlayer` vit dans `StreamAudioHandler`
   (`core/audio/`, `audio_service` + just_audio), initialisé dans `main()` via `AudioService.init`
@@ -461,6 +462,33 @@ Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
   piste), `QueueMiniPlayer` (précédent/play/suivant/croix), `PlaybackQueueSheet` (file visible,
   appui = saut). La file est une **photo** des pistes au lancement : réordonner la playlist ne
   change pas ce qui joue tant qu'on ne relance pas.
+
+### Modes shuffle et repeat (US-05-05)
+
+Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).
+
+- **Mélange tiré par le lecteur natif** (`setShuffleModeEnabled` + `shuffle()`), jamais côté Dart :
+  l'application règle le mode et **lit** l'ordre obtenu (`effectiveIndices`). `shuffle()` est appelé
+  avant l'activation (il garde la piste courante en tête → la lecture n'est pas coupée) et après
+  chaque `loadQueue` (une source neuve arrive avec un ordre naturel).
+- ⚠️ **Un ordre n'est tiré que sur demande de l'auditeur** (`play`). Un rechargement **subi**
+  (reprise après erreur, relance d'une file terminée) passe l'ordre courant à `loadQueue`, que le
+  handler réapplique via `_FixedShuffleOrder` : sans ça, l'expiration d'access token (15 min,
+  ADR 034 §5) réécrirait la suite de la file à ce rythme.
+- **`PlaybackOrder`** (`core/audio/playback_order.dart`) : objet **pur** (comme `InterruptionPolicy`)
+  portant `positionOf` et `relative(current, ±1, wrap:)`. Utilisé par le contrôleur **et** par
+  `StreamAudioHandler._skipRelative` (boutons de la notification) → une seule règle.
+- ⚠️ **`repeat one` ne gouverne que l'enchaînement automatique** : un saut manuel avance quand même.
+  D'où le remplacement de `seekToNext()`/`seekToPrevious()`, qui sous `LoopMode.one` rejouent la
+  piste courante.
+- Énumération applicative `QueueRepeatMode` (`off`/`one`/`all`), traduite en `LoopMode` par le seul
+  handler. **Préfixée `Queue`** : `material.dart` exporte déjà un `RepeatMode` (animations).
+- **Les modes appartiennent au contrôleur**, pas au lecteur (que le direct remet à zéro en prenant
+  la main) : réappliqués avant chaque chargement, conservés après `stop()`, perdus au redémarrage
+  (pas de persistance). Non exposés aux commandes système (l'état ne serait pas relu → dérive).
+- **UI** : toggles « Aléatoire » / répétition (3 états) dans `PlaybackQueueSheet` ; action
+  « Lire en aléatoire » dans l'AppBar de `PlaylistDetailScreen`, avec **piste de départ tirée au
+  sort**. La file affichée et le « n/total » suivent l'**ordre de lecture**, pas celui de la playlist.
 
 ### Authentification (mobile)
 
@@ -654,7 +682,7 @@ xcrun simctl openurl booted \
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `035-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `036-...`). Référencer le ticket Linear correspondant.
 
 ## Principes SOLID
 

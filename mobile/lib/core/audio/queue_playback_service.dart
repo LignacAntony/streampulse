@@ -1,5 +1,7 @@
+import 'playback_order.dart';
 import 'playback_transport.dart';
 
+export 'playback_order.dart' show PlaybackOrder, QueueRepeatMode;
 export 'playback_transport.dart' show PlaybackStatus, PlaybackTransport;
 
 /// Une entrée de la file d'attente, telle que le lecteur natif la consomme :
@@ -44,17 +46,43 @@ abstract class QueuePlaybackService implements PlaybackTransport {
   /// pour repartir d'où l'auditeur en était, plutôt que du début de la piste.
   Duration get position;
 
+  /// Ordre dans lequel le lecteur enchaînera la file chargée (US-05-05) :
+  /// identité en lecture normale, permutation en lecture aléatoire.
+  ///
+  /// Lu **après** [loadQueue] / [setShuffleEnabled], jamais deviné : c'est le
+  /// lecteur natif qui tire le mélange, et l'afficher depuis une autre source
+  /// mentirait sur ce qui va réellement jouer.
+  PlaybackOrder get playbackOrder;
+
+  /// Active ou coupe la lecture aléatoire. À l'activation, un nouvel ordre est
+  /// tiré en **gardant la piste courante en tête** : basculer en aléatoire ne
+  /// coupe jamais ce qu'on est en train d'écouter.
+  Future<void> setShuffleEnabled(bool enabled);
+
+  /// Règle la répétition. Elle gouverne l'**enchaînement automatique** ; les
+  /// sauts manuels suivent [PlaybackOrder.relative] (cf. `QueueRepeatMode.one`).
+  ///
+  /// `setRepeat` et non `setRepeatMode` : ce dernier nom est déjà celui de la
+  /// commande système d'`audio_service`, que l'implémentation hérite.
+  Future<void> setRepeat(QueueRepeatMode mode);
+
   /// Charge [items] et positionne la lecture sur [initialIndex], à
   /// [initialPosition] dans cette piste. Ne démarre pas la lecture (le
   /// contrôleur enchaîne), pour la même raison que `loadUri`.
   ///
   /// [headers] est envoyé avec **chaque** requête de piste : les fichiers audio
   /// d'une bibliothèque sont privés, le lecteur natif doit s'authentifier.
+  ///
+  /// [order] réapplique un ordre de lecture existant au lieu d'en faire tirer un
+  /// neuf. Sert aux rechargements **subis** (reprise après erreur) : sans lui,
+  /// une coupure réseau réécrirait la suite de la file alors que l'auditeur n'a
+  /// rien demandé. `null` = nouveau tirage si l'aléatoire est actif.
   Future<void> loadQueue(
     List<QueueItem> items, {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
+    PlaybackOrder? order,
   });
 
   /// Saute à la piste [index] de la file et repart de son début.

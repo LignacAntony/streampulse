@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -119,7 +121,10 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
   /// niveau application, il ne peut pas suivre les mutations d'un écran qu'on
   /// quitte. Réordonner ou retirer une piste ne change donc pas ce qui joue
   /// tant que l'utilisateur n'a pas relancé la lecture.
-  Future<void> _onPlay({int startIndex = 0}) async {
+  ///
+  /// [shuffle] non nul force le mode de lecture (« Lire en aléatoire »
+  /// US-05-05) ; omis, le mode courant est conservé.
+  Future<void> _onPlay({int startIndex = 0, bool? shuffle}) async {
     final controller = context.read<PlaylistDetailController>();
     if (controller.tracks.isEmpty) return;
 
@@ -128,6 +133,7 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
           playlistName: widget.title,
           tracks: controller.tracks,
           startIndex: startIndex,
+          shuffle: shuffle,
         );
   }
 
@@ -156,6 +162,20 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          IconButton(
+            key: const Key('playlist_shuffle_play_button'),
+            icon: const Icon(Icons.shuffle),
+            tooltip: 'Lire en aléatoire',
+            // Point de départ tiré au sort : le lecteur mélange la suite mais
+            // garde la piste de départ en tête. Partir systématiquement de la
+            // première ferait une lecture aléatoire qui commence toujours pareil.
+            onPressed: controller.tracks.isEmpty
+                ? null
+                : () => _onPlay(
+                      startIndex: Random().nextInt(controller.tracks.length),
+                      shuffle: true,
+                    ),
+          ),
           IconButton(
             key: const Key('playlist_add_track_button'),
             icon: const Icon(Icons.playlist_add),

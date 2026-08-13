@@ -25,8 +25,10 @@ class QueueMiniPlayer extends StatelessWidget {
       PlaybackStatus.ended => ('File d\'attente terminée', colors.error),
       PlaybackStatus.error => ('Lecture impossible', colors.error),
       PlaybackStatus.reconnecting => ('Reconnexion…', colors.onSurfaceVariant),
+      // Rang dans l'ordre de lecture, pas dans la playlist : en aléatoire, la
+      // 1re piste jouée n'est pas la 1re de la liste.
       _ => (
-          '${queue.currentIndex + 1}/${queue.tracks.length} · '
+          '${queue.positionInOrder + 1}/${queue.tracks.length} · '
               '${track.artist ?? 'Artiste inconnu'}',
           colors.onSurfaceVariant,
         ),

@@ -215,6 +215,38 @@ void main() {
       expect(find.byKey(const Key('playlist_play_button')), findsNothing);
     });
 
+    testWidgets('« Lire en aléatoire » lance la file mélangée (US-05-05)',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('playlist_shuffle_play_button')));
+      await tester.pumpAndSettle();
+
+      expect(queue.shuffleEnabled, isTrue);
+      expect(service.shuffleEnabled, isTrue);
+      // Toute la playlist est chargée ; seul l'ordre de lecture change.
+      expect(service.lastItems.map((i) => i.id).toList(), ['t1', 't2']);
+    });
+
+    testWidgets('playlist vide : « Lire en aléatoire » est neutralisé',
+        (tester) async {
+      await tester.pumpWidget(_harness(_FakePlaylistRepository()));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('playlist_shuffle_play_button')),
+      );
+      expect(button.onPressed, isNull);
+    });
+
     testWidgets('playlist vide : message dédié + appel à l\'action',
         (tester) async {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));

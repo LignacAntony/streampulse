@@ -30,6 +30,21 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   final List<int> skips = [];
   bool _playing = false;
 
+  bool shuffleEnabled = false;
+  QueueRepeatMode repeatMode = QueueRepeatMode.off;
+
+  /// Ordre rendu quand l'aléatoire est actif. Fixé (et non tiré au sort) pour
+  /// que les tests décrivent un ordre précis ; à défaut, l'ordre inverse suffit
+  /// à distinguer « mélangé » de « naturel ».
+  List<int>? shuffledOrder;
+
+  /// Ordre imposé au dernier [loadQueue] (`null` = nouveau tirage demandé).
+  PlaybackOrder? lastOrder;
+
+  /// Ordre effectivement conservé par le lecteur simulé, comme le vrai handler :
+  /// un ordre imposé prime sur le tirage.
+  List<int>? _keptOrder;
+
   void emitState(PlayerState state) {
     if (!_stateCtrl.isClosed) _stateCtrl.add(state);
   }
@@ -57,15 +72,41 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
     int initialIndex = 0,
     Duration initialPosition = Duration.zero,
     Map<String, String> headers = const {},
+    PlaybackOrder? order,
   }) async {
     loadCalls++;
     lastItems = items;
     lastInitialIndex = initialIndex;
     lastInitialPosition = initialPosition;
     lastHeaders = headers;
+    lastOrder = order;
+    _keptOrder = order == null ? null : List.of(order.indices);
     final err = loadError;
     if (err != null) throw err;
   }
+
+  /// Ordre de lecture simulé : naturel, ou mélangé quand l'aléatoire est actif
+  /// — comme le lecteur natif, qui tire son ordre au chargement.
+  @override
+  PlaybackOrder get playbackOrder {
+    if (!shuffleEnabled) return PlaybackOrder.natural(lastItems.length);
+    final kept = _keptOrder;
+    if (kept != null) return PlaybackOrder(kept);
+    return PlaybackOrder(
+      shuffledOrder ??
+          List.generate(lastItems.length, (i) => lastItems.length - 1 - i),
+    );
+  }
+
+  @override
+  Future<void> setShuffleEnabled(bool enabled) async {
+    shuffleEnabled = enabled;
+    // Comme le vrai handler : activer l'aléatoire tire un ordre neuf.
+    if (enabled) _keptOrder = null;
+  }
+
+  @override
+  Future<void> setRepeat(QueueRepeatMode mode) async => repeatMode = mode;
 
   @override
   Future<void> skipToIndex(int index) async => skips.add(index);
