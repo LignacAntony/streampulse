@@ -2,23 +2,22 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import 'package:streampulse/core/constants/api_constants.dart';
-import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
+import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 
 import '../../../support/fake_queue_playback_service.dart';
 
-PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
+Track _track(String id, String title) => Track(
       id: id,
       title: title,
       artist: 'Neon Lights',
       durationS: 214,
-      position: position,
     );
 
 final _tracks = [
-  _track('t1', 'Midnight Drive', 0),
-  _track('t2', 'Sunrise', 1),
-  _track('t3', 'Afterglow', 2),
+  _track('t1', 'Midnight Drive'),
+  _track('t2', 'Sunrise'),
+  _track('t3', 'Afterglow'),
 ];
 
 /// Contrôleur sous test + fake associé. [tokens] permet d'observer les demandes
@@ -52,13 +51,13 @@ void elapse(FakeAsync async, {int seconds = 10}) {
 Future<void> _play(
   PlaylistQueueController controller, {
   int startIndex = 0,
-  List<PlaylistTrack>? tracks,
+  List<Track>? tracks,
   bool? shuffle,
 }) {
   return controller.play(
-    playlistId: 'p-1',
-    playlistName: 'My Favorites',
     tracks: tracks ?? _tracks,
+    sourceName: 'My Favorites',
+    playlistId: 'p-1',
     startIndex: startIndex,
     shuffle: shuffle,
   );
@@ -84,7 +83,7 @@ void main() {
       expect(t.service.lastItems.first.url, ApiConstants.trackStream('t1'));
       expect(t.service.lastItems.first.duration, const Duration(seconds: 214));
       expect(t.controller.hasQueue, isTrue);
-      expect(t.controller.playlistName, 'My Favorites');
+      expect(t.controller.sourceName, 'My Favorites');
     });
 
     test('démarre à la piste demandée (appui sur une ligne de la playlist)',
@@ -105,6 +104,25 @@ void main() {
       await _play(t.controller);
 
       expect(liveStopped, isTrue);
+    });
+
+    test('une file peut venir de la bibliothèque, sans playlist (STR-231)',
+        () async {
+      final t = _build();
+
+      await t.controller.play(
+        tracks: _tracks,
+        sourceName: 'Ma bibliothèque',
+        startIndex: 1,
+      );
+
+      expect(t.service.lastItems.map((i) => i.id).toList(), ['t1', 't2', 't3']);
+      expect(t.service.lastInitialIndex, 1);
+      expect(t.controller.sourceName, 'Ma bibliothèque');
+      // Pas de playlist : les écrans qui soulignent « la piste en cours de
+      // cette playlist » ne doivent souligner nulle part.
+      expect(t.controller.playlistId, isNull);
+      expect(t.controller.hasNext, isTrue);
     });
 
     test('une playlist vide ne lance rien', () async {

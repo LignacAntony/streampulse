@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:streampulse/app/shell/player_bar.dart';
-import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
+import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/widgets/queue_mini_player.dart';
 import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
@@ -15,13 +15,7 @@ import '../../support/fake_queue_playback_service.dart';
 const _now = NowPlaying(streamId: 's1', title: 'Radio Nova', broadcaster: 'DJ');
 
 const _tracks = [
-  PlaylistTrack(
-    id: 't1',
-    title: 'Midnight Drive',
-    artist: 'Neon Lights',
-    durationS: 214,
-    position: 0,
-  ),
+  Track(id: 't1', title: 'Midnight Drive', artist: 'Neon Lights', durationS: 214),
 ];
 
 /// Reproduit le câblage croisé d'`app_providers` : démarrer une file arrête le
@@ -81,9 +75,9 @@ void main() {
 
       await c.live.load(_now);
       await c.queue.play(
-        playlistId: 'p-1',
-        playlistName: 'My Favorites',
         tracks: _tracks,
+        sourceName: 'My Favorites',
+        playlistId: 'p-1',
       );
       await tester.pumpWidget(_host(c.live, c.queue));
 
@@ -101,9 +95,9 @@ void main() {
       final c = _controllers(liveService, queueService);
 
       await c.queue.play(
-        playlistId: 'p-1',
-        playlistName: 'My Favorites',
         tracks: _tracks,
+        sourceName: 'My Favorites',
+        playlistId: 'p-1',
       );
       await c.live.load(_now);
       await tester.pumpWidget(_host(c.live, c.queue));

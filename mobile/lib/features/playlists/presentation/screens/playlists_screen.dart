@@ -11,6 +11,7 @@ import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/playlist_repository.dart';
+import '../providers/playlist_queue_controller.dart';
 import '../providers/playlists_controller.dart';
 import '../track_labels.dart';
 import '../widgets/playlist_form_sheet.dart';
@@ -297,31 +298,57 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
             ),
           )
         else
-          ...controller.tracks.map((track) => _TrackTile(track: track)),
+          for (var i = 0; i < controller.tracks.length; i++)
+            _TrackTile(
+              track: controller.tracks[i],
+              // Toute la bibliothèque part en file, à partir de la piste
+              // touchée : une file d'un seul élément rendrait précédent,
+              // suivant, aléatoire et répétition sans objet (STR-231).
+              onPlay: () => context.read<PlaylistQueueController>().play(
+                    tracks: controller.tracks,
+                    sourceName: 'Ma bibliothèque',
+                    startIndex: i,
+                  ),
+            ),
       ],
     );
   }
 }
 
-/// Ligne d'une piste de la bibliothèque (section « Mes pistes »). Lecture seule
-/// pour l'US-05-01 : ni menu ni lecture (hors périmètre).
+/// Ligne d'une piste de la bibliothèque (section « Mes pistes »). Un appui lance
+/// la lecture de toute la bibliothèque à partir d'elle (STR-231).
 class _TrackTile extends StatelessWidget {
-  const _TrackTile({required this.track});
+  const _TrackTile({required this.track, required this.onPlay});
 
   final Track track;
+  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // Comparaison par id : la file est une photo, elle peut décrire une piste
+    // que la bibliothèque affichée a entre-temps réordonnée ou retirée.
+    final isCurrent = context.select<PlaylistQueueController, bool>(
+      (queue) => queue.hasQueue && queue.currentTrack?.id == track.id,
+    );
 
     return ListTile(
       key: Key('track_tile_${track.id}'),
+      onTap: onPlay,
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
         backgroundColor: colors.surfaceContainerHighest,
-        child: Icon(Icons.music_note, color: colors.onSurfaceVariant),
+        child: Icon(
+          isCurrent ? Icons.graphic_eq : Icons.music_note,
+          color: isCurrent ? colors.primary : colors.onSurfaceVariant,
+        ),
       ),
-      title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(
+        track.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: isCurrent ? TextStyle(color: colors.primary) : null,
+      ),
       subtitle: Text(
         trackSubtitle(artist: track.artist, durationS: track.durationS),
         maxLines: 1,

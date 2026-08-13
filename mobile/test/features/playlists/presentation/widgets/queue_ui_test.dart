@@ -3,24 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import 'package:provider/provider.dart';
 
-import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
+import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/widgets/queue_mini_player.dart';
 
 import '../../../../support/fake_queue_playback_service.dart';
 
-PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
+Track _track(String id, String title) => Track(
       id: id,
       title: title,
       artist: 'Neon Lights',
       durationS: 214,
-      position: position,
     );
 
 final _tracks = [
-  _track('t1', 'Midnight Drive', 0),
-  _track('t2', 'Sunrise', 1),
-  _track('t3', 'Afterglow', 2),
+  _track('t1', 'Midnight Drive'),
+  _track('t2', 'Sunrise'),
+  _track('t3', 'Afterglow'),
 ];
 
 Widget _host(PlaylistQueueController controller, Widget child) {
@@ -53,9 +52,9 @@ Future<
   addTearDown(service.dispose);
 
   await controller.play(
-    playlistId: 'p-1',
-    playlistName: 'My Favorites',
     tracks: _tracks,
+    sourceName: 'My Favorites',
+    playlistId: 'p-1',
     startIndex: startIndex,
   );
   await tester.pumpWidget(_host(controller, child));
