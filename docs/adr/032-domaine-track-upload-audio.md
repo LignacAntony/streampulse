@@ -69,6 +69,8 @@ sniff pour que l'écriture reparte du début.
 ### 4. La durée est fournie par le client (champ optionnel)
 
 `duration_s` est un champ multipart **optionnel** envoyé par le client, pas extrait côté serveur.
+Étant une entrée client, elle est validée : `> 0` **et** `≤ MaxInt32` (borne de la colonne `int4`), sinon
+400 — sans quoi une valeur absurde déborderait la conversion `int → int32` (gosec G115).
 
 Raison : une extraction serveur (ffprobe) imposerait ffmpeg comme dépendance d'exécution de l'API
 (il n'est présent aujourd'hui que pour le segmenteur HLS et absent du `go run` local), pour une

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"testing"
 
@@ -188,6 +189,22 @@ func TestCreate_InvalidDuration(t *testing.T) {
 	})
 	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
 		t.Fatalf("expected InvalidArgument for duration<=0, got %v", err)
+	}
+}
+
+// Une durée qui déborde int4 (int32) doit être rejetée en amont (400) plutôt que
+// convertie en un int32 wrappé (négatif) qui violerait le CHECK duration_s > 0.
+func TestCreate_DurationTooLarge(t *testing.T) {
+	svc := NewService(&fakeRepo{}, &stubStorage{})
+	_, err := svc.Create(context.Background(), CreateTrackInput{
+		UserID:    testUserID,
+		Title:     "Song",
+		DurationS: ptr(math.MaxInt32 + 1),
+		Size:      int64(len(mp3Header)),
+		Content:   bytes.NewReader(mp3Header),
+	})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("expected InvalidArgument for duration>MaxInt32, got %v", err)
 	}
 }
 
