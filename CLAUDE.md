@@ -441,7 +441,12 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
 Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
 
 - **`PlaylistQueueController`** (app-level, `features/playlists/presentation/providers/`) : lance une
-  playlist, expose la file et l'index courant. L'**enchaînement est délégué au lecteur natif**
+  file de pistes, expose la file et l'index courant. Sa source est une playlist **ou** la
+  bibliothèque (STR-231) : `play(tracks:, sourceName:, playlistId:)` prend des `Track` (le type sans
+  position), `playlistId` reste nul hors playlist — c'est lui qui permet à l'écran de détail de
+  souligner « la piste en cours **de cette** playlist ». Un appui sur une ligne de « Mes pistes »
+  lance **toute** la bibliothèque à partir d'elle : une file d'un seul élément rendrait
+  précédent/suivant et les modes de lecture sans objet. L'**enchaînement est délégué au lecteur natif**
   (`ConcatenatingAudioSource`, qui précharge la suivante) ; le contrôleur suit
   `currentIndexStream` — un saut fait depuis la notification système remonte donc par le même
   chemin qu'un appui dans l'app, sans seconde source de vérité.

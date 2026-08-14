@@ -6,7 +6,7 @@ import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import '../../../../core/audio/playback_auth.dart';
 import '../../../../core/audio/queue_playback_service.dart';
 import '../../../../core/constants/api_constants.dart';
-import '../../domain/entities/playlist_track.dart';
+import '../../domain/entities/track.dart';
 
 export '../../../../core/audio/queue_playback_service.dart'
     show PlaybackStatus, QueueRepeatMode;
@@ -50,9 +50,9 @@ class PlaylistQueueController extends ChangeNotifier {
   StreamSubscription<Object>? _errorSub;
   Timer? _retryTimer;
 
-  List<PlaylistTrack> _tracks = const [];
+  List<Track> _tracks = const [];
   String? _playlistId;
-  String? _playlistName;
+  String? _sourceName;
   int _index = 0;
   PlaybackStatus _status = PlaybackStatus.idle;
   bool _disposed = false;
@@ -85,9 +85,16 @@ class PlaylistQueueController extends ChangeNotifier {
   /// abandonné plutôt que d'écraser l'état de la nouvelle.
   int _generation = 0;
 
-  List<PlaylistTrack> get tracks => _tracks;
+  List<Track> get tracks => _tracks;
+
+  /// Playlist d'origine de la file, `null` quand elle vient de la bibliothèque
+  /// (STR-231) : sert aux écrans qui soulignent « la piste en cours **de cette**
+  /// playlist ».
   String? get playlistId => _playlistId;
-  String? get playlistName => _playlistName;
+
+  /// Ce qui est en train d'être écouté, tel qu'annoncé à l'auditeur : nom de la
+  /// playlist, ou « Ma bibliothèque ».
+  String? get sourceName => _sourceName;
   int get currentIndex => _index;
   PlaybackStatus get status => _status;
   bool get shuffleEnabled => _shuffleEnabled;
@@ -152,7 +159,7 @@ class PlaylistQueueController extends ChangeNotifier {
   bool get hasQueue =>
       _tracks.isNotEmpty && _status != PlaybackStatus.idle;
 
-  PlaylistTrack? get currentTrack =>
+  Track? get currentTrack =>
       _index >= 0 && _index < _tracks.length ? _tracks[_index] : null;
 
   bool get isPlaying => _status == PlaybackStatus.playing;
@@ -172,12 +179,18 @@ class PlaylistQueueController extends ChangeNotifier {
 
   /// Lance [tracks] à partir de [startIndex] et démarre la lecture.
   ///
+  /// [sourceName] est ce qu'on annonce à l'auditeur (nom de la playlist, « Ma
+  /// bibliothèque »…). [playlistId] n'est renseigné que si la file vient bien
+  /// d'une playlist : la bibliothèque n'en a pas, et les écrans qui soulignent
+  /// « la piste en cours de cette playlist » doivent pouvoir faire la
+  /// différence (STR-231).
+  ///
   /// [shuffle] force la lecture aléatoire (entrée « Lire en aléatoire ») ;
-  /// omis, le mode courant est conservé d'une playlist à l'autre.
+  /// omis, le mode courant est conservé d'une source à l'autre.
   Future<void> play({
-    required String playlistId,
-    required String playlistName,
-    required List<PlaylistTrack> tracks,
+    required List<Track> tracks,
+    required String sourceName,
+    String? playlistId,
     int startIndex = 0,
     bool? shuffle,
   }) async {
@@ -197,7 +210,7 @@ class PlaylistQueueController extends ChangeNotifier {
 
     _tracks = List.unmodifiable(tracks);
     _playlistId = playlistId;
-    _playlistName = playlistName;
+    _sourceName = sourceName;
     _index = startIndex.clamp(0, tracks.length - 1);
     _retryCount = 0;
     // Ordre provisoire, remplacé par celui du lecteur une fois la file chargée.
@@ -459,7 +472,7 @@ class PlaylistQueueController extends ChangeNotifier {
     _retryTimer?.cancel();
     _tracks = const [];
     _playlistId = null;
-    _playlistName = null;
+    _sourceName = null;
     _index = 0;
     // Les modes de lecture survivent : ce sont des préférences d'écoute, pas
     // l'état d'une file. Seul l'ordre, qui décrit cette file, disparaît avec elle.

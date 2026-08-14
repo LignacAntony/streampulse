@@ -181,7 +181,7 @@ void main() {
 
       expect(service.lastItems.map((i) => i.id).toList(), ['t1', 't2']);
       expect(service.lastInitialIndex, 0);
-      expect(queue.playlistName, 'My Favorites');
+      expect(queue.sourceName, 'My Favorites');
       // La ligne en cours est repérable : son numéro cède la place à l'icône.
       expect(find.byIcon(Icons.graphic_eq), findsOneWidget);
     });

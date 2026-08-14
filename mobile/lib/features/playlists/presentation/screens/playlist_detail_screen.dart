@@ -129,9 +129,11 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
     if (controller.tracks.isEmpty) return;
 
     await context.read<PlaylistQueueController>().play(
+          // La file joue des pistes : l'ordre de la playlist est déjà celui de
+          // la liste, la position de chacune n'a plus d'usage une fois partie.
+          tracks: [for (final track in controller.tracks) track.toTrack()],
+          sourceName: widget.title,
           playlistId: controller.playlistId,
-          playlistName: widget.title,
-          tracks: controller.tracks,
           startIndex: startIndex,
           shuffle: shuffle,
         );

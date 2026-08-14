@@ -58,7 +58,7 @@ class PlaybackQueueSheet extends StatelessWidget {
             leading: const Icon(Icons.queue_music),
             title: const Text('File d\'attente'),
             subtitle: Text(
-              queue.playlistName ?? 'Playlist',
+              queue.sourceName ?? 'Lecture en cours',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
