@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -143,7 +144,10 @@ func textValue(t pgtype.Text) *string {
 }
 
 func int4Param(v *int) pgtype.Int4 {
-	if v == nil {
+	// La durée est déjà validée en amont (normalizeDuration : > 0 et ≤ MaxInt32).
+	// Ce garde-fou borne quand même la conversion int -> int32 (colonne int4) pour
+	// écarter tout débordement (gosec G115) : hors plage -> NULL plutôt que wrap.
+	if v == nil || *v < 0 || *v > math.MaxInt32 {
 		return pgtype.Int4{}
 	}
 	return pgtype.Int4{Int32: int32(*v), Valid: true}

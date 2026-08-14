@@ -32,7 +32,10 @@ func (s *FileStorage) Save(_ context.Context, id, ext string, r io.Reader) (stri
 	}
 
 	path := filepath.Join(s.root, id+ext)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	// id est un UUID généré côté serveur (jamais le nom client) + extension
+	// canonique : le chemin reste sous root, aucune traversée possible (cf. doc du type).
+	// #nosec G304 -- chemin dérivé d'un UUID serveur, pas d'entrée client.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("track: open file: %w", err)
 	}

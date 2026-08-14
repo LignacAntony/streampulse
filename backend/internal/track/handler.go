@@ -67,6 +67,8 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	// Borne le corps entier avant toute lecture : un upload démesuré est coupé
 	// ici (413) plutôt que bufferisé.
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload+maxFormOverhead)
+	// #nosec G120 -- le corps est déjà borné par MaxBytesReader ci-dessus (pas de
+	// parsing non borné) ; maxMultipartMemory ne fait que limiter la part gardée en RAM.
 	if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
