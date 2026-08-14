@@ -17,6 +17,7 @@ class MiniPlayerShell extends StatelessWidget {
     required this.actions,
     this.subtitle,
     this.subtitleColor,
+    this.progress,
   });
 
   final IconData icon;
@@ -32,51 +33,63 @@ class MiniPlayerShell extends StatelessWidget {
   final String? subtitle;
   final Color? subtitleColor;
 
+  /// Trait d'avancement collé sous le bandeau (STR-230). Fourni par la file
+  /// d'attente ; le direct le laisse nul — un flux live n'a pas de position à
+  /// montrer, c'est déjà pour ça que sa notification masque sa barre.
+  final Widget? progress;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final line = subtitle;
+    final status = subtitle;
+    final line = progress;
 
     return Material(
       color: colors.surfaceContainerHighest,
       child: InkWell(
         onTap: onTap,
-        child: SizedBox(
-          height: 60,
-          child: Row(
-            children: [
-              const SizedBox(width: 14),
-              Icon(icon, color: colors.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    if (line != null && line.isNotEmpty)
-                      Text(
-                        line,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: text.bodySmall?.copyWith(
-                          color: subtitleColor ?? colors.onSurfaceVariant,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 60,
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  Icon(icon, color: colors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
-                      ),
-                  ],
-                ),
+                        if (status != null && status.isNotEmpty)
+                          Text(
+                            status,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(
+                              color: subtitleColor ?? colors.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  ...actions,
+                  const SizedBox(width: 4),
+                ],
               ),
-              ...actions,
-              const SizedBox(width: 4),
-            ],
-          ),
+            ),
+            if (line != null) line,
+          ],
         ),
       ),
     );

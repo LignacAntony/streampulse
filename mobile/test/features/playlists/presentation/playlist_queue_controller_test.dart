@@ -332,6 +332,30 @@ void main() {
       });
     });
 
+    test('un déplacement pendant une reprise est ignoré (revue #292)', () {
+      fakeAsync((async) {
+        final t = _build();
+        _play(t.controller);
+        async.flushMicrotasks();
+
+        t.service.position = const Duration(seconds: 30);
+        t.service.emitError(Exception('coupure'));
+        async.flushMicrotasks();
+        expect(t.controller.status, PlaybackStatus.reconnecting);
+        expect(t.controller.canSeek, isFalse);
+
+        t.controller.seek(const Duration(seconds: 90));
+        async.flushMicrotasks();
+
+        // La reprise en vol rechargerait à la position relevée AVANT (30 s) :
+        // accepter le déplacement le ferait annuler quelques secondes plus tard,
+        // et l'auditeur verrait la lecture revenir en arrière toute seule.
+        expect(t.service.seeks, isEmpty);
+        elapse(async);
+        expect(t.service.lastInitialPosition, const Duration(seconds: 30));
+      });
+    });
+
     test('avancer dans la file réarme les reprises', () {
       fakeAsync((async) {
         final t = _build();
