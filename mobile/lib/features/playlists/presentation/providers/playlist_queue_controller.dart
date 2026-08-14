@@ -105,6 +105,48 @@ class PlaylistQueueController extends ChangeNotifier {
   /// pendant une lecture aléatoire annoncerait une suite qui n'arrivera pas.
   List<int> get playbackOrder => _order.indices;
 
+  /// Avancement de la piste en cours (STR-230), exposé **tel quel** depuis le
+  /// lecteur.
+  ///
+  /// Ces flux émettent plusieurs fois par seconde : ils ne passent délibérément
+  /// pas par `notifyListeners`, sans quoi tout l'arbre sous ce contrôleur
+  /// app-level se reconstruirait à cette cadence. Les widgets s'y abonnent
+  /// individuellement (`StreamBuilder`).
+  Stream<Duration> get positionStream => _service.positionStream;
+  Stream<Duration> get bufferedPositionStream => _service.bufferedPositionStream;
+  Stream<Duration?> get durationStream => _service.durationStream;
+
+  /// Déplace la lecture dans la piste en cours (glissement sur la barre).
+  ///
+  /// Sans effet sur une file terminée ou en erreur : la source native n'y est
+  /// plus exploitable, c'est une relance qu'il faut, pas un déplacement.
+  ///
+  /// Sans effet non plus **pendant une reprise** (`reconnecting`, `loading`) :
+  /// une reprise en vol rechargera la file à la position qu'elle a relevée
+  /// *avant* le déplacement, et écraserait donc celui-ci quelques secondes plus
+  /// tard — l'auditeur verrait la lecture revenir en arrière toute seule
+  /// (retour de revue #292). Même règle que `togglePlayPause`.
+  Future<void> seek(Duration position) async {
+    if (!canSeek) return;
+    // Action utilisateur : elle réarme les reprises automatiques, comme un saut
+    // de piste (cf. `_retryCount`).
+    _retryCount = 0;
+    await _service.seek(position);
+  }
+
+  /// Un déplacement a-t-il un sens maintenant ?
+  ///
+  /// Exposé pour que la barre se neutralise exactement quand [seek] refuse :
+  /// une poignée qui glisse sans rien déplacer est pire que pas de poignée.
+  /// La mise en mémoire tampon, elle, n'empêche rien — le lecteur sait
+  /// déplacer une lecture qui bufferise.
+  bool get canSeek =>
+      _tracks.isNotEmpty &&
+      !isEnded &&
+      !hasError &&
+      !isReconnecting &&
+      _status != PlaybackStatus.loading;
+
   /// Rang de la piste courante dans l'ordre de lecture (base 0), pour l'affichage
   /// « n/total ». Retombe sur l'index brut si l'ordre n'est pas encore connu.
   int get positionInOrder {

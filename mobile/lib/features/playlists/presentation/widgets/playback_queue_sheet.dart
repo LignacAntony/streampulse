@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
+import 'queue_progress.dart';
 import 'queue_track_visuals.dart';
 
 /// File d'attente en cours de lecture (US-05-04), en feuille modale.
@@ -66,6 +67,9 @@ class PlaybackQueueSheet extends StatelessWidget {
               style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
             ),
           ),
+          // Avancement manipulable (STR-230) : c'est la surface qui a la place
+          // d'accueillir un pouce, contrairement au bandeau.
+          const QueueProgressSlider(),
           // Les modes vivent ici plutôt que sur le mini-player : celui-ci n'a
           // que 60 px de haut et porte déjà quatre boutons, et c'est la file
           // affichée juste dessous qui rend leur effet lisible.

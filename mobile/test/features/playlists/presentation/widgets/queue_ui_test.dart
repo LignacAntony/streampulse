@@ -195,6 +195,115 @@ void main() {
       expect(t.controller.positionInOrder, 2);
     });
 
+    testWidgets('la barre affiche l\'avancement de la piste (STR-230)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+
+      t.service.emitDuration(const Duration(seconds: 200));
+      t.service.emitPosition(const Duration(seconds: 50));
+      // Deux frames : la première laisse les flux délivrer, la seconde peint
+      // l'état qu'ils viennent de poser.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('0:50'), findsOneWidget);
+      expect(find.text('3:20'), findsOneWidget);
+      final slider = tester.widget<Slider>(
+        find.byKey(const Key('queue_progress_slider')),
+      );
+      expect(slider.value, 50000);
+      expect(slider.max, 200000);
+    });
+
+    testWidgets('glisser la barre déplace la lecture (STR-230)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+      t.service.emitDuration(const Duration(seconds: 200));
+      t.service.emitPosition(Duration.zero);
+      await tester.pump();
+      await tester.pump();
+
+      // Le geste démarre au centre de la barre (= 100 s sur 200) et pousse d'un
+      // quart de sa largeur vers la droite : on relâche donc aux trois quarts.
+      final slider = find.byKey(const Key('queue_progress_slider'));
+      await tester.drag(slider, Offset(tester.getSize(slider).width / 4, 0));
+      await tester.pumpAndSettle();
+
+      expect(t.service.seeks, hasLength(1));
+      expect(
+        t.service.seeks.single.inSeconds,
+        closeTo(150, 15),
+        reason: 'le déplacement suit la position relâchée sur la barre',
+      );
+    });
+
+    testWidgets('durée inconnue : barre neutralisée plutôt que fausse',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+
+      // Piste dont la durée n'est ni déclarée ni encore lue par le lecteur.
+      t.service.emitDuration(null);
+      await tester.pump();
+      await tester.pump();
+
+      final slider = tester.widget<Slider>(
+        find.byKey(const Key('queue_progress_slider')),
+      );
+      // La durée déclarée de la piste (0:12 dans _tracks) sert de valeur
+      // d'attente : la barre reste utilisable, elle ne prétend pas 0:00.
+      expect(slider.onChanged, isNotNull);
+      expect(slider.max, 214000);
+    });
+
+    testWidgets('file terminée : la poignée est neutralisée (revue #292)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+      t.service.emitDuration(const Duration(seconds: 200));
+      await tester.pump();
+      await tester.pump();
+
+      t.service.emitState(PlayerState(false, ProcessingState.completed));
+      await tester.pumpAndSettle();
+
+      final slider = tester.widget<Slider>(
+        find.byKey(const Key('queue_progress_slider')),
+      );
+      // `seek` refuserait de toute façon : une poignée qui glisse sans rien
+      // déplacer est pire que pas de poignée.
+      expect(slider.onChanged, isNull);
+    });
+
+    testWidgets('changement de piste : pas de durée périmée (revue #292)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+      t.service.emitDuration(const Duration(seconds: 200));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const Key('queue_progress_slider')))
+            .max,
+        200000,
+      );
+
+      // Piste suivante : le lecteur n'a pas encore lu sa durée.
+      t.service.emitIndex(1);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Slider>(find.byKey(const Key('queue_progress_slider')))
+            .max,
+        214000,
+        reason: 'la durée déclarée de la nouvelle piste, pas celle d\'avant',
+      );
+    });
+
     testWidgets('la feuille se referme si la file s\'arrête pendant', (
       tester,
     ) async {

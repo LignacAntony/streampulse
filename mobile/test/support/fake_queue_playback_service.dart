@@ -11,6 +11,12 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   final _stateCtrl = StreamController<PlayerState>.broadcast();
   final _indexCtrl = StreamController<int?>.broadcast();
   final _errorCtrl = StreamController<Object>.broadcast();
+  final _positionCtrl = StreamController<Duration>.broadcast();
+  final _bufferedCtrl = StreamController<Duration>.broadcast();
+  final _durationCtrl = StreamController<Duration?>.broadcast();
+
+  /// Déplacements demandés par l'application (STR-230).
+  final List<Duration> seeks = [];
 
   /// Si non nul, [loadQueue] lève cette erreur (simule une source injoignable,
   /// typiquement un 401 sur un access token périmé).
@@ -57,6 +63,18 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
     if (!_errorCtrl.isClosed) _errorCtrl.add(error);
   }
 
+  /// Avancement simulé (STR-230). La durée est poussée séparément : le vrai
+  /// lecteur ne la connaît qu'après avoir ouvert le fichier.
+  void emitPosition(Duration position, {Duration? buffered}) {
+    if (!_positionCtrl.isClosed) _positionCtrl.add(position);
+    if (!_bufferedCtrl.isClosed) _bufferedCtrl.add(buffered ?? position);
+  }
+
+  void emitDuration(Duration? duration) {
+    _duration = duration;
+    if (!_durationCtrl.isClosed) _durationCtrl.add(duration);
+  }
+
   @override
   Stream<PlayerState> get playerStateStream => _stateCtrl.stream;
   @override
@@ -64,7 +82,29 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
   @override
   Stream<Object> get playbackErrors => _errorCtrl.stream;
   @override
+  Stream<Duration> get positionStream => _positionCtrl.stream;
+  @override
+  Stream<Duration> get bufferedPositionStream => _bufferedCtrl.stream;
+
+  /// Rejoue la dernière durée connue à chaque nouvel abonné, comme le
+  /// `BehaviorSubject` de just_audio : sans ça, un widget monté après le
+  /// chargement de la piste n'apprendrait jamais sa durée.
+  @override
+  Stream<Duration?> get durationStream async* {
+    yield _duration;
+    yield* _durationCtrl.stream;
+  }
+
+  Duration? _duration;
+  @override
   bool get playing => _playing;
+
+  @override
+  Future<void> seek(Duration to) async {
+    seeks.add(to);
+    position = to;
+    emitPosition(to);
+  }
 
   @override
   Future<void> loadQueue(
@@ -130,5 +170,8 @@ class FakeQueuePlaybackService implements QueuePlaybackService {
     await _stateCtrl.close();
     await _indexCtrl.close();
     await _errorCtrl.close();
+    await _positionCtrl.close();
+    await _bufferedCtrl.close();
+    await _durationCtrl.close();
   }
 }

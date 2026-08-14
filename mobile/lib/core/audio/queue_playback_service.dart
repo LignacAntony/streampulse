@@ -46,6 +46,26 @@ abstract class QueuePlaybackService implements PlaybackTransport {
   /// pour repartir d'où l'auditeur en était, plutôt que du début de la piste.
   Duration get position;
 
+  /// Position de lecture, en continu (STR-230). Émet plusieurs fois par
+  /// seconde : à consommer **au plus près du widget** qui l'affiche, jamais via
+  /// le `notifyListeners` d'un contrôleur applicatif — tout l'arbre sous lui se
+  /// reconstruirait à cette cadence.
+  Stream<Duration> get positionStream;
+
+  /// Portion déjà téléchargée de la piste en cours. Rend la barre honnête sur
+  /// un réseau lent : sans elle, une lecture qui va bufferiser paraît figée.
+  Stream<Duration> get bufferedPositionStream;
+
+  /// Durée de la piste en cours, `null` tant que le lecteur ne l'a pas lue dans
+  /// le fichier. Vient du lecteur et non de la base : `duration_s` est déclaré
+  /// par le client à l'upload (ADR 032), il peut mentir.
+  Stream<Duration?> get durationStream;
+
+  /// Déplace la lecture dans la piste en cours. Sert la navigation manuelle
+  /// (glissement sur la barre) ; le serveur la rend gratuite en honorant les
+  /// requêtes `Range` (ADR 034 §1).
+  Future<void> seek(Duration position);
+
   /// Ordre dans lequel le lecteur enchaînera la file chargée (US-05-05) :
   /// identité en lecture normale, permutation en lecture aléatoire.
   ///
