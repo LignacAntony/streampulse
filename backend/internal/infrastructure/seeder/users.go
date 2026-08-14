@@ -3,7 +3,8 @@ package seeder
 import (
 	"context"
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -17,7 +18,7 @@ type userSeed struct {
 }
 
 func seedUsers(ctx context.Context, tx pgx.Tx) error {
-	log.Println("seed users...")
+	log.Info().Msg("seed users...")
 
 	users := []userSeed{
 		{"admin@streampulse.dev", "admin", "Password123!", "admin"},
@@ -41,7 +42,7 @@ func seedUsers(ctx context.Context, tx pgx.Tx) error {
 			return fmt.Errorf("insert user %s: %w", u.email, err)
 		}
 
-		log.Printf("  ✓ user %s (%s)", u.username, u.role)
+		log.Info().Str("username", u.username).Str("role", u.role).Msg("seed: user")
 	}
 
 	return nil

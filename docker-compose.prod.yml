@@ -1,0 +1,231 @@
+networks:
+  streampulse-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  grafana_data:
+  caddy_data:
+  caddy_config:
+  track_storage:
+
+services:
+
+  # ──────────────────────────────────────────
+  # Base de données
+  # ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    networks:
+      - streampulse-net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Pas de `ports:` en prod — la base reste interne au réseau Docker.
+    # L'API y accède via `postgres:5432` sur streampulse-net.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # API Go (image tirée de GHCR, pas de build en prod)
+  # ──────────────────────────────────────────
+  api:
+    image: ghcr.io/lignacantony/streampulse/api:latest
+    networks:
+      - streampulse-net
+    ports:
+      # Bind loopback uniquement : tout le trafic public passe par Caddy (443).
+      # Un bind 0.0.0.0 contournerait ufw (iptables Docker) et exposerait
+      # /metrics et l'API en clair sur le port 8080 (revue PR #268).
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    environment:
+      GO_ENV: ${GO_ENV}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@streampulse.com}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Préfixe de la stream_source_url renvoyée aux diffuseurs (STR-70/71). Sans
+      # cette variable, le backend retombe sur http://localhost:8080 (config.go),
+      # inutilisable en prod où l'API est exposée via Caddy sur le domaine public.
+      STREAM_INGEST_BASE_URL: ${STREAM_INGEST_BASE_URL:-https://api.streampulse.win}
+      INGEST_RECONNECT_GRACE_SECONDS: ${INGEST_RECONNECT_GRACE_SECONDS:-45}
+      INGEST_STOP_TIMEOUT_SECONDS: ${INGEST_STOP_TIMEOUT_SECONDS:-10}
+      # LOG_PRETTY volontairement absent : en conteneur la sortie doit rester
+      # du JSON pour la collecte Loki (STR-163, ADR 018).
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Export des traces vers Tempo (STR-164, ADR 020). Vide = tracing off.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      # Répertoire de stockage des fichiers audio uploadés (US-05-01, ADR 032),
+      # hors répertoire servi, persisté sur le volume track_storage — sinon les
+      # pistes seraient perdues à chaque `docker compose pull && up` de la CD.
+      STORAGE_PATH: ${STORAGE_PATH:-/data/tracks}
+    volumes:
+      - track_storage:/data/tracks
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Reverse proxy + TLS auto (Let's Encrypt) — Caddy
+  # Point d'entrée public HTTPS ; proxifie vers l'API sur le réseau interne.
+  # ──────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    networks:
+      - streampulse-net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ⚠️ Pas de service `mailpit` en prod — utiliser un vrai relais SMTP via les SMTP_* du .env.
+
+  # ──────────────────────────────────────────
+  # Métriques — Prometheus
+  # ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    networks:
+      - streampulse-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Agrégation de logs — Loki
+  # ──────────────────────────────────────────
+  loki:
+    image: grafana/loki:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Métriques machine — node_exporter (STR-165, ADR 019)
+  # ──────────────────────────────────────────
+  node_exporter:
+    image: prom/node-exporter:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+    # Image distroless (pas de shell ni wget) — healthcheck via service_started
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Collecte des logs Docker → Loki — Alloy
+  # (successeur de Promtail, EOL mars 2026 — cf. ADR 018)
+  # ──────────────────────────────────────────
+  alloy:
+    image: grafana/alloy:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Lecture seule du socket Docker : découverte des conteneurs + flux de logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    depends_on:
+      loki:
+        condition: service_started
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Traces distribuées — Tempo
+  # ──────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:latest
+    networks:
+      - streampulse-net
+    volumes:
+      - ./docker/tempo/tempo-config.yml:/etc/tempo/tempo-config.yaml:ro
+    command: -config.file=/etc/tempo/tempo-config.yaml
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────
+  # Visualisation — Grafana
+  # ──────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    networks:
+      - streampulse-net
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Alertes par email (STR-167, ADR 021) : même relay SMTP que l'API.
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT:-587}
+      GF_SMTP_USER: ${SMTP_USERNAME:-}
+      GF_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM:-noreply@streampulse.com}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped

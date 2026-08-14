@@ -597,3 +597,46 @@ func assertAppError(t *testing.T, err error, code apperror.Code, message string)
 		t.Fatalf("message: want %q, got %q", message, appErr.Message)
 	}
 }
+
+// fakeTrackPurger simule track.Service : il enrobe le hard-delete (deleteUser)
+// et le relaie, comme le vrai purger le ferait après avoir relevé les chemins.
+type fakeTrackPurger struct {
+	called bool
+	gotID  string
+}
+
+func (f *fakeTrackPurger) PurgeUserTracks(_ context.Context, userID string, deleteUser func() error) error {
+	f.called = true
+	f.gotID = userID
+	return deleteUser()
+}
+
+// DeleteAccount purge les fichiers audio du user avant le hard-delete (US-05-01,
+// ADR 032) : sans ça, supprimer son propre compte laisserait des orphelins.
+func TestService_DeleteAccount_PurgesTracks(t *testing.T) {
+	repo := newFakeRepo()
+	hash, err := bcrypt.GenerateFromPassword([]byte("Password123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	u, err := repo.CreateUser(context.Background(), "self@x.dev", "selfuser", string(hash))
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	purger := &fakeTrackPurger{}
+	svc.SetTrackPurger(purger)
+
+	if err := svc.DeleteAccount(context.Background(), DeleteAccountInput{
+		UserID: u.ID, Password: "Password123!",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !purger.called || purger.gotID != u.ID {
+		t.Fatalf("purger not called with user id, got %q (called=%v)", purger.gotID, purger.called)
+	}
+	if _, ok := repo.emails["self@x.dev"]; ok {
+		t.Error("user should have been deleted")
+	}
+}

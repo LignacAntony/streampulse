@@ -40,6 +40,10 @@ class DioClient {
     _refreshAuthApi = AuthApi(_refreshDio);
     _profileApi = ProfileApi(_dio);
     _broadcasterApi = BroadcasterApi(_dio);
+    _streamingApi = StreamingApi(_dio);
+    _adminApi = AdminApi(_dio);
+    _playlistApi = PlaylistApi(_dio);
+    _trackApi = TrackApi(_dio);
   }
 
   static const _retriedKey = '_retried';
@@ -51,6 +55,10 @@ class DioClient {
   late final AuthApi _refreshAuthApi;
   late final ProfileApi _profileApi;
   late final BroadcasterApi _broadcasterApi;
+  late final StreamingApi _streamingApi;
+  late final AdminApi _adminApi;
+  late final PlaylistApi _playlistApi;
+  late final TrackApi _trackApi;
   final _logger = Logger();
 
   Completer<bool>? _refreshing;
@@ -59,6 +67,10 @@ class DioClient {
   AuthApi get authApi => _authApi;
   ProfileApi get profileApi => _profileApi;
   BroadcasterApi get broadcasterApi => _broadcasterApi;
+  StreamingApi get streamingApi => _streamingApi;
+  AdminApi get adminApi => _adminApi;
+  PlaylistApi get playlistApi => _playlistApi;
+  TrackApi get trackApi => _trackApi;
 
   InterceptorsWrapper _authInterceptor() {
     return InterceptorsWrapper(
@@ -109,6 +121,16 @@ class DioClient {
         path.endsWith(ApiConstants.logout) ||
         path.endsWith(ApiConstants.register);
   }
+
+  /// Force une rotation des tokens hors de tout cycle de requête Dio.
+  ///
+  /// Nécessaire pour le lecteur audio : il ouvre lui-même ses connexions HTTP
+  /// (just_audio, en natif) et ne traverse donc **pas** `_authInterceptor`. Sans
+  /// ce point d'entrée, une file d'attente plus longue que la durée de vie d'un
+  /// access token (15 min) casserait au changement de piste, sans personne pour
+  /// rafraîchir. Passe par le même verrou que l'intercepteur : un seul refresh
+  /// en vol, quel que soit l'appelant.
+  Future<bool> refreshTokens() => _refreshTokensOnce();
 
   /// Refresh sérialisé : si un refresh est déjà en cours, on attend son résultat.
   /// Renvoie true si la rotation a réussi.

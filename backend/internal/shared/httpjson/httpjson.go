@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"strings"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
@@ -59,7 +61,7 @@ func Decode(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64) err
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	defer func() {
 		if err := r.Body.Close(); err != nil {
-			log.Printf("http: close request body: %v", err)
+			zerolog.Ctx(r.Context()).Warn().Err(err).Msg("http: fermeture du corps de requête")
 		}
 	}()
 
@@ -138,13 +140,39 @@ func writeInternalError(w http.ResponseWriter) error {
 	}})
 }
 
+// ingestPathPrefix marks the route whose last path segment is the secret
+// stream_key — it must never appear in logs.
+const ingestPathPrefix = "/api/streams/ingest/"
+
+// LoggablePath returns a log-safe representation of the request path: the
+// route pattern (which holds placeholders, never path values) when the mux
+// populated it, otherwise the raw path with the stream_key segment redacted.
+// Shared with the access-log middleware (httpmw) so the redaction rule lives
+// in exactly one place.
+func LoggablePath(r *http.Request) string {
+	if p := r.Pattern; p != "" {
+		if _, after, ok := strings.Cut(p, " "); ok {
+			return after
+		}
+		return p
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, ingestPathPrefix); ok && rest != "" {
+		return ingestPathPrefix + "[redacted]"
+	}
+	return r.URL.Path
+}
+
 func logRequestError(r *http.Request, err error) {
 	if r == nil {
-		log.Printf("http: %v", err)
+		log.Error().Err(err).Msg("erreur http")
 		return
 	}
-	sanitize := func(s string) string {
-		return strings.NewReplacer("\n", "", "\r", "").Replace(s)
-	}
-	log.Printf("http: %s %s %s: %v", r.Method, sanitize(r.URL.Path), sanitize(r.RemoteAddr), err) // #nosec G706 -- path and remoteAddr stripped of newlines by sanitize()
+	// L'encodage JSON de zerolog neutralise toute injection de retour à la
+	// ligne ; LoggablePath continue de masquer le stream_key (PR #262).
+	zerolog.Ctx(r.Context()).Error().
+		Err(err).
+		Str("method", r.Method).
+		Str("path", LoggablePath(r)).
+		Str("remote_addr", r.RemoteAddr).
+		Msg("erreur http")
 }

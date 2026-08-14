@@ -16,6 +16,14 @@ tags:
     description: Current user profile endpoints.
   - name: Broadcaster
     description: Broadcaster role requests and admin review.
+  - name: Admin
+    description: >-
+      Administrative endpoints: user management (US-08-01) and live stream
+      supervision/moderation (STR-192).
+  - name: Playlist
+    description: Personal playlist management (US-05-02).
+  - name: Track
+    description: Personal audio track library — upload and listing (US-05-01).
 paths:
   /health:
     get:
@@ -444,6 +452,1280 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/admin/users:
+    get:
+      tags:
+        - Admin
+      operationId: listAdminUsers
+      summary: List and search users (admin only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Free-text search on email or username.
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: false
+          description: Optional role filter.
+          schema:
+            type: string
+            enum: ["", user, broadcaster, admin]
+        - name: status
+          in: query
+          required: false
+          description: Optional activation status filter.
+          schema:
+            type: string
+            enum: ["", active, inactive]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated users matching the filters, with the total count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags:
+        - Admin
+      operationId: setAdminUserActive
+      summary: Activate or deactivate a user account (admin only).
+      description: >-
+        An admin cannot act on their own account, and the last remaining
+        active admin cannot be deactivated.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetUserActiveRequest"
+      responses:
+        "200":
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Admin
+      operationId: deleteAdminUser
+      summary: Permanently delete a user account (admin only).
+      description: >-
+        Hard delete. Any live stream owned by the user is stopped first
+        (STR-191). Same guards as the activation endpoint (self-action, last
+        active admin).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The user was deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/streams:
+    get:
+      tags:
+        - Admin
+      operationId: listAdminStreams
+      summary: List live streams for moderation (admin only).
+      description: >-
+        All streams currently live, public and private, with the
+        broadcaster's identity (STR-192). Unlike GET /api/streams, private
+        live streams are included and no ownership filtering applies.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated live streams, with the total count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStreamListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/streams/{id}/stop:
+    post:
+      tags:
+        - Admin
+      operationId: stopAdminStream
+      summary: Forcibly stop a live stream (admin only).
+      description: >-
+        Moderation action (STR-192): transitions the stream from live to
+        ended without ownership checks, then stops its in-memory session
+        (ffmpeg killed, "ended" SSE event published). Logged to the audit
+        trail on a best-effort basis (STR-198): a logging failure does not
+        fail the request.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The stream was stopped.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams:
+    post:
+      tags:
+        - Streaming
+      operationId: createStream
+      summary: Create and configure a new live stream (broadcaster only).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStreamRequest"
+      responses:
+        "201":
+          description: The newly created stream, including its source URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags:
+        - Streaming
+      operationId: listStreams
+      summary: List public live streams (paginated).
+      description: >-
+        Public endpoint: no authentication required. Guests can discover live
+        streams (US-04-01). Never exposes any secret (stream_key, source URL).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Public live streams (without any secret).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamSummaryResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: getStream
+      summary: Get a stream by id.
+      description: >-
+        The owner receives the full stream (including stream_key and
+        stream_source_url). Other users receive a public summary without
+        secrets. A private stream owned by someone else returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: >-
+            The stream. For the owner, stream_key and stream_source_url are
+            populated; for any other user they are null.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Streaming
+      operationId: updateStream
+      summary: Update a stream (owner only).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStreamRequest"
+      responses:
+        "200":
+          description: The updated stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Streaming
+      operationId: deleteStream
+      summary: Delete (archive) a stream (owner only).
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream was archived.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/start:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags:
+        - Streaming
+      operationId: startStream
+      summary: Start a stream — go live (broadcaster owner only).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The stream is now live (status live, started_at set).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stream is not idle, or the broadcaster already has a live stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/stop:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags:
+        - Streaming
+      operationId: stopStream
+      summary: Stop a live stream — end it (broadcaster owner only).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The stream is now ended (status ended, ended_at set).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stream is not live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/key/rotate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - Streaming
+      operationId: rotateStreamKey
+      summary: Issue a new ingest key, invalidating the previous one (broadcaster owner only).
+      description: >-
+        Recovery path for a leaked stream_key (STR-228). The key authenticates
+        ingest on its own, so anyone holding it can broadcast in the owner's
+        place; before this endpoint the only remedy was deleting the stream and
+        losing its id, favourites and history.
+
+
+        The response carries the new secrets, which exist nowhere else. The
+        broadcaster's encoder must be reconfigured with the new URL.
+
+
+        Rejected with 409 while the stream is live: the in-memory session is
+        indexed by the key, so rotating mid-broadcast would cut the running
+        ingest and leave the index on the old key. Logged to the audit trail on
+        a best-effort basis, without ever recording the key itself.
+
+
+        The path is `/{id}/key/rotate` and not `/{id}/rotate-key` because the
+        latter structurally conflicts with `/api/streams/ingest/{stream_key}`
+        in Go's ServeMux — `/api/streams/ingest/rotate-key` would match both.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: >-
+            A new key was issued. stream_key and stream_source_url carry the new
+            secret; the previous one is no longer accepted for ingest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stream is live — stop it before rotating its key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/events:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: streamEvents
+      summary: Subscribe to a live stream's events (SSE).
+      description: >-
+        Server-Sent Events stream. The subscriber receives an `ended` event when
+        the broadcaster stops the stream. Requires the stream to be live.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: SSE stream of events (text/event-stream).
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The stream is not live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/favorite:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags:
+        - Streaming
+      operationId: addFavorite
+      summary: Add a stream to the authenticated user's favorites.
+      description: >-
+        Adds the stream to the user's favorites (US-04-05). Idempotent (PUT):
+        adding an already-favorited stream succeeds. A stream that is not visible
+        to the requester (private and owned by someone else, archived, or
+        unknown) returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream is in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Streaming
+      operationId: removeFavorite
+      summary: Remove a stream from the authenticated user's favorites.
+      description: >-
+        Removes the stream from the user's favorites. Idempotent: removing a
+        stream that is not in the favorites succeeds.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The stream is no longer in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/users/me/favorites:
+    get:
+      tags:
+        - Streaming
+      operationId: listMyFavorites
+      summary: List the authenticated user's favorite streams.
+      description: >-
+        Returns the user's favorite streams (all statuses), still visible and not
+        archived, ordered by favorite date descending. Never exposes any secret
+        (stream_key, source URL).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's favorite streams (without any secret).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/stats:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: getStreamStats
+      summary: Live audience statistics for the caller's own stream.
+      description: >-
+        Returns the current audience of a stream the caller owns. A stream that
+        is not live answers 200 with zeroed counters rather than an error, so a
+        polling client has no special case to handle. A stream owned by someone
+        else answers 404, never 403 — its very existence stays private.
+
+
+        `listeners` and `peak_listeners` are ESTIMATES. HLS has no persistent
+        connection, so a client counts as a listener while it has fetched the
+        manifest recently; two players behind one public address count as one.
+        Both values live in memory: they reset when the process restarts and do
+        not survive the end of the broadcast.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current audience and broadcast duration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamStatsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/users/me/streams:
+    get:
+      tags:
+        - Streaming
+      operationId: listMyStreams
+      summary: List the authenticated user's own streams (broadcaster dashboard).
+      description: >-
+        Returns the caller's own streams (all statuses: idle, live, ended),
+        archived ones excluded, ordered by creation date descending. Unlike every
+        other listing endpoint, this one DOES include stream_key and
+        stream_source_url: the query is scoped to the caller's user id, so the
+        recipient is the owner by construction. A user with no streams — for
+        instance one who does not hold the broadcaster role — receives an empty
+        array rather than a 403.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's own streams, including their secrets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/ingest/{stream_key}:
+    parameters:
+      - name: stream_key
+        in: path
+        required: true
+        description: The broadcaster's secret stream key (from stream_source_url).
+        schema:
+          type: string
+    post:
+      tags:
+        - Streaming
+      operationId: ingestStream
+      summary: Push a live audio stream (broadcaster ingest).
+      description: >-
+        Continuous audio ingest for a live stream, authenticated by the
+        `stream_key` in the path (no JWT). The request body is a continuous audio
+        stream segmented into HLS by the backend (cf. ADR 015). The stream must be
+        live (started) for the push to be accepted.
+
+
+        Any audio media type is accepted. `audio/aac` (raw ADTS) — and an absent
+        `Content-Type`, which is assumed to be the same — is muxed as-is with no
+        re-encoding. Every other format (MP3, OGG, WAV, FLAC, …) is transcoded to
+        AAC on the fly by an ffmpeg stage placed in front of the segmenter, adding
+        under 2 seconds of latency (cf. ADR 030). Listeners always receive AAC.
+      requestBody:
+        required: true
+        content:
+          audio/aac:
+            schema:
+              type: string
+              format: binary
+          audio/mpeg:
+            schema:
+              type: string
+              format: binary
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Ingest completed (broadcaster disconnected).
+        "404":
+          description: No live stream for this key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: An ingest is already in progress for this stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: >-
+            Either the Content-Type is present but not audio/* (a non-audio push
+            would spin the HLS demuxer without producing segments), or the body
+            could not be decoded as the announced format — bytes went in and no
+            AAC came out. An absent Content-Type is accepted.
+
+            A push cut short by the network is *not* reported here even when it
+            produced no AAC: that is a transport failure and returns 500, so a
+            client can tell "your audio is invalid" from "retry".
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/streams/{id}/playlist.m3u8:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Streaming
+      operationId: streamPlaylist
+      summary: Get the live HLS media playlist (manifest).
+      description: >-
+        Public — authentication is optional (native HLS players cannot carry a
+        Bearer token). Returns the continuously-updated HLS media playlist (`.m3u8`)
+        of a live **public** stream. Segment URIs are relative (`segments/…`). A
+        private or absent stream returns 404; an owner passing a valid Bearer may
+        also access their own private stream.
+      responses:
+        "200":
+          description: HLS media playlist.
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >-
+            The stream is not live, or its manifest is not ready yet (window
+            between start and the first segment).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: >-
+            Server at listener capacity (HLS_MAX_CONCURRENT concurrent requests
+            reached). Retry after the delay given in the Retry-After header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/streams/{id}/segments/{segment}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: segment
+        in: path
+        required: true
+        description: Segment file name (e.g. seg_00001.ts).
+        schema:
+          type: string
+          pattern: '^seg_\d+\.ts$'
+    get:
+      tags:
+        - Streaming
+      operationId: streamSegment
+      summary: Get an HLS media segment (.ts).
+      description: >-
+        Public — authentication is optional. Returns an MPEG-TS audio segment
+        referenced by the live playlist of a **public** stream. A private or absent
+        stream returns 404; an owner passing a valid Bearer may also access their
+        own private stream.
+      responses:
+        "200":
+          description: MPEG-TS segment.
+          content:
+            video/mp2t:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: >-
+            Server at listener capacity (HLS_MAX_CONCURRENT concurrent requests
+            reached). Retry after the delay given in the Retry-After header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/playlists:
+    post:
+      tags:
+        - Playlist
+      operationId: createPlaylist
+      summary: Create an empty playlist.
+      description: >-
+        Creates a new empty playlist owned by the authenticated user (US-05-02).
+        The name must be unique per user; a duplicate name returns 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlaylistRequest"
+      responses:
+        "201":
+          description: The newly created playlist (empty, track_count = 0).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags:
+        - Playlist
+      operationId: listPlaylists
+      summary: List the authenticated user's playlists.
+      description: >-
+        Returns the user's playlists with their track counts, ordered by
+        creation date (most recent first).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's playlists.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Playlist
+      operationId: getPlaylist
+      summary: Get one of the user's playlists.
+      description: >-
+        Returns the playlist if it belongs to the authenticated user; a playlist
+        owned by someone else returns 404 (its existence is not disclosed).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The playlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Playlist
+      operationId: updatePlaylist
+      summary: Rename a playlist (owner only).
+      description: >-
+        Renames the playlist and/or updates its description. Owner only; a
+        duplicate name returns 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlaylistRequest"
+      responses:
+        "200":
+          description: The updated playlist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Playlist
+      operationId: deletePlaylist
+      summary: Delete a playlist (owner only).
+      description: >-
+        Permanently deletes the playlist and its track associations. Owner only.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The playlist was deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}/tracks:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - Playlist
+      operationId: listPlaylistTracks
+      summary: List a playlist's tracks (owner only).
+      description: >-
+        Returns the tracks of the playlist, ordered by position. Owner only; a
+        playlist owned by someone else returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The playlist's tracks, ordered by position.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistTrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Playlist
+      operationId: addPlaylistTrack
+      summary: Append a track to a playlist (owner only).
+      description: >-
+        Appends one of the user's own tracks at the end of the playlist
+        (US-05-03) and returns the resulting order. A playlist or a track owned
+        by someone else returns 404; a track already in the playlist returns 409,
+        as does a playlist that already holds the maximum of 1000 tracks (the
+        same cap the reorder endpoint enforces, so a playlist can never grow past
+        the size it can be reordered at).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddPlaylistTrackRequest"
+      responses:
+        "201":
+          description: The playlist's tracks after the insertion, ordered by position.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistTrackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Playlist
+      operationId: reorderPlaylistTracks
+      summary: Replace the playlist's track order (owner only).
+      description: >-
+        Rewrites the whole order of the playlist from the supplied list of track
+        identifiers (index 0 = first track), and returns the persisted order
+        (US-05-03). The list must cover exactly the playlist's current tracks:
+        a duplicate identifier returns 400, a stale or partial list returns 409.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderPlaylistTracksRequest"
+      responses:
+        "200":
+          description: The playlist's tracks in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistTrackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}/tracks/{trackId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags:
+        - Playlist
+      operationId: removePlaylistTrack
+      summary: Remove a track from a playlist (owner only).
+      description: >-
+        Removes the track from the playlist and compacts the remaining positions
+        so they stay contiguous (US-05-03). A playlist owned by someone else, or
+        a track absent from the playlist, returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The track was removed from the playlist.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/tracks:
+    get:
+      tags:
+        - Track
+      operationId: listUserTracks
+      summary: List the authenticated user's track library.
+      description: >-
+        Returns the tracks owned by the authenticated user, most recent first.
+        It is the source of the "add a track" picker (US-05-03).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's tracks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Track
+      operationId: uploadTrack
+      summary: Upload an audio file to the personal library.
+      description: >-
+        Uploads an audio file (MP3/AAC/OGG, ≤ 50 MB) to the authenticated user's
+        library (US-05-01). The real MIME type is sniffed server-side (a
+        non-audio file, e.g. a PDF renamed .mp3, is rejected with 415); the file
+        is stored outside any served directory and referenced in the database
+        with its metadata. Duration is optional and supplied by the client.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - title
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The audio file (MP3, AAC or OGG), ≤ 50 MB.
+                title:
+                  type: string
+                  description: Track title.
+                artist:
+                  type: string
+                  description: Optional artist name.
+                duration_s:
+                  type: integer
+                  description: Optional track duration in seconds (positive).
+      responses:
+        "201":
+          description: The created track.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The user's cumulated storage quota would be exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                quotaExceeded:
+                  value:
+                    error:
+                      code: storage_quota_exceeded
+                      message: quota de stockage atteint
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          description: The uploaded file exceeds the 50 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                tooLarge:
+                  value:
+                    error:
+                      code: file_too_large
+                      message: le fichier dépasse la taille maximale de 50 Mo
+        "415":
+          description: The file is not an accepted audio type (MP3/AAC/OGG).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notAudio:
+                  value:
+                    error:
+                      code: unsupported_media_type
+                      message: seuls les fichiers audio MP3, AAC ou OGG sont acceptés
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/tracks/{id}/stream:
+    get:
+      tags:
+        - Track
+      operationId: streamTrack
+      summary: Stream the audio file of one of the user's tracks.
+      description: >-
+        Serves the raw audio bytes of a track owned by the authenticated user
+        (US-05-04), so the mobile player can play a playlist queue. Range
+        requests are honoured (`Accept-Ranges: bytes`), which lets the player
+        resume or seek within a track without downloading it again. A track that
+        belongs to somebody else is reported as 404, exactly like an unknown one:
+        the status code never reveals that it exists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Track identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The audio file.
+          headers:
+            Accept-Ranges:
+              description: Always `bytes` — the player may request slices.
+              schema:
+                type: string
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: The requested byte range of the audio file.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
@@ -524,7 +1806,7 @@ components:
               value:
                 error:
                   code: not_found
-                  message: no broadcaster request found
+                  message: resource not found
     UnsupportedMediaType:
       description: Request content type must be application/json.
       content:
@@ -890,3 +2172,419 @@ components:
         message:
           type: string
           example: invalid email
+    CreateStreamRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - is_public
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: Morning Jazz Session
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          example: A relaxing jazz set to start the day.
+        category:
+          type: string
+          enum: [music, talk, technology, gaming, news, sport, other]
+          nullable: true
+          example: music
+        is_public:
+          type: boolean
+          example: true
+    StreamStatsResponse:
+      type: object
+      required:
+        - stream_id
+        - status
+        - listeners
+        - peak_listeners
+        - duration_seconds
+      properties:
+        stream_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [idle, live, ended]
+        listeners:
+          type: integer
+          description: >-
+            Estimated number of distinct clients that fetched the manifest
+            recently. Zero when the stream is not live.
+          example: 12
+        peak_listeners:
+          type: integer
+          description: >-
+            Highest `listeners` value observed since the broadcast started.
+            In-memory only: reset on process restart, lost when the stream ends.
+          example: 27
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        duration_seconds:
+          type: integer
+          format: int64
+          description: >-
+            Seconds since `started_at` — up to now while live, up to `ended_at`
+            once the broadcast is over. Zero if the stream never started.
+          example: 3725
+    StreamSummaryResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - description
+        - category
+        - status
+        - is_public
+        - started_at
+        - created_at
+        - broadcaster_username
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [idle, live, ended]
+        is_public:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        broadcaster_username:
+          type: string
+          description: Username of the broadcaster (display name in the listener UI).
+    StreamResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - description
+        - category
+        - status
+        - is_public
+        - started_at
+        - ended_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        user_id:
+          type: string
+          format: uuid
+          example: 99999999-8888-7777-6666-555555555555
+        title:
+          type: string
+          example: Morning Jazz Session
+        description:
+          type: string
+          nullable: true
+          example: A relaxing jazz set to start the day.
+        category:
+          type: string
+          nullable: true
+          example: music
+        status:
+          type: string
+          enum: [idle, live, ended]
+          example: idle
+        is_public:
+          type: boolean
+          example: true
+        stream_key:
+          type: string
+          nullable: true
+          description: >-
+            Secret push key. Populated only for the stream owner; null for any
+            other user. Treat as a credential.
+          example: 8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
+        stream_source_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Populated only for the stream owner; null otherwise.
+          example: http://localhost:8080/api/streams/ingest/8Jk2xQ7pL3nR5tV9wB1cD4fG6hJ0kM2nP4qS6uW8yA
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+    AdminUserResponse:
+      type: object
+      required:
+        - id
+        - email
+        - username
+        - role
+        - is_active
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        username:
+          type: string
+          example: alice
+        role:
+          type: string
+          enum: [anonymous, user, broadcaster, admin]
+          example: user
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-01-02T03:04:05Z"
+    AdminUserListResponse:
+      type: object
+      required:
+        - users
+        - total
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUserResponse"
+        total:
+          type: integer
+          format: int64
+          description: Total number of users matching the filters (for pagination).
+          example: 42
+    SetUserActiveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - is_active
+      properties:
+        is_active:
+          type: boolean
+          example: false
+    AdminStreamResponse:
+      type: object
+      required:
+        - id
+        - title
+        - is_public
+        - started_at
+        - user_id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        title:
+          type: string
+          example: Morning Jazz Session
+        is_public:
+          type: boolean
+          example: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-01-02T03:04:05Z"
+        user_id:
+          type: string
+          format: uuid
+          example: 99999999-8888-7777-6666-555555555555
+        username:
+          type: string
+          example: alice
+    AdminStreamListResponse:
+      type: object
+      required:
+        - streams
+        - total
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminStreamResponse"
+        total:
+          type: integer
+          format: int64
+          description: Total number of live streams currently in the moderation list.
+          example: 3
+    CreatePlaylistRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: My Favorites
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Ma playlist préférée
+    UpdatePlaylistRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Road Trip
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+    PlaylistResponse:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - is_public
+        - track_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: My Favorites
+        description:
+          type: string
+          nullable: true
+          example: Ma playlist préférée
+        is_public:
+          type: boolean
+        track_count:
+          type: integer
+          description: Number of tracks in the playlist.
+          example: 3
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PlaylistTrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+        - position
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+        position:
+          type: integer
+          description: Zero-based position of the track within the playlist.
+          example: 0
+    TrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+    AddPlaylistTrackRequest:
+      type: object
+      required:
+        - track_id
+      properties:
+        track_id:
+          type: string
+          format: uuid
+          description: Identifier of one of the user's own tracks.
+    ReorderPlaylistTracksRequest:
+      type: object
+      required:
+        - track_ids
+      properties:
+        track_ids:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: >-
+            Complete, duplicate-free list of the playlist's track identifiers,
+            in the wanted order (index 0 = first track).
+          items:
+            type: string
+            format: uuid

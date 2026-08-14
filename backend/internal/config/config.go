@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -18,13 +19,32 @@ import (
 // constantes pour qu'elles soient à la fois passées à viper.SetDefault
 // et appliquées en post-processing si la variable est définie à "".
 const (
-	defaultGoEnv   = "development"
-	defaultAPIPort = "8080"
-	defaultDBHost  = "localhost"
-	defaultDBPort  = "5432"
+	defaultGoEnv                       = "development"
+	defaultAPIPort                     = "8080"
+	defaultDBHost                      = "localhost"
+	defaultDBPort                      = "5432"
+	defaultStreamIngestBaseURL         = "http://localhost:8080"
+	defaultStoragePath                 = "./data/tracks"
+	defaultHLSMaxConcurrent            = 256
+	defaultIngestReconnectGraceSeconds = 45
+	defaultIngestStopTimeoutSeconds    = 10
+	defaultLogLevel                    = "info"
 
 	minJWTSecretLen = 32
+
+	// mobileMaxReconnectBackoffSeconds reprend le plafond du backoff de
+	// reconnexion du mobile (cappedExponentialBackoff, ADR 027 §3). Le bail
+	// d'ingest doit le dépasser, sinon le serveur couperait les directs pendant
+	// la fenêtre de reprise normale du téléphone.
+	mobileMaxReconnectBackoffSeconds = 30
 )
+
+// validLogLevels énumère les niveaux acceptés pour LOG_LEVEL
+// (alignés sur zerolog.ParseLevel).
+var validLogLevels = map[string]bool{
+	"trace": true, "debug": true, "info": true,
+	"warn": true, "error": true, "fatal": true, "panic": true,
+}
 
 // Config représente la configuration complète de l'API StreamPulse.
 //
@@ -51,8 +71,49 @@ type Config struct {
 	// AppBaseURL est utilisée pour construire les liens dans les emails.
 	AppBaseURL string `mapstructure:"APP_BASE_URL"`
 
+	// StreamIngestBaseURL préfixe l'URL de stream source renvoyée au diffuseur
+	// (cf. ADR 013) : {StreamIngestBaseURL}/api/streams/ingest/{stream_key}.
+	StreamIngestBaseURL string `mapstructure:"STREAM_INGEST_BASE_URL"`
+
+	// StoragePath est le répertoire racine où sont stockés les fichiers audio
+	// uploadés (US-05-01, ADR 032). Hors de tout répertoire servi en HTTP ; en
+	// Docker, monté sur un volume nommé pour la persistance.
+	StoragePath string `mapstructure:"STORAGE_PATH"`
+
+	// HLSMaxConcurrent borne le nombre de requêtes HLS (playlist + segments)
+	// servies simultanément — STR-88. <= 0 désactive la borne.
+	HLSMaxConcurrent int `mapstructure:"HLS_MAX_CONCURRENT"`
+
+	// IngestReconnectGraceSeconds est le bail sans audio accordé au diffuseur
+	// avant l'arrêt automatique du direct. IngestStopTimeoutSeconds borne chaque
+	// tentative de transition persistante live -> ended.
+	IngestReconnectGraceSeconds int `mapstructure:"INGEST_RECONNECT_GRACE_SECONDS"`
+	IngestStopTimeoutSeconds    int `mapstructure:"INGEST_STOP_TIMEOUT_SECONDS"`
+
+	// TrustProxyHeaders autorise la lecture de X-Forwarded-For pour identifier
+	// l'auditeur d'un flux (comptage d'audience, STR-154).
+	//
+	// Faux par défaut, et c'est volontaire : l'en-tête est falsifiable par le
+	// client, l'activer sans reverse proxy devant laisserait n'importe qui
+	// gonfler le compteur d'un flux en variant sa valeur. À passer à true
+	// **uniquement** derrière un proxy qui réécrit l'en-tête (Caddy le fait).
+	// Sans lui, tous les auditeurs derrière le proxy partagent une adresse et
+	// le compteur sature à 1.
+	TrustProxyHeaders bool `mapstructure:"TRUST_PROXY_HEADERS"`
+
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
+
+	// LogLevel : niveau minimal des logs (trace|debug|info|warn|error|fatal|panic).
+	LogLevel string `mapstructure:"LOG_LEVEL"`
+
+	// LogPretty : sortie console lisible (dev local hors Docker uniquement) —
+	// en conteneur la sortie doit rester du JSON pour la collecte Loki (STR-172).
+	LogPretty bool `mapstructure:"LOG_PRETTY"`
+
+	// OTELExporterOTLPEndpoint : endpoint OTLP/HTTP de Tempo (ADR 020).
+	// Vide = tracing désactivé (provider noop) — cas du `go run` local.
+	OTELExporterOTLPEndpoint string `mapstructure:"OTEL_EXPORTER_OTLP_ENDPOINT"`
 }
 
 // Load lit la configuration depuis l'environnement et la valide.
@@ -66,6 +127,14 @@ func Load() (*Config, error) {
 	v.SetDefault("API_PORT", defaultAPIPort)
 	v.SetDefault("DB_HOST", defaultDBHost)
 	v.SetDefault("DB_PORT", defaultDBPort)
+	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
+	v.SetDefault("STORAGE_PATH", defaultStoragePath)
+	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
+	v.SetDefault("INGEST_RECONNECT_GRACE_SECONDS", defaultIngestReconnectGraceSeconds)
+	v.SetDefault("INGEST_STOP_TIMEOUT_SECONDS", defaultIngestStopTimeoutSeconds)
+	v.SetDefault("TRUST_PROXY_HEADERS", false)
+	v.SetDefault("LOG_LEVEL", defaultLogLevel)
+	v.SetDefault("LOG_PRETTY", false)
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -89,7 +158,11 @@ func Load() (*Config, error) {
 		"GO_ENV", "API_PORT", "JWT_SECRET",
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
 		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
-		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS",
+		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
+		"STORAGE_PATH",
+		"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
+		"INGEST_STOP_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_PRETTY",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
@@ -108,6 +181,21 @@ func Load() (*Config, error) {
 	// Viper ne le fait pas seul : os.Getenv retourne "" pour set vide ET pour
 	// absent, et viper privilégie cette chaîne vide sur SetDefault.
 	cfg.applyDefaultsForEmpty()
+
+	// HLSMaxConcurrent est un int : le weak-decode de viper a déjà transformé
+	// "" en 0 pendant l'Unmarshal ci-dessus, indiscernable d'un 0 explicite
+	// (= limiteur désactivé, cf. commentaire du champ). On revérifie donc la
+	// chaîne brute — via .env ou l'environnement OS — plutôt que le champ cfg
+	// déjà converti : seule une chaîne vide retombe sur le défaut.
+	if strings.TrimSpace(v.GetString("HLS_MAX_CONCURRENT")) == "" {
+		cfg.HLSMaxConcurrent = defaultHLSMaxConcurrent
+	}
+	if strings.TrimSpace(v.GetString("INGEST_RECONNECT_GRACE_SECONDS")) == "" {
+		cfg.IngestReconnectGraceSeconds = defaultIngestReconnectGraceSeconds
+	}
+	if strings.TrimSpace(v.GetString("INGEST_STOP_TIMEOUT_SECONDS")) == "" {
+		cfg.IngestStopTimeoutSeconds = defaultIngestStopTimeoutSeconds
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -135,6 +223,16 @@ func (c *Config) applyDefaultsForEmpty() {
 	if c.SMTPPort == "" {
 		c.SMTPPort = "587"
 	}
+	if c.StreamIngestBaseURL == "" {
+		c.StreamIngestBaseURL = defaultStreamIngestBaseURL
+	}
+	if strings.TrimSpace(c.StoragePath) == "" {
+		c.StoragePath = defaultStoragePath
+	}
+	c.LogLevel = strings.ToLower(strings.TrimSpace(c.LogLevel))
+	if c.LogLevel == "" {
+		c.LogLevel = defaultLogLevel
+	}
 }
 
 // parseCSV découpe une liste CSV en ignorant espaces et entrées vides.
@@ -161,6 +259,16 @@ func (c *Config) IsProd() bool {
 // HTTPAddr retourne l'adresse d'écoute HTTP au format ":port".
 func (c *Config) HTTPAddr() string {
 	return ":" + c.APIPort
+}
+
+// IngestReconnectGrace retourne le bail sans audio configuré.
+func (c *Config) IngestReconnectGrace() time.Duration {
+	return time.Duration(c.IngestReconnectGraceSeconds) * time.Second
+}
+
+// IngestStopTimeout borne une tentative d'arrêt automatique en base.
+func (c *Config) IngestStopTimeout() time.Duration {
+	return time.Duration(c.IngestStopTimeoutSeconds) * time.Second
 }
 
 // DBDSN retourne la DSN PostgreSQL prête à passer à database/sql ou pgx.
@@ -192,6 +300,20 @@ func (c *Config) validate() error {
 
 	if len(c.JWTSecret) < minJWTSecretLen {
 		return fmt.Errorf("config: JWT_SECRET must be at least %d characters", minJWTSecretLen)
+	}
+
+	if !validLogLevels[c.LogLevel] {
+		return fmt.Errorf("config: LOG_LEVEL invalide %q (attendu: trace|debug|info|warn|error|fatal|panic)", c.LogLevel)
+	}
+
+	if c.IngestReconnectGraceSeconds <= mobileMaxReconnectBackoffSeconds {
+		return fmt.Errorf(
+			"config: INGEST_RECONNECT_GRACE_SECONDS invalide %d (attendu: > %d, le backoff de reconnexion maximal du mobile)",
+			c.IngestReconnectGraceSeconds, mobileMaxReconnectBackoffSeconds,
+		)
+	}
+	if c.IngestStopTimeoutSeconds <= 0 {
+		return fmt.Errorf("config: INGEST_STOP_TIMEOUT_SECONDS invalide %d (attendu: > 0)", c.IngestStopTimeoutSeconds)
 	}
 
 	return nil

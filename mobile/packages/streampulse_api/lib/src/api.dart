@@ -7,11 +7,15 @@ import 'package:streampulse_api/src/auth/api_key_auth.dart';
 import 'package:streampulse_api/src/auth/basic_auth.dart';
 import 'package:streampulse_api/src/auth/bearer_auth.dart';
 import 'package:streampulse_api/src/auth/oauth.dart';
+import 'package:streampulse_api/src/api/admin_api.dart';
 import 'package:streampulse_api/src/api/auth_api.dart';
 import 'package:streampulse_api/src/api/broadcaster_api.dart';
 import 'package:streampulse_api/src/api/health_api.dart';
 import 'package:streampulse_api/src/api/metrics_api.dart';
+import 'package:streampulse_api/src/api/playlist_api.dart';
 import 'package:streampulse_api/src/api/profile_api.dart';
+import 'package:streampulse_api/src/api/streaming_api.dart';
+import 'package:streampulse_api/src/api/track_api.dart';
 
 class StreampulseApi {
   static const String basePath = r'http://localhost';
@@ -136,6 +140,12 @@ class StreampulseApi {
     }
   }
 
+  /// Get AdminApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  AdminApi getAdminApi() {
+    return AdminApi(dio);
+  }
+
   /// Get AuthApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   AuthApi getAuthApi() {
@@ -160,9 +170,27 @@ class StreampulseApi {
     return MetricsApi(dio);
   }
 
+  /// Get PlaylistApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  PlaylistApi getPlaylistApi() {
+    return PlaylistApi(dio);
+  }
+
   /// Get ProfileApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   ProfileApi getProfileApi() {
     return ProfileApi(dio);
+  }
+
+  /// Get StreamingApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  StreamingApi getStreamingApi() {
+    return StreamingApi(dio);
+  }
+
+  /// Get TrackApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  TrackApi getTrackApi() {
+    return TrackApi(dio);
   }
 }

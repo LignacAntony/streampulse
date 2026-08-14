@@ -1,0 +1,10 @@
+# api.streampulse.win → reverse proxy vers l'API Go (conteneur `api` sur streampulse-net).
+# Caddy obtient et renouvelle automatiquement le certificat TLS (Let's Encrypt).
+# Prérequis : un enregistrement DNS A `api.streampulse.win` → IP du VPS, en DNS-only.
+api.streampulse.win {
+	# /metrics est réservé au scrape interne de Prometheus (streampulse-net) :
+	# l'exposer publierait routes, volumes, taux d'erreur et version Go (ADR 019).
+	respond /metrics 403
+
+	reverse_proxy api:8080
+}

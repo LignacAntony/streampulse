@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // setEnv positionne plusieurs variables d'environnement pour la durée du test.
@@ -128,6 +129,118 @@ func assertDefaults(t *testing.T, cfg *Config) {
 	}
 }
 
+// TestLoad_HLSMaxConcurrent couvre le fix « "" ≠ désactivé » : une valeur
+// vide est équivalente à absente (retombe sur le défaut 256), alors qu'un 0
+// explicite reste 0 (limiteur désactivé, cf. commentaire du champ
+// Config.HLSMaxConcurrent).
+//
+// Limite connue : ces sous-tests positionnent HLS_MAX_CONCURRENT via
+// l'environnement OS (t.Setenv) — ce fichier n'a pas de harnais pour écrire
+// un .env temporaire et le faire lire par Load() (AddConfigPath dépend du
+// cwd du process au moment de l'appel, que ces tests ne modifient pas).
+// Le code de production traite les deux sources de façon identique :
+// v.GetString("HLS_MAX_CONCURRENT") est relu après Unmarshal quelle que soit
+// la couche d'où vient la valeur (env OS, fichier .env, ou défaut viper) —
+// le cas « vide via .env » emprunte donc exactement le même chemin que le
+// cas « vide via env » couvert ci-dessous.
+func TestLoad_HLSMaxConcurrent(t *testing.T) {
+	tests := []struct {
+		name   string
+		setEnv bool // false = variable absente (ni env ni .env)
+		value  string
+		want   int
+	}{
+		{name: "vide -> défaut 256", setEnv: true, value: "", want: defaultHLSMaxConcurrent},
+		{name: "0 explicite -> désactivé", setEnv: true, value: "0", want: 0},
+		{name: "absente -> défaut 256", setEnv: false, want: defaultHLSMaxConcurrent},
+		{name: "128 -> 128", setEnv: true, value: "128", want: 128},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setEnv(t, validVars())
+			if tt.setEnv {
+				t.Setenv("HLS_MAX_CONCURRENT", tt.value)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() unexpected error: %v", err)
+			}
+			if cfg.HLSMaxConcurrent != tt.want {
+				t.Errorf("HLSMaxConcurrent = %d, want %d", cfg.HLSMaxConcurrent, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoad_IngestTimeouts(t *testing.T) {
+	t.Run("défauts", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != 45*time.Second {
+			t.Errorf("IngestReconnectGrace() = %s, want 45s", cfg.IngestReconnectGrace())
+		}
+		if cfg.IngestStopTimeout() != 10*time.Second {
+			t.Errorf("IngestStopTimeout() = %s, want 10s", cfg.IngestStopTimeout())
+		}
+	})
+
+	t.Run("personnalisés", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", "60")
+		t.Setenv("INGEST_STOP_TIMEOUT_SECONDS", "15")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != time.Minute {
+			t.Errorf("IngestReconnectGrace() = %s, want 1m", cfg.IngestReconnectGrace())
+		}
+		if cfg.IngestStopTimeout() != 15*time.Second {
+			t.Errorf("IngestStopTimeout() = %s, want 15s", cfg.IngestStopTimeout())
+		}
+	})
+
+	for _, key := range []string{"INGEST_RECONNECT_GRACE_SECONDS", "INGEST_STOP_TIMEOUT_SECONDS"} {
+		t.Run(key+" invalide", func(t *testing.T) {
+			setEnv(t, validVars())
+			t.Setenv(key, "0")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("Load() error = %v, want erreur pour %s", err, key)
+			}
+		})
+	}
+
+	// Invariant de l'ADR 027 : un bail plus court que le backoff mobile
+	// couperait les directs pendant la fenêtre de reconnexion normale du
+	// téléphone. La borne est refusée au démarrage, pas seulement documentée.
+	for _, value := range []string{"20", "30"} {
+		t.Run("bail plus court que le backoff mobile ("+value+"s)", func(t *testing.T) {
+			setEnv(t, validVars())
+			t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "INGEST_RECONNECT_GRACE_SECONDS") {
+				t.Fatalf("Load() error = %v, want refus du bail %ss", err, value)
+			}
+		})
+	}
+
+	t.Run("bail juste au-dessus du backoff mobile", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("INGEST_RECONNECT_GRACE_SECONDS", "31")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.IngestReconnectGrace() != 31*time.Second {
+			t.Errorf("IngestReconnectGrace() = %s, want 31s", cfg.IngestReconnectGrace())
+		}
+	})
+}
+
 func TestConfig_DBDSN(t *testing.T) {
 	cfg := &Config{
 		DBHost:     "db.example.com",
@@ -166,4 +279,87 @@ func TestConfig_IsDev_IsProd(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoad_Logging(t *testing.T) {
+	t.Run("défauts", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.LogLevel != "info" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+		}
+		if cfg.LogPretty {
+			t.Error("LogPretty = true, want false par défaut")
+		}
+	})
+
+	t.Run("valeurs explicites", func(t *testing.T) {
+		vars := validVars()
+		vars["LOG_LEVEL"] = "DEBUG"
+		vars["LOG_PRETTY"] = "true"
+		setEnv(t, vars)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.LogLevel != "debug" {
+			t.Errorf("LogLevel = %q, want %q (normalisé en minuscules)", cfg.LogLevel, "debug")
+		}
+		if !cfg.LogPretty {
+			t.Error("LogPretty = false, want true")
+		}
+	})
+
+	t.Run("LOG_LEVEL vide retombe sur le défaut", func(t *testing.T) {
+		vars := validVars()
+		vars["LOG_LEVEL"] = ""
+		setEnv(t, vars)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.LogLevel != "info" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+		}
+	})
+
+	t.Run("LOG_LEVEL invalide rejeté", func(t *testing.T) {
+		vars := validVars()
+		vars["LOG_LEVEL"] = "verbose"
+		setEnv(t, vars)
+		if _, err := Load(); err == nil {
+			t.Fatal("Load() = nil error, want erreur pour LOG_LEVEL invalide")
+		} else if !strings.Contains(err.Error(), "LOG_LEVEL") {
+			t.Errorf("erreur %q ne mentionne pas LOG_LEVEL", err)
+		}
+	})
+}
+
+func TestLoad_OTELEndpoint(t *testing.T) {
+	t.Run("défaut vide (tracing désactivé)", func(t *testing.T) {
+		setEnv(t, validVars())
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.OTELExporterOTLPEndpoint != "" {
+			t.Errorf("OTELExporterOTLPEndpoint = %q, want vide par défaut", cfg.OTELExporterOTLPEndpoint)
+		}
+	})
+
+	t.Run("valeur explicite", func(t *testing.T) {
+		vars := validVars()
+		vars["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://tempo:4318"
+		setEnv(t, vars)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.OTELExporterOTLPEndpoint != "http://tempo:4318" {
+			t.Errorf("OTELExporterOTLPEndpoint = %q", cfg.OTELExporterOTLPEndpoint)
+		}
+	})
 }

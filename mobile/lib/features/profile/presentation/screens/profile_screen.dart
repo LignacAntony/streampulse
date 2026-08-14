@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../../admin/presentation/screens/admin_streams_screen.dart';
+import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
+import '../../../streams/presentation/providers/favorites_controller.dart';
 import '../../domain/entities/user_profile.dart';
 import '../providers/profile_controller.dart';
 import '../widgets/profile_avatar.dart';
@@ -59,6 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await context.read<AuthRepository>().logout();
     if (!mounted) return;
     context.read<BroadcasterController>().reset();
+    context.read<FavoritesController>().reset();
     context.go('/login');
   }
 
@@ -152,6 +156,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 12),
           _SettingsCard(profile: profile, runSave: _runSave),
+          if (profile.role == 'admin') ...[
+            const SizedBox(height: 28),
+            const _AdminCard(),
+          ],
           const SizedBox(height: 32),
           ConstrainedBox(
             constraints: const BoxConstraints.tightFor(
@@ -322,6 +330,54 @@ class _SettingsCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Tuiles visibles uniquement pour un profil `role == 'admin'` (cf.
+/// `_buildBody`). Deux entrées de navigation séparées par un `Divider`,
+/// chacune ouverte par `Navigator.push` (écrans hors go_router, pas de route
+/// nommée, accessibles uniquement depuis cette carte) : gestion des comptes
+/// utilisateurs (US-08-01) et supervision des flux en direct (US-08-02).
+class _AdminCard extends StatelessWidget {
+  const _AdminCard();
+
+  void _openUsers(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+    );
+  }
+
+  void _openStreams(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminStreamsScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            key: const Key('profile_admin_tile'),
+            leading: Icon(Icons.admin_panel_settings, color: colors.primary),
+            title: const Text('Gestion des utilisateurs'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openUsers(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('profile_admin_streams_tile'),
+            leading: Icon(Icons.podcasts, color: colors.primary),
+            title: const Text('Supervision des flux'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openStreams(context),
+          ),
+        ],
       ),
     );
   }

@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/storage/secure_storage.dart';
@@ -7,11 +6,17 @@ import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/reset_password_screen.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
+import '../../features/broadcast/presentation/screens/dashboard_screen.dart';
 import '../../features/broadcaster/presentation/screens/broadcaster_request_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/playlists/presentation/screens/playlist_detail_screen.dart';
+import '../../features/playlists/presentation/screens/playlists_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/streams/domain/entities/live_stream.dart';
+import '../../features/tracks/presentation/screens/upload_track_screen.dart';
+import '../../features/streams/presentation/screens/discover_screen.dart';
+import '../../features/streams/presentation/screens/stream_player_screen.dart';
 import '../shell/main_shell.dart';
-import '../shell/placeholder_screen.dart';
 
 const _publicRoutes = {
   '/login',
@@ -22,6 +27,10 @@ const _publicRoutes = {
   '/dashboard',
   '/forgot-password',
   '/reset-password',
+};
+
+const _publicRoutePrefixes = {
+  '/stream/',
 };
 
 /// Construit le routeur GoRouter de l'application.
@@ -36,7 +45,9 @@ GoRouter createAppRouter(SecureStorage storage) {
     redirect: (context, state) async {
       final token = await storage.getAccessToken();
       final isOnSplash = state.matchedLocation == '/';
-      final isPublic = _publicRoutes.contains(state.matchedLocation);
+      final isPublic = _publicRoutes.contains(state.matchedLocation) ||
+          _publicRoutePrefixes
+              .any((prefix) => state.matchedLocation.startsWith(prefix));
 
       if (isOnSplash) return null;
       if (isPublic) return null;
@@ -71,6 +82,13 @@ GoRouter createAppRouter(SecureStorage storage) {
         path: '/broadcaster-request',
         builder: (context, state) => const BroadcasterRequestScreen(),
       ),
+      GoRoute(
+        path: '/stream/:id',
+        builder: (context, state) => StreamPlayerScreen(
+          streamId: state.pathParameters['id']!,
+          stream: state.extra as LiveStream?,
+        ),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             MainShell(navigationShell: navigationShell),
@@ -87,10 +105,25 @@ GoRouter createAppRouter(SecureStorage storage) {
             routes: [
               GoRoute(
                 path: '/library',
-                builder: (context, state) => const PlaceholderScreen(
-                  title: 'Bibliothèque',
-                  icon: Icons.library_music_outlined,
-                ),
+                builder: (context, state) => const PlaylistsScreen(),
+                routes: [
+                  // Sous-route de l'onglet : la barre de navigation reste
+                  // visible sur le détail d'une playlist. Non publique (les
+                  // routes API sont derrière RequireAuth).
+                  GoRoute(
+                    path: 'playlist/:id',
+                    builder: (context, state) => PlaylistDetailScreen(
+                      playlistId: state.pathParameters['id']!,
+                      playlistName: state.extra as String?,
+                    ),
+                  ),
+                  // Upload d'une piste dans la bibliothèque (US-05-01). Sous-route
+                  // de l'onglet : la barre de navigation reste visible.
+                  GoRoute(
+                    path: 'upload',
+                    builder: (context, state) => const UploadTrackScreen(),
+                  ),
+                ],
               ),
             ],
           ),
@@ -98,10 +131,7 @@ GoRouter createAppRouter(SecureStorage storage) {
             routes: [
               GoRoute(
                 path: '/discover',
-                builder: (context, state) => const PlaceholderScreen(
-                  title: 'Découvrir',
-                  icon: Icons.explore_outlined,
-                ),
+                builder: (context, state) => const DiscoverScreen(),
               ),
             ],
           ),
@@ -109,10 +139,7 @@ GoRouter createAppRouter(SecureStorage storage) {
             routes: [
               GoRoute(
                 path: '/dashboard',
-                builder: (context, state) => const PlaceholderScreen(
-                  title: 'Tableau',
-                  icon: Icons.grid_view_outlined,
-                ),
+                builder: (context, state) => const DashboardScreen(),
               ),
             ],
           ),

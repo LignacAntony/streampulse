@@ -33,3 +33,59 @@ sql:
         overrides:
           - db_type: "timestamptz"
             go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/streaming/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "streamingdb"
+        out: "internal/streaming/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+  - engine: "postgresql"
+    queries: "internal/admin/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "admindb"
+        out: "internal/admin/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/playlist/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "playlistdb"
+        out: "internal/playlist/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+  - engine: "postgresql"
+    queries: "internal/track/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "trackdb"
+        out: "internal/track/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

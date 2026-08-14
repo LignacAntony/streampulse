@@ -2,8 +2,9 @@ package profiles
 
 import (
 	"context"
-	"log"
 	"net/http"
+
+	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -98,7 +99,7 @@ func (h *Handler) getMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, profile); err != nil {
-		log.Printf("profiles: encode get-me response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("profiles: encode get-me")
 	}
 }
 
@@ -128,6 +129,6 @@ func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := httpjson.Write(w, http.StatusOK, profile); err != nil {
-		log.Printf("profiles: encode update-me response: %v", err)
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("profiles: encode update-me")
 	}
 }
