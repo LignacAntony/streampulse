@@ -8,7 +8,9 @@ import 'package:streampulse/features/playlists/domain/entities/playlist_track.da
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
 
+import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
+import 'package:streampulse/features/playlists/presentation/providers/offline_playlist_controller.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlists_screen.dart';
 
@@ -91,8 +93,15 @@ Widget _harness(
 }) {
   // L'écran lit la file d'attente app-level (STR-231) : lancer une piste de la
   // bibliothèque et souligner celle en cours passent par elle.
-  return ChangeNotifierProvider<PlaylistQueueController>.value(
-    value: queue ?? _queueController(FakeQueuePlaybackService()),
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<PlaylistQueueController>.value(
+        value: queue ?? _queueController(FakeQueuePlaybackService()),
+      ),
+      ChangeNotifierProvider<OfflinePlaylistController>.value(
+        value: FakeOfflinePlaylistController(),
+      ),
+    ],
     child: ToastificationWrapper(
       child: MaterialApp(
         home: PlaylistsScreen(

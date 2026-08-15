@@ -5,14 +5,17 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/offline/entities/cached_track_status.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist_track.dart';
 import '../../domain/repositories/playlist_repository.dart';
+import '../providers/offline_playlist_controller.dart';
 import '../providers/playlist_detail_controller.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
+import '../widgets/playlist_form_sheet.dart';
 import '../widgets/queue_track_visuals.dart';
 import '../widgets/track_picker_sheet.dart';
 
@@ -164,13 +167,11 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          _OfflineAppBarButton(playlistId: controller.playlistId),
           IconButton(
             key: const Key('playlist_shuffle_play_button'),
             icon: const Icon(Icons.shuffle),
             tooltip: 'Lire en aléatoire',
-            // Point de départ tiré au sort : le lecteur mélange la suite mais
-            // garde la piste de départ en tête. Partir systématiquement de la
-            // première ferait une lecture aléatoire qui commence toujours pareil.
             onPressed: controller.tracks.isEmpty
                 ? null
                 : () => _onPlay(
@@ -233,31 +234,35 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       );
     }
 
-    return ReorderableListView.builder(
-      key: const Key('playlist_tracks_list'),
-      // Sans ce false, ReorderableListView ajoute ses propres déclencheurs :
-      // une seconde poignée à droite de chaque ligne sur desktop/web, et
-      // l'appui-long-n'importe-où sur mobile — soit exactement le conflit avec
-      // le défilement que la poignée explicite ci-dessous cherche à éviter.
-      buildDefaultDragHandles: false,
-      physics: const AlwaysScrollableScrollPhysics(),
-      // Assez de marge pour que la dernière ligne ne se cache pas sous le FAB.
-      padding: const EdgeInsets.only(bottom: 88),
-      itemCount: controller.tracks.length,
-      onReorder: _onReorder,
-      itemBuilder: (context, index) {
-        final track = controller.tracks[index];
-        return _TrackTile(
-          // La clé porte l'id de la piste : c'est elle qui permet à
-          // ReorderableListView de suivre la ligne pendant le drag.
-          key: Key('playlist_track_${track.id}'),
-          track: track,
-          index: index,
+    return Column(
+      children: [
+        _OfflineSection(
           playlistId: controller.playlistId,
-          onRemove: _onRemove,
-          onPlay: () => _onPlay(startIndex: index),
-        );
-      },
+          playlistName: widget.title,
+          tracks: controller.tracks,
+        ),
+        Expanded(
+          child: ReorderableListView.builder(
+            key: const Key('playlist_tracks_list'),
+            buildDefaultDragHandles: false,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: controller.tracks.length,
+            onReorder: _onReorder,
+            itemBuilder: (context, index) {
+              final track = controller.tracks[index];
+              return _TrackTile(
+                key: Key('playlist_track_${track.id}'),
+                track: track,
+                index: index,
+                playlistId: controller.playlistId,
+                onRemove: _onRemove,
+                onPlay: () => _onPlay(startIndex: index),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -291,6 +296,69 @@ Future<bool> _confirmRemoveDialog(BuildContext context, String title) async {
   return confirmed ?? false;
 }
 
+class _OfflineAppBarButton extends StatelessWidget {
+  const _OfflineAppBarButton({required this.playlistId});
+
+  final String playlistId;
+
+  @override
+  Widget build(BuildContext context) {
+    final offline = context.select<OfflinePlaylistController, bool>(
+      (c) => c.isOffline(playlistId),
+    );
+    final downloading = context.select<OfflinePlaylistController, bool>(
+      (c) => c.isDownloading(playlistId),
+    );
+
+    return IconButton(
+      key: const Key('playlist_offline_button'),
+      icon: downloading
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(offline ? Icons.cloud_done : Icons.cloud_download_outlined),
+      tooltip: offline ? 'Disponible hors ligne' : 'Rendre disponible hors ligne',
+      onPressed: null,
+    );
+  }
+}
+
+class _OfflineSection extends StatelessWidget {
+  const _OfflineSection({
+    required this.playlistId,
+    required this.playlistName,
+    required this.tracks,
+  });
+
+  final String playlistId;
+  final String playlistName;
+  final List<PlaylistTrack> tracks;
+
+  @override
+  Widget build(BuildContext context) {
+    final offlineController = context.watch<OfflinePlaylistController>();
+    final isOffline = offlineController.isOffline(playlistId);
+    final progress = offlineController.downloadProgress(playlistId);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: OfflineToggleCard(
+        isOffline: isOffline,
+        progress: progress,
+        onChanged: tracks.isEmpty
+            ? null
+            : (_) => offlineController.toggleOffline(
+                  playlistId,
+                  playlistName,
+                  tracks,
+                ),
+      ),
+    );
+  }
+}
+
 class _TrackTile extends StatelessWidget {
   const _TrackTile({
     super.key,
@@ -309,13 +377,21 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Comparaison par id et non par index : l'ordre local peut différer de
-    // celui figé dans la file (réordonnancement après le lancement).
     final isCurrent = context.select<PlaylistQueueController, bool>(
       (queue) =>
           queue.hasQueue &&
           queue.playlistId == playlistId &&
           queue.currentTrack?.id == track.id,
+    );
+
+    final cacheStatus = context.select<OfflinePlaylistController, TrackCacheStatus?>(
+      (c) {
+        final statuses = c.trackStatuses(playlistId);
+        for (final s in statuses) {
+          if (s.trackId == track.id) return s.status;
+        }
+        return null;
+      },
     );
 
     return ListTile(
@@ -335,14 +411,13 @@ class _TrackTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (cacheStatus != null) _cacheIcon(context, cacheStatus),
           IconButton(
             key: Key('playlist_track_remove_${track.id}'),
             icon: const Icon(Icons.remove_circle_outline),
             tooltip: 'Retirer de la playlist',
             onPressed: () => onRemove(track),
           ),
-          // Poignée explicite : sur mobile, un appui long sur toute la ligne
-          // entrerait en conflit avec le défilement.
           ReorderableDragStartListener(
             index: index,
             child: const Padding(
@@ -355,6 +430,34 @@ class _TrackTile extends StatelessWidget {
     );
   }
 
+  Widget _cacheIcon(BuildContext context, TrackCacheStatus status) {
+    final colors = Theme.of(context).colorScheme;
+    return switch (status) {
+      TrackCacheStatus.done => Icon(
+          Icons.check_circle,
+          size: 16,
+          color: colors.primary,
+        ),
+      TrackCacheStatus.downloading => SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colors.primary,
+          ),
+        ),
+      TrackCacheStatus.error => Icon(
+          Icons.error_outline,
+          size: 16,
+          color: colors.error,
+        ),
+      TrackCacheStatus.pending => Icon(
+          Icons.schedule,
+          size: 16,
+          color: colors.onSurfaceVariant,
+        ),
+    };
+  }
 }
 
 class _MessageView extends StatelessWidget {

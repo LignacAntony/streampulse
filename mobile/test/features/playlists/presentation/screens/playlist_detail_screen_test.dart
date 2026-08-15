@@ -8,9 +8,11 @@ import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
+import 'package:streampulse/features/playlists/presentation/providers/offline_playlist_controller.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlist_detail_screen.dart';
 
+import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
 
 PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
@@ -108,8 +110,15 @@ Widget _harness(
 }) {
   // L'écran lit la file d'attente app-level (US-05-04) pour lancer la lecture et
   // souligner la piste en cours : elle doit exister au-dessus de lui.
-  return ChangeNotifierProvider<PlaylistQueueController>.value(
-    value: queue ?? _queueController(FakeQueuePlaybackService()),
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<PlaylistQueueController>.value(
+        value: queue ?? _queueController(FakeQueuePlaybackService()),
+      ),
+      ChangeNotifierProvider<OfflinePlaylistController>.value(
+        value: FakeOfflinePlaylistController(),
+      ),
+    ],
     child: ToastificationWrapper(
       child: MaterialApp(
         // `ReorderableListView` choisit ses poignées par défaut d'après

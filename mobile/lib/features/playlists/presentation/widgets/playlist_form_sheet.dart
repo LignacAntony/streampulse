@@ -171,7 +171,7 @@ class _PlaylistFormSheetState extends State<PlaylistFormSheet> {
               validator: _validateDescription,
             ),
             const SizedBox(height: 24),
-            const _OfflineToggleCard(),
+            const OfflineToggleCard(isOffline: false),
             const SizedBox(height: 24),
             _GradientButton(
               key: const Key('playlist_form_submit'),
@@ -253,50 +253,82 @@ class _CoverPicker extends StatelessWidget {
   }
 }
 
-/// Carte « Disponible hors ligne ». **Non branchée** : présentée désactivée
-/// (« Bientôt disponible ») pour ne pas laisser croire que le téléchargement
-/// automatique est déjà actif. La logique fera l'objet d'une PR dédiée.
-class _OfflineToggleCard extends StatelessWidget {
-  const _OfflineToggleCard();
+class OfflineToggleCard extends StatelessWidget {
+  const OfflineToggleCard({
+    super.key,
+    required this.isOffline,
+    this.onChanged,
+    this.progress,
+  });
+
+  final bool isOffline;
+  final ValueChanged<bool>? onChanged;
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    return Opacity(
-      opacity: 0.5,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.download_outlined, color: colors.onSurfaceVariant),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Disponible hors ligne', style: text.titleMedium),
-                  Text(
-                    'Bientôt disponible',
-                    style: text.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+    final isDownloading = progress != null && progress! < 1.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isOffline ? Icons.cloud_done : Icons.download_outlined,
+                color: isOffline
+                    ? colors.primary
+                    : colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Disponible hors ligne', style: text.titleMedium),
+                    if (isDownloading)
+                      Text(
+                        'Téléchargement en cours…',
+                        style: text.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      )
+                    else if (isOffline)
+                      Text(
+                        'Prêt pour la lecture hors ligne',
+                        style: text.bodySmall?.copyWith(
+                          color: colors.primary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Switch(
+                key: const Key('playlist_offline_toggle'),
+                value: isOffline,
+                onChanged: onChanged,
+              ),
+            ],
+          ),
+          if (isDownloading) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
               ),
             ),
-            // Désactivé (onChanged: null) : contrôle non branché.
-            const Switch(
-              key: Key('playlist_offline_toggle'),
-              value: false,
-              onChanged: null,
-            ),
           ],
-        ),
+        ],
       ),
     );
   }
