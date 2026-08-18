@@ -44,7 +44,7 @@ Aucune valeur secrète ne doit être committée dans le dépôt.
 | `POSTGRES_USER` | postgres | Utilisateur PostgreSQL (init du volume) | `streampulse` | Oui |
 | `POSTGRES_PASSWORD` | postgres | Mot de passe PostgreSQL (init du volume) | `changeme` | **Oui — à changer** |
 | `POSTGRES_DB` | postgres | Nom de la base de données (init du volume) | `streampulse_db` | Oui |
-| `DATABASE_URL` | api | DSN complète, lue par le migrator au démarrage et en fallback du pool | — | Oui |
+| `DATABASE_URL` | api | DSN complète, lue par le migrator au démarrage et en fallback du pool | aucun | Oui |
 | `GRAFANA_ADMIN_PASSWORD` | grafana | Mot de passe admin Grafana | `changeme` | **Oui — à changer** |
 | `API_PORT` | api / hôte | Port exposé de l'API Go sur l'hôte | `8080` | Non |
 
@@ -58,19 +58,19 @@ caractères → l'API refuse de démarrer.
 |---|---|---|---|
 | `GO_ENV` | Environnement (`development` / `production` / `test`) | `development` | Non |
 | `API_PORT` | Port d'écoute HTTP de l'API | `8080` | Non |
-| `JWT_SECRET` | Clé de signature des JWT — **min. 32 caractères** | — | **Oui** |
+| `JWT_SECRET` | Clé de signature des JWT, **min. 32 caractères** | aucun | **Oui** |
 | `DB_HOST` | Hôte PostgreSQL (`postgres` en compose, `localhost` en dev natif) | `localhost` | Non |
 | `DB_PORT` | Port PostgreSQL | `5432` | Non |
-| `DB_USER` | Utilisateur PostgreSQL | — | **Oui** |
-| `DB_PASSWORD` | Mot de passe PostgreSQL | — | **Oui** |
-| `DB_NAME` | Nom de la base PostgreSQL | — | **Oui** |
+| `DB_USER` | Utilisateur PostgreSQL | aucun | **Oui** |
+| `DB_PASSWORD` | Mot de passe PostgreSQL | aucun | **Oui** |
+| `DB_NAME` | Nom de la base PostgreSQL | aucun | **Oui** |
 | `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live (doit dépasser 30 s, le backoff mobile max — refusé au démarrage sinon) | `45` | Non |
 | `INGEST_STOP_TIMEOUT_SECONDS` | Timeout d'une tentative d'arrêt automatique en base | `10` | Non |
-| `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules. En développement, `localhost` / `127.0.0.1` sont autorisés d'office quel que soit le port — cette variable sert surtout en production | — | Non |
+| `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules. En développement, `localhost` / `127.0.0.1` sont autorisés d'office quel que soit le port ; cette variable sert surtout en production | aucun | Non |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL d'ingest renvoyée au diffuseur : `{base}/api/streams/ingest/{stream_key}` (cf. [ADR 013](./adr/013-domaine-streaming.md)) | `http://localhost:8080` | Non |
 | `STORAGE_PATH` | Répertoire racine des fichiers audio uploadés, hors répertoire servi. Monté sur le volume `track_storage` en compose (cf. [ADR 032](./adr/032-domaine-track-upload-audio.md)) | `./data/tracks` | Non |
 | `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS (playlist + segments) servies simultanément aux auditeurs. `0` = illimité (cf. [ADR 016](./adr/016-scalabilite-test-de-charge-et-limiteur-hls.md)) | `256` | Non |
-| `TRUST_PROXY_HEADERS` | Autorise la lecture de `X-Forwarded-For` pour identifier les auditeurs. **`true` uniquement derrière un reverse proxy** qui réécrit l'en-tête — sinon il est falsifiable, et sans proxy tous les auditeurs partagent l'adresse du proxy (compteur saturé à 1). Cf. [ADR 025](./adr/025-statistiques-daudience-en-temps-reel.md) | `false` | Non |
+| `TRUST_PROXY_HEADERS` | Autorise la lecture de `X-Forwarded-For` pour identifier les auditeurs. **`true` uniquement derrière un reverse proxy** qui réécrit l'en-tête ; sinon il est falsifiable, et sans proxy tous les auditeurs partagent l'adresse du proxy (compteur saturé à 1). Cf. [ADR 025](./adr/025-statistiques-daudience-en-temps-reel.md) | `false` | Non |
 | `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local. **Ne jamais activer en conteneur** : la collecte Loki attend du JSON | `false` | Non |
 
 #### Variables SMTP (emails transactionnels)
@@ -81,12 +81,12 @@ aucun email n'est envoyé, les tokens apparaissent dans les logs de l'API. En lo
 
 | Variable | Description | Valeur par défaut | Obligatoire |
 |---|---|---|---|
-| `SMTP_HOST` | Serveur SMTP. Vide = mode log stdout | — | Non |
-| `SMTP_PORT` | Port SMTP (STARTTLS). `1025` avec mailpit, `587` sur un relay externe | — (`587` dans `.env.example`) | Non |
-| `SMTP_USERNAME` | Utilisateur du relay SMTP (vide avec mailpit) | — | Non |
-| `SMTP_PASSWORD` | Mot de passe du relay SMTP (vide avec mailpit) | — | Non |
-| `SMTP_FROM` | Adresse expéditeur des emails | — (`noreply@streampulse.com` dans `.env.example`) | Non |
-| `APP_BASE_URL` | Schéma d'URL des liens contenus dans les emails — deep link vers l'app Flutter | — (`streampulse://app` dans `.env.example`) | Non |
+| `SMTP_HOST` | Serveur SMTP. Vide = mode log stdout | aucun | Non |
+| `SMTP_PORT` | Port SMTP (STARTTLS). `1025` avec mailpit, `587` sur un relay externe | aucun (`587` dans `.env.example`) | Non |
+| `SMTP_USERNAME` | Utilisateur du relay SMTP (vide avec mailpit) | aucun | Non |
+| `SMTP_PASSWORD` | Mot de passe du relay SMTP (vide avec mailpit) | aucun | Non |
+| `SMTP_FROM` | Adresse expéditeur des emails | aucun (`noreply@streampulse.com` dans `.env.example`) | Non |
+| `APP_BASE_URL` | Schéma d'URL des liens contenus dans les emails, deep link vers l'app Flutter | aucun (`streampulse://app` dans `.env.example`) | Non |
 
 > ⚠️ Ces variables n'ont **pas de valeur par défaut dans le code** : elles sont déclarées sans
 > `def:` dans `envKeys` ([`backend/internal/config/config.go`](../backend/internal/config/config.go)).
