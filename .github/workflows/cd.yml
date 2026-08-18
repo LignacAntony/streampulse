@@ -6,6 +6,17 @@ env:
 permissions:
   contents: read
 
+# Deux CI qui concluent coup sur coup (deux merges rapprochés, ou un merge plus
+# un workflow_dispatch) lanceraient deux CD en parallèle : chacune pousse le tag
+# `latest` puis fait `docker compose pull` sur le VPS, sans garantie d'ordre —
+# la machine pourrait rester sur le plus ancien des deux commits. La file
+# n'annule pas le déploiement en cours (couper à mi-parcours laisserait un état
+# partiel) ; seule la mise en attente est remplacée par la suivante, donc le
+# dernier commit gagne.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
 # Déclenché par la fin de la CI plutôt que par le push : les deux workflows
 # démarraient sinon en parallèle sur `push main`, et des tests rouges
 # déployaient quand même (STR-241). `workflow_run` porte le SHA du run
@@ -24,12 +35,24 @@ jobs:
   build-and-push:
     name: Build & Push Docker image
     runs-on: ubuntu-latest
-    # Le workflow_run se déclenche quel que soit le verdict : on filtre ici.
-    # Un `workflow_dispatch` n'a pas de workflow_run associé, d'où le second
+    # Deux filtres, pas un.
+    #
+    # `conclusion` écarte les CI rouges — c'est l'objet de la bascule.
+    #
+    # `event == 'push'` écarte les CI de pull_request, et ce n'est pas
+    # cosmétique : `workflow_run` se déclenche pour *toute* exécution de la CI,
+    # y compris celles issues d'une PR, et son filtre `branches` compare le
+    # head_branch du run déclencheur. Une PR de fork ouverte depuis une branche
+    # nommée `main` produit donc head_branch == main, passe le filtre, et si sa
+    # CI conclut success la CD s'exécuterait avec les secrets du dépôt de base
+    # sur un commit jamais mergé — la protection de branche ne s'interpose pas.
+    #
+    # Un workflow_dispatch n'a pas de workflow_run associé, d'où le premier
     # membre qui garde le redéploiement manuel utilisable.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     permissions:
       contents: read
       packages: write
