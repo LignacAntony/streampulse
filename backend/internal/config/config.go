@@ -9,6 +9,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,12 +25,20 @@ const (
 	defaultAPIPort                     = "8080"
 	defaultDBHost                      = "localhost"
 	defaultDBPort                      = "5432"
+	defaultDBSSLMode                   = "disable"
 	defaultStreamIngestBaseURL         = "http://localhost:8080"
 	defaultStoragePath                 = "./data/tracks"
 	defaultHLSMaxConcurrent            = 256
 	defaultIngestReconnectGraceSeconds = 45
 	defaultIngestStopTimeoutSeconds    = 10
 	defaultLogLevel                    = "info"
+
+	// Timeouts du serveur HTTP. Les chemins longs (ingest, SSE) ne s'en
+	// remettent pas à ces valeurs : ils neutralisent la write deadline et
+	// renouvellent la read deadline à chaque bloc (cf. streaming/handler.go).
+	defaultHTTPReadTimeoutSeconds  = 5
+	defaultHTTPWriteTimeoutSeconds = 10
+	defaultHTTPIdleTimeoutSeconds  = 120
 
 	minJWTSecretLen = 32
 
@@ -75,6 +85,7 @@ var envKeys = []struct {
 	{key: "DB_USER"},
 	{key: "DB_PASSWORD"},
 	{key: "DB_NAME"},
+	{key: "DB_SSLMODE", def: defaultDBSSLMode},
 
 	{key: "SMTP_HOST"},
 	{key: "SMTP_PORT"},
@@ -91,6 +102,9 @@ var envKeys = []struct {
 	{key: "INGEST_RECONNECT_GRACE_SECONDS", def: defaultIngestReconnectGraceSeconds},
 	{key: "INGEST_STOP_TIMEOUT_SECONDS", def: defaultIngestStopTimeoutSeconds},
 	{key: "TRUST_PROXY_HEADERS", def: false},
+	{key: "HTTP_READ_TIMEOUT_SECONDS", def: defaultHTTPReadTimeoutSeconds},
+	{key: "HTTP_WRITE_TIMEOUT_SECONDS", def: defaultHTTPWriteTimeoutSeconds},
+	{key: "HTTP_IDLE_TIMEOUT_SECONDS", def: defaultHTTPIdleTimeoutSeconds},
 
 	{key: "LOG_LEVEL", def: defaultLogLevel},
 	{key: "LOG_PRETTY", def: false},
@@ -111,6 +125,11 @@ type Config struct {
 	DBUser     string `mapstructure:"DB_USER"`
 	DBPassword string `mapstructure:"DB_PASSWORD"`
 	DBName     string `mapstructure:"DB_NAME"`
+
+	// DBSSLMode : mode TLS de la connexion PostgreSQL. `disable` par défaut —
+	// la base n'est jointe que par le réseau interne Docker — mais paramétrable,
+	// une base managée exigeant `require` ou `verify-full`.
+	DBSSLMode string `mapstructure:"DB_SSLMODE"`
 
 	// SMTP — optionnel. Si SMTPHost est vide, le LogMailer est utilisé.
 	SMTPHost     string `mapstructure:"SMTP_HOST"`
@@ -151,6 +170,13 @@ type Config struct {
 	// Sans lui, tous les auditeurs derrière le proxy partagent une adresse et
 	// le compteur sature à 1.
 	TrustProxyHeaders bool `mapstructure:"TRUST_PROXY_HEADERS"`
+
+	// Timeouts du serveur HTTP, en secondes. Externalisés pour respecter le
+	// zéro-hardcoding : un déploiement derrière un proxy lent ou un réseau
+	// dégradé peut avoir besoin de les élargir sans reconstruire l'image.
+	HTTPReadTimeoutSeconds  int `mapstructure:"HTTP_READ_TIMEOUT_SECONDS"`
+	HTTPWriteTimeoutSeconds int `mapstructure:"HTTP_WRITE_TIMEOUT_SECONDS"`
+	HTTPIdleTimeoutSeconds  int `mapstructure:"HTTP_IDLE_TIMEOUT_SECONDS"`
 
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
@@ -307,11 +333,51 @@ func (c *Config) IngestStopTimeout() time.Duration {
 }
 
 // DBDSN retourne la DSN PostgreSQL prête à passer à database/sql ou pgx.
+// sslMode retombe sur le défaut quand le champ est vide, pour qu'un Config
+// construit à la main (tests, outillage) produise une DSN utilisable sans
+// passer par Load.
+func (c *Config) sslMode() string {
+	if c.DBSSLMode == "" {
+		return defaultDBSSLMode
+	}
+	return c.DBSSLMode
+}
+
 func (c *Config) DBDSN() string {
 	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName,
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.sslMode(),
 	)
+}
+
+// DatabaseURL rend la même connexion au format URL, attendu par golang-migrate
+// et par pgx.Connect.
+//
+// Dérivée de DBDSN plutôt que lue dans DATABASE_URL : cette variable était une
+// seconde source de vérité en doublon avec les DB_*, et .env.example y
+// dupliquait le mot de passe en dur — changer POSTGRES_PASSWORD sans la mettre à
+// jour cassait silencieusement les migrations.
+func (c *Config) DatabaseURL() string {
+	u := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.DBUser, c.DBPassword),
+		Host:     net.JoinHostPort(c.DBHost, c.DBPort),
+		Path:     "/" + c.DBName,
+		RawQuery: url.Values{"sslmode": {c.sslMode()}}.Encode(),
+	}
+	return u.String()
+}
+
+func (c *Config) HTTPReadTimeout() time.Duration {
+	return time.Duration(c.HTTPReadTimeoutSeconds) * time.Second
+}
+
+func (c *Config) HTTPWriteTimeout() time.Duration {
+	return time.Duration(c.HTTPWriteTimeoutSeconds) * time.Second
+}
+
+func (c *Config) HTTPIdleTimeout() time.Duration {
+	return time.Duration(c.HTTPIdleTimeoutSeconds) * time.Second
 }
 
 // validate vérifie que les variables requises sont présentes et que
@@ -349,6 +415,26 @@ func (c *Config) validate() error {
 	}
 	if c.IngestStopTimeoutSeconds <= 0 {
 		return fmt.Errorf("config: INGEST_STOP_TIMEOUT_SECONDS invalide %d (attendu: > 0)", c.IngestStopTimeoutSeconds)
+	}
+
+	// Sans SMTP_HOST, email.NewFromConfig retombe sur LogMailer, qui écrit le
+	// jeton de réinitialisation en clair dans les logs pour permettre le
+	// workflow sans serveur mail. C'est acceptable en développement, jamais en
+	// production : Loki n'a pas de rétention, et quiconque lit les logs prendrait
+	// la main sur tout compte ayant demandé une réinitialisation. On refuse de
+	// démarrer plutôt que de le découvrir après coup.
+	for name, v := range map[string]int{
+		"HTTP_READ_TIMEOUT_SECONDS":  c.HTTPReadTimeoutSeconds,
+		"HTTP_WRITE_TIMEOUT_SECONDS": c.HTTPWriteTimeoutSeconds,
+		"HTTP_IDLE_TIMEOUT_SECONDS":  c.HTTPIdleTimeoutSeconds,
+	} {
+		if v <= 0 {
+			return fmt.Errorf("config: %s invalide %d (attendu: > 0)", name, v)
+		}
+	}
+
+	if c.IsProd() && strings.TrimSpace(c.SMTPHost) == "" {
+		return errors.New("config: SMTP_HOST est requis en production (sans lui les jetons de réinitialisation partiraient dans les logs)")
 	}
 
 	return nil

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"io"
 	"math"
-	"net/http"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -21,7 +20,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
-	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
 )
 
 // MaxUploadBytes borne la taille du fichier audio accepté (50 Mo, critère
@@ -176,11 +174,8 @@ func (s *Service) Create(ctx context.Context, in CreateTrackInput) (Track, error
 		return Track{}, err
 	}
 	if used+in.Size > MaxUserStorageBytes {
-		return Track{}, httpjson.StatusError(
-			http.StatusForbidden,
-			"storage_quota_exceeded",
-			"quota de stockage atteint",
-		)
+		return Track{}, apperror.Forbidden("quota de stockage atteint").
+			Coded("storage_quota_exceeded")
 	}
 
 	id := uuid.NewString()
@@ -325,11 +320,8 @@ func detectAudio(rs io.ReadSeeker) (mimeType, ext string, err error) {
 	mtype := mimetype.Detect(head[:n])
 	canonical, canonicalExt, ok := canonicalAudio(mtype)
 	if !ok {
-		return "", "", httpjson.StatusError(
-			http.StatusUnsupportedMediaType,
-			"unsupported_media_type",
-			"seuls les fichiers audio MP3, AAC ou OGG sont acceptés",
-		)
+		// 415 et non 400 : le corps est bien formé, c'est son type qui est refusé.
+		return "", "", apperror.UnsupportedMedia("seuls les fichiers audio MP3, AAC ou OGG sont acceptés")
 	}
 	return canonical, canonicalExt, nil
 }

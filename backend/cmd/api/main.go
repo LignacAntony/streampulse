@@ -62,6 +62,16 @@ func main() {
 	}
 }
 
+const (
+	// Limiteur des routes d'authentification. Dix tentatives immédiates couvrent
+	// largement un humain qui se trompe de mot de passe ; la reconstitution à
+	// une toutes les six secondes rend une attaque par force brute inopérante
+	// sans gêner un usage normal.
+	authRateLimitBurst    = 10
+	authRateLimitRefill   = 6 * time.Second
+	authRateLimitEviction = 10 * time.Minute
+)
+
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -92,11 +102,11 @@ func run() error {
 	}()
 
 	// 1. Appliquer les migrations
-	migrator.Run()
+	migrator.Run(cfg.DatabaseURL())
 
 	// 2. Seed uniquement en développement (connexion simple, one-shot)
 	if cfg.IsDev() {
-		conn := database.Connect(ctx)
+		conn := database.Connect(ctx, cfg.DatabaseURL())
 		if err := seeder.Run(ctx, conn); err != nil {
 			if cerr := conn.Close(ctx); cerr != nil {
 				log.Warn().Err(cerr).Msg("fermeture connexion db")
@@ -210,12 +220,23 @@ func run() error {
 	// les collectors Go (go_goroutines, go_memstats_*) + ceux du middleware.
 	mux.Handle("/metrics", promhttp.Handler())
 
-	mux.HandleFunc("/api/auth/register", authHandler.Register)
-	mux.HandleFunc("/api/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/auth/refresh", authHandler.Refresh)
+	// Limiteur de débit sur les routes d'authentification non authentifiées :
+	// sans lui, rien ne bornait la force brute sur les mots de passe, les
+	// inscriptions en masse, ni le bombardement d'emails via forgot-password
+	// vers une adresse tierce. Les routes déjà protégées par un JWT (logout,
+	// suppression de compte) n'en ont pas besoin — il faut déjà un jeton valide.
+	authLimiter := httpmw.NewRateLimit(
+		authRateLimitBurst, authRateLimitRefill, cfg.TrustProxyHeaders,
+	)
+	authLimiter.StartEviction(ctx.Done(), authRateLimitEviction)
+	authLimit := authLimiter.Middleware
+
+	mux.Handle("POST /api/auth/register", authLimit(http.HandlerFunc(authHandler.Register)))
+	mux.Handle("POST /api/auth/login", authLimit(http.HandlerFunc(authHandler.Login)))
+	mux.Handle("POST /api/auth/refresh", authLimit(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
-	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
-	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
+	mux.Handle("POST /api/auth/forgot-password", authLimit(http.HandlerFunc(authHandler.ForgotPassword)))
+	mux.Handle("POST /api/auth/reset-password", authLimit(http.HandlerFunc(authHandler.ResetPassword)))
 	mux.Handle("/api/auth/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.DeleteAccount)))
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
@@ -360,9 +381,9 @@ func run() error {
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
 		Handler:      handler,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  cfg.HTTPReadTimeout(),
+		WriteTimeout: cfg.HTTPWriteTimeout(),
+		IdleTimeout:  cfg.HTTPIdleTimeout(),
 	}
 
 	serveErr := make(chan error, 1)

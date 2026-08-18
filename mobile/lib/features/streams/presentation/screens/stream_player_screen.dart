@@ -169,11 +169,6 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                 : _liveBadge(colors),
           ),
           const Spacer(),
-          IconButton(
-            onPressed: () {}, // menu contextuel : hors périmètre STR-108
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'Plus',
-          ),
         ],
       ),
     );
@@ -302,13 +297,6 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
           tooltip: isFavorited ? 'Retirer des favoris' : 'Ajouter aux favoris',
         ),
         _playPauseButton(colors),
-        IconButton(
-          onPressed: () {}, // partage : hors périmètre STR-108
-          iconSize: 26,
-          color: colors.onSurfaceVariant,
-          icon: const Icon(Icons.share_outlined),
-          tooltip: 'Partager',
-        ),
       ],
     );
   }
