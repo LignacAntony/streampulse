@@ -1,0 +1,27 @@
+# CODEOWNERS — propriétaires par défaut pour la review des PR.
+# Cohérent avec la répartition des tâches documentée dans le README
+# (section « Équipe et répartition des tâches »).
+# Doc : https://docs.github.com/articles/about-code-owners
+
+# Par défaut : lead technique
+*                       @LignacAntony
+
+# Backend Go, infra Docker, observabilité, CI/CD — Antony
+/backend/               @LignacAntony
+/docker/                @LignacAntony
+/docs/                  @LignacAntony
+/.github/               @LignacAntony
+/docker-compose.yml     @LignacAntony
+/docker-compose.prod.yml @LignacAntony
+
+# Application mobile Flutter — Thierry & Baptiste
+/mobile/                @thierrymgn @Oceloott
+
+# Lecteur audio, lecture en arrière-plan, interruptions — Thierry
+/mobile/lib/core/audio/ @thierrymgn
+
+# Playlists et bibliothèque : créées par Baptiste, file d'attente et
+# modes de lecture ajoutés par Antony — les deux relisent.
+/mobile/lib/features/playlists/ @Oceloott @LignacAntony
+/mobile/lib/features/tracks/    @Oceloott @LignacAntony
+/mobile/lib/features/library/   @Oceloott @LignacAntony

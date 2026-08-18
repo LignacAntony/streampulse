@@ -1,0 +1,12 @@
+# Fusionne les identités git multiples des contributeurs pour que
+# `git shortlog -sne` et les statistiques GitHub reflètent la réalité.
+# Format : Nom canonique <email canonique> <autre email>
+# Voir : https://git-scm.com/docs/gitmailmap
+
+Antony Lignac <lignac.antony@live.fr>
+
+Thierry Maignan <maignan.thierry@outlook.fr>
+Thierry Maignan <maignan.thierry@outlook.fr> <81976242+thierrymgn@users.noreply.github.com>
+
+Baptiste Ballesteros <baptiste.ballesteros@ecole-decode.fr>
+Baptiste Ballesteros <baptiste.ballesteros@ecole-decode.fr> <60733546+Oceloott@users.noreply.github.com>
