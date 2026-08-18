@@ -68,6 +68,12 @@ services:
       STREAM_INGEST_BASE_URL: ${STREAM_INGEST_BASE_URL:-https://api.streampulse.win}
       INGEST_RECONNECT_GRACE_SECONDS: ${INGEST_RECONNECT_GRACE_SECONDS:-45}
       INGEST_STOP_TIMEOUT_SECONDS: ${INGEST_STOP_TIMEOUT_SECONDS:-10}
+      # Vrai en prod : l'API n'est jamais jointe en direct, tout passe par Caddy
+      # qui réécrit X-Forwarded-For. Sans cette variable, tous les auditeurs
+      # partagent l'adresse du proxy et le compteur d'audience sature à 1
+      # (STR-154, ADR 025).
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      HLS_MAX_CONCURRENT: ${HLS_MAX_CONCURRENT:-256}
       # LOG_PRETTY volontairement absent : en conteneur la sortie doit rester
       # du JSON pour la collecte Loki (STR-163, ADR 018).
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -119,7 +125,13 @@ services:
     networks:
       - streampulse-net
     ports:
-      - "9090:9090"
+      # Bind loopback : Prometheus n'a ni authentification ni TLS (pas de
+      # --web.config.file). Publié sur 0.0.0.0, il sert l'API PromQL complète et
+      # /api/v1/targets à quiconque — ce qui rend inopérant le `respond /metrics
+      # 403` du Caddyfile, la même donnée restant lisible par le port voisin.
+      # ufw ne protège pas : Docker insère ses règles DNAT en amont.
+      # Accès distant : tunnel SSH (ssh -L 9090:127.0.0.1:9090 …).
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
@@ -202,7 +214,11 @@ services:
     networks:
       - streampulse-net
     ports:
-      - "3000:3000"
+      # Bind loopback : publié sur 0.0.0.0, Grafana sert son formulaire de
+      # connexion en HTTP clair, hors Caddy — le mot de passe admin transiterait
+      # en clair sur le réseau.
+      # Accès distant : tunnel SSH (ssh -L 3000:127.0.0.1:3000 …).
+      - "127.0.0.1:3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro

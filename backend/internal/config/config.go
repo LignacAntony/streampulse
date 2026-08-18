@@ -46,6 +46,57 @@ var validLogLevels = map[string]bool{
 	"warn": true, "error": true, "fatal": true, "panic": true,
 }
 
+// envKeys énumère les variables d'environnement lues par Load, avec leur valeur
+// par défaut quand elles en ont une. Table unique et non deux listes parallèles :
+// une clé oubliée d'un côté diverge en silence.
+//
+// Le bind est nécessaire parce que viper.Unmarshal n'itère que sur les clés
+// qu'il connaît — AutomaticEnv() ne suffit pas à en révéler une. Une clé devient
+// connue par SetDefault *ou* par BindEnv ; les clés sans défaut (secrets, SMTP,
+// endpoints) ne dépendent donc que de cette table. On lie toutes les clés, avec
+// ou sans défaut, pour n'avoir jamais à se demander laquelle des deux voies
+// couvre quel champ.
+//
+// TestEnvKeys_CouvrentTousLesChampsDeConfig la garde alignée sur les tags
+// mapstructure de Config.
+//
+// CORS_ALLOWED_ORIGINS y figure alors que le champ porte `mapstructure:"-"` :
+// il est lu à part via v.GetString puis découpé (parseCSV).
+var envKeys = []struct {
+	key string
+	def any // nil = pas de défaut (valeur requise, ou vide acceptée)
+}{
+	{key: "GO_ENV", def: defaultGoEnv},
+	{key: "API_PORT", def: defaultAPIPort},
+	{key: "JWT_SECRET"},
+
+	{key: "DB_HOST", def: defaultDBHost},
+	{key: "DB_PORT", def: defaultDBPort},
+	{key: "DB_USER"},
+	{key: "DB_PASSWORD"},
+	{key: "DB_NAME"},
+
+	{key: "SMTP_HOST"},
+	{key: "SMTP_PORT"},
+	{key: "SMTP_USERNAME"},
+	{key: "SMTP_PASSWORD"},
+	{key: "SMTP_FROM"},
+
+	{key: "APP_BASE_URL"},
+	{key: "CORS_ALLOWED_ORIGINS"},
+	{key: "STREAM_INGEST_BASE_URL", def: defaultStreamIngestBaseURL},
+	{key: "STORAGE_PATH", def: defaultStoragePath},
+
+	{key: "HLS_MAX_CONCURRENT", def: defaultHLSMaxConcurrent},
+	{key: "INGEST_RECONNECT_GRACE_SECONDS", def: defaultIngestReconnectGraceSeconds},
+	{key: "INGEST_STOP_TIMEOUT_SECONDS", def: defaultIngestStopTimeoutSeconds},
+	{key: "TRUST_PROXY_HEADERS", def: false},
+
+	{key: "LOG_LEVEL", def: defaultLogLevel},
+	{key: "LOG_PRETTY", def: false},
+	{key: "OTEL_EXPORTER_OTLP_ENDPOINT"},
+}
+
 // Config représente la configuration complète de l'API StreamPulse.
 //
 // Toutes les valeurs proviennent de variables d'environnement —
@@ -122,19 +173,13 @@ type Config struct {
 func Load() (*Config, error) {
 	v := viper.New()
 
-	// Valeurs par défaut pour les variables non sensibles.
-	v.SetDefault("GO_ENV", defaultGoEnv)
-	v.SetDefault("API_PORT", defaultAPIPort)
-	v.SetDefault("DB_HOST", defaultDBHost)
-	v.SetDefault("DB_PORT", defaultDBPort)
-	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
-	v.SetDefault("STORAGE_PATH", defaultStoragePath)
-	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
-	v.SetDefault("INGEST_RECONNECT_GRACE_SECONDS", defaultIngestReconnectGraceSeconds)
-	v.SetDefault("INGEST_STOP_TIMEOUT_SECONDS", defaultIngestStopTimeoutSeconds)
-	v.SetDefault("TRUST_PROXY_HEADERS", false)
-	v.SetDefault("LOG_LEVEL", defaultLogLevel)
-	v.SetDefault("LOG_PRETTY", false)
+	// Valeurs par défaut, posées avant la lecture du .env (elles restent de plus
+	// basse précédence quoi qu'il arrive).
+	for _, e := range envKeys {
+		if e.def != nil {
+			v.SetDefault(e.key, e.def)
+		}
+	}
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -153,19 +198,9 @@ func Load() (*Config, error) {
 	// Override par les variables d'environnement (priorité max).
 	v.AutomaticEnv()
 
-	// Bind explicite — viper.Unmarshal ne lit pas AutomaticEnv() seul.
-	for _, key := range []string{
-		"GO_ENV", "API_PORT", "JWT_SECRET",
-		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
-		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
-		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
-		"STORAGE_PATH",
-		"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
-		"INGEST_STOP_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_PRETTY",
-		"OTEL_EXPORTER_OTLP_ENDPOINT",
-	} {
-		if err := v.BindEnv(key); err != nil {
-			return nil, fmt.Errorf("config: bind %s: %w", key, err)
+	for _, e := range envKeys {
+		if err := v.BindEnv(e.key); err != nil {
+			return nil, fmt.Errorf("config: bind %s: %w", e.key, err)
 		}
 	}
 
