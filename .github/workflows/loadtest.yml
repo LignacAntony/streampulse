@@ -2,6 +2,11 @@ name: Load Test
 
 on:
   workflow_dispatch:
+  # Hebdomadaire : le harnais vit sous build tag, donc hors du chemin de la CI
+  # de PR. `go vet -tags loadtest` (job Test de la CI) garantit qu'il compile ;
+  # ce run garantit qu'il passe encore, et fournit des chiffres datés à l'ADR 016.
+  schedule:
+    - cron: "0 5 * * 1"
 
 permissions:
   contents: read

@@ -35,6 +35,14 @@ jobs:
           version: v2.4.0
           working-directory: ./backend
           skip-cache: true
+          # `config verify` télécharge le schéma JSON depuis golangci-lint.run à
+          # chaque run. Le lint dépend donc de la disponibilité d'un site tiers,
+          # et un simple timeout fait échouer la CI sans qu'aucune ligne de code
+          # soit en cause — arrivé sur la PR #312, alors que le même commit
+          # passait ailleurs à la même minute. La validation du fichier n'apporte
+          # rien ici : `.golangci.yml` bouge rarement, et une clé invalide fait
+          # de toute façon échouer golangci-lint juste après.
+          verify: false
 
   test:
     name: Test
@@ -55,6 +63,57 @@ jobs:
 
       - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      # Les fichiers sous build tag sont exclus de `go build ./...` comme de
+      # `go test ./...` : ils pourrissent sans que rien n'échoue. C'est ce qui
+      # est arrivé au harnais de charge, resté trois semaines et demie
+      # non compilable après un élargissement de StreamService (STR-241).
+      #
+      # La liste reste déclarée à la main — `go vet -tags` attend un ensemble de
+      # tags simultanément satisfiables, qu'une dérivation aveugle ne garantit
+      # pas — mais elle est désormais gardée : un tag présent dans l'arbre et
+      # absent d'ici fait échouer le job. Sans cette garde, un futur fichier sous
+      # un nouveau tag retomberait exactement dans le trou que cette étape
+      # prétend fermer. Même principe que envKeys côté config.
+      - name: Vérifier la compilation des fichiers sous build tag
+        working-directory: ./backend
+        env:
+          DECLARED_TAGS: "integration loadtest"
+        run: |
+          set -euo pipefail
+
+          # Tags simples présents dans l'arbre. `ignore` est la convention Go
+          # pour un fichier volontairement hors build : rien à vérifier.
+          found=$(grep -rhE '^//go:build ' --include='*.go' . \
+            | sed 's|^//go:build ||' \
+            | tr -s ' ()&|!' '\n' \
+            | grep -E '^[a-z0-9_]+$' \
+            | grep -vx 'ignore' \
+            | sort -u || true)
+
+          # `while read` plutôt que `for tag in $found` : zsh ne découpe pas une
+          # expansion non quotée, le second se comporterait donc différemment
+          # sur un poste de dev et sur le runner. Un garde-fou qu'on ne peut pas
+          # rejouer en local n'en est pas un.
+          missing=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            case " $DECLARED_TAGS " in
+              *" $tag "*) ;;
+              *) missing="$missing $tag" ;;
+            esac
+          done <<EOF
+          $found
+          EOF
+
+          if [ -n "$missing" ]; then
+            echo "::error::build tag présent dans l'arbre mais absent de DECLARED_TAGS :$missing"
+            echo "Ajoutez-le à DECLARED_TAGS (ci.yml), sinon ces fichiers cesseront de compiler sans bruit."
+            exit 1
+          fi
+
+          echo "tags vérifiés : $DECLARED_TAGS"
+          go vet -tags "$(echo $DECLARED_TAGS | tr ' ' ',')" ./...
 
       - name: Run tests
         working-directory: ./backend
