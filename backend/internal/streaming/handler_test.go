@@ -1196,16 +1196,70 @@ func TestHandler_ClientKey_IgnoresForwardedForByDefault(t *testing.T) {
 	}
 }
 
-func TestHandler_ClientKey_UsesFirstForwardedHopWhenTrusted(t *testing.T) {
+func TestHandler_ClientKey_UsesLastForwardedHopWhenTrusted(t *testing.T) {
+	// Le dernier maillon est celui qu'a écrit le proxy de confiance ; tout ce
+	// qui précède vient du client. Caddy n'écrase pas l'en-tête par défaut, il
+	// y ajoute l'IP observée — lire le premier maillon reviendrait à laisser le
+	// client choisir sa clé de comptage.
+	cases := []struct {
+		name string
+		xff  string
+		want string
+	}{
+		{
+			name: "en-tête posé par le seul proxy",
+			xff:  "203.0.113.7",
+			want: "203.0.113.7",
+		},
+		{
+			name: "valeur forgée par le client, IP réelle ajoutée par Caddy",
+			xff:  "1.2.3.4, 203.0.113.7",
+			want: "203.0.113.7",
+		},
+		{
+			name: "chaîne forgée plus longue",
+			xff:  "1.2.3.4, 5.6.7.8, 203.0.113.7",
+			want: "203.0.113.7",
+		},
+		{
+			name: "espaces superflus",
+			xff:  "1.2.3.4 ,   203.0.113.7   ",
+			want: "203.0.113.7",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(t.Context()))
+			h.SetTrustProxyHeaders(true)
+			req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/playlist.m3u8", nil)
+			req.RemoteAddr = "192.0.2.10:54321"
+			req.Header.Set("X-Forwarded-For", tc.xff)
+
+			if got := h.clientKey(req); got != tc.want {
+				t.Errorf("clientKey = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHandler_ClientKey_ForgedForwardedForCannotSplitCount verrouille l'effet
+// recherché : deux requêtes du même auditeur qui forge des X-Forwarded-For
+// différents doivent produire la *même* clé, sinon il gonfle le compteur seul.
+func TestHandler_ClientKey_ForgedForwardedForCannotSplitCount(t *testing.T) {
 	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(t.Context()))
 	h.SetTrustProxyHeaders(true)
-	req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/playlist.m3u8", nil)
-	req.RemoteAddr = "192.0.2.10:54321"
-	// Premier maillon = client d'origine, les suivants sont les proxies.
-	req.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
 
-	if got := h.clientKey(req); got != "1.2.3.4" {
-		t.Errorf("clientKey = %q, want %q", got, "1.2.3.4")
+	key := func(forged string) string {
+		req := httptest.NewRequest(http.MethodGet, "/api/streams/s1/playlist.m3u8", nil)
+		req.RemoteAddr = "192.0.2.10:54321"
+		// Ce que Caddy transmet : la valeur du client, puis l'IP qu'il observe.
+		req.Header.Set("X-Forwarded-For", forged+", 203.0.113.7")
+		return h.clientKey(req)
+	}
+
+	if a, b := key("1.2.3.4"), key("5.6.7.8"); a != b {
+		t.Errorf("clés différentes pour un même auditeur : %q vs %q — le compteur est falsifiable", a, b)
 	}
 }
 

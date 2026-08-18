@@ -23,5 +23,12 @@ api.streampulse.win {
 		-Server
 	}
 
-	reverse_proxy api:8080
+	reverse_proxy api:8080 {
+		# Caddy n'écrase pas X-Forwarded-For par défaut : il ajoute l'IP observée
+		# à la valeur reçue. Un client qui envoie `X-Forwarded-For: 1.2.3.4` ferait
+		# donc transmettre `1.2.3.4, <ip réelle>`. Forcer la réécriture réduit
+		# l'en-tête au seul maillon de confiance, seule valeur que l'API doit lire
+		# pour le comptage d'audience (TRUST_PROXY_HEADERS, ADR 025).
+		header_up X-Forwarded-For {remote_host}
+	}
 }

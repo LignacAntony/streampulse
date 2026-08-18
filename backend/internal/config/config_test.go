@@ -365,7 +365,7 @@ func TestLoad_OTELEndpoint(t *testing.T) {
 	})
 }
 
-// TestBindEnvKeys_CouvrentTousLesChampsDeConfig garde boundEnvKeys aligné sur la
+// TestEnvKeys_CouvrentTousLesChampsDeConfig garde boundEnvKeys aligné sur la
 // structure Config.
 //
 // Un champ dont la clé n'est ni dans boundEnvKeys ni dans un SetDefault est
@@ -373,10 +373,10 @@ func TestLoad_OTELEndpoint(t *testing.T) {
 // effet, sans le moindre message. Exiger la présence dans boundEnvKeys pour
 // *tous* les champs supprime la question « ce champ a-t-il un défaut ? » —
 // c'est une condition suffisante, vérifiable mécaniquement.
-func TestBindEnvKeys_CouvrentTousLesChampsDeConfig(t *testing.T) {
-	bound := make(map[string]bool, len(boundEnvKeys))
-	for _, key := range boundEnvKeys {
-		bound[key] = true
+func TestEnvKeys_CouvrentTousLesChampsDeConfig(t *testing.T) {
+	bound := make(map[string]bool, len(envKeys))
+	for _, e := range envKeys {
+		bound[e.key] = true
 	}
 
 	typ := reflect.TypeOf(Config{})
@@ -387,7 +387,7 @@ func TestBindEnvKeys_CouvrentTousLesChampsDeConfig(t *testing.T) {
 			continue
 		}
 		if !bound[tag] {
-			t.Errorf("champ %s : %q absent de boundEnvKeys — la variable d'environnement serait ignorée", field.Name, tag)
+			t.Errorf("champ %s : %q absent de envKeys — la variable d'environnement serait ignorée", field.Name, tag)
 		}
 	}
 }
@@ -402,6 +402,10 @@ func TestBindEnvKeys_CouvrentTousLesChampsDeConfig(t *testing.T) {
 func TestLoad_TrustProxyHeaders(t *testing.T) {
 	t.Run("absent → false", func(t *testing.T) {
 		setEnv(t, validVars())
+		// Neutralise explicitement : la variable peut être exportée dans le
+		// shell (CI ou poste de dev), ce qui rendrait l'assertion faussement
+		// verte ou instable.
+		t.Setenv("TRUST_PROXY_HEADERS", "")
 
 		cfg, err := Load()
 		if err != nil {
