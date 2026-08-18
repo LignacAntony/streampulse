@@ -29,3 +29,7 @@ generate-openapi-client:
 .PHONY: loadtest
 loadtest:
 	cd backend && go test -tags loadtest -race -count=1 -run TestLoad -v -timeout 5m ./internal/streaming/loadtest/
+
+.PHONY: check-android-security
+check-android-security:
+	python3 scripts/check-android-network-security.py

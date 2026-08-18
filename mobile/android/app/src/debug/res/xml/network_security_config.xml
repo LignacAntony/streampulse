@@ -11,6 +11,11 @@
   Cette permissivité ne concerne que cette variante de build : le release
   applique src/main/res/xml/network_security_config.xml, qui refuse le clair
   hors boucle locale.
+
+  ⚠️ Garder aligné sur src/profile/res/xml/network_security_config.xml. Les deux
+  variantes de développement portent la même politique ; le modèle de source
+  sets Android n'offrant pas d'inclusion, la duplication est subie. Une
+  divergence fait échouer `make check-android-security`.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
