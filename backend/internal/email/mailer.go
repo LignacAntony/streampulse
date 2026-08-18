@@ -72,7 +72,10 @@ func (l *LogMailer) SendPasswordResetEmail(ctx context.Context, to, rawToken str
 	if out == nil {
 		out = os.Stdout
 	}
-	fmt.Fprintf(out, "\n[dev] réinitialisation pour %s\n[dev] %s/reset-password?token=%s\n\n", to, l.baseURL, rawToken)
+	_, err := fmt.Fprintf(out, "\n[dev] réinitialisation pour %s\n[dev] %s/reset-password?token=%s\n\n", to, l.baseURL, rawToken)
+	if err != nil {
+		return fmt.Errorf("email: écriture du lien de développement: %w", err)
+	}
 	return nil
 }
 
