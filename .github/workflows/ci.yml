@@ -35,6 +35,14 @@ jobs:
           version: v2.4.0
           working-directory: ./backend
           skip-cache: true
+          # `config verify` télécharge le schéma JSON depuis golangci-lint.run à
+          # chaque run. Le lint dépend donc de la disponibilité d'un site tiers,
+          # et un simple timeout fait échouer la CI sans qu'aucune ligne de code
+          # soit en cause — arrivé sur la PR #312, alors que le même commit
+          # passait ailleurs à la même minute. La validation du fichier n'apporte
+          # rien ici : `.golangci.yml` bouge rarement, et une clé invalide fait
+          # de toute façon échouer golangci-lint juste après.
+          verify: false
 
   test:
     name: Test
