@@ -46,6 +46,32 @@ var validLogLevels = map[string]bool{
 	"warn": true, "error": true, "fatal": true, "panic": true,
 }
 
+// boundEnvKeys énumère les variables d'environnement liées explicitement.
+//
+// viper.Unmarshal n'itère que sur les clés qu'il connaît : AutomaticEnv() ne
+// suffit pas à en révéler une. Une clé devient connue par SetDefault **ou** par
+// BindEnv — sans l'un des deux, la variable d'environnement est ignorée en
+// silence. Les clés sans défaut (secrets, SMTP, endpoints) dépendent donc
+// entièrement de cette liste.
+//
+// TestBindEnvKeys_CouvrentTousLesChampsDeConfig la garde alignée sur les tags
+// mapstructure de Config : y inscrire même les clés qui ont un défaut évite
+// d'avoir à retenir laquelle des deux voies couvre quel champ.
+//
+// CORS_ALLOWED_ORIGINS y figure alors que le champ porte `mapstructure:"-"` :
+// il est lu à part via v.GetString puis découpé (parseCSV).
+var boundEnvKeys = []string{
+	"GO_ENV", "API_PORT", "JWT_SECRET",
+	"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
+	"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
+	"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
+	"STORAGE_PATH",
+	"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
+	"INGEST_STOP_TIMEOUT_SECONDS", "TRUST_PROXY_HEADERS",
+	"LOG_LEVEL", "LOG_PRETTY",
+	"OTEL_EXPORTER_OTLP_ENDPOINT",
+}
+
 // Config représente la configuration complète de l'API StreamPulse.
 //
 // Toutes les valeurs proviennent de variables d'environnement —
@@ -153,17 +179,7 @@ func Load() (*Config, error) {
 	// Override par les variables d'environnement (priorité max).
 	v.AutomaticEnv()
 
-	// Bind explicite — viper.Unmarshal ne lit pas AutomaticEnv() seul.
-	for _, key := range []string{
-		"GO_ENV", "API_PORT", "JWT_SECRET",
-		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
-		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
-		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
-		"STORAGE_PATH",
-		"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
-		"INGEST_STOP_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_PRETTY",
-		"OTEL_EXPORTER_OTLP_ENDPOINT",
-	} {
+	for _, key := range boundEnvKeys {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("config: bind %s: %w", key, err)
 		}

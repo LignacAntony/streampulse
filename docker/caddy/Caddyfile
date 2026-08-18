@@ -6,5 +6,22 @@ api.streampulse.win {
 	# l'exposer publierait routes, volumes, taux d'erreur et version Go (ADR 019).
 	respond /metrics 403
 
+	# En-têtes de sécurité — Caddy n'en pose aucun par défaut.
+	header {
+		# Force HTTPS pendant un an. `preload` est volontairement omis : son
+		# retrait des listes navigateurs prend des mois, on ne l'engage pas
+		# depuis un fichier de config.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		# L'API ne sert que du JSON en prod — Swagger UI n'est monté que si
+		# !cfg.IsProd() (cmd/api/main.go). Une CSP qui interdit tout est donc
+		# sans risque ici ; à assouplir si une page HTML est exposée un jour.
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		# Ne pas publier la version de Caddy.
+		-Server
+	}
+
 	reverse_proxy api:8080
 }

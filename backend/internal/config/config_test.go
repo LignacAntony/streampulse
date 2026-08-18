@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -360,6 +361,67 @@ func TestLoad_OTELEndpoint(t *testing.T) {
 		}
 		if cfg.OTELExporterOTLPEndpoint != "http://tempo:4318" {
 			t.Errorf("OTELExporterOTLPEndpoint = %q", cfg.OTELExporterOTLPEndpoint)
+		}
+	})
+}
+
+// TestBindEnvKeys_CouvrentTousLesChampsDeConfig garde boundEnvKeys aligné sur la
+// structure Config.
+//
+// Un champ dont la clé n'est ni dans boundEnvKeys ni dans un SetDefault est
+// invisible pour viper.Unmarshal : la variable d'environnement reste sans
+// effet, sans le moindre message. Exiger la présence dans boundEnvKeys pour
+// *tous* les champs supprime la question « ce champ a-t-il un défaut ? » —
+// c'est une condition suffisante, vérifiable mécaniquement.
+func TestBindEnvKeys_CouvrentTousLesChampsDeConfig(t *testing.T) {
+	bound := make(map[string]bool, len(boundEnvKeys))
+	for _, key := range boundEnvKeys {
+		bound[key] = true
+	}
+
+	typ := reflect.TypeOf(Config{})
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		tag := field.Tag.Get("mapstructure")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if !bound[tag] {
+			t.Errorf("champ %s : %q absent de boundEnvKeys — la variable d'environnement serait ignorée", field.Name, tag)
+		}
+	}
+}
+
+// TestLoad_TrustProxyHeaders verrouille la lecture de la variable.
+//
+// STR-240 : la clé manquait à boundEnvKeys, et son absence de
+// docker-compose.prod.yml laissait le défaut `false` s'appliquer en production
+// — derrière Caddy, tous les auditeurs partagent l'adresse du proxy et le
+// comptage sature à un. Le SetDefault suffisait en fait à rendre la clé
+// lisible ; ce test l'établit plutôt que de le supposer.
+func TestLoad_TrustProxyHeaders(t *testing.T) {
+	t.Run("absent → false", func(t *testing.T) {
+		setEnv(t, validVars())
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.TrustProxyHeaders {
+			t.Error("TrustProxyHeaders = true, attendu false par défaut")
+		}
+	})
+
+	t.Run("true → true", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("TRUST_PROXY_HEADERS", "true")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if !cfg.TrustProxyHeaders {
+			t.Error("TrustProxyHeaders = false alors que TRUST_PROXY_HEADERS=true")
 		}
 	})
 }
