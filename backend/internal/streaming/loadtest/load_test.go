@@ -60,6 +60,24 @@ func (stubService) StartStream(context.Context, string, string) (streaming.Strea
 func (stubService) StopStream(context.Context, string, string) (streaming.Stream, error) {
 	return streaming.Stream{}, nil
 }
+func (stubService) AddFavorite(context.Context, string, string) error    { return nil }
+func (stubService) RemoveFavorite(context.Context, string, string) error { return nil }
+func (stubService) ListFavorites(context.Context, string) ([]streaming.Stream, error) {
+	return nil, nil
+}
+func (stubService) ListMyStreams(context.Context, string) ([]streaming.Stream, error) {
+	return nil, nil
+}
+func (stubService) RotateStreamKey(context.Context, string, string) (streaming.Stream, error) {
+	return streaming.Stream{}, nil
+}
+
+// L'assertion de compilation manquait : sans elle, une méthode ajoutée à
+// StreamService ne casse ce harnais qu'au moment où quelqu'un lance
+// `make loadtest`. C'est ce qui s'est produit — le stub est resté incomplet
+// trois semaines et demie, le build tag `loadtest` excluant ce fichier de
+// `go build ./...` comme de `go test ./...` (STR-241).
+var _ streaming.StreamService = stubService{}
 
 // startServer monte les 3 routes HLS comme cmd/api/main.go les monte : ingest
 // sans JWT, playlist/segments en lecture publique (OptionalAuth, STR-108) sous

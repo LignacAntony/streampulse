@@ -56,6 +56,14 @@ jobs:
       - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      # Les fichiers sous build tag sont exclus de `go build ./...` comme de
+      # `go test ./...` : ils pourrissent sans que rien n'échoue. C'est ce qui
+      # est arrivé au harnais de charge, resté trois semaines et demie
+      # non compilable après un élargissement de StreamService (STR-241).
+      - name: Vérifier la compilation des fichiers sous build tag
+        working-directory: ./backend
+        run: go vet -tags loadtest,integration ./...
+
       - name: Run tests
         working-directory: ./backend
         run: go test -v -race -coverprofile=coverage.txt ./...
