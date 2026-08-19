@@ -6,15 +6,71 @@ run:
 linters:
   default: none
   enable:
+    # --- Correction (socle historique) ---
     - errcheck
     - govet
     - ineffassign
     - staticcheck
+
+    # --- Sécurité et robustesse (STR-241) ---
+    # gosec tourne déjà dans le workflow Security, mais uniquement sur push et
+    # sans les fichiers de test. L'activer ici le fait jouer à chaque lint —
+    # donc en local avant le commit, et sur chaque PR via la CI.
+    - gosec
+    # bodyclose : un corps de réponse HTTP non fermé retient sa connexion dans
+    # le pool. Sur une API qui sonde des flux en continu, la fuite est
+    # cumulative et ne se voit qu'à l'épuisement des descripteurs, en prod.
+    - bodyclose
+    # errorlint : impose errors.Is/As plutôt que == ou une assertion de type.
+    # Le code enveloppe systématiquement ses erreurs (%w, apperror) : une
+    # comparaison directe rate sa cible dès qu'une couche enrobe, et c'est le
+    # mauvais statut HTTP qui part au client.
+    - errorlint
+    # noctx : une requête sortante sans context n'est ni annulable ni traçable.
+    # Elle survit à l'arrêt gracieux du serveur et n'apparaît dans aucun span
+    # OpenTelemetry (ADR 020).
+    - noctx
+
   exclusions:
     paths:
       - vendor/
       - ".*\\.pb\\.go$"
       - ".*\\.gen\\.go$"
+
+    # Exclusions ciblées — chacune vise une règle précise sur un périmètre
+    # précis. Une exclusion large (un linter entier, un package entier) ferait
+    # disparaître les vrais défauts avec les faux positifs.
+    rules:
+      # --- noctx dans les tests -------------------------------------------
+      # httptest.NewRequest est l'idiome de la stdlib pour fabriquer une requête
+      # de test ; sa variante ...WithContext n'apporte rien ici, puisqu'il n'y a
+      # ni annulation à honorer ni trace à corréler dans un test. Les ~97 appels
+      # concernés sont du bruit ; noctx garde toute sa valeur sur le code de
+      # production, où il reste actif.
+      - path: '_test\.go$'
+        linters:
+          - noctx
+
+      # --- gosec G204/G304 dans les tests ---------------------------------
+      # G204 (sous-process avec variable) et G304 (lecture de fichier via
+      # variable) supposent une entrée attaquant. Dans les tests, la variable
+      # est un littéral du test lui-même ou un chemin rendu par t.TempDir() :
+      # il n'y a pas d'entrée externe à détourner. Les autres règles gosec
+      # restent appliquées aux tests.
+      - path: '_test\.go$'
+        linters:
+          - gosec
+        text: 'G(204|304):'
+
+      # --- gosec G101 sur un fixture de test ------------------------------
+      # G101 se déclenche sur le NOM de la constante (rawToken) associé à une
+      # chaîne littérale. C'est une valeur de jeu utilisée pour vérifier le
+      # hachage d'un token de réinitialisation, pas un secret : rien à fuiter,
+      # rien à faire tourner. Portée volontairement réduite à ce seul fichier.
+      - path: 'internal/auth/service_test\.go$'
+        linters:
+          - gosec
+        text: 'G101:'
 
 formatters:
   enable:

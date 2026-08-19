@@ -311,7 +311,7 @@ func TestTranscoder_CloseIsIdempotent(t *testing.T) {
 		t.Fatalf("copie vers le transcodeur: %v", err)
 	}
 	first := tr.close()
-	if second := tr.close(); second != first {
+	if second := tr.close(); !errors.Is(second, first) {
 		t.Fatalf("close non idempotent: %v puis %v", first, second)
 	}
 }

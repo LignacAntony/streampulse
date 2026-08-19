@@ -128,6 +128,9 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 		ls.mu.Unlock()
 		return
 	}
+	// #nosec G118 -- cancel n'est pas perdu : il est stocké dans s.cancel et
+	// appelé par reap() et StopAll(). gosec ne suit pas un CancelFunc rangé dans
+	// une structure ; ici la fuite qu'il redoute n'existe pas.
 	ctx, cancel := context.WithCancel(ls.base)
 	s := &session{
 		streamID:    streamID,

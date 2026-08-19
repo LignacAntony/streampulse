@@ -189,6 +189,11 @@ func newTranscoder(dst io.Writer, demuxer string) (*transcoder, error) {
 		"pipe:1",
 	)
 
+	// Même raison qu'en hls.go : close() ferme stdin puis tue le process au bout
+	// de hlsShutdownGrace, et attend la fin de la recopie pour ne pas tronquer
+	// les derniers octets AAC. Un kill par context court-circuiterait cette
+	// séquence.
+	//nolint:noctx // arrêt géré explicitement par close(), cf. ci-dessus
 	cmd := exec.Command("ffmpeg", args...) // #nosec G204 -- args constants serveur, aucune entrée diffuseur
 	stderr := &tailBuffer{max: transcodeStderrMaxBytes}
 	cmd.Stderr = stderr

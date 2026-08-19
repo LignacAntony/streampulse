@@ -321,6 +321,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
 	}
 
+	// #nosec G115 -- limit et offset sont bornés juste au-dessus (cf. le clamp à
+	// 1<<31-1) : la conversion est sûre. Même remarque qu'en admin/handler.go
+	// sur les versions de gosec sans analyse d'intervalle.
 	streams, err := h.svc.ListPublicLive(r.Context(), int32(limit), int32(offset))
 	if err != nil {
 		httpjson.WriteError(w, r, err)
