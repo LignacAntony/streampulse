@@ -5,6 +5,12 @@ import '../core/audio/audio_playback_service.dart';
 import '../core/audio/playback_auth.dart';
 import '../core/audio/queue_playback_service.dart';
 import '../core/network/dio_client.dart';
+import '../core/offline/connectivity_service.dart';
+import '../core/offline/connectivity_service_impl.dart';
+import '../core/offline/offline_cache_repository.dart';
+import '../core/offline/offline_cache_repository_impl.dart';
+import '../core/offline/offline_database.dart';
+import '../core/offline/track_download_service.dart';
 import '../core/storage/secure_storage.dart';
 import '../features/auth/data/datasources/auth_remote_data_source.dart';
 import '../features/auth/data/repositories/auth_repository_impl.dart';
@@ -17,6 +23,7 @@ import '../features/broadcaster/data/datasources/broadcaster_remote_data_source.
 import '../features/broadcaster/data/repositories/broadcaster_repository_impl.dart';
 import '../features/broadcaster/domain/repositories/broadcaster_repository.dart';
 import '../features/broadcaster/presentation/providers/broadcaster_controller.dart';
+import '../features/playlists/presentation/providers/offline_playlist_controller.dart';
 import '../features/playlists/presentation/providers/playlist_queue_controller.dart';
 import '../features/profile/data/datasources/profile_remote_data_source.dart';
 import '../features/profile/data/repositories/profile_repository_impl.dart';
@@ -141,11 +148,26 @@ class StreamPulseApp extends StatelessWidget {
                 ctx.read<StreamRepository>().isManifestUnavailable,
           ),
         ),
-        // File d'attente d'une playlist (US-05-04), app-level pour les mêmes
-        // raisons que le lecteur de direct : la lecture survit à la navigation
-        // et à l'arrière-plan. Les deux se disputent l'unique lecteur natif —
-        // d'où l'aiguillage croisé ci-dessous, qui garantit qu'au plus un des
-        // deux contrôleurs se croit en train de jouer.
+        Provider<OfflineDatabase>(create: (_) => OfflineDatabase()),
+        Provider<OfflineCacheRepository>(
+          create: (ctx) =>
+              OfflineCacheRepositoryImpl(ctx.read<OfflineDatabase>()),
+        ),
+        Provider<TrackDownloadService>(
+          create: (ctx) => TrackDownloadService(
+            ctx.read<DioClient>().dio,
+            ctx.read<OfflineCacheRepository>(),
+          ),
+        ),
+        ChangeNotifierProvider<ConnectivityService>(
+          create: (_) => ConnectivityServiceImpl(),
+        ),
+        ChangeNotifierProvider<OfflinePlaylistController>(
+          create: (ctx) => OfflinePlaylistController(
+            cacheRepository: ctx.read<OfflineCacheRepository>(),
+            downloadService: ctx.read<TrackDownloadService>(),
+          )..init(),
+        ),
         ChangeNotifierProvider<PlaylistQueueController>(
           create: (ctx) {
             final live = ctx.read<AudioPlayerController>();
@@ -153,6 +175,8 @@ class StreamPulseApp extends StatelessWidget {
               service: ctx.read<QueuePlaybackService>(),
               token: ctx.read<PlaybackAuth>().token,
               stopLive: live.stop,
+              resolveTrackUri:
+                  ctx.read<OfflineCacheRepository>().cachedFilePath,
             );
             live.onTakeOver = queue.clear;
             return queue;

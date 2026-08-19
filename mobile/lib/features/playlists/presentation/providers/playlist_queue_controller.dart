@@ -26,9 +26,11 @@ class PlaylistQueueController extends ChangeNotifier {
     required QueuePlaybackService service,
     required PlaybackTokenProvider token,
     Future<void> Function()? stopLive,
+    Future<String?> Function(String trackId)? resolveTrackUri,
   })  : _service = service,
         _token = token,
-        _stopLive = stopLive {
+        _stopLive = stopLive,
+        _resolveTrackUri = resolveTrackUri {
     _stateSub = _service.playerStateStream.listen(_onPlayerState);
     _indexSub = _service.currentIndexStream.listen(_onIndexChanged);
     _errorSub = _service.playbackErrors.listen(_onError);
@@ -40,6 +42,8 @@ class PlaylistQueueController extends ChangeNotifier {
   /// Arrête le direct avant de prendre le lecteur partagé. Sans ça, le
   /// mini-player continuerait d'annoncer un flux qui ne joue plus.
   final Future<void> Function()? _stopLive;
+
+  final Future<String?> Function(String trackId)? _resolveTrackUri;
 
   /// Nombre de reprises automatiques avant d'abandonner, avec backoff 1/2/4 s
   /// (même discipline que le direct, STR-118).
@@ -341,22 +345,33 @@ class PlaylistQueueController extends ChangeNotifier {
       await _service.setShuffleEnabled(_shuffleEnabled);
       if (_disposed || generation != _generation) return;
 
+      final items = <QueueItem>[];
+      var hasRemote = false;
+      for (final track in _tracks) {
+        final cached = await _resolveTrackUri?.call(track.id);
+        if (_disposed || generation != _generation) return;
+        final url = cached != null
+            ? Uri.file(cached).toString()
+            : ApiConstants.trackStream(track.id);
+        if (cached == null) hasRemote = true;
+        items.add(QueueItem(
+          id: track.id,
+          url: url,
+          title: track.title,
+          artist: track.artist,
+          duration: track.durationS == null
+              ? null
+              : Duration(seconds: track.durationS!),
+        ));
+      }
+
       await _service.loadQueue(
-        [
-          for (final track in _tracks)
-            QueueItem(
-              id: track.id,
-              url: ApiConstants.trackStream(track.id),
-              title: track.title,
-              artist: track.artist,
-              duration: track.durationS == null
-                  ? null
-                  : Duration(seconds: track.durationS!),
-            ),
-        ],
+        items,
         initialIndex: fromIndex,
         initialPosition: position,
-        headers: token == null ? const {} : {'Authorization': 'Bearer $token'},
+        headers: !hasRemote || token == null
+            ? const {}
+            : {'Authorization': 'Bearer $token'},
         // Un ordre naturel n'a rien à imposer : le laisser à `null` évite de
         // figer une file qui n'est pas mélangée.
         order: keepOrder && _shuffleEnabled && !_order.isEmpty ? _order : null,
