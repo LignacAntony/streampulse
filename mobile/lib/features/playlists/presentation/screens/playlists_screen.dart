@@ -520,25 +520,27 @@ class _OfflineBadge extends StatelessWidget {
       (c) => c.isDownloading(playlistId),
     );
 
+    final colors = Theme.of(context).colorScheme;
+
     return Positioned(
       bottom: 8,
       left: 8,
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.5),
+          color: colors.scrim.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
         ),
         child: isDownloading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: colors.onInverseSurface,
                 ),
               )
-            : const Icon(Icons.cloud_done, size: 16, color: Colors.white),
+            : Icon(Icons.cloud_done, size: 16, color: colors.onInverseSurface),
       ),
     );
   }

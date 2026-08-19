@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/offline/entities/cached_track_status.dart';
+import '../../../../core/offline/offline_cache_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
@@ -55,6 +56,7 @@ class PlaylistDetailScreen extends StatelessWidget {
               ),
             ),
         playlistId,
+        offlineFallback: ctx.read<OfflineCacheRepository>().cachedTracks,
       )..load(),
       child: _PlaylistDetailBody(title: playlistName ?? 'Playlist'),
     );
@@ -167,7 +169,6 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
-          _OfflineAppBarButton(playlistId: controller.playlistId),
           IconButton(
             key: const Key('playlist_shuffle_play_button'),
             icon: const Icon(Icons.shuffle),
@@ -236,11 +237,14 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
 
     return Column(
       children: [
-        _OfflineSection(
-          playlistId: controller.playlistId,
-          playlistName: widget.title,
-          tracks: controller.tracks,
-        ),
+        if (controller.isOfflineFallback)
+          _OfflineBanner()
+        else
+          _OfflineSection(
+            playlistId: controller.playlistId,
+            playlistName: widget.title,
+            tracks: controller.tracks,
+          ),
         Expanded(
           child: ReorderableListView.builder(
             key: const Key('playlist_tracks_list'),
@@ -296,35 +300,6 @@ Future<bool> _confirmRemoveDialog(BuildContext context, String title) async {
   return confirmed ?? false;
 }
 
-class _OfflineAppBarButton extends StatelessWidget {
-  const _OfflineAppBarButton({required this.playlistId});
-
-  final String playlistId;
-
-  @override
-  Widget build(BuildContext context) {
-    final offline = context.select<OfflinePlaylistController, bool>(
-      (c) => c.isOffline(playlistId),
-    );
-    final downloading = context.select<OfflinePlaylistController, bool>(
-      (c) => c.isDownloading(playlistId),
-    );
-
-    return IconButton(
-      key: const Key('playlist_offline_button'),
-      icon: downloading
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(offline ? Icons.cloud_done : Icons.cloud_download_outlined),
-      tooltip: offline ? 'Disponible hors ligne' : 'Rendre disponible hors ligne',
-      onPressed: null,
-    );
-  }
-}
-
 class _OfflineSection extends StatelessWidget {
   const _OfflineSection({
     required this.playlistId,
@@ -341,6 +316,13 @@ class _OfflineSection extends StatelessWidget {
     final offlineController = context.watch<OfflinePlaylistController>();
     final isOffline = offlineController.isOffline(playlistId);
     final progress = offlineController.downloadProgress(playlistId);
+
+    final error = offlineController.consumeError();
+    if (error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) showAuthErrorToast(context, error);
+      });
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -457,6 +439,36 @@ class _TrackTile extends StatelessWidget {
           color: colors.onSurfaceVariant,
         ),
     };
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      decoration: BoxDecoration(
+        color: colors.tertiaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_done, size: 20, color: colors.onTertiaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Mode hors ligne',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onTertiaryContainer,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

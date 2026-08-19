@@ -20,7 +20,10 @@ class OfflinePlaylistController extends ChangeNotifier {
   Set<String> _offlineIds = {};
   final Map<String, double> _downloadProgress = {};
   final Map<String, List<CachedTrackStatus>> _trackStatuses = {};
+  final Set<String> _busy = {};
   bool _disposed = false;
+
+  String? _toggleError;
 
   bool isOffline(String playlistId) => _offlineIds.contains(playlistId);
 
@@ -34,22 +37,34 @@ class OfflinePlaylistController extends ChangeNotifier {
       _downloadProgress.containsKey(playlistId) &&
       _downloadProgress[playlistId]! < 1.0;
 
+  /// Erreur consommable : lue une seule fois puis effacée.
+  String? consumeError() {
+    final err = _toggleError;
+    _toggleError = null;
+    return err;
+  }
+
   Future<void> init() async {
-    _offlineIds = await _cacheRepository.offlinePlaylistIds();
+    try {
+      _offlineIds = await _cacheRepository.offlinePlaylistIds();
 
-    for (final id in _offlineIds) {
-      final statuses = await _cacheRepository.downloadStatuses(id);
-      _trackStatuses[id] = statuses;
+      for (final id in _offlineIds) {
+        final statuses = await _cacheRepository.downloadStatuses(id);
+        _trackStatuses[id] = statuses;
 
-      final hasPending =
-          statuses.any((s) => s.status != TrackCacheStatus.done);
-      if (hasPending) {
-        final done =
-            statuses.where((s) => s.status == TrackCacheStatus.done).length;
-        _downloadProgress[id] =
-            statuses.isEmpty ? 0.0 : done / statuses.length;
-        _resumeDownload(id);
+        final hasPending =
+            statuses.any((s) => s.status != TrackCacheStatus.done);
+        if (hasPending) {
+          final done =
+              statuses.where((s) => s.status == TrackCacheStatus.done).length;
+          _downloadProgress[id] =
+              statuses.isEmpty ? 0.0 : done / statuses.length;
+          _resumeDownload(id);
+        }
       }
+    } catch (_) {
+      // sqflite / path_provider indisponible (web, test) : le mode hors ligne
+      // reste vide, sans crash.
     }
 
     if (!_disposed) notifyListeners();
@@ -60,28 +75,41 @@ class OfflinePlaylistController extends ChangeNotifier {
     String playlistName,
     List<PlaylistTrack> tracks,
   ) async {
-    if (_offlineIds.contains(playlistId)) {
-      _downloadService.cancelPlaylist(playlistId);
-      await _cacheRepository.disableOffline(playlistId);
+    if (_busy.contains(playlistId)) return;
+    _busy.add(playlistId);
+
+    try {
+      if (_offlineIds.contains(playlistId)) {
+        _downloadService.cancelPlaylist(playlistId);
+        await _cacheRepository.disableOffline(playlistId);
+        _offlineIds.remove(playlistId);
+        _downloadProgress.remove(playlistId);
+        _trackStatuses.remove(playlistId);
+        if (!_disposed) notifyListeners();
+        return;
+      }
+
+      await _cacheRepository.enableOffline(playlistId, playlistName, tracks);
+      _offlineIds.add(playlistId);
+
+      final statuses = await _cacheRepository.downloadStatuses(playlistId);
+      _trackStatuses[playlistId] = statuses;
+      final done =
+          statuses.where((s) => s.status == TrackCacheStatus.done).length;
+      _downloadProgress[playlistId] =
+          statuses.isEmpty ? 1.0 : done / statuses.length;
+      if (!_disposed) notifyListeners();
+
+      await _startDownload(playlistId, tracks);
+    } catch (e) {
       _offlineIds.remove(playlistId);
       _downloadProgress.remove(playlistId);
       _trackStatuses.remove(playlistId);
+      _toggleError = 'Impossible d\'activer le mode hors ligne';
       if (!_disposed) notifyListeners();
-      return;
+    } finally {
+      _busy.remove(playlistId);
     }
-
-    await _cacheRepository.enableOffline(playlistId, playlistName, tracks);
-    _offlineIds.add(playlistId);
-
-    final statuses = await _cacheRepository.downloadStatuses(playlistId);
-    _trackStatuses[playlistId] = statuses;
-    final done =
-        statuses.where((s) => s.status == TrackCacheStatus.done).length;
-    _downloadProgress[playlistId] =
-        statuses.isEmpty ? 1.0 : done / statuses.length;
-    if (!_disposed) notifyListeners();
-
-    await _startDownload(playlistId, tracks);
   }
 
   Future<void> _startDownload(
@@ -96,12 +124,12 @@ class OfflinePlaylistController extends ChangeNotifier {
       playlistId,
       trackInfos,
       onProgress: (trackId, progress) {
-        if (_disposed) return;
+        if (_disposed || !_offlineIds.contains(playlistId)) return;
         _updateTrackProgress(playlistId, trackId, progress);
       },
     );
 
-    if (_disposed) return;
+    if (_disposed || !_offlineIds.contains(playlistId)) return;
     _downloadProgress.remove(playlistId);
     final finalStatuses =
         await _cacheRepository.downloadStatuses(playlistId);

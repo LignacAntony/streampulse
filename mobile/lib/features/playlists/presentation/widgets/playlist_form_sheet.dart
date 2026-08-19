@@ -171,7 +171,13 @@ class _PlaylistFormSheetState extends State<PlaylistFormSheet> {
               validator: _validateDescription,
             ),
             const SizedBox(height: 24),
-            const OfflineToggleCard(isOffline: false),
+            const Opacity(
+              opacity: 0.5,
+              child: OfflineToggleCard(
+                isOffline: false,
+                subtitle: 'Disponible après création',
+              ),
+            ),
             const SizedBox(height: 24),
             _GradientButton(
               key: const Key('playlist_form_submit'),
@@ -259,11 +265,13 @@ class OfflineToggleCard extends StatelessWidget {
     required this.isOffline,
     this.onChanged,
     this.progress,
+    this.subtitle,
   });
 
   final bool isOffline;
   final ValueChanged<bool>? onChanged;
   final double? progress;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -294,7 +302,14 @@ class OfflineToggleCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Disponible hors ligne', style: text.titleMedium),
-                    if (isDownloading)
+                    if (subtitle != null)
+                      Text(
+                        subtitle!,
+                        style: text.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      )
+                    else if (isDownloading)
                       Text(
                         'Téléchargement en cours…',
                         style: text.bodySmall?.copyWith(
