@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -86,18 +87,15 @@ func TestStreamingMetrics_ActiveStreamsGaugeReadsLiveState(t *testing.T) {
 	expectGauge(1)
 }
 
+// trimFloat rend un float64 dans la notation courte du format texte Prometheus
+// (0, 1, 3 — pas 0.000000), pour composer les fixtures attendues.
+//
+// L'implémentation précédente enchaînait un switch sur trois valeurs puis
+// string(rune('0'+int(f))) : au-delà de 9 elle produisait ':' ou ';' au lieu
+// d'un nombre, et gosec la signalait (G115, conversion int -> rune non bornée).
+// strconv.FormatFloat fait le même travail sans borne implicite.
 func trimFloat(f float64) string {
-	switch f {
-	case 0:
-		return "0"
-	case 1:
-		return "1"
-	case 3:
-		return "3"
-	default:
-		t := int(f)
-		return string(rune('0' + t))
-	}
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
 func TestStreamingMetrics_ForgetStreamDrainsInFlightRequests(t *testing.T) {
