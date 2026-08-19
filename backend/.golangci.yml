@@ -62,12 +62,18 @@ linters:
           - gosec
         text: 'G(204|304):'
 
-      # --- gosec G101 sur un fixture de test ------------------------------
-      # G101 se déclenche sur le NOM de la constante (rawToken) associé à une
-      # chaîne littérale. C'est une valeur de jeu utilisée pour vérifier le
-      # hachage d'un token de réinitialisation, pas un secret : rien à fuiter,
-      # rien à faire tourner. Portée volontairement réduite à ce seul fichier.
-      - path: 'internal/auth/service_test\.go$'
+      # --- gosec G101 sur les fixtures de test ----------------------------
+      # G101 se déclenche sur le NOM d'une constante (rawToken, testToken)
+      # associé à une chaîne littérale. Dans un fichier de test, c'est une
+      # valeur de jeu servant à vérifier un hachage ou une comparaison — rien à
+      # fuiter, rien à faire tourner, et le fichier ne part pas en production.
+      #
+      # La portée était d'abord réduite à un seul fichier. Élargie aux tests :
+      # le motif se reproduit à chaque test qui nomme un jeton, et une
+      # exclusion à énumérer fichier par fichier finit par être élargie à la
+      # va-vite le jour où elle bloque une PR pressée. Les autres règles gosec
+      # restent appliquées aux tests.
+      - path: '_test\.go$'
         linters:
           - gosec
         text: 'G101:'
