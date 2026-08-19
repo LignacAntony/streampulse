@@ -6,21 +6,72 @@ env:
 permissions:
   contents: read
 
+# Deux CI qui concluent coup sur coup (deux merges rapprochés, ou un merge plus
+# un workflow_dispatch) lanceraient deux CD en parallèle : chacune pousse le tag
+# `latest` puis fait `docker compose pull` sur le VPS, sans garantie d'ordre —
+# la machine pourrait rester sur le plus ancien des deux commits. La file
+# n'annule pas le déploiement en cours (couper à mi-parcours laisserait un état
+# partiel) ; seule la mise en attente est remplacée par la suivante, donc le
+# dernier commit gagne.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+# Déclenché par la fin de la CI plutôt que par le push : les deux workflows
+# démarraient sinon en parallèle sur `push main`, et des tests rouges
+# déployaient quand même (STR-241). `workflow_run` porte le SHA du run
+# déclencheur, chaque job doit donc le passer explicitement à checkout —
+# sans quoi Actions reprendrait la tête de la branche par défaut.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches:
       - main
+    types:
+      - completed
   workflow_dispatch:
 
 jobs:
   build-and-push:
     name: Build & Push Docker image
     runs-on: ubuntu-latest
+    # Deux filtres, pas un.
+    #
+    # `conclusion` écarte les CI rouges — c'est l'objet de la bascule.
+    #
+    # `event == 'push'` écarte les CI de pull_request, et ce n'est pas
+    # cosmétique : `workflow_run` se déclenche pour *toute* exécution de la CI,
+    # y compris celles issues d'une PR, et son filtre `branches` compare le
+    # head_branch du run déclencheur. Une PR de fork ouverte depuis une branche
+    # nommée `main` produit donc head_branch == main, passe le filtre, et si sa
+    # CI conclut success la CD s'exécuterait avec les secrets du dépôt de base
+    # sur un commit jamais mergé — la protection de branche ne s'interpose pas.
+    #
+    # Un workflow_dispatch n'a pas de workflow_run associé, d'où le premier
+    # membre qui garde le redéploiement manuel utilisable.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     permissions:
       contents: read
       packages: write
     steps:
+      # Sous workflow_run, `github.sha` désigne la tête de la branche par défaut
+      # au moment du déclenchement, pas le commit dont la CI vient de passer.
+      # Les deux coïncident dans le cas nominal mais divergent dès que deux
+      # pushes s'enchaînent — on construirait alors une image étiquetée avec un
+      # SHA qu'elle ne contient pas. Résolu une fois, réutilisé partout.
+      - name: Résoudre le commit à déployer
+        id: target
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short=sha-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -38,7 +89,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/api
           tags: |
-            type=sha,format=short
+            type=raw,value=${{ steps.target.outputs.short }}
             type=raw,value=latest
 
       - name: Build and push Docker image

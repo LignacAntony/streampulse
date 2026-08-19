@@ -68,6 +68,13 @@ func newHLSSegmenter() (*hlsSegmenter, error) {
 		"-hls_segment_filename", filepath.Join(dir, hlsSegmentPattern),
 		filepath.Join(dir, hlsPlaylistName),
 	}
+	// noctx voudrait exec.CommandContext. Inadapté : ce ffmpeg vit le temps de la
+	// session live, pas d'une requête, et son arrêt est déjà piloté par close() —
+	// fermeture de stdin pour qu'il finalise son dernier segment, puis kill au
+	// bout de hlsShutdownGrace. Le rattacher à un context le tuerait sèchement à
+	// l'annulation, avant cette finalisation : dernier segment perdu à chaque
+	// diffusion.
+	//nolint:noctx // arrêt géré explicitement par close(), cf. ci-dessus
 	cmd := exec.Command("ffmpeg", args...) // #nosec G204 -- args 100% statiques/serveur (os.MkdirTemp), aucune entrée utilisateur
 	cmd.Stderr = os.Stderr                 // warnings/erreurs ffmpeg vers les logs du conteneur
 

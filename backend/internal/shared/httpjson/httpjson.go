@@ -104,6 +104,9 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	status := statusFromCode(appErr.Code)
 	message := appErr.Message
 	code := string(appErr.Code)
+	if appErr.PublicCode != "" {
+		code = appErr.PublicCode
+	}
 	if status >= http.StatusInternalServerError {
 		logRequestError(r, err)
 		message = "internal server error"
@@ -128,6 +131,8 @@ func statusFromCode(code apperror.Code) int {
 		return http.StatusNotFound
 	case apperror.CodeConflict:
 		return http.StatusConflict
+	case apperror.CodeUnsupportedMedia:
+		return http.StatusUnsupportedMediaType
 	default:
 		return http.StatusInternalServerError
 	}

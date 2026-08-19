@@ -20,6 +20,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -32,13 +33,28 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.4.0
+          # Aligné sur le gosec du job Security (v2.28.0). Le v2.4.0 précédent
+          # embarquait un gosec dont l'analyse d'intervalle ne remontait pas
+          # jusqu'aux clamps, ce qui obligeait à poser des #nosec G115 sur des
+          # conversions pourtant déjà bornées — annotations que le lint récent
+          # signale comme superflues. Deux analyseurs sur le même code avec des
+          # verdicts divergents ne se réconcilient pas à la main longtemps.
+          version: v2.12.2
           working-directory: ./backend
           skip-cache: true
+          # `config verify` télécharge le schéma JSON depuis golangci-lint.run à
+          # chaque run. Le lint dépend donc de la disponibilité d'un site tiers,
+          # et un simple timeout fait échouer la CI sans qu'aucune ligne de code
+          # soit en cause — arrivé sur la PR #312, alors que le même commit
+          # passait ailleurs à la même minute. La validation du fichier n'apporte
+          # rien ici : `.golangci.yml` bouge rarement, et une clé invalide fait
+          # de toute façon échouer golangci-lint juste après.
+          verify: false
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: lint
     steps:
       - uses: actions/checkout@v4
@@ -53,8 +69,84 @@ jobs:
         working-directory: ./backend
         run: go mod download
 
+      # apt-get sans DEBIAN_FRONTEND peut attendre une saisie interactive
+      # (needrestart, conffile) et ne jamais rendre la main : cette étape a
+      # pendu six heures sur la PR #316 avant que GitHub ne tue le job à son
+      # timeout par défaut. Le job apparaissait alors `cancelled` et Build
+      # `skipped` — un symptôme qui ressemble à une annulation manuelle et
+      # envoie chercher la cause au mauvais endroit. Même incident sur le HEAD
+      # de `develop` en début de semaine.
+      #
+      # Trois gardes : mode non interactif, réessais sur les aléas de miroir,
+      # et une borne de temps. Une installation de paquet qui dépasse cinq
+      # minutes est en panne, pas lente.
       - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if sudo -E apt-get update -qq && sudo -E apt-get install -y --no-install-recommends ffmpeg; then
+              ffmpeg -version | head -1
+              exit 0
+            fi
+            echo "::warning::installation de ffmpeg échouée (tentative $attempt/3)"
+            sleep 5
+          done
+          echo "::error::ffmpeg n'a pas pu être installé après 3 tentatives"
+          exit 1
+
+      # Les fichiers sous build tag sont exclus de `go build ./...` comme de
+      # `go test ./...` : ils pourrissent sans que rien n'échoue. C'est ce qui
+      # est arrivé au harnais de charge, resté trois semaines et demie
+      # non compilable après un élargissement de StreamService (STR-241).
+      #
+      # La liste reste déclarée à la main — `go vet -tags` attend un ensemble de
+      # tags simultanément satisfiables, qu'une dérivation aveugle ne garantit
+      # pas — mais elle est désormais gardée : un tag présent dans l'arbre et
+      # absent d'ici fait échouer le job. Sans cette garde, un futur fichier sous
+      # un nouveau tag retomberait exactement dans le trou que cette étape
+      # prétend fermer. Même principe que envKeys côté config.
+      - name: Vérifier la compilation des fichiers sous build tag
+        working-directory: ./backend
+        env:
+          DECLARED_TAGS: "integration loadtest"
+        run: |
+          set -euo pipefail
+
+          # Tags simples présents dans l'arbre. `ignore` est la convention Go
+          # pour un fichier volontairement hors build : rien à vérifier.
+          found=$(grep -rhE '^//go:build ' --include='*.go' . \
+            | sed 's|^//go:build ||' \
+            | tr -s ' ()&|!' '\n' \
+            | grep -E '^[a-z0-9_]+$' \
+            | grep -vx 'ignore' \
+            | sort -u || true)
+
+          # `while read` plutôt que `for tag in $found` : zsh ne découpe pas une
+          # expansion non quotée, le second se comporterait donc différemment
+          # sur un poste de dev et sur le runner. Un garde-fou qu'on ne peut pas
+          # rejouer en local n'en est pas un.
+          missing=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            case " $DECLARED_TAGS " in
+              *" $tag "*) ;;
+              *) missing="$missing $tag" ;;
+            esac
+          done <<EOF
+          $found
+          EOF
+
+          if [ -n "$missing" ]; then
+            echo "::error::build tag présent dans l'arbre mais absent de DECLARED_TAGS :$missing"
+            echo "Ajoutez-le à DECLARED_TAGS (ci.yml), sinon ces fichiers cesseront de compiler sans bruit."
+            exit 1
+          fi
+
+          echo "tags vérifiés : $DECLARED_TAGS"
+          go vet -tags "$(echo $DECLARED_TAGS | tr ' ' ',')" ./...
 
       - name: Run tests
         working-directory: ./backend
@@ -69,6 +161,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: test
     steps:
       - uses: actions/checkout@v4
@@ -83,9 +176,25 @@ jobs:
         working-directory: ./backend
         run: go build ./cmd/api
 
+  android-network-policy:
+    name: Android network policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Vérifie que le trafic en clair reste refusé en release (STR-240). Sans
+      # ce job, la propriété ne tient qu'à la vigilance du relecteur : un commit
+      # qui rebascule la valeur, ré-ajoute usesCleartextTraffic ou supprime la
+      # configuration rouvrirait le trou sans bruit. Rejouable en local via
+      # `make check-android-security`.
+      - name: Vérifier la politique de trafic en clair
+        run: make check-android-security
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -105,6 +214,7 @@ jobs:
   flutter-test:
     name: Flutter Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: flutter-analyze
     steps:
       - uses: actions/checkout@v4

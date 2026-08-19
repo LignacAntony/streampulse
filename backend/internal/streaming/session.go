@@ -128,6 +128,9 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 		ls.mu.Unlock()
 		return
 	}
+	// #nosec G118 -- cancel n'est pas perdu : il est stocké dans s.cancel et
+	// appelé par reap() et StopAll(). gosec ne suit pas un CancelFunc rangé dans
+	// une structure ; ici la fuite qu'il redoute n'existe pas.
 	ctx, cancel := context.WithCancel(ls.base)
 	s := &session{
 		streamID:    streamID,
@@ -191,12 +194,19 @@ func (s *session) run(ctx context.Context) bool {
 	}
 }
 
-// reap retire du registre une session dont le segmenteur est mort seul et notifie
-// ses abonnés SSE (fin de flux). La ligne DB reste 'live' jusqu'au stop du
-// diffuseur (réconciliée au boot, cf. ADR 013 §7). No-op si la session a déjà été
-// remplacée/retirée entre-temps.
+// reap retire du registre une session dont le segmenteur est mort seul, notifie
+// ses abonnés SSE (fin de flux) et termine l'état persistant du flux. No-op si
+// la session a déjà été remplacée/retirée entre-temps.
+//
+// La transition en base emprunte le handler du bail d'ingest : sans elle la
+// ligne resterait 'live' jusqu'au stop du diffuseur, et le flux continuerait
+// d'apparaître en direct dans GET /api/streams alors que plus rien n'est servi —
+// un auditeur qui clique tombe sur une erreur. Le bail ne referme que le cas où
+// le push cesse aussi ; ffmpeg peut mourir seul pendant que le diffuseur
+// continue d'émettre.
 func (ls *LiveSessions) reap(streamID string, s *session) {
 	ls.mu.Lock()
+	handler := ls.onIngestExpired
 	if ls.byID[streamID] == s {
 		delete(ls.byID, streamID)
 		if s.streamKey != "" {
@@ -207,6 +217,17 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 	ls.recorder().ForgetStream(streamID)
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
+
+	// Hors verrou : le handler repasse par Service, qui peut rappeler Stop.
+	// Best-effort — la session mémoire est déjà retirée, donc plus rien n'est
+	// servi ; un échec ici ne laisse qu'une ligne à réconcilier au prochain boot
+	// (ADR 013 §7). Le handler journalise sa propre erreur.
+	if handler != nil {
+		if err := handler(streamID); err != nil {
+			log.Warn().Err(err).Str("stream_id", streamID).
+				Msg("streaming: segmenteur mort, état persistant non terminé (réconciliation au boot)")
+		}
+	}
 }
 
 // Stop retire la session, publie l'événement "ended" (best-effort) à ses abonnés,

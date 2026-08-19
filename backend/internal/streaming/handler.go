@@ -93,17 +93,28 @@ type StreamSessions interface {
 // double le temps que sa fenêtre expire.
 //
 // X-Forwarded-For n'est lu que si `TRUST_PROXY_HEADERS` est activé. L'en-tête
-// est falsifiable : sans reverse proxy qui le réécrit, le lire laisserait
+// est fourni par le client : sans reverse proxy devant, le lire laisserait
 // n'importe qui gonfler le compteur d'un flux en variant sa valeur. Sans lui
 // en revanche, tous les auditeurs derrière le proxy de production partagent
 // l'adresse de ce dernier et le compteur sature à 1 — d'où le drapeau.
 func (h *Handler) clientKey(r *http.Request) string {
 	if h.trustProxyHeaders {
-		// Premier maillon = client d'origine ; les suivants sont les proxies
-		// traversés. Caddy réécrit l'en-tête, la valeur est donc fiable ici.
+		// Dernier maillon, et non le premier. Caddy n'écrase pas l'en-tête par
+		// défaut : il *ajoute* l'IP observée en fin de liste. Prendre le premier
+		// laisserait un client poser `X-Forwarded-For: 1.2.3.4`, faire
+		// transmettre `1.2.3.4, <ip réelle>` et choisir ainsi sa propre clé de
+		// comptage — exactement l'abus que le drapeau prétend empêcher.
+		//
+		// Le Caddyfile force en plus la réécriture (`header_up`), ce qui réduit
+		// la liste à un seul maillon. Lire le dernier est correct dans les deux
+		// cas, et survit à une régression de cette configuration.
+		//
+		// Vaut pour un unique proxy de confiance en frontal, ce qui est
+		// l'architecture déployée (Caddy → api). Un second proxy intercalé
+		// demanderait de compter les sauts de confiance.
 		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			if first, _, found := strings.Cut(fwd, ","); found {
-				return strings.TrimSpace(first)
+			if idx := strings.LastIndex(fwd, ","); idx >= 0 {
+				return strings.TrimSpace(fwd[idx+1:])
 			}
 			return strings.TrimSpace(fwd)
 		}

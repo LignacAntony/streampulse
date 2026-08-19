@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Politique réseau des builds release (STR-240).
+
+  Remplace `android:usesCleartextTraffic="true"`, qui autorisait l'app de
+  production à émettre du HTTP en clair vers n'importe quel hôte, en-têtes
+  Authorization porteurs du JWT compris.
+
+  Équivalent Android de `NSAllowsLocalNetworking` côté iOS (Info.plist) : le
+  trafic en clair reste possible vers la boucle locale, jamais vers Internet.
+  En production l'API est servie en HTTPS (api.streampulse.win).
+
+  Les builds debug et profile ont leur propre variante, plus permissive :
+  src/debug/res/xml/ et src/profile/res/xml/.
+-->
+<network-security-config>
+    <!-- Tout le reste passe obligatoirement par TLS. -->
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!-- Boucle locale uniquement : couvre `adb reverse tcp:8080 tcp:8080`, qui
+         reste utilisable en lançant un build release sur un device branché.
+         Ce trafic ne quitte jamais l'appareil, aucune surface d'interception.
+         10.0.2.2 (hôte de l'émulateur) n'y figure pas : c'est une adresse de
+         développement, elle vit dans les variantes debug et profile. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
