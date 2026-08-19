@@ -69,8 +69,25 @@ jobs:
       # if: always() — sans lui, l'échec d'une étape précédente laisse l'onglet
       # Security figé sur le scan de la veille : un dépôt vulnérable y paraît
       # sain. Un tableau de bord muet est pire qu'un tableau de bord rouge.
+      # `always()` : un scan qui échoue doit quand même publier ce qu'il a
+      # trouvé, sinon l'onglet Security se vide en silence et l'absence de
+      # findings devient indiscernable d'un scan cassé.
+      #
+      # La seconde condition écarte les PR de fork : GitHub y ramène le
+      # GITHUB_TOKEN à `security-events: read`, l'upload échouerait donc en
+      # « Resource not accessible by integration » et peindrait le check en
+      # rouge pour une raison que le contributeur externe ne peut pas corriger.
+      # Le scan, lui, tourne toujours et peut toujours bloquer.
+      #
+      # Le premier membre est indispensable : sur `push` et `schedule`,
+      # `github.event.pull_request` est nul, et `null == false` vaut *faux* en
+      # expression GitHub — tester la seule appartenance à un fork couperait
+      # l'upload précisément quand on en a besoin.
       - name: Publication du SARIF vers Code Scanning
-        if: always()
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.fork == false)
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs.sarif
@@ -100,6 +117,16 @@ jobs:
   trivy-image:
     name: Trivy — image Docker
     runs-on: ubuntu-latest
+    # Hors des PR. Le job reconstruit toute l'image (compilation Go + base
+    # alpine + ffmpeg), en doublon du job Build de ci.yml, pour un résultat qui
+    # ne bouge qu'au changement du Dockerfile ou des dépendances système — pas à
+    # chaque itération de PR. Le coût est payé sur chaque push et chaque cron.
+    #
+    # Risque résiduel assumé : une PR qui introduit une CVE via le Dockerfile
+    # n'est plus refusée avant merge, elle rend `develop` rouge juste après. La
+    # production reste protégée — le déploiement part de `main`, après une CI
+    # verte (cd.yml).
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       security-events: write
@@ -121,8 +148,25 @@ jobs:
           format: sarif
           output: trivy-image.sarif
 
+      # `always()` : un scan qui échoue doit quand même publier ce qu'il a
+      # trouvé, sinon l'onglet Security se vide en silence et l'absence de
+      # findings devient indiscernable d'un scan cassé.
+      #
+      # La seconde condition écarte les PR de fork : GitHub y ramène le
+      # GITHUB_TOKEN à `security-events: read`, l'upload échouerait donc en
+      # « Resource not accessible by integration » et peindrait le check en
+      # rouge pour une raison que le contributeur externe ne peut pas corriger.
+      # Le scan, lui, tourne toujours et peut toujours bloquer.
+      #
+      # Le premier membre est indispensable : sur `push` et `schedule`,
+      # `github.event.pull_request` est nul, et `null == false` vaut *faux* en
+      # expression GitHub — tester la seule appartenance à un fork couperait
+      # l'upload précisément quand on en a besoin.
       - name: Publication du SARIF vers Code Scanning
-        if: always()
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.fork == false)
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif
@@ -176,8 +220,25 @@ jobs:
         working-directory: ./backend
         run: gosec -exclude-generated -fmt sarif -out ../gosec.sarif -stdout -verbose=text ./...
 
+      # `always()` : un scan qui échoue doit quand même publier ce qu'il a
+      # trouvé, sinon l'onglet Security se vide en silence et l'absence de
+      # findings devient indiscernable d'un scan cassé.
+      #
+      # La seconde condition écarte les PR de fork : GitHub y ramène le
+      # GITHUB_TOKEN à `security-events: read`, l'upload échouerait donc en
+      # « Resource not accessible by integration » et peindrait le check en
+      # rouge pour une raison que le contributeur externe ne peut pas corriger.
+      # Le scan, lui, tourne toujours et peut toujours bloquer.
+      #
+      # Le premier membre est indispensable : sur `push` et `schedule`,
+      # `github.event.pull_request` est nul, et `null == false` vaut *faux* en
+      # expression GitHub — tester la seule appartenance à un fork couperait
+      # l'upload précisément quand on en a besoin.
       - name: Publication du SARIF vers Code Scanning
-        if: always()
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.fork == false)
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif

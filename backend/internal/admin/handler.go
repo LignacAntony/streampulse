@@ -200,10 +200,6 @@ func clampPagination(r *http.Request) (limit, offset int32) {
 	if o > 1<<31-1 {
 		o = 1<<31 - 1
 	}
-	// #nosec G115 -- l et o viennent d'être bornés à [1, maxListLimit] et
-	// [0, MaxInt32] : la conversion ne peut pas déborder. Les gosec antérieurs à
-	// l'analyse d'intervalle ne remontent pas jusqu'au clamp et signalent quand
-	// même — l'annotation garde le lint vert quelle que soit la version.
 	return int32(l), int32(o)
 }
 

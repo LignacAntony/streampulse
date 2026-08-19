@@ -33,7 +33,13 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.4.0
+          # Aligné sur le gosec du job Security (v2.28.0). Le v2.4.0 précédent
+          # embarquait un gosec dont l'analyse d'intervalle ne remontait pas
+          # jusqu'aux clamps, ce qui obligeait à poser des #nosec G115 sur des
+          # conversions pourtant déjà bornées — annotations que le lint récent
+          # signale comme superflues. Deux analyseurs sur le même code avec des
+          # verdicts divergents ne se réconcilient pas à la main longtemps.
+          version: v2.12.2
           working-directory: ./backend
           skip-cache: true
           # `config verify` télécharge le schéma JSON depuis golangci-lint.run à
