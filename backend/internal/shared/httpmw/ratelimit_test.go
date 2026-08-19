@@ -14,7 +14,11 @@ func rateLimitTestHandler() http.Handler {
 }
 
 func do(h http.Handler, remote, forwarded string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	return doPath(h, remote, forwarded, "/api/auth/login")
+}
+
+func doPath(h http.Handler, remote, forwarded, path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, nil)
 	req.RemoteAddr = remote
 	if forwarded != "" {
 		req.Header.Set("X-Forwarded-For", forwarded)
@@ -112,5 +116,25 @@ func TestRateLimit_EvictionPurgeLesSeauxInactifs(t *testing.T) {
 	rl.evict()
 	if len(rl.buckets) != 0 {
 		t.Errorf("après purge: got %d seaux, want 0 — la table croîtrait avec le nombre d'IP vues", len(rl.buckets))
+	}
+}
+
+// TestRateLimit_IsoleLesRoutes : derrière un NAT, tous les utilisateurs
+// partagent l'adresse publique. Si la clé ne portait que l'adresse, un
+// renouvellement de jeton automatique assécherait le budget de la connexion pour
+// tout le monde.
+func TestRateLimit_IsoleLesRoutes(t *testing.T) {
+	rl := NewRateLimit(1, time.Minute, false)
+	h := rl.Middleware(rateLimitTestHandler())
+
+	if rec := doPath(h, "192.0.2.10:1", "", "/api/auth/login"); rec.Code != http.StatusOK {
+		t.Fatalf("login: got %d, want 200", rec.Code)
+	}
+	if rec := doPath(h, "192.0.2.10:1", "", "/api/auth/login"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("login épuisé: got %d, want 429", rec.Code)
+	}
+	// Même adresse, autre route : budget distinct.
+	if rec := doPath(h, "192.0.2.10:1", "", "/api/auth/register"); rec.Code != http.StatusOK {
+		t.Errorf("register après épuisement de login: got %d, want 200 — les routes partagent un seau", rec.Code)
 	}
 }

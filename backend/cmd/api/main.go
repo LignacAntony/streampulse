@@ -67,9 +67,22 @@ const (
 	// largement un humain qui se trompe de mot de passe ; la reconstitution à
 	// une toutes les six secondes rend une attaque par force brute inopérante
 	// sans gêner un usage normal.
-	authRateLimitBurst    = 10
-	authRateLimitRefill   = 6 * time.Second
-	authRateLimitEviction = 10 * time.Minute
+	// Routes sensibles (connexion, inscription, mot de passe oublié / réinitialisé).
+	// Vingt tentatives immédiates puis une toutes les trois secondes : sans effet
+	// pour une attaque par force brute devant bcrypt, et assez large pour un
+	// groupe d'utilisateurs légitimes partageant une sortie Internet.
+	authRateLimitBurst  = 20
+	authRateLimitRefill = 3 * time.Second
+
+	// Renouvellement de jeton. Machine-driven — chaque client rafraîchit toutes
+	// les quinze minutes — et déjà protégé par un secret de 32 octets aléatoires
+	// qu'aucune force brute n'atteint. Le limiter sert de garde-fou de
+	// disponibilité, pas d'authentification : budget large et séparé, pour qu'il
+	// n'assèche pas celui des routes sensibles.
+	refreshRateLimitBurst  = 120
+	refreshRateLimitRefill = time.Second
+
+	rateLimitEviction = 10 * time.Minute
 )
 
 func run() error {
@@ -228,12 +241,17 @@ func run() error {
 	authLimiter := httpmw.NewRateLimit(
 		authRateLimitBurst, authRateLimitRefill, cfg.TrustProxyHeaders,
 	)
-	authLimiter.StartEviction(ctx.Done(), authRateLimitEviction)
+	authLimiter.StartEviction(ctx.Done(), rateLimitEviction)
 	authLimit := authLimiter.Middleware
+
+	refreshLimiter := httpmw.NewRateLimit(
+		refreshRateLimitBurst, refreshRateLimitRefill, cfg.TrustProxyHeaders,
+	)
+	refreshLimiter.StartEviction(ctx.Done(), rateLimitEviction)
 
 	mux.Handle("POST /api/auth/register", authLimit(http.HandlerFunc(authHandler.Register)))
 	mux.Handle("POST /api/auth/login", authLimit(http.HandlerFunc(authHandler.Login)))
-	mux.Handle("POST /api/auth/refresh", authLimit(http.HandlerFunc(authHandler.Refresh)))
+	mux.Handle("POST /api/auth/refresh", refreshLimiter.Middleware(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
 	mux.Handle("POST /api/auth/forgot-password", authLimit(http.HandlerFunc(authHandler.ForgotPassword)))
 	mux.Handle("POST /api/auth/reset-password", authLimit(http.HandlerFunc(authHandler.ResetPassword)))

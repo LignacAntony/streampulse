@@ -11,8 +11,8 @@ import (
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
 )
 
-// RateLimit borne le nombre de requêtes par adresse cliente sur une fenêtre
-// glissante approximée par un seau à jetons.
+// RateLimit borne le nombre de requêtes par couple (adresse cliente, route) sur
+// une fenêtre glissante approximée par un seau à jetons.
 //
 // Monté sur /api/auth/* : sans lui, rien ne limitait les tentatives de connexion
 // (force brute sur les mots de passe), les inscriptions en masse, ni les demandes
@@ -22,6 +22,18 @@ import (
 //
 // Le choix d'un seau plutôt qu'un compteur fixe est délibéré : un compteur par
 // fenêtre autorise deux fois la limite à cheval sur deux fenêtres.
+//
+// La clé inclut la route, et pas seulement l'adresse. Derrière un reverse proxy,
+// ClientIP rend l'IP publique : tous les utilisateurs d'un même NAT — Wi-Fi
+// d'école, d'entreprise, de café — la partagent. Un seau unique par adresse leur
+// ferait partager un seul budget entre connexion, inscription et renouvellement
+// de jeton, et trente personnes ouvrant l'app à la même heure s'épuiseraient
+// mutuellement. Isoler par route évite au moins qu'un usage automatique assèche
+// le budget d'une action humaine.
+//
+// Cela ne supprime pas le problème du NAT sur une route donnée : la vraie
+// réponse pour la connexion et la réinitialisation serait un second facteur sur
+// l'email visé plutôt que sur la seule adresse. À traiter séparément.
 //
 // Volontairement en mémoire, donc par instance. Le déploiement est mono-instance
 // (ADR 013) ; un parc en exigerait un partagé, et ce serait une autre décision.
@@ -125,7 +137,9 @@ func (rl *RateLimit) evict() {
 // Middleware refuse en 429 les requêtes au-delà de la limite.
 func (rl *RateLimit) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ok, retryAfter := rl.allow(ClientIP(r, rl.trustProxy))
+		// La route entre dans la clé : les chemins d'auth sont fixes, r.URL.Path
+		// suffit et ne dépend pas de la sémantique des motifs du routeur.
+		ok, retryAfter := rl.allow(ClientIP(r, rl.trustProxy) + "|" + r.URL.Path)
 		if !ok {
 			seconds := int(retryAfter.Seconds())
 			if seconds < 1 {
