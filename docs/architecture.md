@@ -149,7 +149,7 @@ L'application mobile suit la **Clean Architecture** adaptée mobile, découpée 
 
 ```
 mobile/lib/
-├── main.dart              # Point d'entrée — ProviderScope + runApp
+├── main.dart              # Point d'entrée — AudioService.init + runApp(StreamPulseApp)
 ├── app/
 │   ├── app.dart           # Widget racine MaterialApp.router
 │   └── router/            # Configuration go_router

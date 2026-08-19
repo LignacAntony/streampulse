@@ -1,7 +1,22 @@
 # ADR 005 — Architecture Flutter : Clean Architecture + Riverpod
 
+> **SUPERSEDED (partiellement) par [ADR 036 — `provider` plutôt que Riverpod](036-state-management-flutter-provider.md).**
+>
+> Le volet **state management** ci-dessous — Riverpod, `riverpod_annotation`, « Riverpod
+> Notifiers », et le rejet du package `provider` en fin de document — **ne décrit plus le code
+> livré**. Riverpod a bien été utilisé du 2026-05-04 au 2026-06-04, puis **interdit par l'équipe
+> pédagogique** : la couche présentation a été migrée vers `provider` + `ChangeNotifier`
+> (`8e912ec`). Le motif, le coût assumé et les compensations sont dans
+> l'[ADR 036](036-state-management-flutter-provider.md).
+>
+> Tout le reste de cette ADR **reste en vigueur** : Clean Architecture par feature,
+> `go_router`, `just_audio` / `audio_service`, `dio`, `flutter_secure_storage`.
+>
+> Le texte d'origine est conservé **tel quel** : une ADR est un journal de décisions, pas une
+> description de l'état courant. La décision a bien été prise ainsi, puis révisée.
+
 **Date** : 2026-05-04  
-**Statut** : Accepté  
+**Statut** : ~~Accepté~~ → **Superseded by [ADR 036](036-state-management-flutter-provider.md)** (2026-08-19) sur le volet state management  
 **Ticket** : STR-92 (US-01-06 — Initialisation du projet Flutter mobile)
 
 ---

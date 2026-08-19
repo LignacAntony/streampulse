@@ -297,7 +297,7 @@ Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « d
 Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
 utilisateurs : domaine `internal/admin/` ([ADR 017](docs/adr/017-tableau-de-bord-admin-gestion-utilisateurs.md)).
 Supervision et interruption des flux actifs : même domaine `internal/admin/`
-([ADR 018](docs/adr/018-supervision-admin-des-flux-et-journal-daudit.md)).
+([ADR 039](docs/adr/039-supervision-admin-des-flux-et-journal-daudit.md)).
 Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/adr/014-demande-activation-role-diffuseur.md)).
 
 | Méthode | Route | Handler | Auth requise |
@@ -519,9 +519,12 @@ sur chaque requête et intercepte les `401` :
 - Échec du refresh → `clearTokens()` + propagation de l'erreur (le router renvoie vers `/login`).
 
 **Logout** : `AuthRepository.logout()` appelle `POST /api/auth/logout` en best-effort
-(`try/catch` silencieux), puis purge **toujours** `SecureStorage`. Le `home_screen` complète
-avec `ref.invalidate(loginControllerProvider / registerControllerProvider)` pour libérer les
-`AsyncValue` retenus en mémoire.
+(`try/catch` silencieux), puis purge **toujours** `SecureStorage`. Le `profile_screen`
+(`_logout()`) complète avec `BroadcasterController.reset()` et `FavoritesController.reset()` :
+le conteneur `provider` n'offrant pas d'invalidation déclarative
+(cf. [ADR 036](docs/adr/036-state-management-flutter-provider.md)), tout contrôleur
+**app-level** portant de l'état lié au compte doit être remis à zéro à la main.
+Les contrôleurs **locaux à l'écran** n'ont rien à faire : ils repartent vierges à la reconstruction.
 
 **Erreurs 401** : message UI **hard-codé** (`'Email ou mot de passe incorrect'`) — ne jamais
 relayer le `serverMessage` pour éviter une fuite d'info technique. Les 400/409/5xx peuvent en
