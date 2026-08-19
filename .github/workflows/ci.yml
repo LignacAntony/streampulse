@@ -20,6 +20,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +48,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: lint
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +63,33 @@ jobs:
         working-directory: ./backend
         run: go mod download
 
+      # apt-get sans DEBIAN_FRONTEND peut attendre une saisie interactive
+      # (needrestart, conffile) et ne jamais rendre la main : cette étape a
+      # pendu six heures sur la PR #316 avant que GitHub ne tue le job à son
+      # timeout par défaut. Le job apparaissait alors `cancelled` et Build
+      # `skipped` — un symptôme qui ressemble à une annulation manuelle et
+      # envoie chercher la cause au mauvais endroit. Même incident sur le HEAD
+      # de `develop` en début de semaine.
+      #
+      # Trois gardes : mode non interactif, réessais sur les aléas de miroir,
+      # et une borne de temps. Une installation de paquet qui dépasse cinq
+      # minutes est en panne, pas lente.
       - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if sudo -E apt-get update -qq && sudo -E apt-get install -y --no-install-recommends ffmpeg; then
+              ffmpeg -version | head -1
+              exit 0
+            fi
+            echo "::warning::installation de ffmpeg échouée (tentative $attempt/3)"
+            sleep 5
+          done
+          echo "::error::ffmpeg n'a pas pu être installé après 3 tentatives"
+          exit 1
 
       # Les fichiers sous build tag sont exclus de `go build ./...` comme de
       # `go test ./...` : ils pourrissent sans que rien n'échoue. C'est ce qui
@@ -128,6 +155,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: test
     steps:
       - uses: actions/checkout@v4
@@ -145,6 +173,7 @@ jobs:
   android-network-policy:
     name: Android network policy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -159,6 +188,7 @@ jobs:
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -178,6 +208,7 @@ jobs:
   flutter-test:
     name: Flutter Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: flutter-analyze
     steps:
       - uses: actions/checkout@v4
