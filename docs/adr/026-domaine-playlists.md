@@ -92,6 +92,22 @@ token n'est présent : seul un utilisateur connecté peut posséder une playlist
 
 ---
 
+## Alternatives écartées
+
+**Répondre 403 sur la playlist d'un tiers.** Sémantiquement plus juste — la ressource existe,
+l'accès est refusé. Écarté : distinguer 403 de 404 transforme l'API en oracle d'existence. Un
+tiers pourrait énumérer les identifiants pour savoir quelles playlists existent. Choix cohérent
+avec les flux privés (ADR 013).
+
+**`PATCH` partiel plutôt que `PUT` total.** Éviterait d'effacer la description en l'omettant.
+Écarté : `PUT` a une sémantique de remplacement claire et idempotente, et le formulaire mobile
+envoie de toute façon l'état complet. Un `PATCH` demanderait de distinguer « champ absent » de
+« champ vidé » — la complexité tombe alors côté client comme côté serveur.
+
+**Playlists partageables ou publiques.** Demandé par aucun ticket à ce stade. Écarté volontairement :
+la visibilité impliquerait un modèle d'autorisation (lecture seule, collaboration, lien public) qui
+mérite sa propre décision. Le domaine reste strictement personnel, et `user_id` filtre tout.
+
 ## Conséquences
 
 - **Positif** : domaine isolé et testé (service + handler côté Go ; datasource + controller +

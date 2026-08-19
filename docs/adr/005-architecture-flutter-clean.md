@@ -63,7 +63,6 @@ features/<nom>/
 | `flutter_secure_storage` | ^9.0.0 | EncryptedSharedPreferences Android, Keychain iOS |
 | `equatable` | ^2.0.5 | Comparaison structurelle des entités sans boilerplate |
 | `freezed_annotation` | ^2.4.1 | Data classes immutables, sealed classes pour les états |
-| `web_socket_channel` | ^3.0.1 | WebSocket pour le chat live des streams |
 
 ---
 

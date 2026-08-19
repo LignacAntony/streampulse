@@ -11,7 +11,7 @@ les procédures opérationnelles et le troubleshooting.
 | Service | Image | Rôle | Port interne | Port hôte | Healthcheck |
 |---|---|---|---|---|---|
 | `postgres` | `postgres:16-alpine` | Base de données relationnelle | 5432 | — | `pg_isready` |
-| `api` | build local (Go 1.22) | API REST Go (stub de démarrage) | 8080 | **8080** | `GET /health` |
+| `api` | build local (Go 1.25) | API REST Go : auth, streaming HLS, playlists, pistes, admin | 8080 | **8080** | `GET /health` |
 | `prometheus` | `prom/prometheus:latest` | Collecte de métriques | 9090 | **9090** | `GET /-/healthy` |
 | `loki` | `grafana/loki:latest` | Agrégation de logs | 3100 | — | — (image distroless) |
 | `tempo` | `grafana/tempo:latest` | Traces distribuées (OTLP) | 3200, 4317, 4318 | — | — (image distroless) |

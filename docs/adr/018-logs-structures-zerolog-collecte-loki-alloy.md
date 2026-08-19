@@ -104,6 +104,20 @@ Requête type dans Grafana → Explore → Loki :
 {service="api"} | json | request_id="a1b2c3d4e5f60718"
 ```
 
+## Alternatives écartées
+
+Le choix de la bibliothèque est argumenté en décision 1 (zerolog retenu, zap et slog écartés).
+Restent deux arbitrages sur la collecte :
+
+**Promtail plutôt qu'Alloy.** Promtail est l'agent historique de Loki, plus simple à configurer.
+Écarté : il est en fin de vie (Grafana pousse Alloy comme successeur), et Alloy collecte au passage
+les métriques et les traces — un seul agent au lieu de trois à terme.
+
+**Elasticsearch / ELK.** Recherche plein texte plus riche, écosystème plus mûr. Écarté pour la
+même raison que dans l'ADR 001 : l'empreinte mémoire d'Elasticsearch dépasse à elle seule ce que
+le VPS alloue à toute la stack d'observabilité. Loki indexe les labels et non le contenu, ce qui
+suffit à `{service="api"} | json | level="error"`.
+
 ## Conséquences
 
 - Plus aucun `log.Printf`/`fmt.Println` en production (STR-170) ; le linter n'a rien à

@@ -1,4 +1,7 @@
-# ADR 012 — Gestion du profil utilisateur (table `profiles` dédiée)
+# ADR 038 — Gestion du profil utilisateur (table `profiles` dédiée)
+
+> **Renumérotée (STR-237)** : cette ADR portait le numéro **012**, déjà attribué à
+> [ADR 012 — OpenAPI source de vérité](012-openapi-source-de-verite.md).
 
 ## Statut
 

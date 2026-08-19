@@ -143,6 +143,28 @@ et sans churn sur les constructeurs (donc sur les tests existants). `*track.Serv
 
 ---
 
+## Alternatives écartées
+
+**Valider le type par l'extension ou le `Content-Type` déclaré.** Une ligne de code. Écarté :
+les deux viennent du client. Un PDF renommé `.mp3` passerait, et le fichier serait servi plus tard
+au lecteur avec un type mensonger. Le sniff de contenu lit les octets et ne peut pas être
+contourné par un renommage — c'est le test de sécurité `TestUpload_RejectsDisguisedFile`.
+
+**Stockage objet (S3, MinIO) dès maintenant.** L'architecture cible pour un déploiement multi-instance.
+Écarté à ce stade : le déploiement est mono-instance (ADR 013), et un volume Docker suffit. Le
+découplage est préparé par l'interface `track.Storage` (`Save`/`Open`/`Remove`) — basculer demandera
+une implémentation, pas une refonte du domaine.
+
+**Extraire la durée par `ffprobe` à l'upload.** Donnerait une valeur fiable plutôt que déclarée par
+le client. Écarté : un process externe par upload, sur un chemin déjà borné en mémoire et en
+concurrence, pour une donnée d'affichage. Le lecteur mobile lit de toute façon la durée réelle du
+fichier (ADR 034) ; `duration_s` n'est qu'une valeur d'attente.
+
+**Renvoyer 507 Insufficient Storage sur dépassement de quota.** Le code HTTP qui nomme la
+situation. Écarté : 507 est un 5xx, donc compté comme une erreur serveur par les métriques et les
+alertes (ADR 021). Un utilisateur qui remplit son quota n'est pas un incident — 403 le range du
+bon côté, avec le code public `storage_quota_exceeded` pour que le client distingue le cas.
+
 ## Conséquences
 
 - Nouvelle dépendance directe : `github.com/gabriel-vasile/mimetype`.

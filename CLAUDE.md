@@ -696,15 +696,21 @@ xcrun simctl openurl booted \
 | `docs/README.md` | Index de toute la documentation, ordre de lecture recommandé |
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
+| `docs/README.md` (§ Index complet des ADR) | **Les 38 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
 | `docs/adr/006-authentification-jwt.md` | Décision : JWT HS256 + rotation refresh côté backend |
 | `docs/adr/009-authentification-flutter.md` | Décision : stockage sécurisé, refresh auto, logout best-effort côté Flutter |
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
+| `docs/adr/036-state-management-flutter-provider.md` | Décision : `provider` + `ChangeNotifier` (supersede l'ADR 005 sur ce point) |
+| `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `036-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `040-...`). Référencer le ticket Linear correspondant.
+Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
+que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
+**« Alternatives écartées »**.
 
 ## Principes SOLID
 

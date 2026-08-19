@@ -1,4 +1,7 @@
-# ADR 003 — Initialisation de la base de données : schéma, migrations et seed
+# ADR 037 — Initialisation de la base de données : schéma, migrations et seed
+
+> **Renumérotée (STR-237)** : cette ADR portait le numéro **003**, déjà attribué à
+> [ADR 003 — Choix de GitHub Actions pour la CI/CD](003-choix-cicd-github-actions.md).
 
 ## Statut
 

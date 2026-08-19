@@ -150,7 +150,7 @@ cd backend && sqlc generate
 
 ## Références
 
-- ADR 005 : [Architecture handler / service / repository](005-architecture-handler-service-repository.md) — sqlc s'intègre dans la couche repository.
+- ADR 008 : [Architecture handler / service / repository](008-architecture-handler-service-repository.md) — sqlc s'intègre dans la couche repository.
 - `backend/sqlc.yaml` — configuration sqlc du projet.
 - `internal/auth/queries/auth.sql` — exemple de queries annotées.
 - Documentation officielle : https://docs.sqlc.dev
