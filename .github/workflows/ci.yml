@@ -142,6 +142,20 @@ jobs:
         working-directory: ./backend
         run: go build ./cmd/api
 
+  android-network-policy:
+    name: Android network policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Vérifie que le trafic en clair reste refusé en release (STR-240). Sans
+      # ce job, la propriété ne tient qu'à la vigilance du relecteur : un commit
+      # qui rebascule la valeur, ré-ajoute usesCleartextTraffic ou supprime la
+      # configuration rouvrirait le trou sans bruit. Rejouable en local via
+      # `make check-android-security`.
+      - name: Vérifier la politique de trafic en clair
+        run: make check-android-security
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
