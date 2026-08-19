@@ -3,7 +3,9 @@ package email
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/smtp"
+	"os"
 
 	"github.com/rs/zerolog"
 
@@ -43,18 +45,43 @@ func (m *SMTPMailer) SendPasswordResetEmail(_ context.Context, to, rawToken stri
 	return nil
 }
 
-type LogMailer struct{}
+// LogMailer écrit le lien de réinitialisation sur la sortie standard au lieu de
+// l'envoyer. Réservé au développement : config.validate refuse désormais un
+// SMTP_HOST vide en production, précisément pour qu'il ne puisse pas y être
+// sélectionné.
+//
+// Le lien est écrit hors du logger structuré. Un jeton passé à zerolog
+// atterrirait dans Loki, indexé et conservé sans limite ; ici il reste dans le
+// terminal du développeur, et n'est produit que si la sortie console lisible
+// est active — c'est-à-dire jamais en conteneur (STR-172).
+type LogMailer struct {
+	pretty  bool
+	baseURL string
+	out     io.Writer // injectable pour les tests ; os.Stdout si nil
+}
 
 func (l *LogMailer) SendPasswordResetEmail(ctx context.Context, to, rawToken string) error {
-	// Mode dev uniquement (SMTP_HOST vide) : le token est volontairement
-	// loggé pour permettre le workflow de reset sans serveur mail.
-	zerolog.Ctx(ctx).Info().Str("to", to).Str("token", rawToken).Msg("email dev: password-reset")
+	if !l.pretty {
+		zerolog.Ctx(ctx).Warn().
+			Str("to", to).
+			Msg("email: SMTP non configuré, réinitialisation non envoyée (activer LOG_PRETTY pour afficher le lien en dev)")
+		return nil
+	}
+
+	out := l.out
+	if out == nil {
+		out = os.Stdout
+	}
+	_, err := fmt.Fprintf(out, "\n[dev] réinitialisation pour %s\n[dev] %s/reset-password?token=%s\n\n", to, l.baseURL, rawToken)
+	if err != nil {
+		return fmt.Errorf("email: écriture du lien de développement: %w", err)
+	}
 	return nil
 }
 
 func NewFromConfig(cfg *config.Config) Mailer {
 	if cfg.SMTPHost == "" {
-		return &LogMailer{}
+		return &LogMailer{pretty: cfg.LogPretty, baseURL: cfg.AppBaseURL}
 	}
 	return &SMTPMailer{
 		host:     cfg.SMTPHost,
