@@ -100,13 +100,14 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 037 | [037-initialisation-base-de-donnees.md](adr/037-initialisation-base-de-donnees.md) | Initialisation de la base de données : schéma, migrations et seed *(ex-ADR 003)* |
 | 038 | [038-gestion-profil-utilisateur.md](adr/038-gestion-profil-utilisateur.md) | Gestion du profil utilisateur (table `profiles` dédiée) *(ex-ADR 012)* |
 | 039 | [039-supervision-admin-des-flux-et-journal-daudit.md](adr/039-supervision-admin-des-flux-et-journal-daudit.md) | Supervision admin des flux actifs et journal d'audit *(ex-ADR 018)* |
+| 041 | [041-metriques-metier-debit-departs-et-resume-admin.md](adr/041-metriques-metier-debit-departs-et-resume-admin.md) | Métriques métier : débit, départs d'auditeurs, interruptions et résumé admin |
 
 ---
 
 ## Convention ADR
 
 - Toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`,
-  avec **le numéro suivant** (prochain : `040-...`). Le numéro est un **identifiant**,
+  avec **le numéro suivant** (prochain : `042-...`). Le numéro est un **identifiant**,
   attribué dans l'ordre d'enregistrement — il ne suit pas nécessairement l'ordre chronologique
   des décisions (cf. 037/038/039, renumérotées après collision).
 - Un numéro n'est **jamais réutilisé** : une ADR remplacée passe en statut

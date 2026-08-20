@@ -1,4 +1,4 @@
-# Règles d'alerte provisionnées (STR-167 / STR-189, ADR 021).
+# Règles d'alerte provisionnées (STR-167 / STR-189 / STR-244, ADR 021 et 041).
 # Évaluation chaque minute, déclenchement après 5 minutes au-dessus du seuil
 # (`for: 5m`). Datasource : uid `prometheus` (provisionnée ADR 001).
 #
@@ -130,4 +130,88 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
         noDataState: Alerting
+        execErrState: Error
+
+  # Alertes métier (STR-244, ADR 041). Le sujet demande explicitement de
+  # distinguer « les erreurs 500 (techniques) du nombre de déconnexions brutales
+  # d'utilisateurs (métier/expérience) ». Les quatre règles ci-dessus sont toutes
+  # techniques : aucune ne se déclenche si la plateforme sert parfaitement des
+  # 200 à personne. Celles-ci portent sur ce que vivent les auditeurs.
+  #
+  # Groupe séparé et non simples règles ajoutées au précédent : l'intervalle
+  # d'évaluation est porté par le groupe, et une interruption de diffusion se
+  # constate à la minute alors qu'un pic de CPU se juge sur une fenêtre.
+  - orgId: 1
+    name: streampulse-metier
+    folder: StreamPulse
+    interval: 1m
+    rules:
+      - uid: alerte-diffusion-interrompue
+        title: Diffusion interrompue sans arrêt du diffuseur
+        condition: C
+        # for: 0m — contrairement aux règles techniques, l'événement est ponctuel
+        # et déjà consommé quand on le lit : exiger qu'il « dure » 5 minutes
+        # reviendrait à exiger qu'une seconde diffusion tombe pour être prévenu
+        # de la première.
+        for: 0m
+        labels:
+          severity: warning
+          domain: metier
+        annotations:
+          summary: "Au moins une diffusion s'est arrêtée seule dans les 15 dernières minutes."
+          description: "reason=ingest_timeout : le push audio du diffuseur a cessé (réseau, application fermée) — côté diffuseur, l'API a fait son travail. reason=segmenter_failed : ffmpeg s'est arrêté seul — côté serveur, chercher les lignes component=\"ffmpeg-hls\" dans Loki ({service=\"api\"} | json | component=\"ffmpeg-hls\"). Les deux comptent comme une écoute perdue ; une seule appelle une intervention sur l'infrastructure."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: sum(increase(streampulse_stream_interruptions_total[15m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        # OK et non NoData : tant qu'aucune diffusion n'a jamais été interrompue,
+        # la série n'existe pas — c'est le cas nominal, pas une panne de mesure.
+        noDataState: OK
+        execErrState: Error
+
+      - uid: alerte-erreurs-segments
+        title: Segments HLS en échec > 5%
+        condition: C
+        for: 5m
+        labels:
+          severity: critical
+          domain: metier
+        annotations:
+          summary: "Plus de 5% des segments audio demandés sont refusés depuis 5 minutes."
+          description: "Ce que cela vaut côté auditeur : de l'audio qui se coupe. Le ratio n'est évalué qu'au-dessus de 0,2 segment/s, sinon un unique 404 sur une diffusion sans public suffirait à alerter. Vérifier d'abord les rejets de capacité (HLS_MAX_CONCURRENT, panel « Rejets de capacité HLS ») avant de conclure à une panne."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: ((sum(rate(streampulse_hls_requests_total{kind="segment",status=~"4..|5.."}[5m])) or vector(0)) / sum(rate(streampulse_hls_requests_total{kind="segment"}[5m]))) and (sum(rate(streampulse_hls_requests_total{kind="segment"}[5m])) > 0.2)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+        # OK : sans diffusion en cours, il n'y a pas de segment à servir. Une
+        # absence de données est ici l'état normal d'une plateforme au repos.
+        noDataState: OK
         execErrState: Error

@@ -59,3 +59,14 @@ WHERE s.status = 'live' AND s.archived_at IS NULL;
 -- name: InsertAuditLog :exec
 INSERT INTO audit_logs (actor_id, action, target_type, target_id)
 VALUES (sqlc.arg(actor_id)::uuid, sqlc.arg(action), sqlc.arg(target_type), sqlc.arg(target_id)::uuid);
+
+-- name: AdminUserCounts :one
+-- Résumé de population pour GET /api/admin/metrics (STR-244) : une seule
+-- requête plutôt que quatre COUNT successifs, les agrégats filtrés partageant
+-- le même balayage.
+SELECT
+  COUNT(*)                                     AS total,
+  COUNT(*) FILTER (WHERE is_active)            AS active,
+  COUNT(*) FILTER (WHERE role = 'broadcaster') AS broadcasters,
+  COUNT(*) FILTER (WHERE role = 'admin')       AS admins
+FROM users;

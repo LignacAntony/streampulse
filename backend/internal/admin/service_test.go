@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -58,6 +59,10 @@ type fakeRepo struct {
 	gotAuditType   string
 	gotAuditTarget string
 
+	// userCounts/userCountsErr : population rendue au résumé admin (STR-244).
+	userCounts    UserCounts
+	userCountsErr error
+
 	// order trace, dans l'ordre d'appel, les opérations effectuées par ce repo
 	// et par le fakeStopper/fakeModerator partagés dans le même test (cf. cas 7 :
 	// stop avant delete ; cas StopStream : moderator avant audit).
@@ -87,6 +92,10 @@ func (f *fakeRepo) SetUserActive(_ context.Context, userID string, active bool) 
 	u.IsActive = active
 	f.users[userID] = u
 	return u, nil
+}
+
+func (f *fakeRepo) UserCounts(_ context.Context) (UserCounts, error) {
+	return f.userCounts, f.userCountsErr
 }
 
 func (f *fakeRepo) CountActiveAdmins(_ context.Context) (int64, error) {
@@ -589,5 +598,112 @@ func TestService_ListLiveStreams_DelegatesAndReturnsTotal(t *testing.T) {
 	}
 	if len(streams) != 1 || streams[0].ID != testStreamID {
 		t.Errorf("streams not returned: %+v", streams)
+	}
+}
+
+// --- Résumé de supervision (STR-244, ADR 041) ---
+
+type fakeAudience struct {
+	live      int
+	listeners int
+}
+
+func (f fakeAudience) ActiveCount() int    { return f.live }
+func (f fakeAudience) TotalListeners() int { return f.listeners }
+
+type fakeCounters struct {
+	totals HTTPTotals
+	err    error
+}
+
+func (f fakeCounters) HTTPTotals() (HTTPTotals, error) { return f.totals, f.err }
+
+func TestService_Overview(t *testing.T) {
+	repo := &fakeRepo{userCounts: UserCounts{Total: 42, Active: 40, Broadcasters: 5, Admins: 2}}
+	svc := NewService(repo, &fakeStopper{}, &fakeModerator{})
+	svc.SetOverviewSources(
+		fakeAudience{live: 3, listeners: 37},
+		fakeCounters{totals: HTTPTotals{Requests: 1000, ClientErrors: 40, ServerErrors: 5, ResponseBytes: 999}},
+	)
+
+	got, err := svc.Overview(context.Background())
+	if err != nil {
+		t.Fatalf("Overview: %v", err)
+	}
+	if got.Streams.Live != 3 || got.Streams.ListenersEstimated != 37 {
+		t.Errorf("Streams = %+v, want {3 37}", got.Streams)
+	}
+	if got.Users.Total != 42 || got.Users.Admins != 2 {
+		t.Errorf("Users = %+v", got.Users)
+	}
+	if got.HTTP.RequestsTotal != 1000 || got.HTTP.ServerErrorsTotal != 5 {
+		t.Errorf("HTTP = %+v", got.HTTP)
+	}
+	if got.HTTP.ServerErrorRate != 0.005 {
+		t.Errorf("ServerErrorRate = %v, want 0.005", got.HTTP.ServerErrorRate)
+	}
+}
+
+// Zéro requête servie : le taux vaut 0 et non NaN. Un NaN ne survit pas à
+// l'encodage JSON — encoding/json rend une erreur, et le résumé entier
+// échouerait au démarrage du process, précisément quand un admin le consulte
+// pour vérifier que tout est reparti.
+func TestService_Overview_NoTrafficYieldsZeroRate(t *testing.T) {
+	svc := NewService(&fakeRepo{}, &fakeStopper{}, &fakeModerator{})
+	svc.SetOverviewSources(fakeAudience{}, fakeCounters{})
+
+	got, err := svc.Overview(context.Background())
+	if err != nil {
+		t.Fatalf("Overview: %v", err)
+	}
+	if got.HTTP.ServerErrorRate != 0 {
+		t.Errorf("ServerErrorRate = %v, want 0", got.HTTP.ServerErrorRate)
+	}
+	if data, err := json.Marshal(got); err != nil {
+		t.Fatalf("le résumé doit rester encodable en JSON: %v", err)
+	} else if !strings.Contains(string(data), `"server_error_rate":0`) {
+		t.Errorf("JSON inattendu: %s", data)
+	}
+}
+
+// Le résumé est une vue de supervision, pas une transaction : un volet
+// indisponible ne doit pas priver l'admin des autres.
+func TestService_Overview_DegradesOnCounterFailure(t *testing.T) {
+	repo := &fakeRepo{userCounts: UserCounts{Total: 7}}
+	svc := NewService(repo, &fakeStopper{}, &fakeModerator{})
+	svc.SetOverviewSources(fakeAudience{live: 1}, fakeCounters{err: errors.New("registre indisponible")})
+
+	got, err := svc.Overview(context.Background())
+	if err != nil {
+		t.Fatalf("Overview ne doit pas échouer sur un compteur indisponible: %v", err)
+	}
+	if got.Users.Total != 7 || got.Streams.Live != 1 {
+		t.Errorf("les volets disponibles doivent être servis, got %+v", got)
+	}
+	if got.HTTP != (HTTPStats{}) {
+		t.Errorf("le volet HTTP doit rester à zéro, got %+v", got.HTTP)
+	}
+}
+
+// Sans SetOverviewSources (tests d'autres méthodes, binaire sans métriques), le
+// service ne doit pas paniquer — même garantie que le noopRecorder du streaming.
+func TestService_Overview_WithoutSources(t *testing.T) {
+	svc := NewService(&fakeRepo{userCounts: UserCounts{Total: 1}}, &fakeStopper{}, &fakeModerator{})
+
+	got, err := svc.Overview(context.Background())
+	if err != nil {
+		t.Fatalf("Overview: %v", err)
+	}
+	if got.Users.Total != 1 || got.Streams.Live != 0 {
+		t.Errorf("Overview = %+v", got)
+	}
+}
+
+func TestService_Overview_PropagatesRepositoryError(t *testing.T) {
+	repo := &fakeRepo{userCountsErr: errors.New("base indisponible")}
+	svc := NewService(repo, &fakeStopper{}, &fakeModerator{})
+
+	if _, err := svc.Overview(context.Background()); err == nil {
+		t.Fatal("une base injoignable doit faire échouer le résumé (aucun volet n'est fiable)")
 	}
 }

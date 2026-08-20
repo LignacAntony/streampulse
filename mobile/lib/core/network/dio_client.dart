@@ -7,9 +7,11 @@ import 'package:streampulse_api/streampulse_api.dart';
 import '../constants/api_constants.dart';
 import '../constants/app_constants.dart';
 import '../storage/secure_storage.dart';
+import 'trace_context.dart';
 
 class DioClient {
-  DioClient(this._storage) {
+  DioClient(this._storage, {TraceContext? traceContext})
+    : _traceContext = traceContext ?? TraceContext() {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.baseUrl,
@@ -29,7 +31,19 @@ class DioClient {
       ),
     );
 
-    _dio.interceptors.addAll([_authInterceptor(), _logInterceptor()]);
+    // L'intercepteur de trace passe en premier : il pose l'en-tête sur la
+    // requête sortante, et une requête rejouée après un 401 doit repartir avec
+    // un identifiant neuf plutôt que celui de la tentative qui a échoué.
+    _dio.interceptors.addAll([
+      _traceInterceptor(),
+      _authInterceptor(),
+      _logInterceptor(),
+    ]);
+
+    // Le refresh vaut d'être tracé comme le reste : c'est un appel réseau qui
+    // peut être lent, et c'est justement celui qu'on cherche quand une requête
+    // paraît avoir mis deux fois trop de temps.
+    _refreshDio.interceptors.add(_traceInterceptor());
 
     // Les méthodes générées (ex. AuthApi.logout) émettent une métadonnée
     // `extra['secure']`, mais le client généré ne branche AUCUN intercepteur
@@ -49,6 +63,7 @@ class DioClient {
   static const _retriedKey = '_retried';
 
   final SecureStorage _storage;
+  final TraceContext _traceContext;
   late final Dio _dio;
   late final Dio _refreshDio;
   late final AuthApi _authApi;
@@ -71,6 +86,24 @@ class DioClient {
   AdminApi get adminApi => _adminApi;
   PlaylistApi get playlistApi => _playlistApi;
   TrackApi get trackApi => _trackApi;
+
+  /// Émet un `traceparent` W3C sur chaque requête sortante (STR-244, ADR 041).
+  ///
+  /// Le backend accepte déjà l'en-tête et suit le drapeau d'échantillonnage du
+  /// parent : sans cet intercepteur, la trace commençait au serveur et le temps
+  /// réellement subi par l'utilisateur restait hors de Tempo.
+  ///
+  /// Ne couvre pas la lecture audio : just_audio ouvre ses propres connexions
+  /// HTTP, hors de Dio (même raison que pour l'en-tête `Authorization`, ADR 034).
+  /// Les segments HLS et les binaires de pistes ne portent donc pas de trace.
+  InterceptorsWrapper _traceInterceptor() {
+    return InterceptorsWrapper(
+      onRequest: (options, handler) {
+        options.headers[TraceContext.header] = _traceContext.newTraceparent();
+        handler.next(options);
+      },
+    );
+  }
 
   InterceptorsWrapper _authInterceptor() {
     return InterceptorsWrapper(

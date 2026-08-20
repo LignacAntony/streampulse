@@ -255,6 +255,37 @@ func (q *Queries) AdminSetUserActive(ctx context.Context, arg AdminSetUserActive
 	return i, err
 }
 
+const adminUserCounts = `-- name: AdminUserCounts :one
+SELECT
+  COUNT(*)                                     AS total,
+  COUNT(*) FILTER (WHERE is_active)            AS active,
+  COUNT(*) FILTER (WHERE role = 'broadcaster') AS broadcasters,
+  COUNT(*) FILTER (WHERE role = 'admin')       AS admins
+FROM users
+`
+
+type AdminUserCountsRow struct {
+	Total        int64
+	Active       int64
+	Broadcasters int64
+	Admins       int64
+}
+
+// Résumé de population pour GET /api/admin/metrics (STR-244) : une seule
+// requête plutôt que quatre COUNT successifs, les agrégats filtrés partageant
+// le même balayage.
+func (q *Queries) AdminUserCounts(ctx context.Context) (AdminUserCountsRow, error) {
+	row := q.db.QueryRow(ctx, adminUserCounts)
+	var i AdminUserCountsRow
+	err := row.Scan(
+		&i.Total,
+		&i.Active,
+		&i.Broadcasters,
+		&i.Admins,
+	)
+	return i, err
+}
+
 const insertAuditLog = `-- name: InsertAuditLog :exec
 INSERT INTO audit_logs (actor_id, action, target_type, target_id)
 VALUES ($1::uuid, $2, $3, $4::uuid)

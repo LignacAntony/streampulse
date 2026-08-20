@@ -210,6 +210,21 @@ jobs:
       - name: Vérifier la synchronisation des documents légaux
         run: make check-legal-assets
 
+  # Les dashboards Grafana sont provisionnés `editable: false` : la vérité vit
+  # dans git et personne ne les ouvre avant une mise en production. Une accolade
+  # mal échappée dans une requête PromQL, un lien croisé mort ou un uid en double
+  # ne se voient donc qu'à ce moment-là — et sans message d'erreur, juste un
+  # panneau vide. Rejouable en local via `make check-dashboards`.
+  dashboards:
+    name: Dashboards Grafana valides
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Valider les dashboards provisionnés
+        run: make check-dashboards
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest

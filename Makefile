@@ -37,3 +37,7 @@ check-android-security:
 .PHONY: check-legal-assets
 check-legal-assets:
 	python3 scripts/check-legal-assets.py
+
+.PHONY: check-dashboards
+check-dashboards:
+	python3 scripts/check-dashboards.py

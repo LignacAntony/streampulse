@@ -72,7 +72,10 @@ poignée de séries — et le label reste cantonné à cette seule famille.
 ### 4. Architecture : interface étroite pour les événements, GaugeFunc pour l'état
 
 - Le domaine `internal/streaming` déclare `MetricsRecorder`
-  (`RecordHLSRequest`, `ForgetStream`) et ignore Prometheus ; l'implémentation
+  (`RecordHLSRequest`, `ForgetStream` — plus `RecordListenerDepartures` et
+  `RecordStreamInterruption` depuis
+  [ADR 041](041-metriques-metier-debit-departs-et-resume-admin.md)) et ignore
+  Prometheus ; l'implémentation
   `StreamingMetrics` vit dans `internal/observability` et est injectée par
   `main.go` — même schéma ISP que `admin.LiveStopper`. Un `noopRecorder` est
   posé par défaut : le domaine tourne sans observabilité (tests, binaires nus).
