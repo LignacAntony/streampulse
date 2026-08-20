@@ -47,6 +47,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [manuel-utilisateur.md](manuel-utilisateur.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
 | [plan-formation.md](plan-formation.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
 | [accessibilite.md](accessibilite.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
+| [distribution-mobile.md](distribution-mobile.md) | Build, signature et livraison de l'application Android ; pourquoi iOS n'est pas distribué |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
@@ -96,6 +97,7 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 037 | [037-initialisation-base-de-donnees.md](adr/037-initialisation-base-de-donnees.md) | Initialisation de la base de données : schéma, migrations et seed *(ex-ADR 003)* |
 | 038 | [038-gestion-profil-utilisateur.md](adr/038-gestion-profil-utilisateur.md) | Gestion du profil utilisateur (table `profiles` dédiée) *(ex-ADR 012)* |
 | 039 | [039-supervision-admin-des-flux-et-journal-daudit.md](adr/039-supervision-admin-des-flux-et-journal-daudit.md) | Supervision admin des flux actifs et journal d'audit *(ex-ADR 018)* |
+| 040 | [040-distribution-mobile-signature-et-canal.md](adr/040-distribution-mobile-signature-et-canal.md) | Distribution mobile : signature Android dégradable, pas de canal iOS |
 
 ---
 
