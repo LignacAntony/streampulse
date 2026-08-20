@@ -38,6 +38,11 @@ check-android-security:
 check-legal-assets:
 	python3 scripts/check-legal-assets.py
 
+# L'index anglais des décisions promet d'être exhaustif : cette garde le vérifie.
+.PHONY: check-adr-index
+check-adr-index:
+	python3 scripts/check-adr-index.py
+
 .PHONY: check-dashboards
 check-dashboards:
 	python3 scripts/check-dashboards.py

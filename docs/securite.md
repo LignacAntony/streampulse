@@ -1,5 +1,7 @@
 # Schéma général de la sécurité
 
+> 🇬🇧 **English version: [en/security.md](en/security.md)**
+
 Vue consolidée de la sécurité de StreamPulse : qui accède à quoi, comment les
 secrets sont protégés et renouvelés, quelle est la surface exposée, et ce qui
 arrête un attaquant.
@@ -41,7 +43,7 @@ au premier renouvellement, soit au plus tard 15 minutes après.
 
 ## 2. Matrice rôles × routes
 
-Les 51 routes montées dans `backend/cmd/api/main.go`, dans l'ordre du fichier.
+Les 52 routes montées dans `backend/cmd/api/main.go`, dans l'ordre du fichier.
 
 Lecture des valeurs :
 
@@ -132,6 +134,7 @@ pas sur les contenus privés.
 | `PATCH`, `DELETE /api/admin/users/{id}` | non | non | non | oui |
 | `GET /api/admin/streams` | non | non | non | oui |
 | `POST /api/admin/streams/{id}/stop` | non | non | non | oui |
+| `GET /api/admin/metrics` | non | non | non | oui |
 | `GET /api/admin/broadcaster-requests` | non | non | non | oui |
 | `POST /api/admin/broadcaster-requests/{id}/approve`, `/reject` | non | non | non | oui |
 
