@@ -36,22 +36,24 @@ Un scénario marqué « Vérifié » l'a réellement été. Un scénario marqué
 - Les tests Flutter s'exécutent sur le runtime de test, **pas sur un appareil**. Tout ce qui
   dépend du matériel ou de l'OS — microphone, lecture en arrière-plan, notification système,
   deep link, permissions — est en ⬜ et ne peut pas être fermé autrement qu'à la main.
-- Un test unitaire vert ne prouve pas le **câblage** de `backend/cmd/api/main.go`. Les scénarios
-  qui dépendent du montage réel des routes (accès anonyme en particulier) sont signalés comme
-  tels, et l'écart connu est consigné en §10.
+- Un test unitaire vert ne prouve pas le **câblage** de `backend/cmd/api/main.go`. Un test peut
+  *reproduire* un montage (REC-AUD-02 appelle le handler sans `RequireAuth`, exactement comme
+  `main.go:250`), il ne lit pas `main.go` pour autant : déplacer la route sous `RequireAuth` sans
+  toucher au test ne serait pas détecté. Les scénarios concernés le disent dans leur colonne
+  « résultat obtenu ».
 
 ### Répartition
 
 | Section | ✅ Vérifié | 🟡 Non rejoué | ⬜ À exécuter | Total |
 |---|---|---|---|---|
 | §3 Compte et session | 17 | 0 | 3 | 20 |
-| §4 Auditeur | 14 | 0 | 3 | 17 |
+| §4 Auditeur | 15 | 0 | 2 | 17 |
 | §5 Bibliothèque et playlists | 22 | 0 | 2 | 24 |
 | §6 Diffuseur | 20 | 0 | 3 | 23 |
 | §7 Administrateur | 11 | 1 | 1 | 13 |
 | §8 Sécurité transverse | 16 | 3 | 2 | 21 |
 | §9 Performance et charge | 0 | 5 | 1 | 6 |
-| **Total** | **100** | **9** | **15** | **124** |
+| **Total** | **101** | **9** | **14** | **124** |
 
 ---
 
@@ -119,7 +121,7 @@ Rôle : **auditeur** (invité ou `user`). Routes : `/api/streams`, `playlist.m3u
 | ID | Préconditions | Étapes | Résultat attendu | Résultat obtenu (preuve) | Statut | Date | US / exigence |
 |---|---|---|---|---|---|---|---|
 | REC-AUD-01 | Au moins un flux public en direct | `GET /api/streams` avec une session | 200, liste des directs publics ; **aucun secret** (`stream_key`, `stream_source_url`) dans la réponse | Conforme — `backend/internal/streaming/handler_test.go` `TestHandler_List_OK_NoStreamKey` | ✅ | 2026-08-19 | US-04-01 · ADR 013 |
-| REC-AUD-02 | Idem, aucune session | `GET /api/streams` **sans jeton** (route montée publiquement dans `cmd/api/main.go`) | 200, même liste — découverte accessible en invité | | ⬜ | | US-04-01 · `openapi.yaml` `listStreams` |
+| REC-AUD-02 | Idem, aucune session | `GET /api/streams` **sans jeton** (route montée publiquement dans `cmd/api/main.go`) | 200, même liste — découverte accessible en invité | Conforme — `TestHandler_List_AnonymousOK` : montage public (sans `RequireAuth`, comme `main.go`), aucun en-tête `Authorization`, 200 + aucun secret, et corps **identique** à l'appel authentifié | ✅ | 2026-08-20 | US-04-01 · `openapi.yaml` `listStreams` |
 | REC-AUD-03 | Plus de 100 flux en direct | `GET /api/streams?limit=999&offset=-5` | Bornes appliquées : `limit` plafonné à 100, `offset` négatif ramené à 0 | Conforme — `TestHandler_List_PaginationClamp` | ✅ | 2026-08-19 | ADR 013 |
 | REC-AUD-04 | Flux public en direct et prêt | `GET /api/streams/{id}/playlist.m3u8` sans jeton, puis en tant que propriétaire d'un flux **privé** | 200 dans les deux cas (chaîne `OptionalAuth` réelle) | Conforme — `TestHandler_Playlist_PublicNoAuth` ; `TestHandler_Playlist_ViaOptionalAuth` | ✅ | 2026-08-19 | US-04-02 · STR-108 |
 | REC-AUD-05 | Manifeste obtenu | `GET /api/streams/{id}/segments/{segment}` sans jeton | 200, segment `.ts` servi | Conforme — `TestHandler_Segment_PublicNoAuth` | ✅ | 2026-08-19 | US-04-02 · STR-108 |
@@ -238,7 +240,7 @@ et jusqu'ici non documentés en dehors du code.
 | REC-SEC-03 | Flux en direct appartenant à un tiers | `GET /api/streams/{id}/stats` | **404 et non 403** — un tiers n'apprend ni l'audience, ni l'existence du flux | Conforme — `TestHandler_Stats_NotOwnerIs404` | ✅ | 2026-08-19 | US-06-02 · ADR 025 |
 | REC-SEC-04 | Flux privé (ou inexistant) | `GET /api/streams/{id}/playlist.m3u8` **sans authentification** | **404**, jamais 401 : le handler sort sur la visibilité avant même de chercher une session | Conforme — `TestHandler_Playlist_PrivateNoAuth_Returns404` | ✅ | 2026-08-19 | US-04-02 · STR-108 |
 | REC-SEC-05 | Comptes `user` et `broadcaster` | Appeler une route réservée à un rôle supérieur : création de flux en `user`, `/api/admin/users` et `/api/admin/streams` en non-admin, approbation de demande en non-admin | **403** dans tous les cas, et le service métier n'est **pas** appelé | Conforme — `TestHandler_Create_ForbiddenForUser` ; `admin/handler_test.go` `TestHandler_List_ForbiddenForNonAdmin`, `TestHandler_ListStreams_ForbiddenForNonAdmin` ; `broadcaster/handler_test.go` `TestHandler_Approve_ForbiddenForNonAdmin` | ✅ | 2026-08-19 | ADR 006 · ADR 017 |
-| REC-SEC-06 | Aucune session | Appeler sans jeton : création/liste de flux, stats, favoris, `me/streams`, admin, playlists, tracks | **401** partout | Conforme — `TestHandler_Create_RequiresToken`, `TestHandler_Delete_RequiresToken`, `TestHandler_Start_RequiresToken`, `TestHandler_RotateKey_RequiresToken`, `TestHandler_Stats_Unauthenticated`, `TestHandler_ListMine_Unauthenticated`, `TestHandler_ListFavorites_Unauthenticated` ; `admin` `TestHandler_List_RequiresToken`, `TestHandler_SetActive_RequiresToken`, `TestHandler_Delete_RequiresToken`, `TestHandler_ListStreams_RequiresToken`, `TestHandler_StopStream_RequiresToken` ; `playlist` `TestCreate_Unauthenticated_401` ; `track` `TestUpload_Unauthenticated`, `TestStreamTrack_Unauthenticated` | ✅ | 2026-08-19 | ADR 006 |
+| REC-SEC-06 | Aucune session | Appeler sans jeton : création de flux, stats, favoris, `me/streams`, admin, playlists, tracks. **Hors périmètre** : `GET /api/streams`, `playlist.m3u8` et `segments/*` sont publics par conception (REC-AUD-02, REC-AUD-04/05) | **401** partout sur le périmètre ci-dessus | Conforme — `TestHandler_Create_RequiresToken`, `TestHandler_Delete_RequiresToken`, `TestHandler_Start_RequiresToken`, `TestHandler_RotateKey_RequiresToken`, `TestHandler_Stats_Unauthenticated`, `TestHandler_ListMine_Unauthenticated`, `TestHandler_ListFavorites_Unauthenticated` ; `admin` `TestHandler_List_RequiresToken`, `TestHandler_SetActive_RequiresToken`, `TestHandler_Delete_RequiresToken`, `TestHandler_ListStreams_RequiresToken`, `TestHandler_StopStream_RequiresToken` ; `playlist` `TestCreate_Unauthenticated_401` ; `track` `TestUpload_Unauthenticated`, `TestStreamTrack_Unauthenticated` | ✅ | 2026-08-19 | ADR 006 |
 | REC-SEC-07 | Jetons des quatre rôles | Traverser `RequireAuth`, `RequireRole` et `OptionalAuth` avec un jeton valide, invalide, absent | Hiérarchie `anonymous < user < broadcaster < admin` respectée ; `OptionalAuth` laisse passer en anonyme sur jeton absent **ou** invalide ; l'identité est journalisée dans l'access log | Conforme — `backend/internal/auth/middleware_test.go` `TestRequireAuth_ValidToken`, `TestRequireAuth_InvalidToken`, `TestRequireRole_Hierarchy`, `TestOptionalAuth_NoToken_Anonymous`, `TestOptionalAuth_ValidToken_InjectsIdentity`, `TestOptionalAuth_InvalidToken_Anonymous`, `TestRequireAuth_RecordsUserIDInAccessLog` | ✅ | 2026-08-19 | ADR 006 |
 | REC-SEC-08 | Playlist appartenant à un tiers | `GET`, `PUT`, `DELETE /api/playlists/{id}` et `GET .../tracks` | **404** dans tous les cas — jamais 403 | Conforme — `backend/internal/playlist/handler_test.go` `TestGet_ThirdParty_404`, `TestDelete_ThirdParty_404` | ✅ | 2026-08-19 | US-05-02 · ADR 026 |
 | REC-SEC-09 | Piste appartenant à un tiers | `GET /api/tracks/{id}/stream` | **404** — la propriété est filtrée **en SQL**, l'existence n'est pas révélée | Conforme — `backend/internal/track/handler_test.go` `TestStreamTrack_NotOwned` ; `track/service_test.go` `TestOpenTrackFile_NotOwned` | ✅ | 2026-08-19 | US-05-04 · ADR 034 |
@@ -293,28 +295,22 @@ constant, matériel local ≠ VPS de production.
 
 Consignés ici pour qu'ils soient discutés plutôt que découverts.
 
-1. **Découverte anonyme des flux (REC-AUD-02) — non verrouillée.** `GET /api/streams` est monté
-   **publiquement** dans `backend/cmd/api/main.go` et documenté comme tel dans `openapi.yaml`
-   (`listStreams`, « no authentication required »). Mais côté tests, `TestHandler_List_OK_NoStreamKey`
-   passe un jeton, et `TestHandler_List_RequiresToken` enveloppe le handler dans `auth.RequireAuth`
-   pour attendre un 401 — ce qui ne reflète **pas** le montage de production. Aucun test ne couvre
-   donc l'accès réellement anonyme à cette route. À passer à la main, et à automatiser.
-2. **Limitation de débit sur `/api/auth/*` (REC-SEC-18) — absente de `develop`.** Le middleware
+1. **Limitation de débit sur `/api/auth/*` (REC-SEC-18) — absente de `develop`.** Le middleware
    et ses cinq tests existent sur `fix/str-242-config-securite-et-nettoyages` uniquement. Tant que
    cette branche n'est pas fusionnée, **aucune borne** ne protège la connexion, l'inscription et
    `forgot-password` contre la force brute et le bombardement d'emails.
-3. **Tests d'intégration PostgreSQL (REC-ADM-11, REC-SEC-17) — non rejoués.** Ils exigent un
+2. **Tests d'intégration PostgreSQL (REC-ADM-11, REC-SEC-17) — non rejoués.** Ils exigent un
    conteneur PostgreSQL, indisponible sur le poste de recette le 2026-08-19. À relancer avec la
    procédure décrite en tête de `backend/internal/admin/repository_integration_test.go`.
-4. **Aucun test de bout en bout API + base réelle** dans la suite par défaut. Les handlers et
+3. **Aucun test de bout en bout API + base réelle** dans la suite par défaut. Les handlers et
    services sont testés contre des stubs ; le SQL n'est vérifié que par les deux tests taggés
    `integration` du domaine admin. Les scénarios de ce cahier qui reposent sur une contrainte de
    base (`uq_tracks_user_title` en REC-BIB-09, unicité de position en REC-BIB-20) ne sont donc pas
    fermés au niveau SQL.
-5. **Tout ce qui dépend d'un appareil** (REC-AUD-16/17, REC-BIB-24, REC-CPT-18/19/20,
+4. **Tout ce qui dépend d'un appareil** (REC-AUD-16/17, REC-BIB-24, REC-CPT-18/19/20,
    REC-DIF-21/22/23) reste manuel par nature : microphone, arrière-plan, notification système,
    deep link, magasin de jetons sécurisé.
-6. **Configuration de production** (REC-SEC-20/21) : le blocage de `/metrics` par Caddy et le
+5. **Configuration de production** (REC-SEC-20/21) : le blocage de `/metrics` par Caddy et le
    non-montage de Swagger reposent sur la configuration d'infrastructure et l'environnement, pas
    sur du code testé unitairement.
 

@@ -247,7 +247,9 @@ func TestHandler_Create_ForbiddenForUser(t *testing.T) {
 	}
 }
 
-// doList exécute GET /api/streams via RequireAuth (sans rôle).
+// doList exécute GET /api/streams sur le montage **réel** de la route : publique,
+// sans RequireAuth (cmd/api/main.go). withToken permet de vérifier qu'un jeton
+// présent ne change rien — le handler ne lit jamais l'identité de l'appelant.
 func doList(t *testing.T, h *Handler, query string, withToken bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/streams"+query, nil)
@@ -259,7 +261,7 @@ func doList(t *testing.T, h *Handler, query string, withToken bool) *httptest.Re
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	rec := httptest.NewRecorder()
-	auth.RequireAuth(testSecret, http.HandlerFunc(h.List)).ServeHTTP(rec, req)
+	http.HandlerFunc(h.List).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -284,12 +286,34 @@ func TestHandler_List_OK_NoStreamKey(t *testing.T) {
 	}
 }
 
-func TestHandler_List_RequiresToken(t *testing.T) {
-	h := NewHandler(&stubService{}, testIngestURL, NewLiveSessions(context.Background()))
-	rec := doList(t, h, "", false)
+// La découverte des directs est ouverte aux invités : GET /api/streams est monté
+// sans RequireAuth (cmd/api/main.go) et documenté « no authentication required »
+// dans openapi.yaml. Le test qui occupait cette place enveloppait le handler dans
+// RequireAuth pour attendre un 401 : il validait le middleware — déjà couvert par
+// auth/middleware_test.go, cas « missing » — et non le contrat de cette route.
+func TestHandler_List_AnonymousOK(t *testing.T) {
+	stub := &stubService{listRet: []Stream{
+		{ID: "s1", UserID: "u9", Title: "En direct", Status: StatusLive, IsPublic: true, StreamKey: "SECRET_KEY"},
+	}}
+	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	rec := doList(t, h, "", false) // aucun en-tête Authorization
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"title":"En direct"`) {
+		t.Errorf("un invité doit voir les directs publics: %s", body)
+	}
+	// Sécurité : l'anonymat ne doit pas être un chemin de fuite des secrets.
+	if strings.Contains(body, "SECRET_KEY") || strings.Contains(body, "stream_key") || strings.Contains(body, "stream_source_url") {
+		t.Errorf("la liste anonyme ne doit exposer ni la clé ni l'URL source: %s", body)
+	}
+
+	// « Même liste » : la route ne discrimine pas selon la présence d'un jeton.
+	if authed := doList(t, h, "", true).Body.String(); authed != body {
+		t.Errorf("réponse anonyme et authentifiée divergent:\nanonyme = %s\nauthentifié = %s", body, authed)
 	}
 }
 
