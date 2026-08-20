@@ -1,5 +1,7 @@
 # Schéma général de la sécurité
 
+> 🇬🇧 **English version: [en/security.md](en/security.md)**
+
 Vue consolidée de la sécurité de StreamPulse : qui accède à quoi, comment les
 secrets sont protégés et renouvelés, quelle est la surface exposée, et ce qui
 arrête un attaquant.

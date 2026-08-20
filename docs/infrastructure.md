@@ -1,5 +1,8 @@
 # Infrastructure Docker — StreamPulse
 
+> 🇬🇧 **English version: [en/operations.md](en/operations.md)** — condensed;
+> the troubleshooting runbook below stays French-only.
+
 Ce document décrit l'infrastructure de développement local du projet StreamPulse,
 basée sur Docker Compose. Il couvre les services, les variables d'environnement,
 les procédures opérationnelles et le troubleshooting.
