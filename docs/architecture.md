@@ -1,5 +1,7 @@
 # Architecture — StreamPulse
 
+> 🇬🇧 **English version: [en/architecture.md](en/architecture.md)**
+
 ## Vue d'ensemble
 
 StreamPulse est une application de streaming multi-plateforme composée d'un client Flutter,

@@ -38,6 +38,11 @@ check-android-security:
 check-legal-assets:
 	python3 scripts/check-legal-assets.py
 
+# L'index anglais des décisions promet d'être exhaustif : cette garde le vérifie.
+.PHONY: check-adr-index
+check-adr-index:
+	python3 scripts/check-adr-index.py
+
 # Couverture Go, unitaires seuls — informatif, ne fait jamais échouer.
 #
 # Seuil explicite à 0 : sans lui le script retomberait sur son défaut de 80 %,

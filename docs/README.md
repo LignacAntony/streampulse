@@ -33,6 +33,67 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 
 ---
 
+## Périmètre bilingue
+
+Le critère `Ce3.6.2` demande une documentation technique rédigée **en français
+et en anglais**. Le corpus fait environ 75 000 mots ; tout traduire aurait
+produit deux corpus qui divergent, ce qui est pire qu'un périmètre plus étroit
+mais tenu.
+
+Le périmètre est donc **déclaré**, et c'est cette déclaration qui le rend
+défendable — un silence se lirait comme un oubli.
+
+**Le français fait référence.** En cas de divergence entre les deux versions,
+la française est la bonne, et l'écart est un défaut à signaler.
+
+### Maintenu dans les deux langues
+
+| Français | English | Ce que le document répond |
+|---|---|---|
+| [README.md](../README.md) | [README.en.md](../README.en.md) | Ce qu'est le projet, comment le lancer, quelles variables il attend |
+| [architecture.md](architecture.md) | [en/architecture.md](en/architecture.md) | Comment les pièces s'assemblent, et pourquoi ces technologies |
+| [infrastructure.md](infrastructure.md) | [en/operations.md](en/operations.md) | Comment lancer, observer et déployer la stack |
+| [securite.md](securite.md) | [en/security.md](en/security.md) | Qui accède à quoi, comment les secrets sont protégés, ce qui est exposé |
+| Toutes les ADR | [en/adr-index.md](en/adr-index.md) | Chaque décision d'architecture, résumée |
+| — | [en/README.md](en/README.md) | Index anglais |
+
+### Français uniquement, et pourquoi
+
+Le motif est le même partout : **le public de ces documents est francophone**,
+et une seconde version divergerait — ou, pire, dirait autre chose.
+
+| Document | Motif |
+|---|---|
+| Manuel utilisateur, plan de formation, déclaration d'accessibilité | Écrits pour les personnes qui utilisent le produit et celles qui les forment |
+| Politique de confidentialité, CGU | Textes juridiques. Deux versions d'un texte juridique sont deux textes qui peuvent se contredire — un risque réel, pas théorique |
+| Cahier de recette, user stories | Artefacts de recette, lus par l'équipe et le jury |
+| Les ADR intégrales | Résumées dans l'index anglais ; le code, les tableaux et les diagrammes qu'elles contiennent sont déjà neutres en langue |
+| Runbook d'exploitation détaillé | Procédures de dépannage et de mise à jour du VPS, pour l'équipe qui exploite le service |
+| Rapport de couverture de tests | Lu par l'équipe qui écrit le code et par le jury ; les chiffres et les noms de paquets qu'il contient sont déjà neutres en langue |
+
+### Ce qui garde le périmètre honnête
+
+L'index anglais des décisions promet d'être **exhaustif**. Une ADR ajoutée sans
+son entrée le rendrait menteur sans que personne s'en aperçoive — un lecteur
+anglophone n'a aucun moyen de savoir ce qui lui manque.
+
+`make check-adr-index` refuse donc toute ADR sans entrée, et la CI le rejoue à
+chaque PR. L'asymétrie est voulue : une entrée qui précède son fichier est
+tolérée et signalée (deux branches qui avancent en parallèle), l'inverse jamais.
+
+### Note sur la langue du reste
+
+Les messages de commit, les titres de PR et les tickets Linear sont **en
+français** — convention de projet, décidée une fois. Les identifiants de code,
+les champs d'API et la spécification OpenAPI sont **en anglais**, comme d'usage.
+
+Cette spécification est d'ailleurs le seul artefact qui a toujours été
+anglophone : avant ce travail, l'écart bilingue courait donc dans les deux sens
+— une doc technique 100 % française et une référence d'API 100 % anglaise, aucun
+document dans les deux langues.
+
+---
+
 ## Documents transverses
 
 | Fichier | Description |
@@ -47,6 +108,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [manuel-utilisateur.md](manuel-utilisateur.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
 | [plan-formation.md](plan-formation.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
 | [accessibilite.md](accessibilite.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
+| [en/README.md](en/README.md) | **English** — index de la documentation anglaise et périmètre couvert |
 | [securite.md](securite.md) | Schéma général de la sécurité — matrice rôles × routes, flux JWT, inventaire des secrets, surface d'attaque, modèle de menace |
 | [rgpd.md](rgpd.md) | Dossier RGPD — registre des traitements, politique de rétention par magasin, droits des personnes |
 | [politique-confidentialite.md](politique-confidentialite.md) | Politique de confidentialité destinée aux utilisateurs (embarquée dans l'application) |

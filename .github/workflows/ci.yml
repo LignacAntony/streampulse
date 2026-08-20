@@ -269,6 +269,14 @@ jobs:
       - name: Vérifier la synchronisation des documents légaux
         run: make check-legal-assets
 
+      # Le périmètre bilingue promet que l'index anglais des décisions couvre
+      # toutes les ADR. Sans garde, une ADR ajoutée sans son entrée laisse un
+      # index qui se prétend exhaustif — et un lecteur anglophone n'a aucun
+      # moyen de savoir ce qui lui manque.
+      # Rejouable en local via `make check-adr-index`.
+      - name: Vérifier l'exhaustivité de l'index anglais des ADR
+        run: make check-adr-index
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
