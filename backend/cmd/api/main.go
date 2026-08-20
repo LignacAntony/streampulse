@@ -393,7 +393,7 @@ func run() error {
 	// ni loggés, ni comptés.
 	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(),
 		httpmw.Tracing(mux,
-			httpmw.AccessLog(logger,
+			httpmw.AccessLog(logger, cfg.TrustProxyHeaders,
 				httpmw.Metrics(prometheus.DefaultRegisterer, mux))))
 
 	srv := &http.Server{

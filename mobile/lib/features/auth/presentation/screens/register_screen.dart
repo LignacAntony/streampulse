@@ -14,6 +14,7 @@ import '../widgets/password_strength_indicator.dart';
 import '../widgets/terms_checkbox.dart';
 import 'auth_screen.dart';
 import 'register_form_object.dart';
+import '../../../legal/presentation/screens/legal_document_screen.dart';
 
 class RegisterScreen extends StatelessWidget {
   const RegisterScreen({super.key});
@@ -173,6 +174,8 @@ class _RegisterFormFields extends StatelessWidget {
               value: form.acceptedTerms,
               enabled: !isLoading,
               onChanged: (v) => setFormState(() => form.acceptedTerms = v),
+              onPrivacyTap: () => _openLegal(context, LegalDocument.privacy),
+              onTermsTap: () => _openLegal(context, LegalDocument.terms),
             ),
             const SizedBox(height: 24),
             ConstrainedBox(
@@ -325,4 +328,15 @@ class _DividerWithLabel extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Ouvre un document légal par-dessus l'inscription. Une route poussée et non
+/// un remplacement : le formulaire déjà saisi doit être retrouvé intact au
+/// retour.
+void _openLegal(BuildContext context, LegalDocument document) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => LegalDocumentScreen(document: document),
+    ),
+  );
 }
