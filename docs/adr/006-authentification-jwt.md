@@ -97,7 +97,7 @@ type TokenRefresher interface { Refresh(...) }
 
 ## Références
 
-- ADR 005 : [Architecture handler / service / repository](005-architecture-handler-service-repository.md) — les interfaces ISP s'inscrivent dans ce pattern.
+- ADR 008 : [Architecture handler / service / repository](008-architecture-handler-service-repository.md) — les interfaces ISP s'inscrivent dans ce pattern.
 - Linear : [STR-38](https://linear.app/streampulse/issue/STR-38) — ticket de connexion sécurisée.
 - `internal/auth/token.go` — `GenerateAccessToken`, `ParseAccessToken`, `GenerateRefreshToken`.
 - `internal/auth/middleware.go` — `RequireAuth`, `RequireRole`.

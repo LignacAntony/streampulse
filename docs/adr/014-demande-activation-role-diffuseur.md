@@ -132,6 +132,6 @@ endpoints admin étant déjà exposés côté API.
 
 - ADR 006 : [Authentification JWT](006-authentification-jwt.md) — rôles, `RequireRole`, refresh.
 - ADR 008 : [Architecture handler / service / repository](008-architecture-handler-service-repository.md) — squelette suivi par `internal/broadcaster/`.
-- ADR 012 : [Gestion du profil utilisateur](012-gestion-profil-utilisateur.md) — domaine modèle (`internal/profiles/`).
+- ADR 038 : [Gestion du profil utilisateur](038-gestion-profil-utilisateur.md) — domaine modèle (`internal/profiles/`).
 - ADR 012 : [OpenAPI source de vérité](012-openapi-source-de-verite.md) — spec + client Dart/Dio généré.
 - Linear : [STR-49](https://linear.app/streampulse/issue/STR-49) — demande et activation du rôle diffuseur.

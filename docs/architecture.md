@@ -87,8 +87,11 @@ Dart/Dio de l'app Flutter en est généré. Voir [ADR 012](adr/012-openapi-sourc
 5. L'API formate la réponse JSON et la renvoie au client Flutter
 ```
 
-Pour les flux de streaming vidéo (HLS), l'API génère des URLs signées
-pointant vers le stockage objet (prévu en phase ultérieure).
+Les flux HLS sont servis **directement par l'API** : un ffmpeg par session live
+segmente l'audio en `.ts` et écrit un manifeste glissant, que les handlers
+`Playlist` et `Segment` renvoient depuis le répertoire de travail de la session
+(ADR 015). Il n'y a ni stockage objet ni URL signée — l'accès est contrôlé à la
+requête, par la visibilité du flux.
 
 ---
 
@@ -130,7 +133,7 @@ pointant vers le stockage objet (prévu en phase ultérieure).
 - **Binaire statique** : l'image Docker finale fait < 30 MB (pas de runtime JVM/Node)
 - **Bibliothèque standard riche** : HTTP/2, TLS, JSON natifs sans dépendances
 - **Typage fort** : détection d'erreurs à la compilation, refactoring sûr
-- **Écosystème** : excellente intégration OpenTelemetry, GORM, pgx pour PostgreSQL
+- **Écosystème** : excellente intégration OpenTelemetry, et pgx + sqlc pour PostgreSQL — l'ORM a été écarté au profit de SQL écrit à la main et typé à la génération (ADR 037)
 
 ### Pourquoi Flutter pour le client ?
 
@@ -149,7 +152,7 @@ L'application mobile suit la **Clean Architecture** adaptée mobile, découpée 
 
 ```
 mobile/lib/
-├── main.dart              # Point d'entrée — ProviderScope + runApp
+├── main.dart              # Point d'entrée — AudioService.init + runApp(StreamPulseApp)
 ├── app/
 │   ├── app.dart           # Widget racine MaterialApp.router
 │   └── router/            # Configuration go_router

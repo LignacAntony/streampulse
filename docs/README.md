@@ -10,56 +10,107 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 
 1. [architecture.md](architecture.md) — Vue d'ensemble du système : composants, flux de données, choix techniques. **Commencer ici.**
 2. [infrastructure.md](infrastructure.md) — Infrastructure Docker : services, variables d'environnement, commandes du quotidien, procédure de premier lancement, troubleshooting, pipeline CI/CD.
-3. [adr/001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) — Décision d'architecture : stack d'observabilité LGTM (Loki, Grafana, Tempo, Prometheus).
-4. [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) — Décision d'architecture : conteneurisation avec Docker Compose.
-5. [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) — Décision d'architecture : pipeline CI/CD avec GitHub Actions et GHCR.
-6. [adr/003-initialisation-base-de-donnees.md](adr/003-initialisation-base-de-donnees.md) — Décision d'architecture : initialisation de la base de données (schéma, migrations, seed).
-7. [adr/004-config-12-factor-viper.md](adr/004-config-12-factor-viper.md) — Décision d'architecture : configuration 12-Factor App avec Viper.
-8. [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) — Décision d'architecture : Clean Architecture + provider pour l'application mobile Flutter.
-9. [adr/006-authentification-jwt.md](adr/006-authentification-jwt.md) — Décision d'architecture : authentification JWT (access token + refresh token avec rotation).
-10. [adr/007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) — Décision d'architecture : accès base de données via sqlc (SQL → Go typé).
-11. [adr/008-architecture-handler-service-repository.md](adr/008-architecture-handler-service-repository.md) — Décision d'architecture : layering handler / service / repository côté backend Go.
-12. [adr/010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) — Décision d'architecture : sécurisation du workflow de réinitialisation de mot de passe (backend Go).
-13. [adr/011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) — Décision d'architecture : deep links et gestion d'état Flutter pour la réinitialisation de mot de passe.
-14. [adr/012-openapi-source-de-verite.md](adr/012-openapi-source-de-verite.md) — Décision d'architecture : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré.
-14. [adr/012-gestion-profil-utilisateur.md](adr/012-gestion-profil-utilisateur.md) — Décision d'architecture : table `profiles` dédiée (1-1 avec `users`), création automatique par trigger, préférences modifiables.
+3. **Socle technique** — les décisions structurantes, dans l'ordre où elles ont été prises :
+   [ADR 001](adr/001-choix-stack-observabilite.md) (observabilité) ·
+   [ADR 002](adr/002-choix-conteneurisation-docker.md) (Docker) ·
+   [ADR 003](adr/003-choix-cicd-github-actions.md) (CI/CD) ·
+   [ADR 004](adr/004-config-12-factor-viper.md) (configuration) ·
+   [ADR 037](adr/037-initialisation-base-de-donnees.md) (base de données) ·
+   [ADR 007](adr/007-sqlc-generation-code-sql.md) (sqlc).
+4. **Backend Go** — [ADR 008](adr/008-architecture-handler-service-repository.md) (layering handler/service/repository) puis
+   [ADR 006](adr/006-authentification-jwt.md) (JWT) et [ADR 012](adr/012-openapi-source-de-verite.md) (OpenAPI, contrat HTTP).
+5. **Application mobile** — [ADR 005](adr/005-architecture-flutter-clean.md) (Clean Architecture), **corrigée par**
+   [ADR 036](adr/036-state-management-flutter-provider.md) (`provider` plutôt que Riverpod — à lire ensemble),
+   puis [ADR 009](adr/009-authentification-flutter.md) (auth mobile).
+6. **Métier** — streaming ([ADR 013](adr/013-domaine-streaming.md), [ADR 015](adr/015-moteur-hls-segmentation-ffmpeg.md)),
+   bibliothèque ([ADR 026](adr/026-domaine-playlists.md), [ADR 032](adr/032-domaine-track-upload-audio.md)),
+   lecture audio ([ADR 023](adr/023-lecteur-audio-hls-mobile.md), [ADR 034](adr/034-lecture-dune-playlist-avec-file-dattente.md)).
+7. **Observabilité en production** — [ADR 018](adr/018-logs-structures-zerolog-collecte-loki-alloy.md) (logs) ·
+   [ADR 019](adr/019-metriques-prometheus-cardinalite-et-dashboards.md) (métriques) ·
+   [ADR 020](adr/020-traces-opentelemetry-otlp-tempo.md) (traces) ·
+   [ADR 021](adr/021-alertes-grafana-provisionnees-email.md) (alertes) ·
+   [ADR 022](adr/022-metriques-metier-streaming-et-panel-live.md) (métriques métier).
 
 ---
 
-## Index complet
+## Documents transverses
 
 | Fichier | Description |
 |---|---|
 | [architecture.md](architecture.md) | Architecture globale, schéma ASCII, flux requête et observabilité, justification des choix |
 | [infrastructure.md](infrastructure.md) | Services Docker, variables d'environnement, procédures opérationnelles, troubleshooting, pipeline CI/CD |
+| [cdc-conflits-codebase.md](cdc-conflits-codebase.md) | Écarts connus entre le cahier des charges et la codebase |
+| [user-stories.md](user-stories.md) | Les user stories du produit, par épopée, avec leurs critères d'acceptation |
+| [database.md](database.md) | Structure de la base de données : tables, relations, contraintes |
+| [diagrammes.md](diagrammes.md) | Diagrammes UML, chacun accompagné de son équivalent textuel |
+| [cahier-de-recette.md](cahier-de-recette.md) | Cahier de recette : 124 scénarios, statut et preuve de chacun |
 | [manuel-utilisateur.md](manuel-utilisateur.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
 | [plan-formation.md](plan-formation.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
 | [accessibilite.md](accessibilite.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
-| [adr/001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) | ADR 001 — Choix de la stack LGTM pour l'observabilité |
-| [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) | ADR 002 — Conteneurisation avec Docker Compose |
-| [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) | ADR 003 — Pipeline CI/CD avec GitHub Actions et GHCR |
-| [adr/003-initialisation-base-de-donnees.md](adr/003-initialisation-base-de-donnees.md) | ADR 003 — Initialisation de la base de données : schéma, migrations, seed |
-| [adr/004-config-12-factor-viper.md](adr/004-config-12-factor-viper.md) | ADR 004 — Configuration 12-Factor App avec Viper |
-| [adr/005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) | ADR 005 — Architecture Flutter : Clean Architecture + provider |
-| [adr/006-authentification-jwt.md](adr/006-authentification-jwt.md) | ADR 006 — Authentification JWT : access token + refresh token avec rotation |
-| [adr/007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) | ADR 007 — Accès base de données : sqlc (SQL → Go typé) |
-| [adr/008-architecture-handler-service-repository.md](adr/008-architecture-handler-service-repository.md) | ADR 008 — Layering backend Go : handler / service / repository |
-| [adr/009-authentification-flutter.md](adr/009-authentification-flutter.md) | ADR 009 — Authentification Flutter : stockage sécurisé, refresh automatique, logout best-effort |
-| [adr/010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) | ADR 010 — Réinitialisation mot de passe : token haché, anti-énumération, transaction atomique, mailer |
-| [adr/011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) | ADR 011 — Réinitialisation mot de passe Flutter : deep links custom scheme, AsyncNotifier<bool> |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
 
-## Architecture Decision Records (ADR)
+## Index complet des ADR
 
 Les ADR documentent toutes les décisions d'architecture significatives du projet.
-Chaque décision est tracée avec son contexte, les alternatives considérées et les conséquences.
+Chaque décision est tracée avec son contexte, les **alternatives écartées** et les conséquences.
 
-**Convention :** toute nouvelle décision d'architecture → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `013-...`).
+| # | Fichier | Décision |
+|---|---|---|
+| 001 | [001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) | Choix de la stack d'observabilité : LGTM |
+| 002 | [002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) | Conteneurisation avec Docker Compose pour l'environnement de développement |
+| 003 | [003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) | Choix de GitHub Actions pour la CI/CD |
+| 004 | [004-config-12-factor-viper.md](adr/004-config-12-factor-viper.md) | Configuration 12-Factor App via Viper |
+| 005 | [005-architecture-flutter-clean.md](adr/005-architecture-flutter-clean.md) | Architecture Flutter : Clean Architecture (**Superseded** par l'ADR 036 sur le state management) |
+| 006 | [006-authentification-jwt.md](adr/006-authentification-jwt.md) | Authentification JWT : access token + refresh token |
+| 007 | [007-sqlc-generation-code-sql.md](adr/007-sqlc-generation-code-sql.md) | Accès base de données : sqlc (SQL → Go typé) |
+| 008 | [008-architecture-handler-service-repository.md](adr/008-architecture-handler-service-repository.md) | Architecture en couches : handler / service / repository |
+| 009 | [009-authentification-flutter.md](adr/009-authentification-flutter.md) | Authentification côté Flutter : stockage sécurisé, refresh automatique, logout best-effort |
+| 010 | [010-reinitialisation-mot-de-passe-backend.md](adr/010-reinitialisation-mot-de-passe-backend.md) | Réinitialisation de mot de passe : sécurisation côté backend |
+| 011 | [011-reinitialisation-mot-de-passe-flutter.md](adr/011-reinitialisation-mot-de-passe-flutter.md) | Réinitialisation de mot de passe : deep links et gestion d'état Flutter |
+| 012 | [012-openapi-source-de-verite.md](adr/012-openapi-source-de-verite.md) | OpenAPI comme source de vérité du contrat HTTP + client Flutter généré |
+| 013 | [013-domaine-streaming.md](adr/013-domaine-streaming.md) | Domaine streaming : `stream_key`, CRUD des flux et soft delete |
+| 014 | [014-demande-activation-role-diffuseur.md](adr/014-demande-activation-role-diffuseur.md) | Demande et activation du rôle diffuseur |
+| 015 | [015-moteur-hls-segmentation-ffmpeg.md](adr/015-moteur-hls-segmentation-ffmpeg.md) | Moteur HLS : segmentation et manifeste via ffmpeg |
+| 016 | [016-scalabilite-test-de-charge-et-limiteur-hls.md](adr/016-scalabilite-test-de-charge-et-limiteur-hls.md) | Scalabilité : test de charge Go in-process et limiteur de capacité HLS |
+| 017 | [017-tableau-de-bord-admin-gestion-utilisateurs.md](adr/017-tableau-de-bord-admin-gestion-utilisateurs.md) | Tableau de bord admin : liste, recherche et gestion des utilisateurs |
+| 018 | [018-logs-structures-zerolog-collecte-loki-alloy.md](adr/018-logs-structures-zerolog-collecte-loki-alloy.md) | Logs structurés JSON (zerolog) et collecte Loki via Alloy |
+| 019 | [019-metriques-prometheus-cardinalite-et-dashboards.md](adr/019-metriques-prometheus-cardinalite-et-dashboards.md) | Métriques Prometheus : middleware dédié, cardinalité bornée, dashboards provisionnés |
+| 020 | [020-traces-opentelemetry-otlp-tempo.md](adr/020-traces-opentelemetry-otlp-tempo.md) | Traces OpenTelemetry : OTLP/HTTP vers Tempo, otelhttp et otelpgx |
+| 021 | [021-alertes-grafana-provisionnees-email.md](adr/021-alertes-grafana-provisionnees-email.md) | Alertes Grafana provisionnées, notification par email |
+| 022 | [022-metriques-metier-streaming-et-panel-live.md](adr/022-metriques-metier-streaming-et-panel-live.md) | Métriques métier du streaming et panel Live |
+| 023 | [023-lecteur-audio-hls-mobile.md](adr/023-lecteur-audio-hls-mobile.md) | Lecteur audio HLS mobile (just_audio) |
+| 024 | [024-tableau-de-bord-diffuseur-lancer-et-arreter-un-flux.md](adr/024-tableau-de-bord-diffuseur-lancer-et-arreter-un-flux.md) | Tableau de bord diffuseur : lancer et arrêter un flux |
+| 025 | [025-statistiques-daudience-en-temps-reel.md](adr/025-statistiques-daudience-en-temps-reel.md) | Statistiques d'audience en temps réel |
+| 026 | [026-domaine-playlists.md](adr/026-domaine-playlists.md) | Domaine playlists : CRUD, isolation propriétaire et unicité du nom |
+| 027 | [027-capture-microphone-et-push-aac-mobile.md](adr/027-capture-microphone-et-push-aac-mobile.md) | Capture microphone et push AAC depuis l'application mobile |
+| 028 | [028-rotation-de-la-cle-de-diffusion.md](adr/028-rotation-de-la-cle-de-diffusion.md) | Rotation de la clé de diffusion |
+| 029 | [029-pistes-dune-playlist-ajout-retrait-reordonnancement.md](adr/029-pistes-dune-playlist-ajout-retrait-reordonnancement.md) | Pistes d'une playlist : ajout, retrait et réordonnancement |
+| 030 | [030-transcodage-a-la-volee-des-formats-dingest.md](adr/030-transcodage-a-la-volee-des-formats-dingest.md) | Transcodage à la volée des formats d'ingest |
+| 031 | [031-lecture-audio-en-arriere-plan.md](adr/031-lecture-audio-en-arriere-plan.md) | Lecture audio en arrière-plan (audio_service) |
+| 032 | [032-domaine-track-upload-audio.md](adr/032-domaine-track-upload-audio.md) | Domaine track : upload d'une piste audio |
+| 033 | [033-gestion-des-interruptions-audio.md](adr/033-gestion-des-interruptions-audio.md) | Gestion des interruptions audio (appels, notifications, casque) |
+| 034 | [034-lecture-dune-playlist-avec-file-dattente.md](adr/034-lecture-dune-playlist-avec-file-dattente.md) | Lecture d'une playlist avec file d'attente (queue) |
+| 035 | [035-modes-shuffle-et-repeat.md](adr/035-modes-shuffle-et-repeat.md) | Modes shuffle et repeat de la file d'attente |
+| 037 | [037-initialisation-base-de-donnees.md](adr/037-initialisation-base-de-donnees.md) | Initialisation de la base de données : schéma, migrations et seed *(ex-ADR 003)* |
+| 038 | [038-gestion-profil-utilisateur.md](adr/038-gestion-profil-utilisateur.md) | Gestion du profil utilisateur (table `profiles` dédiée) *(ex-ADR 012)* |
+| 039 | [039-supervision-admin-des-flux-et-journal-daudit.md](adr/039-supervision-admin-des-flux-et-journal-daudit.md) | Supervision admin des flux actifs et journal d'audit *(ex-ADR 018)* |
 
-Format utilisé : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) (Michael Nygard).
+---
+
+## Convention ADR
+
+- Toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`,
+  avec **le numéro suivant** (prochain : `040-...`). Le numéro est un **identifiant**,
+  attribué dans l'ordre d'enregistrement — il ne suit pas nécessairement l'ordre chronologique
+  des décisions (cf. 037/038/039, renumérotées après collision).
+- Un numéro n'est **jamais réutilisé** : une ADR remplacée passe en statut
+  `Superseded by NNN` et reste dans le dépôt — l'historique décisionnel a de la valeur.
+- Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
+  **« Alternatives écartées »** : sans alternative rejetée, un document décrit une
+  implémentation, pas une décision.
+- Format : [Lightweight ADR](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) (Michael Nygard).
 
 ---
 
