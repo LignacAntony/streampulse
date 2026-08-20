@@ -63,7 +63,7 @@ la rendrait pas et laisserait l'appelant croire que rien n'a bougé, alors que s
 déjà cassé. L'échec part dans les logs (`zerolog`), la requête réussit.
 
 Seul l'identifiant public du flux est journalisé — jamais la clé ni l'URL d'ingest (même règle que
-`httpjson.LoggablePath`, [ADR 039](039-supervision-admin-des-flux-et-journal-daudit.md)).
+`httpjson.LoggablePath`, [ADR 018](018-logs-structures-zerolog-collecte-loki-alloy.md)).
 
 ### 5. Côté mobile : entrée de menu, confirmation, et une règle visible avant le tap
 

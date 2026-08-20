@@ -696,7 +696,7 @@ xcrun simctl openurl booted \
 | `docs/README.md` | Index de toute la documentation, ordre de lecture recommandé |
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
-| `docs/README.md` (§ Index complet des ADR) | **Les 38 ADR**, avec leur numéro et leur décision |
+| `docs/README.md` (§ Index complet des ADR) | **Les 39 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
