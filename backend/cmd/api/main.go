@@ -115,7 +115,7 @@ func run() error {
 	}()
 
 	// 1. Appliquer les migrations
-	migrator.Run(cfg.DatabaseURL())
+	migrator.Run(cfg.MigrationURL())
 
 	// 2. Seed uniquement en développement (connexion simple, one-shot)
 	if cfg.IsDev() {

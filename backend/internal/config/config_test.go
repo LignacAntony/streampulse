@@ -256,6 +256,40 @@ func TestConfig_DBDSN(t *testing.T) {
 	}
 }
 
+// Les deux URL de connexion ne diffèrent que par leur schéma, et ce détail
+// décide si l'API démarre. golang-migrate résout son pilote par le schéma :
+// `database/pgx/v5` ne s'enregistre que sous « pgx5 », et une URL « postgres://
+// » fait échouer le démarrage sur « unknown driver postgres (forgotten
+// import?) ». pgx.ParseConfig, lui, rejette « pgx5:// ».
+//
+// Rien d'autre ne couvre cette contrainte : la CI compile et joue les tests
+// unitaires, elle ne démarre jamais le binaire.
+func TestConfig_URLsDeConnexion(t *testing.T) {
+	cfg := &Config{
+		DBHost:     "db.example.com",
+		DBPort:     "5432",
+		DBUser:     "u",
+		DBPassword: "p",
+		DBName:     "n",
+	}
+
+	const credsEtCible = "://u:p@db.example.com:5432/n?sslmode=disable"
+
+	if got, want := cfg.DatabaseURL(), "postgres"+credsEtCible; got != want {
+		t.Errorf("DatabaseURL() = %q, want %q", got, want)
+	}
+	if got, want := cfg.MigrationURL(), "pgx5"+credsEtCible; got != want {
+		t.Errorf("MigrationURL() = %q, want %q", got, want)
+	}
+
+	// Les deux doivent désigner la même base : seul le schéma change.
+	if strings.TrimPrefix(cfg.DatabaseURL(), "postgres") !=
+		strings.TrimPrefix(cfg.MigrationURL(), "pgx5") {
+		t.Errorf("les deux URL ne pointent pas sur la même base:\n  %s\n  %s",
+			cfg.DatabaseURL(), cfg.MigrationURL())
+	}
+}
+
 func TestConfig_IsDev_IsProd(t *testing.T) {
 	tests := []struct {
 		env      string
