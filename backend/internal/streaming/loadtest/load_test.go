@@ -339,7 +339,7 @@ func TestLoad_50Listeners(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
 
 	// Échantillonneur du pic mémoire pendant la charge (1 Hz).
-	var peakHeap uint64 = before.HeapAlloc
+	peakHeap := before.HeapAlloc
 	samplerDone := make(chan struct{})
 	go func() {
 		defer close(samplerDone)
