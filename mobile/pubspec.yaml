@@ -80,3 +80,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # Copies exactes de docs/politique-confidentialite.md et docs/cgu.md.
+    # Embarquées et non servies par l'API : la case de consentement de
+    # l'inscription doit pouvoir les ouvrir sans réseau et sans compte.
+    # `make check-legal-assets` échoue si elles divergent de docs/.
+    - assets/legal/

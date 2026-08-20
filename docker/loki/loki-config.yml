@@ -25,6 +25,22 @@ schema_config:
         prefix: index_
         period: 24h
 
+# Sans compactor, aucune rétention n'est appliquée : Loki garde ses chunks
+# indéfiniment. Or les lignes d'accès portent client_ip (préfixe réseau) et
+# user_id — conserver cela sans durée définie contrevient à l'art. 5(1)(e) du
+# RGPD. Le compactor est donc la pièce qui rend `retention_period` opérant, pas
+# une optimisation de stockage. Cf. docs/rgpd.md § Politique de rétention.
+compactor:
+  working_directory: /loki/compactor
+  delete_request_store: filesystem
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+
 limits_config:
   reject_old_samples: true
   reject_old_samples_max_age: 168h
+  # 30 jours : couvre l'analyse d'un incident et deux cycles de release, sans
+  # constituer un historique de navigation. Toute valeur plus longue devrait
+  # être justifiée dans le registre des traitements.
+  retention_period: 720h

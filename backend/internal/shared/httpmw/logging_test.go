@@ -25,7 +25,7 @@ func serveWithAccessLog(t *testing.T, level zerolog.Level, handler http.Handler,
 	logger := zerolog.New(&buf).Level(level)
 	rec := httptest.NewRecorder()
 
-	AccessLog(logger, handler).ServeHTTP(rec, req)
+	AccessLog(logger, false, handler).ServeHTTP(rec, req)
 
 	var entries []map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
@@ -59,10 +59,11 @@ func TestAccessLog_BasicFields(t *testing.T) {
 	}
 	e := entries[0]
 	checks := map[string]any{
-		"level":       "info",
-		"method":      "GET",
-		"path":        "/api/streams",
-		"remote_addr": "203.0.113.7:1234",
+		"level":  "info",
+		"method": "GET",
+		"path":   "/api/streams",
+		// Préfixe réseau, pas l'adresse : le dernier octet et le port ont sauté.
+		"client_ip": "203.0.113.0/24",
 	}
 	for k, want := range checks {
 		if e[k] != want {
@@ -261,7 +262,7 @@ func TestAccessLog_PanicLoggedAndRepropagated(t *testing.T) {
 			t.Errorf("panic non loggée en error: %q", buf.String())
 		}
 	}()
-	AccessLog(logger, handler).ServeHTTP(rec, req)
+	AccessLog(logger, false, handler).ServeHTTP(rec, req)
 }
 
 func TestAccessLog_PreservesFlusher(t *testing.T) {
@@ -297,7 +298,7 @@ func TestAccessLog_TraceIDWhenSpanActive(t *testing.T) {
 	handlerTraceID = span.SpanContext().TraceID().String()
 	req := httptest.NewRequest(http.MethodGet, "/api/streams", nil).WithContext(ctx)
 
-	AccessLog(logger, handler).ServeHTTP(httptest.NewRecorder(), req)
+	AccessLog(logger, false, handler).ServeHTTP(httptest.NewRecorder(), req)
 	span.End()
 
 	out := buf.String()
@@ -311,9 +312,62 @@ func TestAccessLog_NoTraceIDWithoutSpan(t *testing.T) {
 	logger := zerolog.New(&buf)
 	req := httptest.NewRequest(http.MethodGet, "/api/streams", nil)
 
-	AccessLog(logger, statusHandler(http.StatusOK)).ServeHTTP(httptest.NewRecorder(), req)
+	AccessLog(logger, false, statusHandler(http.StatusOK)).ServeHTTP(httptest.NewRecorder(), req)
 
 	if strings.Contains(buf.String(), "trace_id") {
 		t.Errorf("pas de span actif → pas de champ trace_id, sortie: %s", buf.String())
+	}
+}
+
+// L'IP journalisée ne doit jamais permettre de désigner une ligne : ni l'adresse
+// entière, ni le port. Ce test échouerait si AnonymizeIP disparaissait du
+// middleware — c'est le seul endroit où la règle est vérifiable de bout en bout.
+func TestAccessLog_NeJournalisePasLAdresseEntiere(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/streams", nil)
+	req.RemoteAddr = "203.0.113.7:1234"
+
+	entries, _ := serveWithAccessLog(t, zerolog.InfoLevel, statusHandler(http.StatusOK), req)
+
+	raw, err := json.Marshal(entries[0])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, interdit := range []string{"203.0.113.7", "1234", "remote_addr"} {
+		if strings.Contains(string(raw), interdit) {
+			t.Errorf("la ligne de log contient %q: %s", interdit, raw)
+		}
+	}
+}
+
+// AccessLog derrière un reverse proxy : sans trustProxy le champ ne vaut que
+// l'adresse du proxy. Avec, il désigne le réseau du client réel — anonymisé.
+func TestAccessLog_ClientIPDerriereProxy(t *testing.T) {
+	cas := []struct {
+		nom        string
+		trustProxy bool
+		want       string
+	}{
+		{"proxy non fiable", false, "10.0.0.0/24"},
+		{"proxy fiable", true, "198.51.100.0/24"},
+	}
+	for _, tc := range cas {
+		t.Run(tc.nom, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/streams", nil)
+			req.RemoteAddr = "10.0.0.5:9999" // le conteneur Caddy
+			req.Header.Set("X-Forwarded-For", "198.51.100.42")
+
+			var buf bytes.Buffer
+			logger := zerolog.New(&buf).Level(zerolog.InfoLevel)
+			AccessLog(logger, tc.trustProxy, statusHandler(http.StatusOK)).
+				ServeHTTP(httptest.NewRecorder(), req)
+
+			var e map[string]any
+			if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &e); err != nil {
+				t.Fatalf("log illisible: %v — %s", err, buf.String())
+			}
+			if e["client_ip"] != tc.want {
+				t.Errorf("client_ip = %v, want %v", e["client_ip"], tc.want)
+			}
+		})
 	}
 }

@@ -11,6 +11,14 @@ distributor:
         http:
           endpoint: 0.0.0.0:4318
 
+# Défaut Tempo : 14 jours. Fixé explicitement pour que la durée soit lisible
+# ici plutôt que déduite d'une version d'image. Une trace porte le chemin, le
+# statut et la durée d'une requête — corrélée aux journaux par trace_id, elle
+# se rattache à un utilisateur ; elle relève donc de la même règle de rétention.
+compactor:
+  compaction:
+    block_retention: 168h
+
 storage:
   trace:
     backend: local

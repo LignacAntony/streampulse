@@ -120,6 +120,11 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      # Fixée explicitement plutôt qu'héritée du défaut de l'image.
+      # 90 jours : les séries sont agrégées et ne portent aucun
+      # identifiant d'utilisateur (ADR 019, cardinalité bornée), la
+      # durée relève donc du volume disque, pas du RGPD.
+      - "--storage.tsdb.retention.time=90d"
       - "--web.console.libraries=/usr/share/prometheus/console_libraries"
       - "--web.console.templates=/usr/share/prometheus/consoles"
     healthcheck:

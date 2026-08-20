@@ -47,6 +47,10 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [manuel-utilisateur.md](manuel-utilisateur.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
 | [plan-formation.md](plan-formation.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
 | [accessibilite.md](accessibilite.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
+| [securite.md](securite.md) | Schéma général de la sécurité — matrice rôles × routes, flux JWT, inventaire des secrets, surface d'attaque, modèle de menace |
+| [rgpd.md](rgpd.md) | Dossier RGPD — registre des traitements, politique de rétention par magasin, droits des personnes |
+| [politique-confidentialite.md](politique-confidentialite.md) | Politique de confidentialité destinée aux utilisateurs (embarquée dans l'application) |
+| [cgu.md](cgu.md) | Conditions générales d'utilisation (embarquées dans l'application) |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---

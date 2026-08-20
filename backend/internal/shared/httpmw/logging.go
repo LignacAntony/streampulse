@@ -77,10 +77,16 @@ func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWrite
 // attache au context un logger corrélé par request_id, récupérable en aval
 // via zerolog.Ctx(r.Context()).
 //
+// L'adresse cliente est journalisée sous client_ip, réduite à son préfixe
+// réseau par httpjson.AnonymizeIP : une IP entière est une donnée personnelle,
+// et Loki la conserverait le temps de sa rétention. trustProxy suit
+// TRUST_PROXY_HEADERS — sans lui, derrière Caddy le champ ne vaudrait que
+// l'adresse du proxy, c'est-à-dire rien.
+//
 // Règles de bruit : /health et /metrics ne sont jamais loggés ; les succès
 // HLS (playlist + segments, ~1 req/s par auditeur) sont émis au niveau
 // debug. Niveau selon status : 5xx=error, 4xx=warn, sinon info.
-func AccessLog(logger zerolog.Logger, next http.Handler) http.Handler {
+func AccessLog(logger zerolog.Logger, trustProxy bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if skipObservability(r.URL.Path) {
 			next.ServeHTTP(w, r)
@@ -120,7 +126,7 @@ func AccessLog(logger zerolog.Logger, next http.Handler) http.Handler {
 				Int("status", status).
 				Int64("duration_ms", time.Since(start).Milliseconds()).
 				Int("bytes", sr.bytes).
-				Str("remote_addr", r.RemoteAddr)
+				Str("client_ip", httpjson.AnonymizeIP(ClientIP(r, trustProxy)))
 			if recorder.userID != "" {
 				event = event.Str("user_id", recorder.userID)
 			}
