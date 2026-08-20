@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
@@ -87,5 +88,37 @@ void main() {
       ),
     );
     handle.dispose();
+  });
+
+  testWidgets('le renvoi des CGU ouvre la politique de confidentialité',
+      (tester) async {
+    // Le renvoi que la revue de la PR #321 a relevé : les CGU citent la
+    // politique de confidentialité, qui est elle aussi embarquée. Le laisser
+    // inerte revenait à afficher un lien mort dans un parcours de consentement.
+    await ouvrir(tester, LegalDocument.terms);
+
+    final richTexts = tester.widgetList<RichText>(find.byType(RichText));
+    TapGestureRecognizer? renvoi;
+    for (final rt in richTexts) {
+      rt.text.visitChildren((span) {
+        if (span is TextSpan &&
+            span.text == 'politique de confidentialité' &&
+            span.recognizer is TapGestureRecognizer) {
+          renvoi = span.recognizer! as TapGestureRecognizer;
+          return false;
+        }
+        return true;
+      });
+      if (renvoi != null) break;
+    }
+
+    expect(renvoi, isNotNull,
+        reason: 'le renvoi vers la politique doit porter un recognizer');
+
+    renvoi!.onTap!();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Politique de confidentialité'), findsWidgets);
+    expect(find.textContaining('Ce que nous collectons'), findsOneWidget);
   });
 }

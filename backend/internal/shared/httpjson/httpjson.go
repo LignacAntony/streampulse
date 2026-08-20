@@ -205,12 +205,19 @@ func logRequestError(r *http.Request, err error) {
 		log.Error().Err(err).Msg("erreur http")
 		return
 	}
+	// Pas de client_ip ici, volontairement. AccessLog en émet déjà un pour
+	// chaque requête, tiré de ClientIP(r, trustProxy) ; le dupliquer depuis
+	// r.RemoteAddr — seule adresse accessible d'une fonction de paquet — ferait
+	// diverger les deux lignes d'une même requête derrière un reverse proxy :
+	// l'une porterait le réseau du client, l'autre celui du conteneur Caddy,
+	// sous le même nom de champ. Les deux lignes partagent request_id, ce qui
+	// suffit à les rapprocher.
+	//
 	// L'encodage JSON de zerolog neutralise toute injection de retour à la
 	// ligne ; LoggablePath continue de masquer le stream_key (PR #262).
 	zerolog.Ctx(r.Context()).Error().
 		Err(err).
 		Str("method", r.Method).
 		Str("path", LoggablePath(r)).
-		Str("client_ip", AnonymizeIP(r.RemoteAddr)).
 		Msg("erreur http")
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -37,6 +38,20 @@ class _LegalDocumentScreenState extends State<LegalDocumentScreen> {
     return parseLegalDocument(source);
   }
 
+  /// Ouvre l'autre document légal embarqué. `pushReplacement` et non `push` :
+  /// les deux documents se renvoient l'un à l'autre, et empiler les allers-
+  /// retours ferait grossir la pile sans fin sous le doigt de l'utilisateur.
+  void _open(String assetFileName) {
+    final cible = LegalDocument.values.firstWhere(
+      (d) => d.assetPath.endsWith(assetFileName),
+      orElse: () => widget.document,
+    );
+    if (cible == widget.document) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(builder: (_) => LegalDocumentScreen(document: cible)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -63,7 +78,10 @@ class _LegalDocumentScreenState extends State<LegalDocumentScreen> {
           return ListView.builder(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
             itemCount: blocks.length,
-            itemBuilder: (context, i) => _LegalBlockView(block: blocks[i]),
+            itemBuilder: (context, i) => _LegalBlockView(
+              block: blocks[i],
+              onOpen: _open,
+            ),
           );
         },
       ),
@@ -89,10 +107,35 @@ class _LegalError extends StatelessWidget {
   }
 }
 
-class _LegalBlockView extends StatelessWidget {
-  const _LegalBlockView({required this.block});
+class _LegalBlockView extends StatefulWidget {
+  const _LegalBlockView({required this.block, required this.onOpen});
 
   final LegalBlock block;
+  final void Function(String assetFileName) onOpen;
+
+  @override
+  State<_LegalBlockView> createState() => _LegalBlockViewState();
+}
+
+class _LegalBlockViewState extends State<_LegalBlockView> {
+  /// Un TapGestureRecognizer possède des ressources natives : créé une fois,
+  /// libéré dans dispose(). En construire dans build() les fuirait à chaque
+  /// reconstruction — même raison que dans TermsCheckbox.
+  late final List<TapGestureRecognizer> _recognizers = [
+    for (final span in widget.block.spans)
+      if (span.isLink)
+        TapGestureRecognizer()..onTap = () => widget.onOpen(span.target!),
+  ];
+
+  @override
+  void dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  LegalBlock get block => widget.block;
 
   @override
   Widget build(BuildContext context) {
@@ -120,9 +163,39 @@ class _LegalBlockView extends StatelessWidget {
           ),
         );
       case LegalBlockKind.paragraph:
+        if (block.spans.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(block.text, style: text.bodyMedium),
+          );
+        }
+        var lien = 0;
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: Text(block.text, style: text.bodyMedium),
+          child: Text.rich(
+            TextSpan(
+              style: text.bodyMedium,
+              children: [
+                for (final span in block.spans)
+                  if (span.isLink)
+                    TextSpan(
+                      text: span.text,
+                      style: TextStyle(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w600,
+                        // Souligné en plus d'être coloré : la couleur seule ne
+                        // distingue pas un lien pour qui ne perçoit pas le
+                        // contraste de teinte (WCAG 1.4.1).
+                        decoration: TextDecoration.underline,
+                        decorationColor: colors.primary,
+                      ),
+                      recognizer: _recognizers[lien++],
+                    )
+                  else
+                    TextSpan(text: span.text),
+              ],
+            ),
+          ),
         );
       case LegalBlockKind.bullet:
         return Padding(

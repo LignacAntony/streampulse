@@ -61,7 +61,7 @@ concern*. À l'inverse :
 ### 4. Access log : champs, niveaux, bruit
 
 Une ligne JSON par requête terminée : `request_id`, `method`, `path`, `status`,
-`duration_ms`, `bytes`, `remote_addr`, et `user_id` quand la requête est authentifiée
+`duration_ms`, `bytes`, `client_ip`, et `user_id` quand la requête est authentifiée
 (hook `httpmw.RecordUserID` appelé par `auth.RequireAuth`/`OptionalAuth` — le mux Go 1.22
 passant une copie de la requête aux handlers, l'identité remonte au middleware via un
 réceptacle mutable posé dans le contexte).
