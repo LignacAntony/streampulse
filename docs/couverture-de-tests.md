@@ -63,20 +63,27 @@ make coverage        # unitaires seuls, informatif
 make coverage-gate   # unitaires + intégration, échoue sous le seuil
 ```
 
-Pour les tests d'intégration, une base jetable suffit :
+Pour les tests d'intégration, une base jetable suffit. La cible est **toujours
+explicite** — `TEST_DATABASE_URL` n'a pas de valeur par défaut :
 
 ```bash
 docker run -d --rm --name streampulse-it \
   -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \
   -p 15432:5432 postgres:16-alpine
-cd backend && go test -tags integration ./...
+
+cd backend
+export TEST_DATABASE_URL="postgres://test:test@localhost:15432/test?sslmode=disable"
+go test -tags integration ./...
+
 docker stop streampulse-it
 ```
 
-Ou contre n'importe quelle base via `TEST_DATABASE_URL`.
-
 > ⚠️ Ces tests **écrivent** dans la base ciblée. Ne jamais y pointer une base de
 > développement dont le contenu compte.
+>
+> C'est la raison pour laquelle il n'y a pas de valeur par défaut : un défaut
+> pointant sur un port courant finit toujours par s'appliquer à une base qu'on
+> ne visait pas. Sans la variable, les tests d'intégration se sautent.
 
 En CI, un service `postgres:16-alpine` est démarré par le job `Test` et les
 tests d'intégration tournent à chaque PR.

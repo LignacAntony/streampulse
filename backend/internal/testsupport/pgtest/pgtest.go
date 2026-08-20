@@ -13,19 +13,25 @@
 //
 // # Lancer les tests d'intégration
 //
+// La base cible est **toujours** explicite, via TEST_DATABASE_URL. Il n'y a
+// pas de valeur par défaut, et c'est délibéré : ces tests écrivent dans la
+// base qu'on leur donne. Un défaut pointant sur un port courant finirait tôt
+// ou tard par tomber sur la base de développement de quelqu'un.
+//
 //	docker run -d --rm --name streampulse-it \
 //	  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \
 //	  -p 15432:5432 postgres:16-alpine
-//	cd backend && go test -tags integration ./...
-//	docker stop streampulse-it
 //
-// Ou contre n'importe quelle base via TEST_DATABASE_URL :
-//
-//	TEST_DATABASE_URL='postgres://u:p@localhost:5432/streampulse_test?sslmode=disable' \
+//	cd backend && TEST_DATABASE_URL='postgres://<user>:<pass>@localhost:15432/test?sslmode=disable' \
 //	  go test -tags integration ./...
 //
-// ⚠️ Ces tests écrivent dans la base ciblée. Ne jamais y pointer une base de
-// développement dont on tient au contenu.
+//	docker stop streampulse-it
+//
+// en remplaçant <user> et <pass> par les identifiants du conteneur ci-dessus.
+//
+// Sans TEST_DATABASE_URL, ou si la base est injoignable, ces tests se
+// **sautent** — ils n'échouent pas. La même commande reste donc jouable sur un
+// poste sans PostgreSQL.
 package pgtest
 
 import (
@@ -45,26 +51,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// DefaultDSN cible le conteneur jetable décrit en tête de fichier. Le port
-// 15432 et non 5432 : un PostgreSQL de développement occupe souvent le port
-// standard, et une suite de tests ne doit pas pouvoir l'atteindre par défaut.
-// Identifiants factices d'un conteneur jetable, jamais ceux d'un environnement
-// réel — d'où le nolint : gosec ne peut pas distinguer les deux, et remplacer
-// cette constante par une concaténation ne ferait que masquer la chaîne sans
-// rien changer au fond.
-//
-//nolint:gosec // G101: identifiants d'un PostgreSQL de test jetable
-const DefaultDSN = "postgres://test:test@localhost:15432/test?sslmode=disable"
+// EnvDSN nomme la variable qui porte la base de test.
+const EnvDSN = "TEST_DATABASE_URL"
 
 var migrateOnce sync.Once
 
-// DSN rend la chaîne de connexion utilisée par les tests.
-func DSN() string {
-	if dsn := os.Getenv("TEST_DATABASE_URL"); dsn != "" {
-		return dsn
-	}
-	return DefaultDSN
-}
+// DSN rend la chaîne de connexion des tests, ou la chaîne vide si elle n'est
+// pas fournie.
+//
+// Aucune valeur par défaut, volontairement. La version précédente en avait une
+// — un conteneur jetable sur un port inhabituel — et c'était déjà une
+// concession : ces tests écrivent dans la base qu'on leur donne, et un défaut
+// finit toujours par s'appliquer à une base qu'on ne visait pas. L'absence de
+// défaut supprime aussi le seul identifiant en dur du dépôt hors fichiers de
+// test, que le garde-fou `Scan for hardcoded ports / DSN / secrets` relevait à
+// juste titre.
+func DSN() string { return os.Getenv(EnvDSN) }
 
 // Pool ouvre un pool vers la base de test, applique les migrations une seule
 // fois par processus de test, et referme le pool à la fin du test.
@@ -76,6 +78,10 @@ func Pool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
 	dsn := DSN()
+	if dsn == "" {
+		t.Skipf("integration: %s non défini — cf. l'en-tête de pgtest pour la commande", EnvDSN)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

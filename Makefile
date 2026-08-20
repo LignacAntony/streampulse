@@ -41,9 +41,14 @@ coverage:
 	python3 scripts/check-coverage.py backend/coverage.txt
 
 # Couverture Go, unitaires + intégration, avec la porte de qualité.
-# Exige un PostgreSQL joignable ; sans lui les tests d'intégration se sautent
-# et le seuil ne sera pas tenu. Cf. l'en-tête de internal/testsupport/pgtest.
+# Exige TEST_DATABASE_URL et un PostgreSQL joignable ; sans eux les tests
+# d'intégration se sautent et le seuil ne sera pas tenu — ce n'est pas un faux
+# négatif, c'est la mesure réelle de ce qui a tourné.
+# Cf. l'en-tête de backend/internal/testsupport/pgtest.
 .PHONY: coverage-gate
 coverage-gate:
+	@test -n "$$TEST_DATABASE_URL" || { \
+	  echo ">> coverage-gate: TEST_DATABASE_URL non défini — les tests d'intégration se sauteraient"; \
+	  echo ">> cf. docs/couverture-de-tests.md § 4"; exit 1; }
 	cd backend && go test ./... -tags integration -covermode=count -coverprofile=coverage.txt
 	python3 scripts/check-coverage.py backend/coverage.txt
