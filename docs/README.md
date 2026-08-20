@@ -51,6 +51,7 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [rgpd.md](rgpd.md) | Dossier RGPD — registre des traitements, politique de rétention par magasin, droits des personnes |
 | [politique-confidentialite.md](politique-confidentialite.md) | Politique de confidentialité destinée aux utilisateurs (embarquée dans l'application) |
 | [cgu.md](cgu.md) | Conditions générales d'utilisation (embarquées dans l'application) |
+| [couverture-de-tests.md](couverture-de-tests.md) | Couverture Go : périmètre déclaré, porte de qualité à 80 %, tests d'intégration et ce qui reste hors d'atteinte |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---

@@ -1,123 +1,47 @@
 //go:build integration
 
-// Tests d'intégration du repository admin (pgRepository) contre un vrai
-// PostgreSQL. Deux bugs de revue PR #264 vivent au niveau SQL réel et ne
-// peuvent pas se manifester via fakeRepo (utilisé par service_test.go) :
+// Tests d'intégration du repository admin contre un vrai PostgreSQL.
 //
-//   - fix #2 : le total de pagination doit rester correct même quand la page
-//     demandée (offset) dépasse le nombre de lignes filtrées (page vide).
-//   - fix #4 : '_' et '%' dans le terme de recherche doivent être traités
-//     comme des caractères littéraux, pas comme des jokers ILIKE.
+// Le socle (pool, migrations, saut si la base est absente) vient de
+// internal/testsupport/pgtest : il était dupliqué ici, il ne l'est plus.
 //
-// Exclus de `go test ./...` par le build tag, comme internal/streaming/loadtest
-// (cf. CLAUDE.md). Lancer :
+// Deux de ces tests remontent à la revue de la PR #264 et verrouillent des
+// régressions qui ne peuvent se manifester qu'au niveau SQL :
 //
-//	docker run -d --rm --name streampulse-admin-it \
-//	  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \
-//	  -p 15432:5432 postgres:16-alpine
-//	cd backend && go test -tags integration ./internal/admin/... -run TestRepository -v
-//	docker stop streampulse-admin-it
+//   - le total de pagination doit rester juste même quand la page demandée
+//     dépasse le nombre de lignes filtrées ;
+//   - « _ » et « % » dans une recherche sont des caractères littéraux, pas des
+//     jokers ILIKE.
 //
-// DSN surchargeable via TEST_DATABASE_URL (format URL postgres://, sans le
-// sous-scheme pgx5 propre à golang-migrate — dérivé automatiquement).
+// Lancement : cf. l'en-tête de internal/testsupport/pgtest.
 package admin
 
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/LignacAntony/streampulse/internal/testsupport/pgtest"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const defaultTestDSN = "postgres://test:test@localhost:15432/test?sslmode=disable"
-
-var migrateOnce sync.Once
-
-// testRepository ouvre un pool vers TEST_DATABASE_URL (ou defaultTestDSN),
-// applique les migrations une seule fois par process de test (idempotent via
-// ErrNoChange), et renvoie le pgRepository concret (accès direct au pool pour
-// les fixtures, cf. insertTestUser). t.Skip si la base n'est pas joignable :
-// `go test -tags integration ./...` sans Postgres démarré ne doit jamais
-// échouer, juste sauter ces tests.
+// testRepository rend le pgRepository concret : les fixtures écrivent
+// directement par le pool, ce que l'interface Repository ne permet pas.
 func testRepository(t *testing.T) *pgRepository {
 	t.Helper()
-
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		dsn = defaultTestDSN
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Skipf("integration: cannot open pool (%v) — start postgres first, see file header", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Skipf("integration: cannot reach postgres (%v) — start postgres first, see file header", err)
-	}
-
-	applyMigrations(t, dsn)
-
-	t.Cleanup(pool.Close)
-	repo, ok := NewRepository(pool).(*pgRepository)
+	repo, ok := NewRepository(pgtest.Pool(t)).(*pgRepository)
 	if !ok {
-		t.Fatalf("NewRepository did not return a *pgRepository")
+		t.Fatalf("NewRepository n'a pas rendu un *pgRepository")
 	}
 	return repo
 }
 
-// applyMigrations exécute toutes les migrations SQL (backend/migrations) sur
-// la base ciblée par dsn, une seule fois par process de test.
-func applyMigrations(t *testing.T, dsn string) {
-	t.Helper()
-	migrateOnce.Do(func() {
-		migrationsDir, err := filepath.Abs("../../migrations")
-		if err != nil {
-			t.Fatalf("integration: resolve migrations dir: %v", err)
-		}
-		m, err := migrate.New("file://"+migrationsDir, toMigrateURL(dsn))
-		if err != nil {
-			t.Fatalf("integration: migrate init: %v", err)
-		}
-		defer m.Close()
-		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			t.Fatalf("integration: migrate up: %v", err)
-		}
-	})
-}
-
-// toMigrateURL substitue à dsn (postgres://...) le pseudo-scheme "pgx5"
-// attendu par le driver golang-migrate/database/pgx/v5 (cf. migrator.go).
-func toMigrateURL(dsn string) string {
-	if i := strings.Index(dsn, "://"); i != -1 {
-		return "pgx5" + dsn[i:]
-	}
-	return dsn
-}
-
-// uniqueTag renvoie un préfixe improbable à collisionner, utilisé dans les
-// champs recherchables (email/username) des fixtures pour que le filtre
-// Search d'un test ne matche jamais les lignes d'un autre test partageant la
-// même base.
 func uniqueTag(t *testing.T) string {
 	t.Helper()
-	return fmt.Sprintf("it%d", time.Now().UnixNano())
+	return pgtest.UniqueTag(t)
 }
 
-// insertTestUser insère une ligne users minimale et la supprime à la fin du
-// test (t.Cleanup), que le test réussisse ou non.
+// insertTestUser insère une ligne users minimale, supprimée en fin de test.
 func insertTestUser(t *testing.T, pool *pgxpool.Pool, email, username, role string, isActive bool) {
 	t.Helper()
 	ctx := context.Background()
@@ -125,7 +49,7 @@ func insertTestUser(t *testing.T, pool *pgxpool.Pool, email, username, role stri
 		`INSERT INTO users (email, username, password_hash, role, is_active) VALUES ($1, $2, 'x', $3, $4)`,
 		email, username, role, isActive)
 	if err != nil {
-		t.Fatalf("integration: insert fixture user %s: %v", username, err)
+		t.Fatalf("integration: insertion fixture %s: %v", username, err)
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, email)
@@ -188,5 +112,218 @@ func TestRepository_ListUsers_SearchEscapesLikeWildcards(t *testing.T) {
 	}
 	if users[0].Username != exactUsername {
 		t.Errorf("wrong match: got username %q, want %q", users[0].Username, exactUsername)
+	}
+}
+
+func TestRepository_GetUser(t *testing.T) {
+	repo := testRepository(t)
+	tag := uniqueTag(t)
+	insertTestUser(t, repo.pool, tag+"@example.com", tag, "broadcaster", true)
+
+	liste, _, err := repo.ListUsers(context.Background(), ListUsersInput{Search: tag, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(liste) != 1 {
+		t.Fatalf("%d résultats, want 1", len(liste))
+	}
+
+	got, err := repo.GetUser(context.Background(), liste[0].ID)
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if got.Username != tag || got.Role != "broadcaster" || !got.IsActive {
+		t.Errorf("utilisateur = %+v, want %s/broadcaster/actif", got, tag)
+	}
+}
+
+func TestRepository_GetUser_Inconnu(t *testing.T) {
+	repo := testRepository(t)
+	if _, err := repo.GetUser(context.Background(), "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Error("un identifiant inconnu doit produire une erreur")
+	}
+}
+
+func TestRepository_SetUserActive(t *testing.T) {
+	repo := testRepository(t)
+	ctx := context.Background()
+	tag := uniqueTag(t)
+	insertTestUser(t, repo.pool, tag+"@example.com", tag, "user", true)
+
+	liste, _, err := repo.ListUsers(ctx, ListUsersInput{Search: tag, Limit: 10})
+	if err != nil || len(liste) != 1 {
+		t.Fatalf("ListUsers: %v (%d résultats)", err, len(liste))
+	}
+	id := liste[0].ID
+
+	desactive, err := repo.SetUserActive(ctx, id, false)
+	if err != nil {
+		t.Fatalf("SetUserActive(false): %v", err)
+	}
+	if desactive.IsActive {
+		t.Error("le compte doit être désactivé")
+	}
+
+	reactive, err := repo.SetUserActive(ctx, id, true)
+	if err != nil {
+		t.Fatalf("SetUserActive(true): %v", err)
+	}
+	if !reactive.IsActive {
+		t.Error("la désactivation doit être réversible")
+	}
+}
+
+func TestRepository_SetUserActive_Inconnu(t *testing.T) {
+	repo := testRepository(t)
+	if _, err := repo.SetUserActive(context.Background(), "00000000-0000-0000-0000-000000000000", false); err == nil {
+		t.Error("désactiver un compte inconnu doit produire une erreur")
+	}
+}
+
+// Ce compteur est le garde-fou qui empêche de retirer le dernier
+// administrateur actif. S'il comptait faux, l'administration deviendrait
+// inaccessible sans que rien ne l'ait signalé.
+func TestRepository_CountActiveAdmins(t *testing.T) {
+	repo := testRepository(t)
+	ctx := context.Background()
+
+	avant, err := repo.CountActiveAdmins(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveAdmins: %v", err)
+	}
+
+	tag := uniqueTag(t)
+	insertTestUser(t, repo.pool, tag+"@example.com", tag, "admin", true)
+
+	apres, err := repo.CountActiveAdmins(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveAdmins après ajout: %v", err)
+	}
+	if apres != avant+1 {
+		t.Fatalf("compte = %d, want %d", apres, avant+1)
+	}
+
+	// Un administrateur désactivé ne compte plus.
+	liste, _, err := repo.ListUsers(ctx, ListUsersInput{Search: tag, Limit: 10})
+	if err != nil || len(liste) != 1 {
+		t.Fatalf("ListUsers: %v (%d)", err, len(liste))
+	}
+	if _, err := repo.SetUserActive(ctx, liste[0].ID, false); err != nil {
+		t.Fatalf("SetUserActive: %v", err)
+	}
+	final, err := repo.CountActiveAdmins(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveAdmins après désactivation: %v", err)
+	}
+	if final != avant {
+		t.Errorf("compte = %d, want %d — un admin désactivé ne doit pas compter", final, avant)
+	}
+}
+
+func TestRepository_DeleteUser(t *testing.T) {
+	repo := testRepository(t)
+	ctx := context.Background()
+	tag := uniqueTag(t)
+	insertTestUser(t, repo.pool, tag+"@example.com", tag, "user", true)
+
+	liste, _, err := repo.ListUsers(ctx, ListUsersInput{Search: tag, Limit: 10})
+	if err != nil || len(liste) != 1 {
+		t.Fatalf("ListUsers: %v (%d)", err, len(liste))
+	}
+	id := liste[0].ID
+
+	if err := repo.DeleteUser(ctx, id); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	if _, err := repo.GetUser(ctx, id); err == nil {
+		t.Error("le compte supprimé reste lisible")
+	}
+}
+
+func TestRepository_ListLiveStreams(t *testing.T) {
+	repo := testRepository(t)
+	ctx := context.Background()
+	tag := uniqueTag(t)
+	insertTestUser(t, repo.pool, tag+"@example.com", tag, "broadcaster", true)
+
+	var userID string
+	if err := repo.pool.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, tag).Scan(&userID); err != nil {
+		t.Fatalf("relecture de l'identifiant: %v", err)
+	}
+
+	// Flux live inséré directement : la modération lit les flux, elle ne les
+	// crée pas, et le domaine streaming n'est pas importable ici.
+	var streamID string
+	err := repo.pool.QueryRow(ctx,
+		`INSERT INTO streams (user_id, title, is_public, status, stream_key, started_at)
+		 VALUES ($1, $2, true, 'live', $3, NOW()) RETURNING id`,
+		userID, "Direct "+tag, tag+"-key",
+	).Scan(&streamID)
+	if err != nil {
+		t.Fatalf("insertion du flux: %v", err)
+	}
+
+	liste, total, err := repo.ListLiveStreams(ctx, 100, 0)
+	if err != nil {
+		t.Fatalf("ListLiveStreams: %v", err)
+	}
+	if total < 1 {
+		t.Fatalf("total = %d, want au moins 1", total)
+	}
+	var trouve bool
+	for _, s := range liste {
+		if s.ID == streamID {
+			trouve = true
+			if s.Username != tag {
+				t.Errorf("username = %q, want %q — la jointure users doit être remplie", s.Username, tag)
+			}
+			if s.StartedAt == nil {
+				t.Error("started_at doit être renseigné sur un flux live")
+			}
+		}
+	}
+	if !trouve {
+		t.Error("le flux en direct doit apparaître dans la liste de modération")
+	}
+}
+
+// La trace d'audit doit survivre à la suppression du compte de l'administrateur
+// qui a agi : actor_id passe à NULL, la ligne reste. C'est l'arbitrage entre le
+// droit à l'effacement et l'obligation de garder trace des décisions.
+func TestRepository_InsertAuditLog_SurvitALaSuppressionDeLActeur(t *testing.T) {
+	repo := testRepository(t)
+	ctx := context.Background()
+	tag := uniqueTag(t)
+	insertTestUser(t, repo.pool, tag+"@example.com", tag, "admin", true)
+
+	var adminID string
+	if err := repo.pool.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, tag).Scan(&adminID); err != nil {
+		t.Fatalf("relecture de l'identifiant: %v", err)
+	}
+
+	cible := "11111111-1111-1111-1111-111111111111"
+	if err := repo.InsertAuditLog(ctx, adminID, "stream.stopped", "stream", cible); err != nil {
+		t.Fatalf("InsertAuditLog: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = repo.pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE target_id = $1`, cible)
+	})
+
+	if err := repo.DeleteUser(ctx, adminID); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	var action string
+	var acteur *string
+	err := repo.pool.QueryRow(ctx,
+		`SELECT action, actor_id::text FROM audit_logs WHERE target_id = $1`, cible).Scan(&action, &acteur)
+	if err != nil {
+		t.Fatalf("la trace d'audit doit survivre: %v", err)
+	}
+	if action != "stream.stopped" {
+		t.Errorf("action = %q, want stream.stopped", action)
+	}
+	if acteur != nil {
+		t.Errorf("actor_id = %v, want NULL après suppression du compte", *acteur)
 	}
 }
