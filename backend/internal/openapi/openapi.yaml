@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: StreamPulse API
-  version: 0.1.0
+  version: 1.2.0
   description: REST API for the StreamPulse backend.
 servers:
   - url: /

@@ -72,6 +72,23 @@ Scénario E2E documenté et rejoué sur stack isolée : arrêt de postgres, traf
 5 min de `for`, et l'email d'alerte est vérifié dans Mailpit via son API. Aucune
 route de test ni seuil trafiqué.
 
+## Alternatives écartées
+
+**Alertmanager de Prometheus.** L'outil canonique du couple Prometheus/Alertmanager, avec un
+routage plus fin (inhibition, silences, groupement par étiquette). Écarté : il ajoute un service
+et une seconde interface à surveiller, alors que Grafana — déjà déployé pour les dashboards — sait
+évaluer des règles et router des notifications. L'inhibition n'a pas d'usage ici avec quatre règles.
+
+**Définir les alertes dans l'UI Grafana.** Plus rapide à écrire et à ajuster. Écarté pour la même
+raison que les dashboards (ADR 019) : une règle qui ne vit que dans le volume Grafana disparaît au
+premier `docker compose down -v`, n'est pas relue, et n'apparaît dans aucun diff. Le provisioning
+YAML rend les seuils discutables en revue de PR.
+
+**Notifier sur Slack ou Discord plutôt que par email.** Plus immédiat. Écarté : cela suppose un
+espace de travail partagé que le projet n'a pas, et un webhook à stocker. L'email fonctionne avec
+le relay SMTP déjà configuré pour la réinitialisation de mot de passe, et Mailpit le rend
+testable en local sans rien envoyer dehors.
+
 ## Conséquences
 
 - Toute nouvelle alerte = une entrée dans `rules.yml`, revue en PR comme du code.

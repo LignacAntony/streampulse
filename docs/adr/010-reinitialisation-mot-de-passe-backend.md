@@ -146,6 +146,21 @@ smtp.SendMail(addr, auth, m.from, []string{to}, msg)
 
 ---
 
+## Alternatives écartées
+
+**JWT court à la place d'un jeton en base.** Un JWT signé de 15 minutes éviterait la table
+`password_reset_tokens` et son nettoyage. Écarté : un JWT est valide jusqu'à son expiration et ne
+peut pas être **révoqué**. Un jeton en base se marque `used_at` au premier usage — c'est ce qui
+rend la réinitialisation à usage unique, propriété que le JWT ne sait pas offrir sans… une table.
+
+**Stocker le jeton en clair.** Simplifierait la vérification (comparaison directe). Écarté : une
+fuite de la base donnerait immédiatement la main sur tous les comptes ayant une demande en cours.
+Le hachage SHA-256 suffit ici — contrairement à un mot de passe, le jeton a 256 bits d'entropie,
+une attaque par dictionnaire est sans objet et bcrypt ne servirait qu'à ralentir la vérification.
+
+**Répondre 404 sur un email inconnu.** Plus honnête en apparence. Écarté : c'est un oracle
+d'énumération de comptes. `ForgotPassword` renvoie toujours 204, que l'adresse existe ou non.
+
 ## Conséquences
 
 ### Avantages

@@ -297,7 +297,7 @@ Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « d
 Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
 utilisateurs : domaine `internal/admin/` ([ADR 017](docs/adr/017-tableau-de-bord-admin-gestion-utilisateurs.md)).
 Supervision et interruption des flux actifs : même domaine `internal/admin/`
-([ADR 018](docs/adr/018-supervision-admin-des-flux-et-journal-daudit.md)).
+([ADR 039](docs/adr/039-supervision-admin-des-flux-et-journal-daudit.md)).
 Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/adr/014-demande-activation-role-diffuseur.md)).
 
 | Méthode | Route | Handler | Auth requise |
@@ -519,9 +519,12 @@ sur chaque requête et intercepte les `401` :
 - Échec du refresh → `clearTokens()` + propagation de l'erreur (le router renvoie vers `/login`).
 
 **Logout** : `AuthRepository.logout()` appelle `POST /api/auth/logout` en best-effort
-(`try/catch` silencieux), puis purge **toujours** `SecureStorage`. Le `home_screen` complète
-avec `ref.invalidate(loginControllerProvider / registerControllerProvider)` pour libérer les
-`AsyncValue` retenus en mémoire.
+(`try/catch` silencieux), puis purge **toujours** `SecureStorage`. Le `profile_screen`
+(`_logout()`) complète avec `BroadcasterController.reset()` et `FavoritesController.reset()` :
+le conteneur `provider` n'offrant pas d'invalidation déclarative
+(cf. [ADR 036](docs/adr/036-state-management-flutter-provider.md)), tout contrôleur
+**app-level** portant de l'état lié au compte doit être remis à zéro à la main.
+Les contrôleurs **locaux à l'écran** n'ont rien à faire : ils repartent vierges à la reconstruction.
 
 **Erreurs 401** : message UI **hard-codé** (`'Email ou mot de passe incorrect'`) — ne jamais
 relayer le `serverMessage` pour éviter une fuite d'info technique. Les 400/409/5xx peuvent en
@@ -693,15 +696,21 @@ xcrun simctl openurl booted \
 | `docs/README.md` | Index de toute la documentation, ordre de lecture recommandé |
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
+| `docs/README.md` (§ Index complet des ADR) | **Les 39 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
 | `docs/adr/006-authentification-jwt.md` | Décision : JWT HS256 + rotation refresh côté backend |
 | `docs/adr/009-authentification-flutter.md` | Décision : stockage sécurisé, refresh auto, logout best-effort côté Flutter |
 | `docs/adr/012-openapi-source-de-verite.md` | Décision : OpenAPI source de vérité du contrat HTTP + client Dart/Dio généré |
+| `docs/adr/036-state-management-flutter-provider.md` | Décision : `provider` + `ChangeNotifier` (supersede l'ADR 005 sur ce point) |
+| `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `036-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `040-...`). Référencer le ticket Linear correspondant.
+Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
+que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
+**« Alternatives écartées »**.
 
 ## Principes SOLID
 

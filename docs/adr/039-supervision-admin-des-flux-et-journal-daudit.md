@@ -1,4 +1,7 @@
-# ADR 018 — Supervision admin des flux actifs et journal d'audit
+# ADR 039 — Supervision admin des flux actifs et journal d'audit
+
+> **Renumérotée (STR-237)** : cette ADR portait le numéro **018**, déjà attribué à
+> [ADR 018 — Logs structurés JSON (zerolog)](018-logs-structures-zerolog-collecte-loki-alloy.md).
 
 **Date** : 2026-07-21
 **Statut** : Accepté
