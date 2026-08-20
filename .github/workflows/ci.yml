@@ -191,6 +191,15 @@ jobs:
       - name: Vérifier la politique de trafic en clair
         run: make check-android-security
 
+      # Les documents légaux existent en deux exemplaires : docs/ est le
+      # livrable, mobile/assets/legal/ est ce que lit l'utilisateur — Flutter
+      # refusant un asset hors du répertoire du paquet. Sans cette garde, une
+      # correction n'atterrissant que d'un côté ferait dire deux choses
+      # différentes au même document selon l'endroit où on le lit.
+      # Rejouable en local via `make check-legal-assets`.
+      - name: Vérifier la synchronisation des documents légaux
+        run: make check-legal-assets
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest

@@ -221,3 +221,43 @@ func TestDecode(t *testing.T) {
 		})
 	}
 }
+
+func TestAnonymizeIP(t *testing.T) {
+	cas := []struct {
+		nom  string
+		in   string
+		want string
+	}{
+		{"IPv4 avec port", "203.0.113.7:1234", "203.0.113.0/24"},
+		{"IPv4 nue", "198.51.100.42", "198.51.100.0/24"},
+		{"IPv4 déjà en .0", "192.0.2.0", "192.0.2.0/24"},
+		{"IPv6 avec port et crochets", "[2001:db8:1234:5678::1]:443", "2001:db8:1234::/48"},
+		{"IPv6 nue", "2001:db8:abcd:ef01::9", "2001:db8:abcd::/48"},
+		{"IPv4 encodée en IPv6", "::ffff:203.0.113.7", "203.0.113.0/24"},
+		{"boucle locale", "127.0.0.1:8080", "127.0.0.0/24"},
+		{"vide", "", "unknown"},
+		{"non analysable", "pas-une-ip", "unknown"},
+		// Une valeur venue du réseau ne doit pas ressortir telle quelle dans un
+		// journal, même échappée : elle rendrait le champ imprévisible.
+		{"injection", "1.2.3.4 evil\nlog=inject", "unknown"},
+	}
+	for _, tc := range cas {
+		t.Run(tc.nom, func(t *testing.T) {
+			if got := AnonymizeIP(tc.in); got != tc.want {
+				t.Errorf("AnonymizeIP(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// Le dernier octet v4 et les 80 bits bas v6 doivent réellement disparaître :
+// deux adresses du même réseau se réduisent à la même valeur, deux réseaux
+// distincts restent distincts.
+func TestAnonymizeIP_ReduitAuReseau(t *testing.T) {
+	if a, b := AnonymizeIP("203.0.113.7"), AnonymizeIP("203.0.113.250"); a != b {
+		t.Errorf("même /24 doit donner la même valeur: %q vs %q", a, b)
+	}
+	if a, b := AnonymizeIP("203.0.113.7"), AnonymizeIP("203.0.114.7"); a == b {
+		t.Errorf("deux /24 distincts ne doivent pas se confondre: %q", a)
+	}
+}

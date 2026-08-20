@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 
@@ -167,6 +168,38 @@ func LoggablePath(r *http.Request) string {
 	return r.URL.Path
 }
 
+// AnonymizeIP réduit une adresse cliente à son préfixe réseau — /24 en IPv4,
+// /48 en IPv6 — avant de l'écrire dans un journal.
+//
+// Une IP complète identifie un abonné : conservée telle quelle dans Loki, elle
+// fait des journaux un traitement de données personnelles à part entière
+// (art. 4(1) RGPD). Le préfixe garde ce à quoi sert réellement le champ —
+// reconnaître qu'une rafale de requêtes vient d'un même réseau — sans désigner
+// la ligne. C'est la granularité retenue par les principaux outils d'analyse
+// d'audience pour la même raison.
+//
+// addr accepte « host:port » comme un hôte nu. Une valeur non analysable rend
+// "unknown" : la journaliser telle quelle rendrait le champ imprévisible, et
+// c'est une entrée qui vient du réseau.
+func AnonymizeIP(addr string) string {
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return "unknown"
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return net.IP{v4[0], v4[1], v4[2], 0}.String() + "/24"
+	}
+	masked := ip.Mask(net.CIDRMask(48, 128))
+	if masked == nil {
+		return "unknown"
+	}
+	return masked.String() + "/48"
+}
+
 func logRequestError(r *http.Request, err error) {
 	if r == nil {
 		log.Error().Err(err).Msg("erreur http")
@@ -178,6 +211,6 @@ func logRequestError(r *http.Request, err error) {
 		Err(err).
 		Str("method", r.Method).
 		Str("path", LoggablePath(r)).
-		Str("remote_addr", r.RemoteAddr).
+		Str("client_ip", AnonymizeIP(r.RemoteAddr)).
 		Msg("erreur http")
 }
