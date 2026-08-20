@@ -32,6 +32,9 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 |---|---|
 | [architecture.md](architecture.md) | Architecture globale, schéma ASCII, flux requête et observabilité, justification des choix |
 | [infrastructure.md](infrastructure.md) | Services Docker, variables d'environnement, procédures opérationnelles, troubleshooting, pipeline CI/CD |
+| [manuel-utilisateur.md](manuel-utilisateur.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
+| [plan-formation.md](plan-formation.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
+| [accessibilite.md](accessibilite.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
 | [adr/001-choix-stack-observabilite.md](adr/001-choix-stack-observabilite.md) | ADR 001 — Choix de la stack LGTM pour l'observabilité |
 | [adr/002-choix-conteneurisation-docker.md](adr/002-choix-conteneurisation-docker.md) | ADR 002 — Conteneurisation avec Docker Compose |
 | [adr/003-choix-cicd-github-actions.md](adr/003-choix-cicd-github-actions.md) | ADR 003 — Pipeline CI/CD avec GitHub Actions et GHCR |
