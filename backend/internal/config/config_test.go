@@ -429,3 +429,43 @@ func TestLoad_TrustProxyHeaders(t *testing.T) {
 		}
 	})
 }
+
+// Les timeouts HTTP sont exprimés en secondes dans l'environnement et
+// consommés en time.Duration par le serveur. Une conversion oubliée donnerait
+// des timeouts de quelques nanosecondes — le serveur couperait toute requête.
+func TestConfig_TimeoutsHTTP(t *testing.T) {
+	cfg := &Config{
+		HTTPReadTimeoutSeconds:  15,
+		HTTPWriteTimeoutSeconds: 30,
+		HTTPIdleTimeoutSeconds:  120,
+	}
+	cas := []struct {
+		nom  string
+		got  time.Duration
+		want time.Duration
+	}{
+		{"lecture", cfg.HTTPReadTimeout(), 15 * time.Second},
+		{"écriture", cfg.HTTPWriteTimeout(), 30 * time.Second},
+		{"inactivité", cfg.HTTPIdleTimeout(), 120 * time.Second},
+	}
+	for _, tc := range cas {
+		if tc.got != tc.want {
+			t.Errorf("timeout %s = %v, want %v", tc.nom, tc.got, tc.want)
+		}
+	}
+}
+
+// sslMode retombe sur le défaut quand le champ est vide : un Config construit
+// à la main dans un test ou un outil doit produire une DSN utilisable sans
+// passer par Load.
+func TestConfig_SSLModeParDefaut(t *testing.T) {
+	vide := &Config{DBHost: "h", DBPort: "1", DBUser: "u", DBPassword: "p", DBName: "n"}
+	if got := vide.DBDSN(); !strings.Contains(got, "sslmode="+defaultDBSSLMode) {
+		t.Errorf("DSN = %q, want le sslmode par défaut %q", got, defaultDBSSLMode)
+	}
+
+	explicite := &Config{DBHost: "h", DBPort: "1", DBUser: "u", DBPassword: "p", DBName: "n", DBSSLMode: "require"}
+	if got := explicite.DBDSN(); !strings.Contains(got, "sslmode=require") {
+		t.Errorf("DSN = %q, want sslmode=require", got)
+	}
+}

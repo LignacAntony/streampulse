@@ -33,3 +33,17 @@ loadtest:
 .PHONY: check-android-security
 check-android-security:
 	python3 scripts/check-android-network-security.py
+
+# Couverture Go, unitaires seuls — informatif, ne fait pas échouer.
+.PHONY: coverage
+coverage:
+	cd backend && go test ./... -covermode=count -coverprofile=coverage.txt
+	python3 scripts/check-coverage.py backend/coverage.txt
+
+# Couverture Go, unitaires + intégration, avec la porte de qualité.
+# Exige un PostgreSQL joignable ; sans lui les tests d'intégration se sautent
+# et le seuil ne sera pas tenu. Cf. l'en-tête de internal/testsupport/pgtest.
+.PHONY: coverage-gate
+coverage-gate:
+	cd backend && go test ./... -tags integration -covermode=count -coverprofile=coverage.txt
+	python3 scripts/check-coverage.py backend/coverage.txt

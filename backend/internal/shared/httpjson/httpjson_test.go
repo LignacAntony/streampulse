@@ -221,3 +221,60 @@ func TestDecode(t *testing.T) {
 		})
 	}
 }
+
+// Le mapping code applicatif → statut HTTP est le contrat de sortie de toute
+// l'API : une entrée oubliée renverrait un 500 là où le client attend un 404,
+// et le mobile afficherait « erreur serveur » sur une ressource absente.
+func TestStatusFromCode(t *testing.T) {
+	cas := []struct {
+		code apperror.Code
+		want int
+	}{
+		{apperror.CodeInvalidArgument, http.StatusBadRequest},
+		{apperror.CodeUnauthorized, http.StatusUnauthorized},
+		{apperror.CodeForbidden, http.StatusForbidden},
+		{apperror.CodeNotFound, http.StatusNotFound},
+		{apperror.CodeConflict, http.StatusConflict},
+		{apperror.CodeUnsupportedMedia, http.StatusUnsupportedMediaType},
+		{apperror.CodeInternal, http.StatusInternalServerError},
+		// Un code inconnu doit valoir 500, jamais 200 : une erreur non
+		// répertoriée reste une erreur.
+		{apperror.Code("inconnu"), http.StatusInternalServerError},
+	}
+	for _, tc := range cas {
+		t.Run(string(tc.code), func(t *testing.T) {
+			if got := statusFromCode(tc.code); got != tc.want {
+				t.Errorf("statusFromCode(%q) = %d, want %d", tc.code, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestError_MessageEtUnwrap(t *testing.T) {
+	sans := &Error{Status: 400, Code: "bad_request", Message: "corps illisible"}
+	if got, want := sans.Error(), "bad_request: corps illisible"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if sans.Unwrap() != nil {
+		t.Error("Unwrap() sans cause doit rendre nil")
+	}
+
+	cause := errors.New("EOF")
+	avec := &Error{Status: 400, Code: "bad_request", Message: "corps illisible", Err: cause}
+	if got, want := avec.Error(), "bad_request: corps illisible: EOF"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if !errors.Is(avec, cause) {
+		t.Error("la cause doit rester atteignable par errors.Is")
+	}
+
+	// Nil typé : Error() est appelé à travers une interface, où le nil passe
+	// inaperçu jusqu'à la panique.
+	var nul *Error
+	if got := nul.Error(); got != "" {
+		t.Errorf("Error() sur nil = %q, want vide", got)
+	}
+	if nul.Unwrap() != nil {
+		t.Error("Unwrap() sur nil doit rendre nil")
+	}
+}

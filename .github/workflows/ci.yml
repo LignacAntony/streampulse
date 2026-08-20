@@ -56,6 +56,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: lint
+
+    # Les tests d'intégration existaient depuis la revue de la PR #264 mais
+    # aucun workflow ne passait `-tags integration` : ils n'avaient jamais
+    # tourné en CI. Toute la couche persistance — 93 fonctions sur les sept
+    # domaines — n'était donc exercée par rien.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -148,11 +168,24 @@ jobs:
           echo "tags vérifiés : $DECLARED_TAGS"
           go vet -tags "$(echo $DECLARED_TAGS | tr ' ' ',')" ./...
 
+      # -tags integration : les tests de repository tournent contre le service
+      # PostgreSQL ci-dessus. Sans PostgreSQL ils se sautent proprement, donc la
+      # même commande reste jouable en local.
       - name: Run tests
         working-directory: ./backend
-        run: go test -v -race -coverprofile=coverage.txt ./...
+        env:
+          TEST_DATABASE_URL: postgres://test:test@localhost:15432/test?sslmode=disable
+        run: go test -v -race -tags integration -covermode=atomic -coverprofile=coverage.txt ./...
+
+      # La porte que ce job n'avait pas. Le profil était produit puis archivé
+      # sans jamais être lu : une PR faisant tomber la couverture à 10 % passait
+      # au vert. Le périmètre exclu est déclaré et justifié dans le script.
+      # Rejouable en local via `make coverage-gate`.
+      - name: Porte de couverture (80 % sur le périmètre déclaré)
+        run: python3 scripts/check-coverage.py backend/coverage.txt
 
       - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage
