@@ -51,9 +51,9 @@ Un scénario marqué « Vérifié » l'a réellement été. Un scénario marqué
 | §5 Bibliothèque et playlists | 22 | 0 | 2 | 24 |
 | §6 Diffuseur | 20 | 0 | 3 | 23 |
 | §7 Administrateur | 11 | 1 | 1 | 13 |
-| §8 Sécurité transverse | 16 | 3 | 2 | 21 |
+| §8 Sécurité transverse | 17 | 2 | 2 | 21 |
 | §9 Performance et charge | 0 | 5 | 1 | 6 |
-| **Total** | **101** | **9** | **14** | **124** |
+| **Total** | **102** | **8** | **14** | **124** |
 
 ---
 
@@ -61,7 +61,7 @@ Un scénario marqué « Vérifié » l'a réellement été. Un scénario marqué
 
 | Suite | Commande | Résultat | Date |
 |---|---|---|---|
-| Backend Go | `cd backend && go test ./... -count=1` | **420 fonctions `Test*`, 528 cas sous-tests inclus — 100 % au vert** | 2026-08-19 |
+| Backend Go | `cd backend && go test ./... -count=1` | **431 fonctions `Test*`, 541 cas sous-tests inclus — 100 % au vert** | 2026-08-20 |
 | Mobile Flutter | `cd mobile && flutter test` | **415 tests — 100 % au vert** | 2026-08-19 |
 | Repository admin (intégration) | `cd backend && go test -tags integration ./internal/admin/... -run TestRepository` | **non rejoué** — exige un PostgreSQL ; le daemon Docker n'était pas disponible sur le poste de recette | — |
 | Charge HLS | `make loadtest` (exige ffmpeg) | cf. §9 — dernier run connu **2026-08-18** | 2026-08-18 |
@@ -252,7 +252,7 @@ et jusqu'ici non documentés en dehors du code.
 | REC-SEC-15 | — | Demander une réinitialisation pour un email inconnu ; rejouer un refresh token consommé ; réinitialiser un mot de passe | Pas d'énumération de comptes ; refus du rejeu ; une réinitialisation **révoque toutes** les sessions | Conforme — `TestForgotPassword_UnknownEmail_ReturnsNil` ; `TestRefresh_TokenReuse_Rejected` ; `TestResetPassword_RevokesAllRefreshTokens` | ✅ | 2026-08-19 | ADR 006 · ADR 010 |
 | REC-SEC-16 | `CORS_ALLOWED_ORIGINS` renseigné | Préflight `OPTIONS` ; requête depuis `localhost` en dev ; origine non listée en prod ; origine listée en prod ; requête sans `Origin` | Préflight court-circuité ; localhost accepté en dev quel que soit le port ; origine non listée **rejetée** en prod ; origine listée acceptée ; absence d'`Origin` sans effet | Conforme — `backend/internal/shared/httpmw/cors_test.go` `TestCORS_PreflightShortCircuited`, `TestCORS_DevAllowsLocalhostAnyPort`, `TestCORS_ProdRejectsUnlistedOrigin`, `TestCORS_ProdAllowsConfiguredOrigin`, `TestCORS_NoOriginPassesThrough` | ✅ | 2026-08-19 | ADR 004 |
 | REC-SEC-17 | PostgreSQL réel, deux comptes dont un contenant l'underscore littéral | `GET /api/admin/users?search=<tag>_a_b` | `_` traité comme un **caractère littéral** et non comme un joker `ILIKE` : exactement 1 résultat | Test présent — `backend/internal/admin/repository_integration_test.go` `TestRepository_ListUsers_SearchEscapesLikeWildcards` (build tag `integration`) — **non rejoué le 2026-08-19** | 🟡 | | US-08-01 · revue PR #264 |
-| REC-SEC-18 | — | Enchaîner les appels à `/api/auth/login` au-delà de la capacité ; varier `X-Forwarded-For` derrière un proxy ; attendre la reconstitution du seau | **429** + `Retry-After` au-delà de la capacité ; seaux isolés par client ; un `X-Forwarded-For` forgé ne donne **pas** un seau neuf ; les seaux inactifs sont purgés | Test présent mais **absent de `develop`** — `backend/internal/shared/httpmw/ratelimit_test.go` (`TestRateLimit_RefuseAuDelaDeLaCapacite`, `TestRateLimit_IsoleLesClients`, `TestRateLimit_SeauSeReconstitue`, `TestRateLimit_ForgedForwardedForNeDonnePasUnSeauNeuf`, `TestRateLimit_EvictionPurgeLesSeauxInactifs`), livré sur la branche `fix/str-242-config-securite-et-nettoyages` (commit `d643f18`), **non fusionnée** | 🟡 | | STR-242 (complète STR-240) |
+| REC-SEC-18 | — | Enchaîner les appels à `/api/auth/login` au-delà de la capacité ; varier `X-Forwarded-For` derrière un proxy ; attendre la reconstitution du seau | **429** + `Retry-After` au-delà de la capacité ; seaux isolés par client ; un `X-Forwarded-For` forgé ne donne **pas** un seau neuf ; les seaux inactifs sont purgés | Conforme — `backend/internal/shared/httpmw/ratelimit_test.go`, six tests : `TestRateLimit_RefuseAuDelaDeLaCapacite`, `TestRateLimit_IsoleLesClients`, `TestRateLimit_IsoleLesRoutes`, `TestRateLimit_SeauSeReconstitue`, `TestRateLimit_ForgedForwardedForNeDonnePasUnSeauNeuf`, `TestRateLimit_EvictionPurgeLesSeauxInactifs`. Fusionné sur `develop` par la PR #316 ; câblé dans `cmd/api/main.go:241-257` sur `register`, `login`, `forgot-password`, `reset-password` (seau partagé) et `refresh` (seau propre) | ✅ | 2026-08-20 | STR-242 (complète STR-240) |
 | REC-SEC-19 | Compte au quota | Upload via le **handler HTTP** (et non le service) | **403** avec le code public `storage_quota_exceeded` de bout en bout | Test présent mais **absent de `develop`** — ajout à `backend/internal/track/handler_test.go` sur la même branche `fix/str-242-…` (commit `d643f18`). Sur `develop`, seul le niveau service est verrouillé (REC-SEC-10) | 🟡 | | US-05-01 · STR-242 |
 | REC-SEC-20 | Stack de production derrière Caddy | `GET /metrics` depuis l'extérieur ; puis depuis le réseau interne | **403** depuis l'extérieur ; scrape interne fonctionnel | | ⬜ | | US-07-03 · ADR 019 |
 | REC-SEC-21 | `GO_ENV=production` | `GET /swagger/` et `GET /swagger/openapi.yaml` | Endpoints **non montés** en production (montés seulement si `!cfg.IsProd()`) | | ⬜ | | ADR 012 (OpenAPI) |
@@ -295,22 +295,18 @@ constant, matériel local ≠ VPS de production.
 
 Consignés ici pour qu'ils soient discutés plutôt que découverts.
 
-1. **Limitation de débit sur `/api/auth/*` (REC-SEC-18) — absente de `develop`.** Le middleware
-   et ses cinq tests existent sur `fix/str-242-config-securite-et-nettoyages` uniquement. Tant que
-   cette branche n'est pas fusionnée, **aucune borne** ne protège la connexion, l'inscription et
-   `forgot-password` contre la force brute et le bombardement d'emails.
-2. **Tests d'intégration PostgreSQL (REC-ADM-11, REC-SEC-17) — non rejoués.** Ils exigent un
+1. **Tests d'intégration PostgreSQL (REC-ADM-11, REC-SEC-17) — non rejoués.** Ils exigent un
    conteneur PostgreSQL, indisponible sur le poste de recette le 2026-08-19. À relancer avec la
    procédure décrite en tête de `backend/internal/admin/repository_integration_test.go`.
-3. **Aucun test de bout en bout API + base réelle** dans la suite par défaut. Les handlers et
+2. **Aucun test de bout en bout API + base réelle** dans la suite par défaut. Les handlers et
    services sont testés contre des stubs ; le SQL n'est vérifié que par les deux tests taggés
    `integration` du domaine admin. Les scénarios de ce cahier qui reposent sur une contrainte de
    base (`uq_tracks_user_title` en REC-BIB-09, unicité de position en REC-BIB-20) ne sont donc pas
    fermés au niveau SQL.
-4. **Tout ce qui dépend d'un appareil** (REC-AUD-16/17, REC-BIB-24, REC-CPT-18/19/20,
+3. **Tout ce qui dépend d'un appareil** (REC-AUD-16/17, REC-BIB-24, REC-CPT-18/19/20,
    REC-DIF-21/22/23) reste manuel par nature : microphone, arrière-plan, notification système,
    deep link, magasin de jetons sécurisé.
-5. **Configuration de production** (REC-SEC-20/21) : le blocage de `/metrics` par Caddy et le
+4. **Configuration de production** (REC-SEC-20/21) : le blocage de `/metrics` par Caddy et le
    non-montage de Swagger reposent sur la configuration d'infrastructure et l'environnement, pas
    sur du code testé unitairement.
 
