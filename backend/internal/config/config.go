@@ -350,16 +350,30 @@ func (c *Config) DBDSN() string {
 	)
 }
 
-// DatabaseURL rend la même connexion au format URL, attendu par golang-migrate
-// et par pgx.Connect.
+// DatabaseURL rend la connexion au format URL attendu par pgx.
 //
 // Dérivée de DBDSN plutôt que lue dans DATABASE_URL : cette variable était une
 // seconde source de vérité en doublon avec les DB_*, et .env.example y
 // dupliquait le mot de passe en dur — changer POSTGRES_PASSWORD sans la mettre à
 // jour cassait silencieusement les migrations.
-func (c *Config) DatabaseURL() string {
+func (c *Config) DatabaseURL() string { return c.databaseURL("postgres") }
+
+// MigrationURL rend la même connexion pour golang-migrate.
+//
+// Le schéma diffère de DatabaseURL, et ce n'est pas cosmétique : golang-migrate
+// résout son pilote **par le schéma de l'URL**, et le pilote importé par
+// internal/infrastructure/migrator est `database/pgx/v5`, qui s'enregistre sous
+// le seul nom « pgx5 ». Une URL en « postgres:// » le fait échouer au démarrage
+// sur « unknown driver postgres (forgotten import?) ».
+//
+// L'inverse est vrai aussi : pgx.ParseConfig n'accepte que « postgres:// » ou
+// « postgresql:// » et rejette « pgx5:// ». Aucune URL unique ne peut donc
+// servir les deux — d'où deux méthodes plutôt qu'une valeur partagée.
+func (c *Config) MigrationURL() string { return c.databaseURL("pgx5") }
+
+func (c *Config) databaseURL(scheme string) string {
 	u := &url.URL{
-		Scheme:   "postgres",
+		Scheme:   scheme,
 		User:     url.UserPassword(c.DBUser, c.DBPassword),
 		Host:     net.JoinHostPort(c.DBHost, c.DBPort),
 		Path:     "/" + c.DBName,
