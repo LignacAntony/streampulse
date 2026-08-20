@@ -28,7 +28,7 @@ or, worse, carry a different meaning.
 | User manual, training plan, accessibility statement | Written for the people who use the product and the people who train them |
 | Privacy policy, terms of use | Legal texts. Two versions of a legal text are two texts that can disagree — a real risk, not a theoretical one |
 | Test book (*cahier de recette*), user stories | Acceptance artefacts, read by the team and the examining board |
-| The 39 full ADR records | Summarised in [adr-index.md](adr-index.md); the code, tables and diagrams inside are already language-neutral |
+| The full ADR records | Summarised in [adr-index.md](adr-index.md); the code, tables and diagrams inside are already language-neutral |
 | Detailed operations runbook | Troubleshooting procedures for the team that operates the service; [operations.md](operations.md) covers what a reader needs to run and understand the stack |
 
 ## Conventions

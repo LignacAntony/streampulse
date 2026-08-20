@@ -54,7 +54,7 @@ la française est la bonne, et l'écart est un défaut à signaler.
 | [architecture.md](architecture.md) | [en/architecture.md](en/architecture.md) | Comment les pièces s'assemblent, et pourquoi ces technologies |
 | [infrastructure.md](infrastructure.md) | [en/operations.md](en/operations.md) | Comment lancer, observer et déployer la stack |
 | [securite.md](securite.md) | [en/security.md](en/security.md) | Qui accède à quoi, comment les secrets sont protégés, ce qui est exposé |
-| Les 40 ADR | [en/adr-index.md](en/adr-index.md) | Chaque décision d'architecture, résumée |
+| Toutes les ADR | [en/adr-index.md](en/adr-index.md) | Chaque décision d'architecture, résumée |
 | — | [en/README.md](en/README.md) | Index anglais |
 
 ### Français uniquement, et pourquoi
@@ -67,8 +67,9 @@ et une seconde version divergerait — ou, pire, dirait autre chose.
 | Manuel utilisateur, plan de formation, déclaration d'accessibilité | Écrits pour les personnes qui utilisent le produit et celles qui les forment |
 | Politique de confidentialité, CGU | Textes juridiques. Deux versions d'un texte juridique sont deux textes qui peuvent se contredire — un risque réel, pas théorique |
 | Cahier de recette, user stories | Artefacts de recette, lus par l'équipe et le jury |
-| Les 40 ADR intégrales | Résumées dans l'index anglais ; le code, les tableaux et les diagrammes qu'elles contiennent sont déjà neutres en langue |
+| Les ADR intégrales | Résumées dans l'index anglais ; le code, les tableaux et les diagrammes qu'elles contiennent sont déjà neutres en langue |
 | Runbook d'exploitation détaillé | Procédures de dépannage et de mise à jour du VPS, pour l'équipe qui exploite le service |
+| Rapport de couverture de tests | Lu par l'équipe qui écrit le code et par le jury ; les chiffres et les noms de paquets qu'il contient sont déjà neutres en langue |
 
 ### Ce qui garde le périmètre honnête
 
@@ -112,6 +113,7 @@ document dans les deux langues.
 | [rgpd.md](rgpd.md) | Dossier RGPD — registre des traitements, politique de rétention par magasin, droits des personnes |
 | [politique-confidentialite.md](politique-confidentialite.md) | Politique de confidentialité destinée aux utilisateurs (embarquée dans l'application) |
 | [cgu.md](cgu.md) | Conditions générales d'utilisation (embarquées dans l'application) |
+| [couverture-de-tests.md](couverture-de-tests.md) | Couverture Go : périmètre déclaré, porte de qualité à 80 %, tests d'intégration et ce qui reste hors d'atteinte |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---

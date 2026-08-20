@@ -1,7 +1,7 @@
 # Architecture decisions — index
 
 > 🇫🇷 **Version française : [docs/README.md § Index complet des ADR](../README.md)**
-> and the 39 full records in [`docs/adr/`](../adr/).
+> and the full records in [`docs/adr/`](../adr/).
 
 This page summarises **every** architecture decision record in one line of
 context, one of decision, and one of consequence. It exists because the full
