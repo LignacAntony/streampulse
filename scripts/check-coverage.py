@@ -68,9 +68,15 @@ LIGNE = re.compile(r"^(.*?):\d+\.\d+,\d+\.\d+ (\d+) (\d+)$")
 
 
 def exclu(chemin: str) -> str | None:
-    for motif, raison in EXCLUSIONS:
+    """Rend le premier motif d'exclusion couvrant `chemin`, ou None.
+
+    Rend le motif et non la raison : c'est lui qui sert de clé d'attribution
+    dans le récapitulatif, et un motif est unique là où deux exclusions
+    pourraient partager une formulation.
+    """
+    for motif, _ in EXCLUSIONS:
         if motif in chemin:
-            return raison
+            return motif
     return None
 
 
@@ -119,12 +125,22 @@ def main(argv: list[str]) -> int:
     for paquet, (c, n) in sorted(dans.items(), key=lambda kv: kv[1][0] / kv[1][1]):
         print(f"{100.0 * c / n:7.1f}%  {c:5}/{n:<5} {paquet}")
 
+    # Chaque paquet est attribué au **premier** motif qui le couvre, comme le
+    # fait `exclu()`. Le compter sous chaque motif correspondant ferait dépasser
+    # le total à la moindre exclusion qui en recoupe une autre — un futur
+    # `internal/infrastructure/.../db/` relèverait des deux — et le lecteur ne
+    # pourrait plus recouper le détail avec le total.
     exclus_total = sum(v[1] for v in hors.values())
+    par_motif: dict[str, int] = {motif: 0 for motif, _ in EXCLUSIONS}
+    for chemin, (_, n) in hors.items():
+        motif = exclu(chemin + "/")
+        if motif is not None:
+            par_motif[motif] += n
+
     print(f"\nExclus du calcul : {exclus_total} statements")
     for motif, raison in EXCLUSIONS:
-        n = sum(v[1] for k, v in hors.items() if motif in k + "/")
-        if n:
-            print(f"  {n:5} — {motif:26} {raison}")
+        if par_motif[motif]:
+            print(f"  {par_motif[motif]:5} — {motif:26} {raison}")
 
     print(f"\nPérimètre déclaré : {couverts}/{total} = {pct:.2f}%")
     print(f"Seuil exigé       : {seuil:.2f}%")

@@ -38,11 +38,16 @@ check-android-security:
 check-legal-assets:
 	python3 scripts/check-legal-assets.py
 
-# Couverture Go, unitaires seuls — informatif, ne fait pas échouer.
+# Couverture Go, unitaires seuls — informatif, ne fait jamais échouer.
+#
+# Seuil explicite à 0 : sans lui le script retomberait sur son défaut de 80 %,
+# qu'une mesure sans `-tags integration` ne peut pas tenir — toute la couche
+# repository reste non couverte. La cible échouait donc en prétendant le
+# contraire, et rendait un rouge à qui voulait seulement lire un rapport.
 .PHONY: coverage
 coverage:
 	cd backend && go test ./... -covermode=count -coverprofile=coverage.txt
-	python3 scripts/check-coverage.py backend/coverage.txt
+	python3 scripts/check-coverage.py backend/coverage.txt 0
 
 # Couverture Go, unitaires + intégration, avec la porte de qualité.
 # Exige TEST_DATABASE_URL et un PostgreSQL joignable ; sans eux les tests

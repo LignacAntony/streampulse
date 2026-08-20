@@ -42,6 +42,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -149,12 +150,28 @@ func toMigrateURL(dsn string) string {
 	return dsn
 }
 
+// tagSeq distingue deux appels d'un même processus de test.
+var tagSeq atomic.Uint64
+
 // UniqueTag rend un préfixe que deux tests ne peuvent pas partager. Les tests
 // s'exécutent sur une base commune et ne la vident pas : sans ce préfixe dans
 // les champs recherchables, le filtre d'un test verrait les lignes d'un autre.
+//
+// Trois composantes, et aucune n'est décorative :
+//
+//   - l'horodatage seul ne suffit pas — deux appels dans la même nanoseconde
+//     rendraient le même tag ;
+//   - le PID sépare les processus, et `go test ./...` en lance un par paquet,
+//     jusqu'à GOMAXPROCS en parallèle : sept binaires d'intégration écrivent
+//     dans la même base en même temps ;
+//   - le compteur sépare deux appels d'un même processus.
+//
+// Une collision produirait un doublon sur `users.email`, donc un échec
+// d'insertion dans un test qui n'a rien fait de mal — le genre de rareté qui
+// tombe en CI et envoie chercher la cause au mauvais endroit.
 func UniqueTag(t *testing.T) string {
 	t.Helper()
-	return fmt.Sprintf("it%d", time.Now().UnixNano())
+	return fmt.Sprintf("it%d_%d_%d", time.Now().UnixNano(), os.Getpid(), tagSeq.Add(1))
 }
 
 // InsertUser insère un utilisateur minimal et rend son identifiant. La ligne

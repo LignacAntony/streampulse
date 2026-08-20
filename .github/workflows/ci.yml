@@ -175,7 +175,33 @@ jobs:
         working-directory: ./backend
         env:
           TEST_DATABASE_URL: postgres://test:test@localhost:15432/test?sslmode=disable
-        run: go test -v -race -tags integration -covermode=atomic -coverprofile=coverage.txt ./...
+        run: |
+          set -o pipefail
+          go test -v -race -tags integration -covermode=atomic \
+            -coverprofile=coverage.txt ./... | tee /tmp/go-test.log
+
+      # Sans cette garde, une base injoignable donnerait un diagnostic faux :
+      # les tests d'intégration se sautent au lieu d'échouer (c'est voulu en
+      # local), la couche repository n'est donc pas exercée, et la porte
+      # suivante échouerait sur « couverture insuffisante » — envoyant chercher
+      # des tests manquants alors que c'est PostgreSQL qui n'a pas répondu.
+      #
+      # Le compromis « sauter plutôt qu'échouer » est bon sur un poste de
+      # développement ; en CI on veut l'inverse, et nommé.
+      - name: Vérifier que les tests d'intégration ont réellement tourné
+        run: |
+          set -euo pipefail
+
+          # On compte les PASS, pas les RUN : un test sauté est aussi « lancé »,
+          # et c'est précisément le cas qu'on veut distinguer.
+          PASSES=$(grep -cE '^--- PASS: +TestRepository_' /tmp/go-test.log || true)
+          SKIPS=$(grep -cE '^--- SKIP: +TestRepository_' /tmp/go-test.log || true)
+
+          if [ "$PASSES" -eq 0 ]; then
+            echo "::error::aucun test d'intégration n'a réussi ($SKIPS sauté(s)) — PostgreSQL était-il joignable ? Vérifier TEST_DATABASE_URL et le service postgres."
+            exit 1
+          fi
+          echo "tests d'intégration exécutés : $PASSES (sautés : $SKIPS)"
 
       # La porte que ce job n'avait pas. Le profil était produit puis archivé
       # sans jamais être lu : une PR faisant tomber la couverture à 10 % passait
