@@ -1,4 +1,4 @@
-# ADR 006 — Architecture en couches : handler / service / repository
+# ADR 008 — Architecture en couches : handler / service / repository
 
 ## Statut
 
@@ -77,6 +77,6 @@ internal/<feature>/
 
 ## Références
 
-- ADR 003 : [Initialisation de la base de données](003-initialisation-base-de-donnees.md) — pose le pool `pgxpool` réutilisé ici.
+- ADR 037 : [Initialisation de la base de données](037-initialisation-base-de-donnees.md) — pose le pool `pgxpool` réutilisé ici.
 - ADR 004 : [Configuration 12-Factor](004-config-12-factor-viper.md) — le câblage dans `main.go` lit la config via `config.Load()`.
 - Linear : [STR-33](https://linear.app/streampulse/issue/STR-33) — premier ticket à appliquer ce pattern.

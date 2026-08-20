@@ -70,6 +70,23 @@ Grafana « StreamPulse », non éditables en UI — la vérité vit dans git) :
 - **Infrastructure** (`streampulse-infra`) : CPU et RAM machine (node_exporter),
   goroutines et heap de l'API.
 
+## Alternatives écartées
+
+**Utiliser `r.URL.Path` brut comme label.** L'implémentation la plus directe. Écartée sans
+hésitation : les chemins contiennent des UUID (`/api/streams/{id}/stats`), donc une série
+Prometheus **par ressource**. Quelques milliers de flux suffiraient à faire exploser la mémoire
+du serveur — le mode de panne classique de Prometheus.
+
+**Maintenir une table de routes à la main.** Un `map[string]string` chemin → libellé donnerait
+des labels propres. Écarté : c'est une seconde source de vérité, qui diverge à la première route
+ajoutée sans que rien n'échoue. `mux.Handler(r)` rend le pattern **du routeur lui-même**, donc
+rien à synchroniser.
+
+**Exporter les métriques en OTLP vers Tempo/Mimir.** Cohérent avec les traces de l'ADR 020, un
+seul protocole. Écarté : Prometheus est déjà en place pour `node_exporter`, son modèle *pull*
+convient à un service unique, et `client_golang` fournit gratuitement les collecteurs Go
+(`go_goroutines`, `go_memstats_*`) qui servent aux alertes de l'ADR 021.
+
 ## Conséquences
 
 - Aucune synchronisation à maintenir : une nouvelle route dans `main.go` est

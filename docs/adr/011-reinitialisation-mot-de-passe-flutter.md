@@ -58,11 +58,8 @@ Nous avons choisi le **schéma custom `streampulse://app`**.
 - Universal Links offrent un meilleur fallback (s'ouvre dans le navigateur si l'app n'est pas installée), mais pour un lien de réinitialisation de mot de passe, un fallback vers un site web n'a pas de valeur — l'utilisateur doit avoir l'app.
 - Un schéma custom fonctionne **hors connexion** et **sans configuration serveur**. C'est la solution correcte pour les deep links internes à une app mobile sans besoin de fallback web.
 
-**Alternative rejetée — Universal Links / App Links** : plus sécurisée (le schéma `streampulse://` peut être usurpé par une autre app qui enregistre le même schéma), mais impose une infrastructure domaine HTTPS opérationnelle dès maintenant. À reconsidérer quand le domaine production sera actif.
-
-**Alternative rejetée — copier-coller du token dans l'app** : l'utilisateur devrait copier le token depuis l'email et le coller dans un champ de l'app. Expérience utilisateur inacceptable.
-
-**Alternative rejetée — QR code dans l'email** : complexifie la génération du mail côté backend, ne fonctionne pas si l'email est ouvert sur le même téléphone que l'app (l'utilisateur ne peut pas scanner son propre écran).
+Les options écartées (Universal Links, copier-coller, QR code) sont détaillées dans
+[Alternatives écartées](#alternatives-écartées).
 
 ### 2. Parsing du token dans go_router
 
@@ -80,65 +77,88 @@ GoRoute(
 
 `go_router` reçoit l'URL du deep link via le plugin `uni_links` (intégré dans Flutter). Si le token est absent ou vide, `ResetPasswordScreen` affiche une vue `_InvalidTokenView` au lieu du formulaire — évite un crash ou une requête API avec un token vide.
 
-### 3. `AsyncNotifier<bool>` plutôt que `AsyncNotifier<void>`
+### 3. Le résultat de l'action ne transite **pas** par l'état du contrôleur
 
-C'est la décision technique la plus structurante de cette US.
+C'est la décision technique la plus structurante de cette US, et elle vient d'un bug réel.
 
-#### Le bug avec `AsyncNotifier<void>`
+#### Le problème : un état initial indiscernable d'un succès
 
-Les contrôleurs de la première implémentation héritaient de `AsyncNotifier<void>` :
+Un contrôleur qui publie « l'action a réussi » comme un **état**, et un écran qui **écoute** cet
+état pour naviguer, forment un piège : à l'ouverture de l'écran, l'écouteur est branché *avant*
+que l'état initial ne soit stabilisé, et il reçoit une première notification qu'il ne sait pas
+distinguer d'un succès.
+
+Symptômes observés sur la première implémentation :
+
+- **`ForgotPasswordScreen`** : le toast « email envoyé » s'affichait **à l'ouverture**, puis
+  `context.pop()` était appelé dans un état instable.
+- **`ResetPasswordScreen`** (ouvert par deep link) : `context.go('/login')` partait dès
+  l'ouverture, renvoyant l'utilisateur sur login sans qu'il ait rien soumis.
+
+#### La solution retenue : un contrôleur qui ne publie que `isLoading`
+
+`ForgotPasswordController` et `ResetPasswordController` étendent `ChangeNotifier` et n'exposent
+**qu'un seul** état observable — `isLoading` :
 
 ```dart
-class ForgotPasswordController extends AsyncNotifier<void> {
-    @override
-    Future<void> build() async {}  // ← problème ici
+class ForgotPasswordController extends ChangeNotifier {
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+
+  Future<void> submit({required String email}) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _repository.requestPasswordReset(email: email);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }
 ```
 
-`build()` est **asynchrone**. Riverpod démarre le provider en état `AsyncLoading`, puis dès que `build()` se termine (au microtask suivant), l'état passe à `AsyncData(null)`.
-
-Or, `ref.listen` est enregistré **pendant la phase de build du widget**, c'est-à-dire **avant** que ce microtask soit traité. La transition `AsyncLoading → AsyncData(null)` est donc interceptée par le listener immédiatement à l'ouverture de l'écran — avant tout geste utilisateur.
-
-Résultat observé :
-- **`ForgotPasswordScreen`** : le toast "email envoyé" s'affichait à l'ouverture, puis `context.pop()` était appelé dans un état instable.
-- **`ResetPasswordScreen`** (ouvert via deep link) : `context.go('/login')` était appelé dès l'ouverture, renvoyant l'utilisateur sur login sans qu'il ait soumis le formulaire.
-
-#### La correction avec `AsyncNotifier<bool>`
+Le succès n'est **pas** un état : c'est le retour normal du `Future`. L'échec n'est pas un état
+non plus : l'exception remonte. L'écran enchaîne dans son propre callback, là où le geste
+utilisateur a eu lieu :
 
 ```dart
-class ForgotPasswordController extends AsyncNotifier<bool> {
-    @override
-    Future<bool> build() async => false;  // état initial stable et discriminant
+try {
+  await context.read<ForgotPasswordController>().submit(email: ...);
+  if (!mounted) return;
+  showAuthInfoToast(context, 'Si cet email est enregistré, un lien vous a été envoyé.');
+  context.pop();
+} catch (error) {
+  if (!mounted) return;
+  showAuthErrorToast(context, _humanReadable(error));
 }
 ```
 
-L'état initial est `AsyncData(false)`. La transition `AsyncLoading → AsyncData(false)` est bien interceptée par le listener, mais le callback peut maintenant **distinguer l'état initial** :
+**Pourquoi c'est la bonne forme** : le bug n'était pas dans le choix du type d'état, il était
+dans le fait de *faire transiter un événement ponctuel* (« ça a marché, navigue ») *par un canal
+d'état* (« voici la valeur courante »). Un canal d'état n'a pas de notion de « rien ne s'est
+encore passé » qui se distingue toute seule ; il faut la fabriquer. En gardant le résultat dans
+le `Future`, la question ne se pose plus : le toast et la navigation ne peuvent partir que depuis
+le `await` d'un `onPressed`. Le flag `isLoading`, lui, est un état légitime — il décrit bien
+quelque chose de continu.
 
-```dart
-void _onStateChanged(AsyncValue<bool>? previous, AsyncValue<bool> next) {
-    next.when(
-        data: (sent) {
-            if (!sent) return;  // false = état initial → ignorer
-            if (!context.mounted) return;
-            showAuthInfoToast(context, '...');
-            context.pop();
-        },
-        ...
-    );
-}
-```
+**Cohérent avec `LoginController` / `RegisterController`**, qui suivent exactement le même
+schéma (cf. [ADR 009](009-authentification-flutter.md) §6) : `submit()` **renvoie** le
+`TokenPair` ou le `User`, et n'expose que `isLoading`.
 
-**Pourquoi `bool` et pas `int` ou un enum** : le cycle de vie de ces contrôleurs est binaire — soit aucune action n'a encore été effectuée (`false`), soit l'action a réussi (`true`). Un bool est le type le plus simple et le plus expressif pour ce cas. Un enum (`Idle`, `Success`) serait surdimensionné.
-
-**Pourquoi ne pas comparer `previous`** : on pourrait écrire `if (previous?.value == next.value) return;` mais cela est fragile — la comparaison de `AsyncValue` avec `==` peut être piégée par les cas d'égalité structurelle. La garde `if (!value) return;` est explicite, testable, et ne dépend pas du `previous`.
-
-**Ce pattern est cohérent avec `LoginController`** qui utilise `AsyncNotifier<TokenPair?>` avec `if (tokens == null) return;` comme garde sur l'état initial.
-
-**Alternative rejetée — `AsyncNotifier<void>` avec comparaison de `previous`** : `if (previous == null) return;` semble fonctionner mais `previous` est `null` uniquement lors du **premier** fire du listener (transition depuis l'état initial qui n'existait pas encore). Ce comportement dépend d'un détail d'implémentation de Riverpod et n'est pas documenté comme garanti.
-
-**Alternative rejetée — `KeepAliveLink` / `ref.keepAlive()`** : maintenir le provider en vie éviterait la réinitialisation du `build()` à chaque ouverture de l'écran, mais ce serait une optimisation prématurée qui masque le vrai problème plutôt que de le corriger.
-
-**Alternative rejetée — `StateNotifier<bool>` classique** : `AsyncNotifier` est le pattern recommandé par Riverpod 2.x pour les opérations asynchrones. `StateNotifier` ne gère pas nativement les états `loading`/`error` — il faudrait les gérer manuellement.
+> **Note historique (STR-237).** À sa rédaction (2026-05-25), cette section décrivait la même
+> décision en vocabulaire **Riverpod**, qui était alors le state management du projet : le bug y
+> était formulé comme la transition `AsyncLoading → AsyncData(null)` d'un `AsyncNotifier<void>`,
+> interceptée par `ref.listen` au premier microtask, et la correction consistait à passer à
+> `AsyncNotifier<bool>` avec `false` comme état initial discriminant.
+>
+> Riverpod ayant été **interdit** par l'équipe pédagogique, la couche présentation a été migrée
+> vers `provider` le 2026-06-04 (`8e912ec`, cf. [ADR 036](036-state-management-flutter-provider.md)) —
+> mais cette ADR n'avait jamais été mise à jour. Le texte ci-dessus décrit désormais le code
+> réellement livré.
+>
+> Le raisonnement d'origine, lui, reste valable : il porte sur la distinction entre *état* et
+> *événement*, pas sur un framework. Les alternatives ci-dessous ont été réécrites en conséquence.
 
 ### 4. Deux écrans dédiés (`ForgotPasswordScreen`, `ResetPasswordScreen`)
 
@@ -173,12 +193,60 @@ La limite à **72 caractères** n'est pas arbitraire : bcrypt tronque silencieus
 
 ---
 
+## Alternatives écartées
+
+### Universal Links (iOS) / App Links (Android) plutôt qu'un schéma custom
+
+Plus sûrs — le schéma `streampulse://` peut être revendiqué par n'importe quelle autre app
+installée, alors qu'un App Link est vérifié cryptographiquement contre le domaine. Écartés
+parce qu'ils **imposent un domaine HTTPS opérationnel** hébergeant `apple-app-site-association`
+et `assetlinks.json`, qui n'existe pas encore. Bloquer une feature d'authentification sur une
+dépendance infra non livrée n'est pas justifiable ; à reconsidérer quand le domaine de
+production sera actif (cf. Inconvénients).
+
+### Copier-coller manuel du token depuis l'email
+
+Zéro configuration native, fonctionne partout. Écarté sur l'UX : demander à l'utilisateur de
+sélectionner une chaîne de 64 caractères hexadécimaux dans un email, puis de la coller dans un
+champ, sur mobile, garantit un taux d'abandon élevé sur un parcours déjà subi.
+
+### QR code dans l'email
+
+Écarté sur un cas d'usage dirimant : l'email de réinitialisation est le plus souvent ouvert
+**sur le téléphone lui-même** — l'utilisateur ne peut pas scanner son propre écran. Coût de
+génération côté backend en prime.
+
+### Publier le résultat de l'action comme un **état** du contrôleur
+
+C'est l'implémentation d'origine, et la cause du bug décrit en §3 : un canal d'état ne
+distingue pas « rien ne s'est encore passé » d'un succès, donc l'écouteur navigue à
+l'ouverture de l'écran. Deux correctifs ont été envisagés puis écartés :
+
+- **Ajouter une valeur initiale discriminante** (un `bool false`, un enum `Idle`/`Success`) et
+  garder l'écran à l'écoute. Ça marche, mais chaque nouvel écran doit se souvenir d'écrire la
+  garde — un oubli redonne exactement le même bug, sans erreur de compilation.
+- **Comparer l'état précédent** dans l'écouteur pour ignorer la première notification. Écarté :
+  la sémantique de « première notification » dépend du moment où l'écouteur a été branché, donc
+  du cycle de vie du widget — un détail d'implémentation, non garanti par contrat.
+
+Garder le résultat dans le `Future` supprime la classe de bugs au lieu de la contourner.
+
+### `ResetPasswordScreen` accessible aussi depuis la navigation normale
+
+Un écran « j'ai déjà un token » atteignable depuis le menu aurait offert un plan B si le deep
+link échoue. Écarté : cela suppose d'exposer un champ « collez votre token ici », ce que la
+première alternative rejette déjà, et ajoute une route publique qui ne sert qu'à contourner un
+dysfonctionnement — la bonne réponse à un deep link cassé est une page web de fallback, pas un
+écran de saisie manuelle.
+
+---
+
 ## Conséquences
 
 ### Avantages
 
 - **UX fluide** : clic sur le lien email → app ouverte directement sur le bon écran, token pré-rempli.
-- **Pas de régression** : le pattern `AsyncNotifier<bool>` est cohérent avec `LoginController` — la codebase est homogène.
+- **Pas de régression** : les deux contrôleurs suivent le même schéma que `LoginController` (résultat renvoyé, seul `isLoading` publié) — la codebase est homogène.
 - **Règles de validation centralisées** : une seule source de vérité pour les contraintes de mot de passe.
 
 ### Inconvénients
@@ -196,8 +264,9 @@ La limite à **72 caractères** n'est pas arbitraire : bcrypt tronque silencieus
 
 ## Références
 
-- [ADR 005](005-architecture-flutter-clean.md) — Clean Architecture + Riverpod
-- [ADR 009](009-authentification-flutter.md) — Pattern `AsyncNotifier`, toasts, navigation
+- [ADR 005](005-architecture-flutter-clean.md) — Clean Architecture par feature
+- [ADR 036](036-state-management-flutter-provider.md) — `provider` + `ChangeNotifier` (supersede l'ADR 005 sur le state management)
+- [ADR 009](009-authentification-flutter.md) — Contrôleurs d'auth, toasts, navigation
 - [ADR 010](010-reinitialisation-mot-de-passe-backend.md) — Sécurisation côté backend
 - `mobile/lib/features/auth/presentation/screens/forgot_password_screen.dart`
 - `mobile/lib/features/auth/presentation/screens/reset_password_screen.dart`

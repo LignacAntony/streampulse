@@ -1,7 +1,7 @@
 name: streampulse
 description: Plateforme audio hybride live & on-demand — StreamPulse
 publish_to: none
-version: 1.0.0+1
+version: 1.2.0+1
 
 environment:
   sdk: ^3.11.4
@@ -41,9 +41,6 @@ dependencies:
 
   # Permission notifications (Android 13+) pour la notification média (STR-109)
   permission_handler: ^11.3.1
-
-  # WebSocket (chat live)
-  web_socket_channel: ^3.0.1
 
   # Typographie
   google_fonts: ^6.2.1

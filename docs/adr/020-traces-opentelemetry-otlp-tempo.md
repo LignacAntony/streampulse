@@ -77,11 +77,31 @@ de fond périodiques apparaissent : un sampler dédié éviterait d'exporter ces
 ### 5. Resource et corrélation
 
 `service.name = streampulse-api` (aligné sur le label des logs) +
-`deployment.environment.name`. La trace complète du critère (mobile → API → DB) se
-lit ainsi : requête du mobile → span serveur otelhttp → spans SQL otelpgx, visible
-dans Grafana → Explore → Tempo, ou en un clic depuis un log Loki (bouton TraceID).
-L'instrumentation du client Flutter (OTEL Dart, header `traceparent` sortant) est
-hors du scope de ce ticket backend.
+`deployment.environment.name`. La trace se lit dans Grafana → Explore → Tempo, ou
+en un clic depuis un log Loki (bouton TraceID) : span serveur otelhttp → spans SQL
+otelpgx.
+
+⚠️ **La trace commence au serveur, pas au mobile.** Le critère du sujet demande de
+suivre une requête « de l'application mobile jusqu'à la base de données » ; ce que
+cet ADR livre s'arrête à `API → DB`. Le propagateur W3C est bien armé côté serveur
+(`tracer.go`), donc un `traceparent` entrant serait honoré — mais aucun n'est émis :
+`grep -r traceparent mobile/` ne rend rien. Il manque un intercepteur Dio d'une
+quinzaine de lignes. Tant qu'il n'existe pas, le critère n'est pas couvert, et il ne
+faut pas prétendre l'inverse en soutenance.
+
+## Alternatives écartées
+
+**Jaeger plutôt que Tempo.** UI plus riche, requêtes par service et opération. Écarté : Tempo
+s'intègre nativement à Grafana, déjà présent pour les métriques et les logs — une seule interface
+et, surtout, le lien direct log → trace via `derivedFields`. Jaeger imposerait un second frontal.
+
+**OTLP/gRPC au lieu de HTTP.** Plus efficace en réseau. Écarté : le gain est nul à ce volume, et
+HTTP traverse sans configuration un environnement où seul le port 4318 est ouvert entre conteneurs.
+
+**Sampling probabiliste.** Réduirait le volume de traces. Écarté : à l'échelle du projet, tout
+tracer coûte moins cher que rater la trace de l'incident qu'on cherche. `ParentBased(AlwaysSample)`
+reste le bon réglage tant que Tempo n'est pas saturé — à revoir si le trafic change d'ordre de
+grandeur.
 
 ## Conséquences
 

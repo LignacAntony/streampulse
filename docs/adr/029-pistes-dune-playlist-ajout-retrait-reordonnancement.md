@@ -147,6 +147,26 @@ lequel US-05-04 construira la queue.
 
 ---
 
+## Alternatives écartées
+
+**Positions fractionnaires** (insérer entre 1 et 2 avec 1,5). Évite de réécrire toutes les lignes
+à chaque déplacement. Écarté : la précision flottante se dégrade après quelques centaines
+d'insertions au même endroit et impose une renumérotation périodique — la complexité qu'on
+prétendait éviter, mais différée et surprenante. Une playlist tient dans quelques dizaines de
+lignes : les réécrire toutes coûte moins qu'un index fractionnaire à surveiller.
+
+**Liste chaînée** (chaque piste porte l'identifiant de la suivante). Insertion et suppression en
+temps constant. Écarté : lire la playlist dans l'ordre demande alors de parcourir la chaîne
+côté application, et une rupture de chaînon — un `next_id` orphelin — rend la playlist illisible
+sans qu'aucune contrainte ne l'ait empêché. La colonne `position` avec contrainte d'unicité rend
+l'état vérifiable par la base.
+
+**Contrainte d'unicité non différée, avec réécriture en deux temps** (décaler d'abord toutes les
+positions hors plage, puis les réécrire). Fonctionne sans `DEFERRABLE`. Écarté : deux fois plus
+d'écritures, et un échec entre les deux temps laisse la playlist dans un état absurde. La
+contrainte différée exprime exactement l'intention — l'invariant doit tenir au COMMIT, pas à
+chaque ligne.
+
 ## Conséquences
 
 - **Positif** : ordre garanti unique et contigu au niveau **base** (pas seulement applicatif) ;
