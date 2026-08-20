@@ -34,6 +34,10 @@ loadtest:
 check-android-security:
 	python3 scripts/check-android-network-security.py
 
+.PHONY: check-legal-assets
+check-legal-assets:
+	python3 scripts/check-legal-assets.py
+
 # Couverture Go, unitaires seuls — informatif, ne fait pas échouer.
 .PHONY: coverage
 coverage:
