@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"os"
 	"strings"
 	"time"
 
@@ -11,16 +10,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Connect établit une connexion à PostgreSQL via DATABASE_URL.
-// pgx natif attend postgres://, on remplace pgx5:// si nécessaire.
-// Un timeout de 10s est appliqué pour éviter un blocage infini si Postgres est indisponible.
-func Connect(ctx context.Context) *pgx.Conn {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal().Msg("DATABASE_URL non définie")
-	}
-
-	dbURL = strings.Replace(dbURL, "pgx5://", "postgres://", 1)
+// Connect établit une connexion simple à PostgreSQL (seeder de développement).
+// La DSN vient de la config, dérivée des DB_*. Un timeout de 10 s évite un
+// blocage infini si Postgres est indisponible.
+func Connect(ctx context.Context, databaseURL string) *pgx.Conn {
+	dbURL := strings.Replace(databaseURL, "pgx5://", "postgres://", 1)
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

@@ -4,14 +4,41 @@ import 'package:provider/provider.dart';
 import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
+import 'package:streampulse/core/offline/entities/cached_track_status.dart';
+import 'package:streampulse/core/offline/offline_cache_repository.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
+import 'package:streampulse/features/playlists/presentation/providers/offline_playlist_controller.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlist_detail_screen.dart';
 
+import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
+
+class _FakeCacheRepository implements OfflineCacheRepository {
+  @override
+  Future<Set<String>> offlinePlaylistIds() async => {};
+  @override
+  Future<bool> isOffline(String playlistId) async => false;
+  @override
+  Future<void> enableOffline(String id, String name, List<PlaylistTrack> t) async {}
+  @override
+  Future<void> disableOffline(String id) async {}
+  @override
+  Future<List<PlaylistTrack>> cachedTracks(String id) async => [];
+  @override
+  Future<List<CachedTrackStatus>> downloadStatuses(String id) async => [];
+  @override
+  Future<void> updateTrackStatus(String t, String p, {required TrackCacheStatus status, String? filePath, int? fileSize}) async {}
+  @override
+  Future<String?> cachedFilePath(String t) async => null;
+  @override
+  Future<int> totalCacheSize() async => 0;
+  @override
+  Future<void> clearAll() async {}
+}
 
 PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
       id: id,
@@ -108,8 +135,16 @@ Widget _harness(
 }) {
   // L'écran lit la file d'attente app-level (US-05-04) pour lancer la lecture et
   // souligner la piste en cours : elle doit exister au-dessus de lui.
-  return ChangeNotifierProvider<PlaylistQueueController>.value(
-    value: queue ?? _queueController(FakeQueuePlaybackService()),
+  return MultiProvider(
+    providers: [
+      Provider<OfflineCacheRepository>.value(value: _FakeCacheRepository()),
+      ChangeNotifierProvider<PlaylistQueueController>.value(
+        value: queue ?? _queueController(FakeQueuePlaybackService()),
+      ),
+      ChangeNotifierProvider<OfflinePlaylistController>.value(
+        value: FakeOfflinePlaylistController(),
+      ),
+    ],
     child: ToastificationWrapper(
       child: MaterialApp(
         // `ReorderableListView` choisit ses poignées par défaut d'après

@@ -40,6 +40,13 @@ souhaitant comprendre l'architecture, l'infrastructure et les décisions prises.
 | [architecture.md](architecture.md) | Architecture globale, schéma ASCII, flux requête et observabilité, justification des choix |
 | [infrastructure.md](infrastructure.md) | Services Docker, variables d'environnement, procédures opérationnelles, troubleshooting, pipeline CI/CD |
 | [cdc-conflits-codebase.md](cdc-conflits-codebase.md) | Écarts connus entre le cahier des charges et la codebase |
+| [user-stories.md](user-stories.md) | Les user stories du produit, par épopée, avec leurs critères d'acceptation |
+| [database.md](database.md) | Structure de la base de données : tables, relations, contraintes |
+| [diagrammes.md](diagrammes.md) | Diagrammes UML, chacun accompagné de son équivalent textuel |
+| [cahier-de-recette.md](cahier-de-recette.md) | Cahier de recette : 124 scénarios, statut et preuve de chacun |
+| [manuel-utilisateur.md](manuel-utilisateur.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
+| [plan-formation.md](plan-formation.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
+| [accessibilite.md](accessibilite.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---

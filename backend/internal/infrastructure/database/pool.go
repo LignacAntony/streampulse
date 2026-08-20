@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,11 +20,16 @@ const (
 	poolMaxConnIdle    = 5 * time.Minute
 	poolHealthCheck    = 1 * time.Minute
 	poolPingTimeoutSec = 10
+
+	// statementTimeout borne chaque requête SQL côté serveur. Large devant les
+	// requêtes du projet (toutes indexées, paginées) et étroit devant le
+	// ReadTimeout HTTP : une requête qui l'atteint est un défaut, pas une
+	// lenteur normale.
+	statementTimeout = 5 * time.Second
 )
 
 // NewPool ouvre un *pgxpool.Pool prêt à servir les requêtes HTTP.
-// La DSN provient de config.DBDSN() (12-factor) avec fallback DATABASE_URL
-// pour rester compatible avec le seeder déjà câblé sur cette variable.
+// La DSN provient de config.DBDSN() — source unique, dérivée des DB_*.
 func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	dsn := cfg.DBDSN()
 
@@ -37,6 +43,12 @@ func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	poolCfg.MaxConnLifetime = poolMaxConnLife
 	poolCfg.MaxConnIdleTime = poolMaxConnIdle
 	poolCfg.HealthCheckPeriod = poolHealthCheck
+
+	// Borne côté serveur la durée d'une requête. Aucun repository ne pose de
+	// context.WithTimeout : une requête pathologique bloquerait sa connexion
+	// jusqu'à ce que le client abandonne, et le pool se viderait sous charge.
+	// PostgreSQL annule lui-même au-delà, et pgx remonte l'erreur normalement.
+	poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.Itoa(int(statementTimeout.Milliseconds()))
 
 	// Un span par requête SQL, enfant du span HTTP via le ctx (STR-164,
 	// ADR 020). Sans TracerProvider global (OTEL désactivé), coût quasi nul.

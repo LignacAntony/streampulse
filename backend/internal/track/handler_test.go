@@ -99,6 +99,41 @@ func TestUpload_RejectsDisguisedFile(t *testing.T) {
 	}
 }
 
+// TestUpload_QuotaExceeded verrouille le contrat HTTP du dépassement de quota :
+// 403 — et non 507 — avec le code public `storage_quota_exceeded`.
+//
+// Les deux comptent. Le statut range la réponse hors du bucket 5xx, donc hors
+// des alertes : un utilisateur qui remplit son quota n'est pas un incident
+// (ADR 032). Le code, lui, est publié dans openapi.yaml et permet au mobile de
+// distinguer ce cas d'un refus d'accès banal — c'est ce que `PublicCode` porte
+// depuis que le domaine ne fabrique plus de réponses HTTP lui-même.
+func TestUpload_QuotaExceeded(t *testing.T) {
+	repo := &fakeRepo{sumRet: MaxUserStorageBytes} // déjà au quota
+	storage := &stubStorage{}
+	h := NewHandler(NewService(repo, storage))
+
+	rec := upload(t, h, map[string]string{"title": "Over quota"}, "song.mp3", mp3Header, true)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status: got %d, want 403 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("réponse illisible: %v (body=%s)", err, rec.Body.String())
+	}
+	if body.Error.Code != "storage_quota_exceeded" {
+		t.Errorf("code: got %q, want storage_quota_exceeded", body.Error.Code)
+	}
+	if storage.saveCalled || repo.createCalled {
+		t.Error("nothing must be stored when quota is exceeded")
+	}
+}
+
 func TestUpload_MissingFile(t *testing.T) {
 	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
 
