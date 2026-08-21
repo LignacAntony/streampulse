@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../core/audio/audio_playback_service.dart';
-import '../core/audio/volume_store.dart';
 import '../core/audio/playback_auth.dart';
 import '../core/audio/queue_playback_service.dart';
 import '../core/network/dio_client.dart';
@@ -37,6 +36,7 @@ import '../features/streams/presentation/providers/audio_player_controller.dart'
 import '../features/streams/presentation/providers/discover_notifier.dart';
 import '../features/streams/presentation/providers/favorites_controller.dart';
 import '../features/streams/presentation/providers/stream_notifier.dart';
+import '../core/audio/volume_store.dart';
 
 /// Conteneur racine d'injection de dépendances (remplace `ProviderScope`).
 ///
@@ -123,9 +123,8 @@ class StreamPulseApp extends StatelessWidget {
               BroadcasterRemoteDataSource(ctx.read<DioClient>().broadcasterApi),
         ),
         Provider<BroadcasterRepository>(
-          create: (ctx) => BroadcasterRepositoryImpl(
-            ctx.read<BroadcasterRemoteDataSource>(),
-          ),
+          create: (ctx) =>
+              BroadcasterRepositoryImpl(ctx.read<BroadcasterRemoteDataSource>()),
         ),
         ChangeNotifierProvider<BroadcasterController>(
           create: (ctx) =>
@@ -153,9 +152,8 @@ class StreamPulseApp extends StatelessWidget {
         ChangeNotifierProvider<AudioPlayerController>(
           create: (ctx) => AudioPlayerController(
             service: ctx.read<AudioPlaybackService>(),
-            isManifestUnavailable: ctx
-                .read<StreamRepository>()
-                .isManifestUnavailable,
+            isManifestUnavailable:
+                ctx.read<StreamRepository>().isManifestUnavailable,
           ),
         ),
         Provider<OfflineDatabase>(create: (_) => OfflineDatabase()),
@@ -185,9 +183,8 @@ class StreamPulseApp extends StatelessWidget {
               service: ctx.read<QueuePlaybackService>(),
               token: ctx.read<PlaybackAuth>().token,
               stopLive: live.stop,
-              resolveTrackUri: ctx
-                  .read<OfflineCacheRepository>()
-                  .cachedFilePath,
+              resolveTrackUri:
+                  ctx.read<OfflineCacheRepository>().cachedFilePath,
             );
             live.onTakeOver = queue.clear;
             return queue;

@@ -55,7 +55,6 @@ abstract class PlaybackTransport {
   ///
   /// Ne remplace pas les boutons matériels : ceux-ci pilotent le volume du
   /// **système**, celui-ci atténue le flux de l'application à l'intérieur.
-  /// L'auditeur peut ainsi baisser StreamPulse sans baisser ses notifications.
   Future<void> setVolume(double volume);
 
   Future<void> play();

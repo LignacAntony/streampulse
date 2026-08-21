@@ -15,11 +15,7 @@ Widget _host(AudioPlayerController controller) {
   );
 }
 
-const _now = NowPlaying(
-  streamId: 's1',
-  title: 'Radio Nova',
-  broadcaster: 'DJ Qa',
-);
+const _now = NowPlaying(streamId: 's1', title: 'Radio Nova', broadcaster: 'DJ Qa');
 
 void main() {
   testWidgets('masqué quand rien ne joue (idle)', (tester) async {
@@ -35,9 +31,8 @@ void main() {
     expect(find.byIcon(Icons.play_arrow), findsNothing);
   });
 
-  testWidgets('affiche titre + diffuseur et le bouton pause en lecture', (
-    tester,
-  ) async {
+  testWidgets('affiche titre + diffuseur et le bouton pause en lecture',
+      (tester) async {
     final service = FakeAudioPlaybackService();
     final controller = AudioPlayerController(service: service);
     addTearDown(controller.dispose);
@@ -53,9 +48,8 @@ void main() {
     expect(find.byIcon(Icons.pause), findsOneWidget);
   });
 
-  testWidgets('la croix arrête la lecture et masque le mini-player', (
-    tester,
-  ) async {
+  testWidgets('la croix arrête la lecture et masque le mini-player',
+      (tester) async {
     final service = FakeAudioPlaybackService();
     final controller = AudioPlayerController(service: service);
     addTearDown(controller.dispose);
@@ -74,9 +68,8 @@ void main() {
     expect(find.text('Radio Nova'), findsNothing); // idle → masqué
   });
 
-  testWidgets('flux terminé → affiche « Le direct est terminé » + replay', (
-    tester,
-  ) async {
+  testWidgets('flux terminé → affiche « Le direct est terminé » + replay',
+      (tester) async {
     final service = FakeAudioPlaybackService();
     final controller = AudioPlayerController(
       service: service,
@@ -95,9 +88,6 @@ void main() {
 
     expect(find.text('Le direct est terminé'), findsOneWidget);
     expect(find.byIcon(Icons.replay), findsOneWidget);
-    expect(
-      find.text('DJ Qa'),
-      findsNothing,
-    ); // le statut prime sur le diffuseur
+    expect(find.text('DJ Qa'), findsNothing); // le statut prime sur le diffuseur
   });
 }

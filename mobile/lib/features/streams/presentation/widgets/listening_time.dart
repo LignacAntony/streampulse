@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../../core/audio/listening_clock.dart';
 import '../providers/audio_player_controller.dart';
 
 /// Temps d'écoute d'un direct (STR-244).
@@ -12,14 +11,17 @@ import '../providers/audio_player_controller.dart';
 /// n'avance jamais serait un mensonge visuel. Ce qu'il a — et ce que l'auditeur
 /// veut savoir — c'est depuis combien de temps il écoute.
 ///
-/// La valeur vient d'une [ListeningClock] pilotée par l'**état de lecture**, et
-/// non de `positionStream`. La raison est dans `listening_clock.dart` : le
-/// contrôleur recharge l'URL à chaque reprise après erreur (STR-118), ce qui
-/// remettrait la position du lecteur à zéro à la moindre coupure réseau.
+/// ## Le cumul vit dans le contrôleur, le tic vit ici
 ///
-/// Le tic est **local à ce widget**. Il bat une fois par seconde, et rien
-/// au-dessus ne se reconstruit — même règle que la position de la file
-/// d'attente (`queue_progress.dart`).
+/// L'horloge appartient au [PlaybackController] **app-level**, pas au `State`
+/// de ce widget. La lecture survit à la navigation (ADR 031) : dans le `State`,
+/// revenir en arrière puis rouvrir le plein écran repartait de `00:00` alors
+/// que le direct jouait depuis dix minutes — ce qui contredisait la promesse du
+/// libellé (revue PR #331).
+///
+/// Ce widget n'apporte donc que l'affichage et son tic, **local** : il bat une
+/// fois par seconde, et rien au-dessus ne se reconstruit — même règle que la
+/// position de la file d'attente (`queue_progress.dart`).
 class ListeningTime extends StatefulWidget {
   const ListeningTime({super.key, required this.controller, this.now});
 
@@ -27,9 +29,7 @@ class ListeningTime extends StatefulWidget {
 
   /// Source de l'heure courante. Injectable parce que `tester.pump(Duration)`
   /// n'avance que l'horloge **simulée** de Flutter : un widget qui appellerait
-  /// `DateTime.now()` en dur ne verrait jamais le temps passer sous test, et
-  /// tout ce fichier serait invérifiable. Même parti que le `controller`
-  /// injectable de `StreamPlayerScreen`.
+  /// `DateTime.now()` en dur ne verrait jamais le temps passer sous test.
   final DateTime Function()? now;
 
   @override
@@ -37,15 +37,9 @@ class ListeningTime extends StatefulWidget {
 }
 
 class _ListeningTimeState extends State<ListeningTime> {
-  final _clock = ListeningClock();
   Timer? _ticker;
 
   DateTime _now() => (widget.now ?? DateTime.now)();
-
-  /// Flux auquel le décompte se rapporte. Changer de direct redémarre
-  /// l'horloge : sans ce repère, le temps d'écoute d'une radio serait
-  /// attribué à la suivante.
-  String? _streamId;
 
   @override
   void initState() {
@@ -62,37 +56,18 @@ class _ListeningTimeState extends State<ListeningTime> {
   }
 
   void _onPlaybackChanged() {
-    final controller = widget.controller;
-    final streamId = controller.nowPlaying?.streamId;
-
-    if (streamId != _streamId) {
-      _streamId = streamId;
-      _clock.reset();
-    }
-
-    // L'horloge ne tourne que pendant une lecture effective. Une reconnexion
-    // n'en est pas une : l'auditeur n'entend rien, et un compteur qui court sur
-    // du silence surestimerait ce qu'il a réellement écouté.
-    if (controller.isPlaying) {
-      _clock.start(_now());
-    } else {
-      // Couvre aussi la fin de flux et l'erreur : dans les deux cas plus rien
-      // ne joue, et le compteur doit s'arrêter là où l'écoute s'est arrêtée.
-      _clock.pause(_now());
-    }
-
     _syncTicker();
     if (mounted) setState(() {});
   }
 
-  /// Le tic ne bat que quand l'horloge tourne : une lecture en pause n'a aucune
-  /// raison de réveiller l'application chaque seconde.
+  /// Le tic ne bat que pendant une lecture effective : une lecture en pause n'a
+  /// aucune raison de réveiller l'application chaque seconde.
   void _syncTicker() {
-    if (_clock.running && _ticker == null) {
+    if (widget.controller.isPlaying && _ticker == null) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() {});
       });
-    } else if (!_clock.running) {
+    } else if (!widget.controller.isPlaying) {
       _ticker?.cancel();
       _ticker = null;
     }
@@ -102,7 +77,7 @@ class _ListeningTimeState extends State<ListeningTime> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final elapsed = _clock.elapsedAt(_now());
+    final elapsed = widget.controller.listeningElapsed(_now());
 
     // Rien à afficher avant la première seconde écoutée : un « 00:00 » figé
     // pendant le chargement laisse croire que la lecture est bloquée.

@@ -30,7 +30,7 @@ class StreamAudioHandler extends BaseAudioHandler
   // `handleInterruptions: false` : c'est [InterruptionPolicy] qui arbitre les
   // appels entrants et le débranchement du casque (STR-110), pas just_audio.
   StreamAudioHandler({AudioPlayer? player})
-    : _player = player ?? AudioPlayer(handleInterruptions: false) {
+      : _player = player ?? AudioPlayer(handleInterruptions: false) {
     // Chaque événement du lecteur → un PlaybackState pour la notification. Les
     // erreurs sont routées vers [playbackErrors] (le contrôleur les gère), et
     // ne cassent pas le flux de la notification. Le handler vit aussi longtemps
@@ -124,12 +124,12 @@ class StreamAudioHandler extends BaseAudioHandler
   /// pas le même vocabulaire.
   @override
   Future<void> setRepeat(QueueRepeatMode mode) => _player.setLoopMode(
-    const {
-      QueueRepeatMode.off: LoopMode.off,
-      QueueRepeatMode.one: LoopMode.one,
-      QueueRepeatMode.all: LoopMode.all,
-    }[mode]!,
-  );
+        const {
+          QueueRepeatMode.off: LoopMode.off,
+          QueueRepeatMode.one: LoopMode.one,
+          QueueRepeatMode.all: LoopMode.all,
+        }[mode]!,
+      );
 
   @override
   Future<void> loadUri(String url, {required NowPlaying now}) async {
@@ -302,11 +302,11 @@ class StreamAudioHandler extends BaseAudioHandler
   }
 
   MediaItem _toMediaItem(QueueItem item) => MediaItem(
-    id: item.id,
-    title: item.title,
-    artist: item.artist,
-    duration: item.duration,
-  );
+        id: item.id,
+        title: item.title,
+        artist: item.artist,
+        duration: item.duration,
+      );
 
   /// Republie le `MediaItem` de la piste atteinte. Ne fait rien hors file
   /// d'attente : en direct, l'unique `MediaItem` est posé par [loadUri].
@@ -366,8 +366,6 @@ class StreamAudioHandler extends BaseAudioHandler
   /// Lève l'atténuation en revenant au niveau **choisi par l'auditeur**, et non
   /// à un niveau capturé avant le duck : si le curseur a bougé entre-temps,
   /// c'est le nouveau réglage qui doit survivre à l'interruption.
-  ///
-  /// Ne fait rien hors d'un duck, pour ne pas réécrire le volume sans raison.
   void _restoreVolumeIfDucked() {
     if (!_volumeLevel.ducked) return;
     _volumeLevel = _volumeLevel.withDucked(false);
@@ -405,14 +403,13 @@ class StreamAudioHandler extends BaseAudioHandler
       // `?? idle` : une valeur d'enum ajoutée par une future version de
       // just_audio ne doit pas lever dans ce listener (ça tuerait le flux de
       // playbackState → notification figée).
-      processingState:
-          const {
-            ProcessingState.idle: AudioProcessingState.idle,
-            ProcessingState.loading: AudioProcessingState.loading,
-            ProcessingState.buffering: AudioProcessingState.buffering,
-            ProcessingState.ready: AudioProcessingState.ready,
-            ProcessingState.completed: AudioProcessingState.completed,
-          }[_player.processingState] ??
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState] ??
           AudioProcessingState.idle,
       playing: playing,
       updatePosition: _player.position,

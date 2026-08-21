@@ -495,6 +495,13 @@ Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
   contrôleur recharge l'URL à chaque reprise (STR-118), la position repartirait de zéro à
   chaque coupure réseau. L'horloge est pilotée par l'**état de lecture** et se met en
   pause pendant une reconnexion.
+- ⚠️ **Le cumul vit dans `AudioPlayerController` (app-level), pas dans le `State` du
+  widget** : la lecture survit à la navigation (ADR 031), donc le décompte doit y survivre.
+  Dans le `State`, réduire puis rouvrir le lecteur repartait de `00:00`. Le widget n'apporte
+  que le **tic local**, une fois par seconde.
+- La **sourdine n'est pas persistée** : seuls les niveaux audibles vont dans `VolumeStore`.
+  Un `0` enregistré faisait redémarrer l'application en silence, et le mini-player n'a pas
+  de curseur pour s'en sortir.
 - La source de temps du widget est **injectable** : `tester.pump(Duration)` n'avance que
   l'horloge simulée de Flutter, un `DateTime.now()` en dur rendrait le widget invérifiable.
 

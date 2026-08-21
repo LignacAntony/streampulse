@@ -140,10 +140,7 @@ class _QueueModeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final queue = context.watch<PlaylistQueueController>();
 
-    final (
-      IconData repeatIcon,
-      String repeatLabel,
-    ) = switch (queue.repeatMode) {
+    final (IconData repeatIcon, String repeatLabel) = switch (queue.repeatMode) {
       QueueRepeatMode.off => (Icons.repeat, 'Répétition'),
       QueueRepeatMode.all => (Icons.repeat, 'Répéter la file'),
       QueueRepeatMode.one => (Icons.repeat_one, 'Répéter la piste'),
@@ -212,7 +209,11 @@ class _ModeButton extends StatelessWidget {
           foregroundColor: active ? colors.primary : colors.onSurfaceVariant,
         ),
         icon: Icon(icon),
-        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
