@@ -70,6 +70,7 @@ et une seconde version divergerait — ou, pire, dirait autre chose.
 | Les ADR intégrales | Résumées dans l'index anglais ; le code, les tableaux et les diagrammes qu'elles contiennent sont déjà neutres en langue |
 | Runbook d'exploitation détaillé | Procédures de dépannage et de mise à jour du VPS, pour l'équipe qui exploite le service |
 | Rapport de couverture de tests | Lu par l'équipe qui écrit le code et par le jury ; les chiffres et les noms de paquets qu'il contient sont déjà neutres en langue |
+| Guide de distribution mobile | Procédure d'exploitation : secrets à poser, build à déclencher, artefact à récupérer — pour l'équipe qui livre |
 
 ### Ce qui garde le périmètre honnête
 
@@ -114,6 +115,7 @@ document dans les deux langues.
 | [politique-confidentialite.md](politique-confidentialite.md) | Politique de confidentialité destinée aux utilisateurs (embarquée dans l'application) |
 | [cgu.md](cgu.md) | Conditions générales d'utilisation (embarquées dans l'application) |
 | [couverture-de-tests.md](couverture-de-tests.md) | Couverture Go : périmètre déclaré, porte de qualité à 80 %, tests d'intégration et ce qui reste hors d'atteinte |
+| [distribution-mobile.md](distribution-mobile.md) | Build, signature et livraison de l'application Android ; pourquoi iOS n'est pas distribué |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
 ---
@@ -163,6 +165,7 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 037 | [037-initialisation-base-de-donnees.md](adr/037-initialisation-base-de-donnees.md) | Initialisation de la base de données : schéma, migrations et seed *(ex-ADR 003)* |
 | 038 | [038-gestion-profil-utilisateur.md](adr/038-gestion-profil-utilisateur.md) | Gestion du profil utilisateur (table `profiles` dédiée) *(ex-ADR 012)* |
 | 039 | [039-supervision-admin-des-flux-et-journal-daudit.md](adr/039-supervision-admin-des-flux-et-journal-daudit.md) | Supervision admin des flux actifs et journal d'audit *(ex-ADR 018)* |
+| 040 | [040-distribution-mobile-signature-et-canal.md](adr/040-distribution-mobile-signature-et-canal.md) | Distribution mobile : signature Android dégradable, pas de canal iOS |
 | 042 | [042-controle-du-volume-et-temps-decoute.md](adr/042-controle-du-volume-et-temps-decoute.md) | Contrôle du volume dans l'application et temps d'écoute d'un direct |
 
 ---

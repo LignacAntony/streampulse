@@ -16,6 +16,35 @@ documentation autrement), [plan-formation.md](plan-formation.md),
 
 ---
 
+## Installer l'application
+
+L'application n'est pas encore publiée sur un magasin. Elle s'installe
+directement à partir du fichier attaché à chaque version.
+
+1. Ouvrir la page des versions du projet sur GitHub.
+2. Télécharger le fichier `.apk` de la dernière version, depuis un téléphone
+   **Android**.
+3. Ouvrir le fichier téléchargé. Android demandera l'autorisation d'installer
+   une application venue d'ailleurs que du magasin : l'accorder pour cette
+   fois.
+
+> ⚠️ Si le nom du fichier contient **`-NON-SIGNE`**, il s'agit d'une version de
+> test. Elle fonctionne, mais elle ne pourra pas être mise à jour par une
+> version définitive : il faudra la désinstaller d'abord. Ce n'est pas une
+> précaution de principe, c'est une règle d'Android — il refuse de remplacer
+> une application par une autre signée différemment.
+
+**iOS** : l'application n'est pas distribuable sur iPhone. Elle fonctionne, mais
+sa mise à disposition demande un compte développeur Apple payant dont l'équipe
+ne dispose pas. Le détail est dans [distribution-mobile.md](distribution-mobile.md).
+
+## Signaler un problème
+
+Depuis l'onglet **Issues** du dépôt, choisir **Retour utilisateur**. Le
+formulaire demande la version installée — visible en bas de l'écran **Profil**.
+Sans elle, un problème ne peut pas être rattaché à une version, et il devient
+très difficile de savoir s'il est déjà corrigé.
+
 ## Se repérer dans l'application
 
 Une barre en bas de l'écran donne accès à cinq espaces :
