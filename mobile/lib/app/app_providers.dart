@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../core/audio/audio_playback_service.dart';
+import '../core/audio/volume_store.dart';
 import '../core/audio/playback_auth.dart';
 import '../core/audio/queue_playback_service.dart';
 import '../core/network/dio_client.dart';
@@ -68,6 +69,13 @@ class StreamPulseApp extends StatelessWidget {
       providers: [
         Provider<AudioPlaybackService>.value(value: audioService),
         Provider<QueuePlaybackService>.value(value: queueService),
+        // Le volume ne dépend pas de la source : le curseur lit l'interface la
+        // plus étroite qui le porte (principe I) et fonctionne donc aussi bien
+        // pendant un direct que pendant une file d'attente (STR-245).
+        Provider<PlaybackTransport>.value(value: audioService),
+        Provider<VolumeStore>(
+          create: (_) => const SharedPreferencesVolumeStore(),
+        ),
         Provider<SecureStorage>(create: (_) => SecureStorage()),
         Provider<DioClient>(
           create: (ctx) => DioClient(ctx.read<SecureStorage>()),
@@ -115,8 +123,9 @@ class StreamPulseApp extends StatelessWidget {
               BroadcasterRemoteDataSource(ctx.read<DioClient>().broadcasterApi),
         ),
         Provider<BroadcasterRepository>(
-          create: (ctx) =>
-              BroadcasterRepositoryImpl(ctx.read<BroadcasterRemoteDataSource>()),
+          create: (ctx) => BroadcasterRepositoryImpl(
+            ctx.read<BroadcasterRemoteDataSource>(),
+          ),
         ),
         ChangeNotifierProvider<BroadcasterController>(
           create: (ctx) =>
@@ -144,8 +153,9 @@ class StreamPulseApp extends StatelessWidget {
         ChangeNotifierProvider<AudioPlayerController>(
           create: (ctx) => AudioPlayerController(
             service: ctx.read<AudioPlaybackService>(),
-            isManifestUnavailable:
-                ctx.read<StreamRepository>().isManifestUnavailable,
+            isManifestUnavailable: ctx
+                .read<StreamRepository>()
+                .isManifestUnavailable,
           ),
         ),
         Provider<OfflineDatabase>(create: (_) => OfflineDatabase()),
@@ -175,8 +185,9 @@ class StreamPulseApp extends StatelessWidget {
               service: ctx.read<QueuePlaybackService>(),
               token: ctx.read<PlaybackAuth>().token,
               stopLive: live.stop,
-              resolveTrackUri:
-                  ctx.read<OfflineCacheRepository>().cachedFilePath,
+              resolveTrackUri: ctx
+                  .read<OfflineCacheRepository>()
+                  .cachedFilePath,
             );
             live.onTakeOver = queue.clear;
             return queue;

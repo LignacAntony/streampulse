@@ -5,6 +5,7 @@ import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
 import 'queue_progress.dart';
 import 'queue_track_visuals.dart';
+import '../../../../core/widgets/volume_slider.dart';
 
 /// File d'attente en cours de lecture (US-05-04), en feuille modale.
 ///
@@ -70,6 +71,13 @@ class PlaybackQueueSheet extends StatelessWidget {
           // Avancement manipulable (STR-230) : c'est la surface qui a la place
           // d'accueillir un pouce, contrairement au bandeau.
           const QueueProgressSlider(),
+          // Volume ici pour la même raison que la barre d'avancement : le
+          // bandeau de 60 px n'a pas la place d'un curseur qu'on vise au pouce
+          // (STR-245). Il pilote le même transport que pendant un direct.
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: VolumeSlider(showLabel: false),
+          ),
           // Les modes vivent ici plutôt que sur le mini-player : celui-ci n'a
           // que 60 px de haut et porte déjà quatre boutons, et c'est la file
           // affichée juste dessous qui rend leur effet lisible.
@@ -132,7 +140,10 @@ class _QueueModeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final queue = context.watch<PlaylistQueueController>();
 
-    final (IconData repeatIcon, String repeatLabel) = switch (queue.repeatMode) {
+    final (
+      IconData repeatIcon,
+      String repeatLabel,
+    ) = switch (queue.repeatMode) {
       QueueRepeatMode.off => (Icons.repeat, 'Répétition'),
       QueueRepeatMode.all => (Icons.repeat, 'Répéter la file'),
       QueueRepeatMode.one => (Icons.repeat_one, 'Répéter la piste'),
@@ -201,11 +212,7 @@ class _ModeButton extends StatelessWidget {
           foregroundColor: active ? colors.primary : colors.onSurfaceVariant,
         ),
         icon: Icon(icon),
-        label: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
   }

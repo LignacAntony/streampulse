@@ -174,6 +174,16 @@ the system notification travels the same path as a tap in the app.
 **involuntary** reloads. *Consequence:* a token expiry no longer reshuffles the
 queue every fifteen minutes.
 
+**ADR 042 — In-app volume and live listening time.** *Context:* the brief lists
+a volume control and a progress bar; the code documented the absence of the
+former as a deliberate choice. *Decision:* put volume on `PlaybackTransport` —
+so one slider serves both live and queue — keep the listener's setting as the
+source of truth with ducking as a factor derived from it, and show a live's
+elapsed **listening time** rather than a progress bar. *Consequence:* a volume
+change made during an interruption survives it, and the elapsed counter survives
+a reconnection, where the player's own position would reset because the
+controller reloads the source.
+
 ## Administration
 
 **ADR 017 — Admin dashboard, user management.** *Context:* administration must

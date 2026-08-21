@@ -36,6 +36,28 @@ abstract class PlaybackTransport {
 
   bool get playing;
 
+  /// Niveau sonore **choisi par l'auditeur**, dans `[0, 1]` (STR-245).
+  ///
+  /// Ce n'est pas nécessairement le niveau appliqué au lecteur à l'instant t :
+  /// pendant l'atténuation d'une interruption (ducking, ADR 033) le lecteur
+  /// joue plus bas, mais le réglage de l'auditeur, lui, n'a pas changé — et
+  /// c'est celui-là que l'interface doit montrer.
+  double get volume;
+
+  /// Émet le niveau choisi à chaque changement. Comme la position de lecture,
+  /// **à consommer au plus près du widget** qui l'affiche : un glissement de
+  /// curseur émet des dizaines de valeurs par seconde, les faire transiter par
+  /// un `ChangeNotifier` app-level reconstruirait tout l'arbre à cette cadence.
+  Stream<double> get volumeStream;
+
+  /// Règle le niveau sonore de l'application. Valeur hors bornes ramenée dans
+  /// `[0, 1]`.
+  ///
+  /// Ne remplace pas les boutons matériels : ceux-ci pilotent le volume du
+  /// **système**, celui-ci atténue le flux de l'application à l'intérieur.
+  /// L'auditeur peut ainsi baisser StreamPulse sans baisser ses notifications.
+  Future<void> setVolume(double volume);
+
   Future<void> play();
   Future<void> pause();
 

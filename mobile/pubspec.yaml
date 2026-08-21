@@ -32,6 +32,11 @@ dependencies:
   # Stockage sécurisé (tokens JWT)
   flutter_secure_storage: ^9.0.0
 
+  # Préférences non sensibles — niveau sonore du lecteur (STR-245).
+  # Séparé de flutter_secure_storage à dessein : celui-ci n'a qu'une
+  # responsabilité, les jetons, et un volume n'est pas un secret.
+  shared_preferences: ^2.3.0
+
   # Lecture audio (live HLS + on-demand)
   just_audio: ^0.9.40
   audio_service: ^0.18.12
