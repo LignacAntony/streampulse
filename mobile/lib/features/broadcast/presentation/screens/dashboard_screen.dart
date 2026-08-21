@@ -22,6 +22,7 @@ import '../../domain/services/broadcast_audio_publisher.dart';
 import '../controllers/broadcast_session_controller.dart';
 import '../providers/broadcast_notifier.dart';
 import 'create_stream_sheet.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 
 /// Tableau de bord du diffuseur (US-06-01, ADR 024 et ADR 027) : créer un flux,
 /// lancer/arrêter le direct et pousser le microphone du téléphone en AAC/ADTS.
@@ -387,10 +388,10 @@ class _DashboardBodyState extends State<_DashboardBody>
         title: const Text('Tableau de bord'),
         actions: [
           if (_isBroadcaster(profile))
-            IconButton(
+            AccessibleIconButton(
               key: const Key('dashboard_create_button'),
-              icon: const Icon(Icons.add),
-              tooltip: 'Créer un flux',
+              icon: Icons.add,
+              label: 'Créer un flux',
               onPressed: notifier.creating ? null : _onCreate,
             ),
         ],
@@ -973,20 +974,23 @@ class _IngestUrlRowState extends State<_IngestUrlRow> {
               ],
             ),
           ),
-          IconButton(
+          AccessibleIconButton(
             key: Key('dashboard_reveal_key_${widget.streamId}'),
-            icon: Icon(
-              _revealed
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-            ),
+            icon: _revealed
+                ? Icons.visibility_off_outlined
+                : Icons.visibility_outlined,
+            // « Révéler 15 s » ne dit pas ce qui va s'afficher — or c'est une
+            // clé secrète, et l'annoncer compte.
+            label: _revealed
+                ? 'Masquer la clé de diffusion'
+                : 'Révéler la clé de diffusion pendant 15 secondes',
             tooltip: _revealed ? 'Masquer' : 'Révéler 15 s',
             onPressed: _toggleReveal,
           ),
-          IconButton(
+          AccessibleIconButton(
             key: Key('dashboard_copy_key_${widget.streamId}'),
-            icon: const Icon(Icons.copy_outlined),
-            tooltip: 'Copier l\'URL',
+            icon: Icons.copy_outlined,
+            label: 'Copier l\'URL de diffusion',
             onPressed: _copy,
           ),
         ],

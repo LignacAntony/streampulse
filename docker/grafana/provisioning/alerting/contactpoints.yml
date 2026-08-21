@@ -2,6 +2,18 @@
 # En dev, Grafana envoie via Mailpit (GF_SMTP_HOST=mailpit:1025) : les emails
 # d'alerte sont visibles sur http://localhost:8025. En prod, GF_SMTP_* pointe
 # le relay SMTP réel (mêmes variables que l'API).
+#
+# L'adresse vient de l'environnement (STR-244) : elle était auparavant codée en
+# dur sur un domaine placeholder qui n'appartient pas au projet. Une alerte
+# envoyée à un domaine qu'on ne contrôle pas ne prévient personne — et si le
+# domaine venait à exister, elle préviendrait quelqu'un d'autre. Défaut en
+# .invalid (RFC 2606) : non délivrable par construction, donc jamais adressé
+# à un tiers par accident.
+#
+# Syntaxe `$VAR` et non `${VAR}` : c'est la forme documentée par Grafana pour le
+# provisioning d'alerting, et `${VAR}` déclenche une double expansion si la valeur
+# contient elle-même un `$`. ⚠️ L'interpolation ne s'applique PAS aux annotations
+# de règles d'alerte — ne pas y attendre de variable d'environnement.
 apiVersion: 1
 
 contactPoints:
@@ -11,5 +23,5 @@ contactPoints:
       - uid: email-equipe
         type: email
         settings:
-          addresses: admin@streampulse.dev
+          addresses: $ALERT_EMAIL_TO
           singleEmail: true

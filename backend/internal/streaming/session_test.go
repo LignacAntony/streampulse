@@ -12,7 +12,7 @@ import (
 // les tests de cycle de vie (SSE, goroutines) n'exercent pas ffmpeg.
 func newTestSessions(ctx context.Context) *LiveSessions {
 	ls := NewLiveSessions(ctx)
-	ls.newSeg = func() (*hlsSegmenter, error) { return nil, nil }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, nil }
 	return ls
 }
 

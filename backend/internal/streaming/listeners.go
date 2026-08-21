@@ -39,10 +39,12 @@ type SessionStats struct {
 //
 // La purge n'a donc PAS lieu ici. Elle coûte un balayage de toute la map, et la
 // faire à chaque manifeste sérialiserait derrière `s.mu` toutes les requêtes
-// concurrentes d'un flux très suivi. Elle est repoussée dans [stats], appelé
-// toutes les 5 s par un seul lecteur — et déclenchée en dernier recours quand le
-// plafond est atteint.
-func (s *session) touchListener(key string, now time.Time) {
+// concurrentes d'un flux très suivi. Elle est portée par [LiveSessions.StartListenerSweep]
+// et par [stats] — et déclenchée ici en dernier recours quand le plafond est atteint.
+//
+// Retourne le nombre d'auditeurs expirés au passage (0 dans le cas courant) :
+// l'appelant les publie en métrique hors du mutex de session.
+func (s *session) touchListener(key string, now time.Time) int {
 	if s.listeners == nil {
 		s.listeners = make(map[string]time.Time)
 	}
@@ -52,37 +54,55 @@ func (s *session) touchListener(key string, now time.Time) {
 		// Purger AVANT d'appliquer le plafond : une map saturée d'entrées déjà
 		// expirées (churn d'adresses) rejetterait sinon un auditeur légitime,
 		// et sous-compterait l'audience jusqu'au prochain stats().
-		s.pruneListeners(now)
+		departed := s.pruneListeners(now)
 		if len(s.listeners) >= maxTrackedListeners {
-			return // réellement plein : le compteur sature
+			return departed // réellement plein : le compteur sature
 		}
+		s.listeners[key] = now
+		return departed
 	}
 	s.listeners[key] = now
+	return 0
 }
 
-// pruneListeners retire les clients dont la dernière requête est trop ancienne.
-// Appelé sous le mutex de la session.
-func (s *session) pruneListeners(now time.Time) {
+// pruneListeners retire les clients dont la dernière requête est trop ancienne
+// et retourne combien ont été retirés. Appelé sous le mutex de la session.
+//
+// Ce retour est la source unique de streampulse_listener_departures_total
+// (STR-244) : un auditeur n'est compté comme parti qu'ici, c'est-à-dire tant
+// que la session vit. L'arrêt d'un flux détruit la map sans passer par cette
+// fonction — les auditeurs d'une diffusion qui se termine normalement ne sont
+// donc jamais comptés comme des départs.
+func (s *session) pruneListeners(now time.Time) int {
 	cutoff := now.Add(-listenerWindow)
+	departed := 0
 	for key, seen := range s.listeners {
 		if seen.Before(cutoff) {
 			delete(s.listeners, key)
+			departed++
 		}
 	}
+	return departed
 }
 
-// stats purge les clients expirés puis retourne l'instantané courant — sans la
-// purge, un flux abandonné afficherait éternellement ses derniers auditeurs.
-// Appelé sous le mutex de la session.
+// stats purge les clients expirés puis retourne l'instantané courant et le
+// nombre de départs constatés au passage. Sans la purge, un flux abandonné
+// afficherait éternellement ses derniers auditeurs. Appelé sous le mutex de la
+// session.
+//
+// Depuis STR-244 la purge ne dépend plus de cet appel : [LiveSessions.StartListenerSweep]
+// balaie toutes les sessions à intervalle régulier. Sans ce balayage, le compteur
+// de départs n'aurait avancé que pendant qu'un diffuseur regardait son tableau
+// de bord — une métrique dont la valeur dépend de qui l'observe.
 //
 // C'est aussi ici que le pic est mis à jour : le compte n'est exact qu'après
 // purge, et le faire à l'insertion imposerait un balayage par requête (cf.
 // [touchListener]). Conséquence assumée : le pic est celui **observé** aux
 // instants de lecture, à 5 s près, pas un maximum instantané continu.
-func (s *session) stats(now time.Time) SessionStats {
-	s.pruneListeners(now)
+func (s *session) stats(now time.Time) (SessionStats, int) {
+	departed := s.pruneListeners(now)
 	if n := len(s.listeners); n > s.peakListeners {
 		s.peakListeners = n
 	}
-	return SessionStats{Listeners: len(s.listeners), Peak: s.peakListeners}
+	return SessionStats{Listeners: len(s.listeners), Peak: s.peakListeners}, departed
 }

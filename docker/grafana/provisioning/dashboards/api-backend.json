@@ -1,38 +1,125 @@
 {
   "uid": "streampulse-api",
   "title": "StreamPulse — API Backend",
-  "tags": ["streampulse", "api", "str-165"],
+  "tags": [
+    "streampulse",
+    "api",
+    "str-165",
+    "str-244"
+  ],
   "schemaVersion": 39,
   "editable": false,
   "timezone": "browser",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "refresh": "15s",
+  "links": [
+    {
+      "type": "link",
+      "title": "Live Streaming",
+      "url": "/d/streampulse-live",
+      "icon": "dashboard",
+      "tooltip": "Audience, débit et interruptions de diffusion",
+      "keepTime": true,
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "tags": []
+    },
+    {
+      "type": "link",
+      "title": "Logs & Erreurs",
+      "url": "/d/streampulse-logs",
+      "icon": "dashboard",
+      "tooltip": "Journaux corrélés, erreurs cliquables vers Tempo",
+      "keepTime": true,
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "tags": []
+    },
+    {
+      "type": "link",
+      "title": "Infrastructure",
+      "url": "/d/streampulse-infra",
+      "icon": "dashboard",
+      "tooltip": "CPU, mémoire et goroutines de la machine",
+      "keepTime": true,
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "tags": []
+    }
+  ],
   "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Métier — usage de l'API",
+      "collapsed": false,
+      "description": "Ce que les utilisateurs demandent au service, et le volume que cela représente. Ces courbes montent quand le produit est utilisé : une baisse est un signal d'usage, pas de panne.",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
     {
       "id": 1,
       "type": "stat",
       "title": "Requêtes / s (total)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "description": "Débit de requêtes servies, toutes routes confondues.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(http_requests_total[5m]))" }
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total[5m]))"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Taux d'erreur 5xx",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 0 },
+      "title": "Débit sortant (total)",
+      "description": "Octets de corps de réponse écrits vers les clients, convertis en bits/s (STR-244). Dominé par les segments HLS dès qu'une diffusion est suivie.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
       "targets": [
-        { "refId": "A", "expr": "(sum(rate(http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_requests_total[5m]))" }
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_response_bytes_total[5m])) * 8"
+        }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit",
-          "decimals": 2,
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 } ] }
+          "unit": "bps"
         },
         "overrides": []
       }
@@ -40,49 +127,279 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Latence p99 (5m)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 0 },
+      "title": "Activité authentifiée",
+      "description": "Débit des routes qui exigent une session utilisateur. Ce n'est pas un nombre de personnes : l'API est sans état (JWT, aucune table de sessions) et le label user_id serait de cardinalité non bornée — le registre ne peut donc pas compter des individus. Le volet « utilisateurs en ligne » du sujet est porté par l'audience estimée du dashboard Live Streaming, et par GET /api/admin/metrics pour la population de comptes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))" }
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{path=~\"/api/(auth|users|playlists|tracks).*\"}[5m]))"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3 }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Latences p50 / p95 / p99",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "title": "Requêtes / s par route",
+      "description": "Le label path est le pattern du routeur (ex. /api/streams/{id}), jamais l'URL réelle : aucune valeur dynamique ne crée de série (ADR 019).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
-        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95" },
-        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99" }
+        {
+          "refId": "A",
+          "expr": "sum by (path) (rate(http_requests_total[5m]))",
+          "legendFormat": "{{path}}"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Requêtes / s par route",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 15 },
+      "title": "Débit sortant par route (bits/s)",
+      "description": "Où passe la bande passante. Une route inattendue en tête est souvent le symptôme d'une réponse non paginée.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
       "targets": [
-        { "refId": "A", "expr": "sum by (path) (rate(http_requests_total[5m]))", "legendFormat": "{{path}}" }
+        {
+          "refId": "A",
+          "expr": "sum by (path) (rate(http_response_bytes_total[5m])) * 8",
+          "legendFormat": "{{path}}"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Technique — santé du service",
+      "collapsed": false,
+      "description": "Latence, erreurs, saturation. Le sujet demande de distinguer une erreur 500 — technique — d'un incident vécu par un utilisateur : les 5xx d'ici, les départs d'auditeurs sur le dashboard Live Streaming.",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "panels": []
     },
     {
       "id": 6,
+      "type": "stat",
+      "title": "Taux d'erreur 5xx",
+      "description": "Part des requêtes échouant côté serveur. Dénominateur borné par clamp_min : sans trafic, un ratio 0/0 afficherait NaN.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_requests_total[5m])), 0.001)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Latence p99 (5m)",
+      "description": "99e centile toutes routes. Les routes de longue durée (SSE, ingest) sont exclues de l'histogramme : une observation de plusieurs minutes fausserait ce chiffre (ADR 019).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Erreurs 5xx (1 h)",
+      "description": "Nombre absolu d'erreurs serveur sur la dernière heure — un taux faible sur un gros trafic peut cacher beaucoup d'échecs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(http_requests_total{status=~\"5..\"}[1h]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Latences p50 / p95 / p99",
+      "description": "Trois centiles sur les mêmes buckets. L'écart p50/p99 dit si la lenteur touche tout le monde ou une minorité de requêtes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
       "type": "timeseries",
       "title": "Erreurs 4xx / 5xx par seconde",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
+      "description": "Les 4xx sont majoritairement légitimes (401 avant refresh, 404 de sondage). Ce sont les 5xx qui déclenchent l'alerte.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(http_requests_total{status=~\"4..\"}[5m]))", "legendFormat": "4xx" },
-        { "refId": "B", "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "5xx" }
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{status=~\"4..\"}[5m]))",
+          "legendFormat": "4xx (client)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx (serveur)"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     }
   ]
 }

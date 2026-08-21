@@ -5,11 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/permissions/notification_permission.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
+import '../../../../core/widgets/volume_slider.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/live_stream.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
-import '../../../../core/widgets/volume_slider.dart';
 import '../widgets/listening_time.dart';
 
 /// Lecteur audio HLS plein écran (STR-108/117, cf. ADR 023). L'audio est piloté
@@ -165,10 +166,10 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
-          IconButton(
+          AccessibleIconButton(
+            icon: Icons.keyboard_arrow_down,
+            label: 'Réduire le lecteur',
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.keyboard_arrow_down),
-            tooltip: 'Réduire',
           ),
           const Spacer(),
           // Le badge « EN DIRECT » disparaît quand le flux est terminé ou en
@@ -300,12 +301,12 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        IconButton(
+        AccessibleIconButton(
+          icon: isFavorited ? Icons.favorite : Icons.favorite_border,
+          label: isFavorited ? 'Retirer des favoris' : 'Ajouter aux favoris',
           onPressed: _toggleFavorite,
           iconSize: 28,
           color: isFavorited ? colors.primary : colors.onSurfaceVariant,
-          icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
-          tooltip: isFavorited ? 'Retirer des favoris' : 'Ajouter aux favoris',
         ),
         _playPauseButton(colors),
       ],
@@ -328,17 +329,42 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       icon = Icon(Icons.play_arrow, size: 40, color: colors.onPrimary);
     }
 
-    return Material(
-      color: colors.primary,
-      shape: const CircleBorder(),
-      elevation: 4,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: _audio.togglePlayPause,
-        child: SizedBox(
-          width: 76,
-          height: 76,
-          child: Center(child: icon),
+    // Le contrôle principal de l'écran était un InkWell nu : aucun nom, aucun
+    // rôle, rien pour un lecteur d'écran. Le libellé suit l'état, sinon il
+    // annoncerait « Lire » sur un flux déjà en lecture.
+    final String label;
+    if (_audio.isBusy || _audio.isReconnecting) {
+      label = 'Chargement du flux';
+    } else if (_audio.hasError || _audio.isEnded) {
+      label = 'Réessayer la lecture';
+    } else if (_audio.isPlaying) {
+      label = 'Mettre en pause';
+    } else {
+      label = 'Lire';
+    }
+
+    return Semantics(
+      label: label,
+      button: true,
+      // Pendant le chargement il n'y a rien à activer : l'annoncer évite qu'un
+      // appui à l'aveugle passe pour une panne.
+      enabled: !(_audio.isBusy || _audio.isReconnecting),
+      // Même raison qu'AccessibleIconButton : `excludeSemantics` retire l'action
+      // de l'InkWell, il faut la redéclarer sinon le nœud n'est pas opérable.
+      onTap: _audio.togglePlayPause,
+      excludeSemantics: true,
+      child: Material(
+        color: colors.primary,
+        shape: const CircleBorder(),
+        elevation: 4,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _audio.togglePlayPause,
+          child: SizedBox(
+            width: 76,
+            height: 76,
+            child: Center(child: icon),
+          ),
         ),
       ),
     );

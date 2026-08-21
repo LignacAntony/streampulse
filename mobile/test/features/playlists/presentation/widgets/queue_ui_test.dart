@@ -10,6 +10,7 @@ import 'package:streampulse/features/playlists/presentation/widgets/queue_mini_p
 import '../../../../support/fake_queue_playback_service.dart';
 import 'package:streampulse/core/audio/playback_transport.dart';
 import 'package:streampulse/core/audio/volume_store.dart';
+import 'package:streampulse/core/widgets/accessible_icon_button.dart';
 
 Track _track(String id, String title) => Track(
       id: id,
@@ -112,7 +113,7 @@ void main() {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
 
       // Sur la première piste, « précédent » n'a rien à faire.
-      final previous = tester.widget<IconButton>(
+      final previous = tester.widget<AccessibleIconButton>(
         find.byKey(const Key('queue_mini_previous')),
       );
       expect(previous.onPressed, isNull);
