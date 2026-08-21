@@ -674,7 +674,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
 | `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint OTLP/HTTP Tempo pour les traces (vide = tracing désactivé) — ADR 020 | `http://tempo:4318` |
-| `ALERT_EMAIL_TO` | Destinataire des alertes Grafana (STR-244, ADR 041). Interpolé dans `contactpoints.yml`. Défaut en `.invalid` (RFC 2606) : **non délivrable** — une alerte mal configurée ne peut pas atterrir chez un tiers | `alertes@streampulse.invalid` |
+| `ALERT_EMAIL_TO` | Destinataire des alertes Grafana (STR-244, ADR 041). Interpolé par le provisioning Grafana depuis l'environnement de **son** process : à passer explicitement dans le service `grafana` des deux compose, pas seulement dans le `.env`. Défaut `.invalid` (RFC 2606, non délivrable) en dev ; **sans défaut en prod** (`:?`) — un déploiement qui ne sait pas à qui adresser ses alertes doit refuser de démarrer plutôt que de les router vers le vide | `alertes@streampulse.invalid` |
 
 ## Santé des services
 

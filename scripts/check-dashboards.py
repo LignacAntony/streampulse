@@ -53,19 +53,15 @@ def declared_datasource_uids() -> set[str]:
     return set(DATASOURCE_UID.findall(DATASOURCES.read_text(encoding="utf-8")))
 
 
-def walk_targets(panel: dict):
-    """Rend les cibles d'un panneau, y compris celles des lignes repliées.
+def walk_panels(panel: dict):
+    """Rend un panneau et tous ses descendants.
 
     Une row `collapsed: true` porte ses panneaux dans sa propre clé `panels` :
     les oublier laisserait une moitié du dashboard non vérifiée, et c'est
-    justement celle qu'on ne regarde pas.
+    justement celle qu'on ne regarde pas. Comme les contrôles parcourent la
+    liste déjà aplatie par cette fonction, ils couvrent les panneaux imbriqués
+    sans avoir à descendre eux-mêmes.
     """
-    yield from panel.get("targets", [])
-    for nested in panel.get("panels", []):
-        yield from walk_targets(nested)
-
-
-def walk_panels(panel: dict):
     yield panel
     for nested in panel.get("panels", []):
         yield from walk_panels(nested)

@@ -146,8 +146,20 @@ groups:
     folder: StreamPulse
     interval: 1m
     rules:
+      # Cette règle ne porte QUE sur reason="segmenter_failed" (revue PR #328).
+      #
+      # L'ADR 041 distingue les deux causes précisément parce qu'elles n'appellent
+      # pas la même intervention — puis alertait sur les deux, ce qui était
+      # incohérent. Côté diffuseur, fermer l'application, passer en arrière-plan
+      # ou sortir de couverture produit un `ingest_timeout` identique à une perte
+      # réseau : sur une plateforme au churn normal, cette alerte serait presque
+      # toujours active et noierait le seul cas actionnable, le crash de ffmpeg.
+      #
+      # `ingest_timeout` reste compté et visible sur le panneau « Interruptions
+      # de diffusion » du dashboard Live Streaming : mesurer n'oblige pas à
+      # réveiller quelqu'un.
       - uid: alerte-diffusion-interrompue
-        title: Diffusion interrompue sans arrêt du diffuseur
+        title: Segmenteur HLS arrêté seul (diffusion perdue côté serveur)
         condition: C
         # for: 0m — contrairement aux règles techniques, l'événement est ponctuel
         # et déjà consommé quand on le lit : exiger qu'il « dure » 5 minutes
@@ -158,14 +170,14 @@ groups:
           severity: warning
           domain: metier
         annotations:
-          summary: "Au moins une diffusion s'est arrêtée seule dans les 15 dernières minutes."
-          description: "reason=ingest_timeout : le push audio du diffuseur a cessé (réseau, application fermée) — côté diffuseur, l'API a fait son travail. reason=segmenter_failed : ffmpeg s'est arrêté seul — côté serveur, chercher les lignes component=\"ffmpeg-hls\" dans Loki ({service=\"api\"} | json | component=\"ffmpeg-hls\"). Les deux comptent comme une écoute perdue ; une seule appelle une intervention sur l'infrastructure."
+          summary: "ffmpeg s'est arrêté seul sur au moins une diffusion dans les 15 dernières minutes."
+          description: "Panne côté serveur : la diffusion est perdue alors que le diffuseur poussait toujours. Chercher les lignes du segmenteur dans Loki : {service=\"api\"} | json | component=\"ffmpeg-hls\". Les arrêts côté diffuseur (reason=ingest_timeout — application fermée, réseau perdu) ne déclenchent PAS cette alerte : ils sont normaux et se lisent sur le panneau « Interruptions de diffusion »."
         data:
           - refId: A
             relativeTimeRange: { from: 900, to: 0 }
             datasourceUid: prometheus
             model:
-              expr: sum(increase(streampulse_stream_interruptions_total[15m]))
+              expr: sum(increase(streampulse_stream_interruptions_total{reason="segmenter_failed"}[15m]))
               instant: true
               intervalMs: 1000
               maxDataPoints: 43200

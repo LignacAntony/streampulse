@@ -176,11 +176,20 @@ séparé parce que l'intervalle d'évaluation est porté par le groupe, et qu'un
 interruption de diffusion se constate à la minute quand un pic de CPU se juge sur une
 fenêtre :
 
-- **Diffusion interrompue sans arrêt du diffuseur** — `for: 0m`, contrairement aux
-  règles techniques. L'événement est ponctuel et déjà consommé quand on le lit : exiger
-  qu'il « dure » cinq minutes reviendrait à exiger qu'une seconde diffusion tombe pour
-  être prévenu de la première. `noDataState: OK` — tant qu'aucune diffusion n'a jamais
-  été interrompue, la série n'existe pas, et c'est le cas nominal.
+- **Segmenteur HLS arrêté seul** — `reason="segmenter_failed"` **uniquement**, et
+  `for: 0m` contrairement aux règles techniques. L'événement est ponctuel et déjà
+  consommé quand on le lit : exiger qu'il « dure » cinq minutes reviendrait à exiger
+  qu'une seconde diffusion tombe pour être prévenu de la première. `noDataState: OK` —
+  tant qu'aucun segmenteur n'est mort, la série n'existe pas, et c'est le cas nominal.
+
+  > **Corrigé en revue (PR #328).** La règle portait d'abord sur les deux causes. Or
+  > cette ADR distingue `ingest_timeout` et `segmenter_failed` précisément parce
+  > qu'elles n'appellent pas la même intervention — puis alertait sur les deux, ce qui
+  > était incohérent avec son propre raisonnement. Côté diffuseur, fermer l'application
+  > ou sortir de couverture produit un `ingest_timeout` identique à une perte réseau :
+  > sur une plateforme au churn normal, l'alerte serait presque toujours active et
+  > noierait le seul cas actionnable. `ingest_timeout` reste compté et visible sur le
+  > dashboard — mesurer n'oblige pas à réveiller quelqu'un.
 - **Segments HLS en échec > 5 %** — ce que cela vaut côté auditeur : de l'audio qui se
   coupe. Garde de trafic minimal (0,2 segment/s), sinon un unique 404 sur une diffusion
   sans public suffirait à alerter.
@@ -203,6 +212,12 @@ annotations de règles d'alerte ; les nôtres n'en contiennent aucune (vérifié
 Le défaut vise `.invalid`, TLD réservé par la RFC 2606 : non délivrable par
 construction, donc jamais adressé à un tiers par accident. En développement, tout part
 dans Mailpit quelle que soit l'adresse.
+
+⚠️ **La variable doit être câblée dans l'environnement du process Grafana**, pas
+seulement dans le `.env` : c'est le provisioning de Grafana qui interpole, depuis son
+propre environnement. Elle est donc passée explicitement dans les deux fichiers compose —
+avec un défaut en développement, et **sans défaut** en production, où son absence fait
+échouer le démarrage plutôt que de router les alertes vers le vide.
 
 ---
 
@@ -325,8 +340,13 @@ mémoire sans fin.
 - Le résumé admin rend des cumuls depuis le boot, pas des taux glissants.
 - La lecture audio (just_audio) reste hors du périmètre de tracing.
 - Un balayage périodique de plus tourne dans le process, toutes les 30 s.
-- Les alertes ne partent nulle part tant que `ALERT_EMAIL_TO` n'est pas renseigné en
-  production — mais elles ne partent plus chez un tiers non plus.
+- En production, un déploiement sans `ALERT_EMAIL_TO` **refuse de démarrer**
+  (`${ALERT_EMAIL_TO:?…}` dans `docker-compose.prod.yml`). C'est délibéré : la première
+  version omettait la variable côté prod, si bien que `$ALERT_EMAIL_TO` s'y expansait en
+  chaîne vide et que **toutes** les alertes partaient nulle part — pire que l'adresse en
+  dur qu'elle remplaçait, qui produisait au moins une enveloppe délivrable (revue
+  PR #328). Un déploiement qui ne sait pas à qui adresser ses alertes doit s'arrêter,
+  pas démarrer en silence.
 
 ---
 
