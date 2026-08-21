@@ -11,6 +11,7 @@ package loadtest
 import (
 	"fmt"
 	"os/exec"
+	"runtime/debug"
 	"syscall"
 	"time"
 )
@@ -94,4 +95,35 @@ func cores(cpu, wall time.Duration) float64 {
 		return 0
 	}
 	return float64(cpu) / float64(wall)
+}
+
+// raceEnabled indique si le binaire de test a été compilé avec le détecteur de
+// données. Il multiplie le temps CPU du code Go par un ordre de grandeur sans
+// toucher à celui des process ffmpeg : la mesure ne serait pas décalée d'un
+// facteur d'échelle rattrapable, mais DÉFORMÉE entre ses deux termes.
+//
+// Lu dans les réglages de build, et non via une paire de fichiers sous
+// `//go:build race` / `//go:build !race`. Trois raisons, dans cet ordre :
+//
+//  1. `race` n'est pas un tag qu'on passe à `-tags` — c'est le toolchain qui le
+//     pose sous `-race`. La garde DECLARED_TAGS de la CI exige que tout tag
+//     présent dans l'arbre y soit déclaré ; l'y ajouter aurait fait tourner
+//     `go vet -tags …,race` sans détecteur actif, c'est-à-dire mentir au
+//     système de build pour faire taire un garde-fou.
+//  2. La CI ne compile qu'une variante par tag. Le fichier `//go:build race`
+//     n'aurait donc jamais été vérifié — très exactement la pourriture
+//     silencieuse que la garde existe pour attraper (cf. ADR 016).
+//  3. Une fonction se teste dans les deux sens ; une constante sous build tag,
+//     non.
+func raceEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, s := range info.Settings {
+		if s.Key == "-race" {
+			return s.Value == "true"
+		}
+	}
+	return false
 }

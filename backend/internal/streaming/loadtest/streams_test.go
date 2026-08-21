@@ -371,7 +371,7 @@ func TestStreamCPU_Sweep(t *testing.T) {
 	// Un modèle de coût mesuré sous `-race` serait faux d'un ordre de grandeur
 	// sur sa composante Go — et faux de façon invisible, puisque le CPU des
 	// ffmpeg (non instrumentés) resterait juste. Refuser plutôt que publier.
-	if raceEnabled {
+	if raceEnabled() {
 		t.Fatal("mesure CPU compilée avec -race : chiffres inexploitables, utiliser `make loadtest-cpu`")
 	}
 
@@ -419,11 +419,20 @@ func TestStreamCPU_Listeners(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg absent du PATH : mesure CPU ignorée")
 	}
-	if raceEnabled {
+	if raceEnabled() {
 		t.Fatal("mesure CPU compilée avec -race : chiffres inexploitables, utiliser `make loadtest-cpu`")
 	}
 
 	window := broadcastWindow(t)
+	// Une fenêtre trop courte rend un chiffre FAUX, pas un chiffre imprécis :
+	// les segments durent 10 s, et tant qu'il n'y en a qu'un ou deux les
+	// auditeurs passent leur temps à re-demander le même manifeste sans rien
+	// télécharger. Mesuré : 0,05 mcœur par auditeur sur une fenêtre de 12 s,
+	// contre 0,37 sur 45 s — un facteur 7 dans le mauvais sens, et rien à
+	// l'écran pour le signaler. Sauter plutôt que publier.
+	if window < 40*time.Second {
+		t.Skipf("fenêtre de %s trop courte : moins de quatre segments, le coût d'un auditeur y est sous-estimé d'un facteur ~7", window)
+	}
 	idle := measureStreams(t, profileAAC, 1, 0, window)
 	loaded := measureStreams(t, profileAAC, 1, listeners, window)
 

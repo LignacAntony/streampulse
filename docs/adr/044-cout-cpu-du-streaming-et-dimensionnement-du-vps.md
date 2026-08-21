@@ -61,8 +61,22 @@ facteur d'échelle qu'on pourrait corriger après coup, mais une **déformation 
 répartition entre les deux termes — le genre d'erreur qui ne se voit pas dans le résultat.
 
 D'où une cible séparée, `make loadtest-cpu`, et un garde-fou : le test **échoue** s'il a été
-compilé avec le détecteur (`race_on_test.go` / `race_off_test.go`). Publier un chiffre faux coûte
-plus cher que ne pas en publier.
+compilé avec le détecteur. Publier un chiffre faux coûte plus cher que ne pas en publier.
+
+La détection lit les **réglages de build** (`debug.ReadBuildInfo`), et non un couple de fichiers
+sous `//go:build race` / `//go:build !race`. La première version faisait exactement ça et la CI
+l'a refusée, à raison : `race` n'est pas un tag qu'on passe à `-tags`, c'est le toolchain qui le
+pose sous `-race`. Le déclarer dans le `DECLARED_TAGS` du job Test aurait fait tourner
+`go vet -tags …,race` **sans détecteur actif** — mentir au système de build pour faire taire un
+garde-fou — et la variante `race` des deux fichiers n'aurait de toute façon jamais été compilée
+par la CI, ce qui est très exactement la pourriture silencieuse que cette garde existe pour
+attraper (ADR 016, § Validation). Une fonction se teste dans les deux sens ; une constante sous
+build tag, non.
+
+Même logique un cran plus bas : le coût d'un auditeur n'est mesurable que sur une fenêtre assez
+longue pour produire plusieurs segments. Sur 12 s, il tombe à 0,05 mcœur contre 0,37 sur 45 s —
+les auditeurs re-demandent le même manifeste sans rien télécharger. Le test **saute** plutôt que
+de publier ce chiffre-là.
 
 ### 3. Faire varier le nombre de flux, pas le nombre d'auditeurs
 
