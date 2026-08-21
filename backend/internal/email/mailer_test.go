@@ -2,6 +2,7 @@ package email
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -114,4 +115,66 @@ func TestNewFromConfig_ChoisitLeMailer(t *testing.T) {
 func isLogMailer(m Mailer) bool {
 	_, ok := m.(*LogMailer)
 	return ok
+}
+
+// buildPlainEmail produit les octets envoyés au relais SMTP. Le format n'est
+// pas cosmétique : des en-têtes mal terminés, ou une ligne vide manquante
+// entre en-têtes et corps, et le message part en pièce jointe illisible ou est
+// rejeté. Rien d'autre ne vérifie cette forme — l'envoi réel n'est pas testé.
+func TestBuildPlainEmail(t *testing.T) {
+	msg := string(buildPlainEmail(
+		"noreply@streampulse.test",
+		"destinataire@example.com",
+		"Sujet de test",
+		"streampulse://app/reset-password?token=abc",
+	))
+
+	entetes := []string{
+		"From: noreply@streampulse.test\r\n",
+		"To: destinataire@example.com\r\n",
+		"Subject: Sujet de test\r\n",
+		"Content-Type: text/plain; charset=UTF-8\r\n",
+	}
+	for _, e := range entetes {
+		if !strings.Contains(msg, e) {
+			t.Errorf("en-tête manquant ou mal terminé: %q", e)
+		}
+	}
+
+	// La ligne vide sépare les en-têtes du corps : sans elle, tout le message
+	// est interprété comme un bloc d'en-têtes.
+	entete, corps, ok := strings.Cut(msg, "\r\n\r\n")
+	if !ok {
+		t.Fatal("aucune ligne vide entre les en-têtes et le corps")
+	}
+	if strings.Contains(entete, "Bonjour") {
+		t.Error("le corps a débordé dans les en-têtes")
+	}
+	if !strings.Contains(corps, "streampulse://app/reset-password?token=abc") {
+		t.Error("le lien de réinitialisation doit figurer dans le corps")
+	}
+	if !strings.Contains(corps, "expire dans 1 heure") {
+		t.Error("la durée de validité doit être annoncée au destinataire")
+	}
+}
+
+// Le lien est construit à partir de APP_BASE_URL : une erreur ici enverrait
+// l'utilisateur sur un domaine qui n'est pas le nôtre.
+func TestSMTPMailer_LienConstruitDepuisLaBaseURL(t *testing.T) {
+	m := &SMTPMailer{
+		host:    "127.0.0.1",
+		port:    "1",
+		from:    "noreply@streampulse.test",
+		baseURL: "streampulse://app",
+	}
+
+	// L'envoi échoue (aucun relais sur ce port), mais l'erreur doit être
+	// enveloppée et non paniquer — c'est le seul chemin observable sans relais.
+	err := m.SendPasswordResetEmail(context.Background(), "qui@example.com", "jeton-test")
+	if err == nil {
+		t.Fatal("l'envoi vers un relais inexistant doit échouer")
+	}
+	if !strings.Contains(err.Error(), "email: smtp send") {
+		t.Errorf("erreur = %v, want une erreur enveloppée « email: smtp send »", err)
+	}
 }

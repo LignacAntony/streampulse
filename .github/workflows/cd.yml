@@ -162,7 +162,31 @@ jobs:
     env:
       TAG: ${{ needs.release.outputs.tag_name }}
     steps:
+      # release-please est en mode manifest ici. `releases_created` est fiable,
+      # mais `tag_name` ne remonte le tag du composant racine que si l'action
+      # expose bien ses sorties sans préfixe. Si ce n'était pas le cas, le job
+      # passerait quand même sa condition et n'échouerait qu'à l'upload, après
+      # trente minutes de build, sur un `gh release upload ""` illisible.
+      #
+      # En tête de job et non juste avant l'upload : le tag sert aussi de `ref`
+      # au checkout et de nom aux artefacts. Une valeur vide fausse tout ce qui
+      # suit, autant s'arrêter avant d'avoir rien construit d'utile.
+      - name: Garde — tag de release résolu
+        run: |
+          [ -n "$TAG" ] || {
+            echo "::error::tag_name vide — sortie release-please introuvable (mode manifest ?). Vérifier les outputs du job release."
+            exit 1
+          }
+          echo "release : $TAG"
+
+      # ref explicite : sans lui, checkout prend la tête de la branche par
+      # défaut au moment du déclenchement (workflow_run), pas le commit taggé.
+      # Deux merges qui s'enchaînent sur main suffisent à publier, sous vX.Y.Z,
+      # un binaire bâti depuis un commit plus récent que vX.Y.Z. Même correctif
+      # que celui appliqué à build-and-push en #314.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag_name }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -179,16 +203,37 @@ jobs:
       # utile pour installer et tester l'application, il n'est simplement pas
       # distribuable. L'alternative — échouer — bloquerait toute release tant
       # que la clé manque, ce qui est disproportionné.
+      # Les QUATRE secrets, pas seulement le keystore. Une configuration
+      # partielle est le cas le plus probable — quelqu'un pose la clé et oublie
+      # un mot de passe — et c'est celui qui dégradait le plus mal : le keystore
+      # était restauré, Gradle voyait un fichier présent et des mots de passe
+      # non nuls (un secret GitHub absent référencé dans `env:` vaut la chaîne
+      # vide, pas null), signait avec un mot de passe vide, et le build tombait
+      # sur une erreur jarsigner qui ne nommait aucun secret.
+      #
+      # Toute la thèse de ce job est « dégrader, pas échouer » : une config
+      # incomplète doit donc dégrader comme une config absente, en nommant ce
+      # qui manque.
       - name: Déterminer si la signature de release est disponible
         id: signing
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE" ]; then
+          MANQUANTS=""
+          [ -n "$KEYSTORE" ]          || MANQUANTS="$MANQUANTS ANDROID_KEYSTORE_BASE64"
+          [ -n "$KEYSTORE_PASSWORD" ] || MANQUANTS="$MANQUANTS ANDROID_KEYSTORE_PASSWORD"
+          [ -n "$KEY_ALIAS" ]         || MANQUANTS="$MANQUANTS ANDROID_KEY_ALIAS"
+          [ -n "$KEY_PASSWORD" ]      || MANQUANTS="$MANQUANTS ANDROID_KEY_PASSWORD"
+
+          if [ -z "$MANQUANTS" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "signature de release : les quatre secrets sont présents"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::ANDROID_KEYSTORE_BASE64 absent — artefacts signés avec la clé de debug, non distribuables. Cf. docs/distribution-mobile.md"
+            echo "::warning::signature de release indisponible, secret(s) manquant(s) :$MANQUANTS — artefacts signés avec la clé de debug, non distribuables. Cf. docs/distribution-mobile.md"
           fi
 
       - name: Restaurer le keystore
@@ -206,7 +251,12 @@ jobs:
 
       # --dart-define : sans lui, l'application embarque le défaut
       # `http://localhost:8080` et un APK de release ne joindrait aucune API.
-      - name: Construire l'AAB et l'APK
+      # L'APK toujours, l'AAB seulement s'il est signable. Un .aab ne s'installe
+      # pas — c'est un format d'upload Play Store — et un .aab signé en debug y
+      # serait refusé. En mode dégradé il n'irait donc nulle part : l'attacher à
+      # la release afficherait un livrable qui ne mène à rien, ce qui est pire
+      # que son absence. L'APK, lui, s'installe et sert au test.
+      - name: Construire les artefacts
         working-directory: ./mobile
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
@@ -215,10 +265,12 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          flutter build appbundle --release \
-            --dart-define=API_BASE_URL=https://api.streampulse.win
           flutter build apk --release \
             --dart-define=API_BASE_URL=https://api.streampulse.win
+          if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
+            flutter build appbundle --release \
+              --dart-define=API_BASE_URL=https://api.streampulse.win
+          fi
 
       # Le suffixe n'est pas cosmétique : un artefact signé en debug installé
       # par un testeur ne pourra jamais être mis à jour par la version signée,
@@ -228,14 +280,14 @@ jobs:
         working-directory: ./mobile
         run: |
           set -euo pipefail
+          mkdir -p ../dist
           if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
             SUFFIXE=""
+            cp build/app/outputs/bundle/release/app-release.aab \
+               "../dist/streampulse-${TAG}.aab"
           else
             SUFFIXE="-NON-SIGNE"
           fi
-          mkdir -p ../dist
-          cp build/app/outputs/bundle/release/app-release.aab \
-             "../dist/streampulse-${TAG}${SUFFIXE}.aab"
           cp build/app/outputs/flutter-apk/app-release.apk \
              "../dist/streampulse-${TAG}${SUFFIXE}.apk"
           ls -lh ../dist

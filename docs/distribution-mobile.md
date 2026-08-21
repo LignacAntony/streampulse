@@ -12,14 +12,25 @@ iOS ne l'est pas.
 ## 1. Ce qui se passe à chaque release
 
 `release-please` publie une release à partir des Conventional Commits, puis le
-job `mobile` de la workflow **CD** construit et attache deux artefacts :
+job `mobile` de la workflow **CD** construit et attache les artefacts :
 
-| Artefact | À quoi il sert |
-|---|---|
-| `streampulse-vX.Y.Z.aab` | Android App Bundle — le format attendu par le Play Store |
-| `streampulse-vX.Y.Z.apk` | Installation directe sur un appareil, sans magasin |
+| Artefact | À quoi il sert | Produit quand |
+|---|---|---|
+| `streampulse-vX.Y.Z.apk` | Installation directe sur un appareil, sans magasin | Toujours |
+| `streampulse-vX.Y.Z.aab` | Android App Bundle — le format attendu par le Play Store | Seulement si la signature est disponible |
 
-Les deux sont construits avec `--dart-define=API_BASE_URL=https://api.streampulse.win`.
+**L'AAB n'est pas produit en mode dégradé** (revue PR #326). Un `.aab` ne
+s'installe pas — c'est un format d'upload, pas un paquet — et un `.aab` signé
+avec la clé de debug serait de toute façon refusé par le Play Store. En mode
+dégradé, il n'irait donc nulle part : l'attacher à la release afficherait un
+livrable qui ne mène à rien, ce qui est pire que son absence.
+
+Le job est aussi construit depuis le **commit taggé** (`ref: tag_name`) et non
+depuis la tête de branche : sans cela, deux merges qui s'enchaînent sur `main`
+suffisent à publier sous `vX.Y.Z` un binaire bâti depuis un commit plus récent
+que `vX.Y.Z`.
+
+Les artefacts sont construits avec `--dart-define=API_BASE_URL=https://api.streampulse.win`.
 Sans ce passage, l'application embarquerait son défaut de développement
 (`http://localhost:8080`) et ne joindrait aucune API une fois installée.
 
@@ -34,9 +45,22 @@ Sans ce passage, l'application embarquerait son défaut de développement
 fonctionne en **mode dégradé** :
 
 - le build **réussit**, signé avec la clé de debug ;
-- les artefacts sont suffixés **`-NON-SIGNE`** ;
+- l'APK est suffixé **`-NON-SIGNE`**, et l'AAB n'est pas produit ;
 - Gradle émet un avertissement en `error` pendant le build ;
-- la CI émet un `::warning::` visible sur le résumé du run.
+- la CI émet un `::warning::` **nommant les secrets manquants**.
+
+### Une configuration partielle dégrade comme une absente
+
+Les **quatre** secrets sont exigés pour activer la signature, et une valeur vide
+compte comme absente des deux côtés (CI et Gradle).
+
+Sans cela, le cas le plus probable — quelqu'un pose la clé et oublie un mot de
+passe — était aussi le pire : un secret GitHub non défini mais référencé dans un
+bloc `env:` est exporté avec la **chaîne vide**, que `System.getenv` rend telle
+quelle et non `null`. Gradle voyait donc un keystore restauré et des mots de
+passe « présents », signait avec un mot de passe vide, et le build tombait sur
+une erreur `jarsigner` qui ne nommait aucun secret. Le mode dégradé dégradait en
+panne dure (revue PR #326).
 
 Un tel artefact s'installe et se teste, mais il est **refusé par le Play Store**.
 

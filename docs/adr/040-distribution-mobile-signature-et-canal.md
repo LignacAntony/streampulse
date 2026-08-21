@@ -33,13 +33,39 @@ sur la clé de debug** au lieu de s'arrêter.
 
 Le repli est rendu bruyant à trois endroits : un message Gradle en niveau
 `error`, un `::warning::` dans le résumé de la CI, et un suffixe `-NON-SIGNE`
-sur les artefacts.
+sur l'APK.
+
+**Une configuration partielle dégrade comme une absente.** Les quatre secrets
+sont exigés, et une valeur vide compte comme absente des deux côtés. La première
+version ne testait que la présence du keystore côté CI, et `!= null` côté
+Gradle — or un secret GitHub non défini mais référencé dans un bloc `env:` est
+exporté avec la **chaîne vide**, que `System.getenv` rend telle quelle. Poser la
+clé en oubliant un mot de passe suffisait donc à signer avec un secret vide et à
+casser le build sur une erreur `jarsigner` qui ne nommait rien : le mode dégradé
+dégradait en panne dure, et l'avertissement n'orientait vers aucun secret
+(revue PR #326).
+
+**L'AAB n'est produit que s'il est signable.** Un `.aab` ne s'installe pas — il
+n'est qu'un format d'upload — et signé en debug il serait refusé par le Play
+Store. En mode dégradé il ne mène nulle part : l'attacher afficherait sur la
+page de release un livrable trompeur. L'APK, lui, s'installe et sert au test.
 
 ### 2. Le job de build vit dans `cd.yml`, pas dans une workflow `on: release`
 
 `release-please` publie la release avec `GITHUB_TOKEN`, et un événement émis par
 ce jeton ne déclenche aucune workflow. Une workflow `on: release` ne se serait
 jamais exécutée — et n'aurait rien signalé.
+
+Le job est **épinglé sur le commit taggé** (`ref: tag_name`). Sans `ref`,
+`checkout` prend la tête de la branche par défaut au moment du déclenchement :
+deux merges qui s'enchaînent sur `main` suffisent alors à publier, sous
+`vX.Y.Z`, un binaire bâti depuis un commit plus récent que `vX.Y.Z`. Même
+correctif que celui appliqué à `build-and-push` en #314.
+
+Une garde en tête de job vérifie que le tag est résolu. En mode manifest,
+`releases_created` est fiable mais `tag_name` dépend de la façon dont l'action
+expose ses sorties racine : une valeur vide passerait la condition du job et
+n'échouerait qu'à l'upload, après trente minutes de build.
 
 ### 3. iOS n'est pas distribué
 
@@ -114,7 +140,8 @@ expliquée.
 
 **Positives**
 
-- Un tag de release produit AAB et APK sans intervention manuelle.
+- Un tag de release produit un APK — et un AAB dès que la clé existe — sans
+  intervention manuelle, depuis le commit effectivement taggé.
 - Activer la signature ne demande que d'ajouter quatre secrets — aucun code à
   changer.
 - L'écart est visible partout où quelqu'un peut le rencontrer : build local,
@@ -124,7 +151,8 @@ expliquée.
 
 **Négatives, et assumées**
 
-- Aucun artefact distribuable tant que la clé n'est pas générée.
+- Aucun artefact distribuable tant que la clé n'est pas générée, et **aucun AAB
+  du tout** dans cet état.
 - Un testeur ayant installé une version `-NON-SIGNE` devra **désinstaller**
   avant la première version signée : Android refuse le changement de clé.
 - iOS reste hors distribution. Le critère `Ce3.4.2` — « l'ensemble des

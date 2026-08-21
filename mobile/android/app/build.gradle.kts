@@ -14,19 +14,34 @@ val keystoreProperties = Properties().apply {
     if (f.exists()) FileInputStream(f).use { load(it) }
 }
 
+/// Une valeur vide compte comme absente.
+///
+/// `System.getenv` ne rend `null` que si la variable n'existe pas du tout. Or un
+/// secret GitHub non défini mais référencé dans un bloc `env:` est bel et bien
+/// exporté — avec la chaîne vide pour valeur. Un test `!= null` le prenait donc
+/// pour un mot de passe valide : signature tentée avec un secret vide, build
+/// cassé sur une erreur jarsigner qui ne nomme rien (revue PR #326).
+///
+/// `takeUnless { it.isBlank() }` ramène ce cas au seul qui soit vrai — la valeur
+/// n'est pas utilisable — et laisse le repli en clé de debug faire son travail.
+/// Appliqué aux DEUX sources : une propriété locale vide doit laisser passer
+/// l'environnement, et non court-circuiter l'elvis avec une chaîne vide.
 fun signingValue(propertyKey: String, envKey: String): String? =
-    keystoreProperties.getProperty(propertyKey) ?: System.getenv(envKey)
+    keystoreProperties.getProperty(propertyKey)?.takeUnless { it.isBlank() }
+        ?: System.getenv(envKey)?.takeUnless { it.isBlank() }
 
 val releaseStoreFile: String? = signingValue("storeFile", "ANDROID_KEYSTORE_PATH")
 val releaseStorePassword: String? = signingValue("storePassword", "ANDROID_KEYSTORE_PASSWORD")
 val releaseKeyAlias: String? = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
 val releaseKeyPassword: String? = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
 
+/// Les quatre valeurs ET le fichier : une configuration partielle est traitée
+/// comme une configuration absente. Signer à moitié n'existe pas.
 val hasReleaseKeystore: Boolean =
-    releaseStoreFile != null &&
-        releaseStorePassword != null &&
-        releaseKeyAlias != null &&
-        releaseKeyPassword != null &&
+    !releaseStoreFile.isNullOrBlank() &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank() &&
         file(releaseStoreFile).exists()
 
 // L'avertissement ne se déclenche que si une tâche de release est demandée :

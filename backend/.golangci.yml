@@ -2,6 +2,13 @@ version: "2"
 
 run:
   timeout: 5m
+  # Sans ces tags, les fichiers taggés ne sont pas analysés du tout : le
+  # harnais de charge et les tests d'intégration échappaient au linter comme
+  # ils échappaient à `go build`. Le job CI vérifie déjà qu'aucun tag de
+  # l'arbre ne manque à sa liste ; les deux listes doivent rester alignées.
+  build-tags:
+    - integration
+    - loadtest
 
 linters:
   default: none
