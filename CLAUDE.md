@@ -537,7 +537,7 @@ wrappers minces vers `AuthScreen(initialTab: ...)`.
 **Toasts** : `toastification` via les helpers `showAuthSuccessToast / ErrorToast / InfoToast`
 (`presentation/widgets/auth_toasts.dart`). `ToastificationWrapper` est posé dans `app.dart`.
 
-### Accessibilité et adaptation aux largeurs (STR-246, ADR 043)
+### Accessibilité et adaptation aux largeurs (STR-244, ADR 043)
 
 - ⚠️ **Un `tooltip` n'est pas un `label`.** Vérifié sur l'arbre sémantique : un
   `IconButton(tooltip: 'X')` rend `label="" tooltip="X"`. Android s'en sert à défaut de

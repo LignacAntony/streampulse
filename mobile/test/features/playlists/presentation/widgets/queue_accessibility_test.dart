@@ -11,7 +11,7 @@ import '../../../../support/fake_queue_playback_service.dart';
 
 /// Les contrôles du lecteur sont la surface la plus utilisée de l'application,
 /// et la plus dépendante d'icônes sans texte : c'est là qu'un défaut
-/// d'accessibilité coûte le plus (STR-246).
+/// d'accessibilité coûte le plus (STR-244).
 void main() {
   testWidgets(
     'le bandeau de file d\'attente est utilisable au lecteur d\'écran',

@@ -2,7 +2,7 @@
 
 **Date** : 2026-08-21
 **Statut** : Accepté
-**Ticket** : [STR-246](https://linear.app/streampulse/issue/STR-246)
+**Ticket** : [STR-244](https://linear.app/streampulse/issue/STR-244/completer-le-lecteur-linterface-et-les-metriques-manquantes-du-bareme)
 
 ---
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/app_constants.dart';
 
-/// Bouton-icône nommé pour les lecteurs d'écran (STR-246).
+/// Bouton-icône nommé pour les lecteurs d'écran (STR-244).
 ///
 /// ## Pourquoi un `tooltip` ne suffit pas
 ///

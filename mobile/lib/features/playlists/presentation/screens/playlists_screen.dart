@@ -195,7 +195,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
           ],
         ],
       ),
-      // Cf. discover_screen : contenu borné au-delà de la rupture (STR-246).
+      // Cf. discover_screen : contenu borné au-delà de la rupture (STR-244).
       body: SafeArea(
         child: ResponsiveContent(
           child: RefreshIndicator(

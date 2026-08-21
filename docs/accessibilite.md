@@ -8,7 +8,7 @@ StreamPulse, les règles qui l'assurent, et les écarts qui subsistent.
 > comptent, séparément, et confondre les deux reviendrait à déclarer conforme
 > quelque chose qui ne l'est pas.
 >
-> Le volet application est traité depuis STR-246 :
+> Le volet application est traité depuis STR-244 :
 > [ADR 043](adr/043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md)
 > décrit ce qui est fait — libellés sémantiques, vérificateurs WCAG en CI,
 > adaptation aux largeurs — **et ce qui ne l'est pas** : aucune vérification au

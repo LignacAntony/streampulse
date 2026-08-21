@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-/// Ruptures de largeur et adaptation de la mise en page (STR-246).
+/// Ruptures de largeur et adaptation de la mise en page (STR-244).
 ///
 /// ## La décision, plutôt que de la subir
 ///

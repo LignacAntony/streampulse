@@ -29,7 +29,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Découvrir')),
-      // Contenu borné et centré au-delà de la rupture (STR-246) : sans cela,
+      // Contenu borné et centré au-delà de la rupture (STR-244) : sans cela,
       // une ligne de flux traverse 800 px en paysage pour trois mots. Sans
       // effet sur un téléphone en portrait, où la contrainte ne mord pas.
       body: SafeArea(

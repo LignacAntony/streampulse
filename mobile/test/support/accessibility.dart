@@ -1,7 +1,7 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Vérifications d'accessibilité partagées (STR-246).
+/// Vérifications d'accessibilité partagées (STR-244).
 ///
 /// `flutter_test` embarque des vérificateurs conformes aux recommandations des
 /// deux plateformes. Les faire tourner en CI vaut mieux qu'une affirmation de
