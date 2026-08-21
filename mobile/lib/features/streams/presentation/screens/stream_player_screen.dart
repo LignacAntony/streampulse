@@ -9,6 +9,8 @@ import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/live_stream.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
+import '../../../../core/widgets/volume_slider.dart';
+import '../widgets/listening_time.dart';
 
 /// Lecteur audio HLS plein écran (STR-108/117, cf. ADR 023). L'audio est piloté
 /// par le [AudioPlayerController] **partagé** app-level (STR-109) : la lecture
@@ -133,10 +135,19 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                         const SizedBox(height: 10),
                         _listeners(colors, text, listeners),
                       ],
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      // Temps d'écoute plutôt qu'une barre de progression : un
+                      // direct n'a pas de fin connue, donc pas de fraction à
+                      // remplir (STR-244).
+                      ListeningTime(controller: _audio),
+                      const SizedBox(height: 16),
                       _statusLine(colors, text),
                       const SizedBox(height: 28),
                       _controls(colors, isFavorited),
+                      const SizedBox(height: 20),
+                      // Le curseur s'abonne seul au flux de volume : aucune
+                      // reconstruction de l'écran quand il bouge.
+                      const VolumeSlider(),
                       const SizedBox(height: 24),
                     ],
                   ),

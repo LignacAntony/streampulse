@@ -167,13 +167,16 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 039 | [039-supervision-admin-des-flux-et-journal-daudit.md](adr/039-supervision-admin-des-flux-et-journal-daudit.md) | Supervision admin des flux actifs et journal d'audit *(ex-ADR 018)* |
 | 040 | [040-distribution-mobile-signature-et-canal.md](adr/040-distribution-mobile-signature-et-canal.md) | Distribution mobile : signature Android dégradable, pas de canal iOS |
 | 041 | [041-metriques-metier-debit-departs-et-resume-admin.md](adr/041-metriques-metier-debit-departs-et-resume-admin.md) | Métriques métier : débit, départs d'auditeurs, interruptions et résumé admin |
+| 042 | [042-controle-du-volume-et-temps-decoute.md](adr/042-controle-du-volume-et-temps-decoute.md) | Contrôle du volume dans l'application et temps d'écoute d'un direct |
 
 ---
 
 ## Convention ADR
 
 - Toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`,
-  avec **le numéro suivant** (prochain : `042-...`). Le numéro est un **identifiant**,
+  avec **le numéro suivant** (prochain : `045-...`). Les numéros **043** et **044** sont
+  réservés par des PR ouvertes — ils n'apparaissent pas encore dans ce tableau mais ne sont
+  pas libres. Le numéro est un **identifiant**,
   attribué dans l'ordre d'enregistrement — il ne suit pas nécessairement l'ordre chronologique
   des décisions (cf. 037/038/039, renumérotées après collision).
 - Un numéro n'est **jamais réutilisé** : une ADR remplacée passe en statut
