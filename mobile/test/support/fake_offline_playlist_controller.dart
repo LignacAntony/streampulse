@@ -12,10 +12,7 @@ class _NoopCacheRepository implements OfflineCacheRepository {
   Future<bool> isOffline(String playlistId) async => false;
   @override
   Future<void> enableOffline(
-    String playlistId,
-    String name,
-    List<PlaylistTrack> tracks,
-  ) async {}
+          String playlistId, String name, List<PlaylistTrack> tracks) async {}
   @override
   Future<void> disableOffline(String playlistId) async {}
   @override
@@ -24,13 +21,10 @@ class _NoopCacheRepository implements OfflineCacheRepository {
   Future<List<CachedTrackStatus>> downloadStatuses(String playlistId) async =>
       [];
   @override
-  Future<void> updateTrackStatus(
-    String trackId,
-    String playlistId, {
-    required TrackCacheStatus status,
-    String? filePath,
-    int? fileSize,
-  }) async {}
+  Future<void> updateTrackStatus(String trackId, String playlistId,
+          {required TrackCacheStatus status,
+          String? filePath,
+          int? fileSize}) async {}
   @override
   Future<String?> cachedFilePath(String trackId) async => null;
   @override
@@ -41,10 +35,10 @@ class _NoopCacheRepository implements OfflineCacheRepository {
 
 class FakeOfflinePlaylistController extends OfflinePlaylistController {
   FakeOfflinePlaylistController()
-    : super(
-        cacheRepository: _NoopCacheRepository(),
-        downloadService: TrackDownloadService(Dio(), _NoopCacheRepository()),
-      );
+      : super(
+          cacheRepository: _NoopCacheRepository(),
+          downloadService: TrackDownloadService(Dio(), _NoopCacheRepository()),
+        );
 
   @override
   Future<void> init() async {}

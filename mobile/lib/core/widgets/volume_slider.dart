@@ -47,9 +47,13 @@ class _VolumeSliderState extends State<VolumeSlider> {
 
   double _volume = 1;
 
-  /// Niveau d'avant la coupure, restauré au second appui sur l'icône. Nul tant
-  /// que le son n'a pas été coupé depuis ce widget.
-  double? _beforeMute;
+  /// Dernier niveau **audible** connu, restauré quand on rétablit le son.
+  ///
+  /// Mémorisé à chaque changement et non dans la seule branche « couper » :
+  /// amener le curseur à zéro en glissant coupe le son tout autant qu'un appui
+  /// sur l'icône, et l'appui suivant remontait alors brutalement à 100 %
+  /// (revue PR #331).
+  double _lastAudible = 1;
 
   @override
   void initState() {
@@ -60,8 +64,12 @@ class _VolumeSliderState extends State<VolumeSlider> {
     // s'y fier seul laisserait le curseur à sa valeur par défaut jusqu'au
     // premier réglage.
     _volume = _transport.volume;
+    if (_volume > 0) _lastAudible = _volume;
     _subscription = _transport.volumeStream.listen((value) {
-      if (!mounted) return;
+      // Garde contre l'écho : un réglage venu de ce curseur a déjà mis l'état à
+      // jour, et le transport le renvoie aussitôt. Sans elle, chaque frame d'un
+      // glissement reconstruisait le widget deux fois (revue PR #331).
+      if (!mounted || value == _volume) return;
       setState(() => _volume = value);
     });
   }
@@ -72,24 +80,34 @@ class _VolumeSliderState extends State<VolumeSlider> {
     super.dispose();
   }
 
-  Future<void> _apply(double value) => _transport.setVolume(value);
+  Future<void> _apply(double value) {
+    if (value > 0) _lastAudible = value;
+    return _transport.setVolume(value);
+  }
 
-  Future<void> _persist(double value) => _store.write(value);
+  /// N'enregistre que les niveaux **audibles** : la sourdine est un état de
+  /// session, pas une préférence.
+  ///
+  /// Persister un zéro faisait redémarrer l'application en silence, sans aucun
+  /// indice — et le mini-player n'a pas de curseur, donc rien à portée pour
+  /// comprendre. Un flux muet se lit comme un flux cassé (revue PR #331).
+  ///
+  /// L'asymétrie est assumée : un démarrage trop fort s'entend et se corrige,
+  /// un démarrage muet se diagnostique mal.
+  Future<void> _persist(double value) async {
+    if (value <= 0) return;
+    await _store.write(value);
+  }
 
   Future<void> _toggleMute() async {
     if (_volume > 0) {
-      _beforeMute = _volume;
+      // `_lastAudible` retient déjà ce niveau : la coupure n'a rien à mémoriser.
       await _apply(0);
       await _persist(0);
       return;
     }
-    // Restaurer à 1 quand rien n'a été mémorisé : l'auditeur a démarré
-    // l'application déjà en sourdine, l'appui doit lui rendre du son plutôt
-    // que de ne rien faire.
-    final restored = _beforeMute ?? 1.0;
-    _beforeMute = null;
-    await _apply(restored);
-    await _persist(restored);
+    await _apply(_lastAudible);
+    await _persist(_lastAudible);
   }
 
   IconData get _icon {

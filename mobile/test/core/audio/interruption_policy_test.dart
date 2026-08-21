@@ -49,31 +49,28 @@ void main() {
       );
     });
 
-    test(
-      'interruption alors qu\'on est déjà en pause → aucune reprise auto',
-      () {
-        final policy = InterruptionPolicy();
+    test('interruption alors qu\'on est déjà en pause → aucune reprise auto', () {
+      final policy = InterruptionPolicy();
 
-        expect(
-          policy.onInterruption(
-            begin: true,
-            isDuck: false,
-            canResume: false,
-            isPlaying: false,
-          ),
-          InterruptionAction.none,
-        );
-        expect(
-          policy.onInterruption(
-            begin: false,
-            isDuck: false,
-            canResume: true,
-            isPlaying: false,
-          ),
-          InterruptionAction.none,
-        );
-      },
-    );
+      expect(
+        policy.onInterruption(
+          begin: true,
+          isDuck: false,
+          canResume: false,
+          isPlaying: false,
+        ),
+        InterruptionAction.none,
+      );
+      expect(
+        policy.onInterruption(
+          begin: false,
+          isDuck: false,
+          canResume: true,
+          isPlaying: false,
+        ),
+        InterruptionAction.none,
+      );
+    });
 
     test('notification transitoire en lecture → duck puis unduck', () {
       final policy = InterruptionPolicy();
@@ -135,7 +132,10 @@ void main() {
     test('casque débranché en lecture → pause, sans reprise auto ensuite', () {
       final policy = InterruptionPolicy();
 
-      expect(policy.onBecomingNoisy(isPlaying: true), InterruptionAction.pause);
+      expect(
+        policy.onBecomingNoisy(isPlaying: true),
+        InterruptionAction.pause,
+      );
       // Une fin d'interruption ne doit pas relancer le son sur le haut-parleur.
       expect(
         policy.onInterruption(
@@ -151,7 +151,10 @@ void main() {
     test('casque débranché à l\'arrêt → aucune action', () {
       final policy = InterruptionPolicy();
 
-      expect(policy.onBecomingNoisy(isPlaying: false), InterruptionAction.none);
+      expect(
+        policy.onBecomingNoisy(isPlaying: false),
+        InterruptionAction.none,
+      );
     });
   });
 }

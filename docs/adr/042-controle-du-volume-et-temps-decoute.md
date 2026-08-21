@@ -90,6 +90,13 @@ ce qui permet aux tests de tourner sans plugin de plateforme.
 applique (l'auditeur doit entendre pendant qu'il glisse), `onChangeEnd`
 enregistre. Écrire à chaque tick userait le magasin pour un résultat identique.
 
+**Seuls les niveaux audibles sont enregistrés** : la sourdine est un état de
+session, pas une préférence. Persister un zéro faisait redémarrer l'application
+en silence sans aucun indice — et le mini-player n'ayant pas de curseur, rien
+n'était à portée pour comprendre. Un flux muet se lit comme un flux cassé
+(revue PR #331). L'asymétrie est assumée : un démarrage trop fort s'entend et se
+corrige, un démarrage muet se diagnostique mal.
+
 Le niveau est restauré **avant le premier rendu**, dans `main()`. Le retrouver
 après coup ferait démarrer la lecture au volume par défaut puis sauter — et cela
 s'entend. La restauration est best-effort, comme la configuration de la session
@@ -125,8 +132,23 @@ vérifiable sans attendre. Le widget qui l'affiche reçoit sa source de temps en
 paramètre injectable — `tester.pump(Duration)` n'avance que l'horloge simulée de
 Flutter, un `DateTime.now()` en dur aurait rendu tout le fichier invérifiable.
 
-Le tic bat **une fois par seconde et localement au widget** : rien au-dessus ne
-se reconstruit, et il s'arrête dès que l'horloge est suspendue.
+### Le cumul appartient au contrôleur, le tic au widget
+
+L'horloge vit dans `AudioPlayerController`, **app-level**, pas dans le `State`
+du widget qui l'affiche.
+
+> **Corrigé en revue (PR #331).** La première version la posait dans le `State`.
+> Or la lecture survit à la navigation ([ADR 031](031-lecture-audio-en-arriere-plan.md)) :
+> réduire le lecteur puis le rouvrir détruit ce `State`, et le compteur repartait
+> de `00:00` alors que le direct jouait depuis dix minutes. Cela contredisait la
+> promesse même du libellé — et la thèse de cette ADR, « une horloge qui traverse
+> les rechargements ». Un test de non-régression monte, démonte et remonte le
+> widget pour le vérifier.
+
+Le contrôleur porte le cumul et le pilote depuis les transitions d'état qu'il
+calcule déjà ; le widget n'apporte que l'affichage et son **tic local**, une
+fois par seconde. Rien au-dessus ne se reconstruit, et le tic s'arrête dès que
+la lecture s'interrompt — le cumul, lui, ne bouge plus mais reste.
 
 ---
 
@@ -149,6 +171,8 @@ se reconstruit, et il s'arrête dès que l'horloge est suspendue.
 - Le temps d'écoute compte le temps de **lecture**, pas le temps passé sur
   l'écran : mettre en pause le fige. C'est voulu, mais quelqu'un peut s'attendre
   à l'inverse.
+- Couper le son ne survit pas au redémarrage de l'application : c'est le dernier
+  niveau audible qui est restauré.
 - Deux widgets tests de plus dépendent des providers `PlaybackTransport` et
   `VolumeStore` — trois harnais existants ont dû les fournir.
 
