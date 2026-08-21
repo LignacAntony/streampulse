@@ -52,7 +52,7 @@ func (s *session) segmenter() *hlsSegmenter {
 // goroutine (STR-84), son segmenteur HLS (STR-70) et ses abonnés SSE (STR-85).
 type LiveSessions struct {
 	base   context.Context
-	newSeg func() (*hlsSegmenter, error) // injectable (tests sans ffmpeg)
+	newSeg func(streamID string) (*hlsSegmenter, error) // injectable (tests sans ffmpeg)
 
 	mu      sync.Mutex
 	byID    map[string]*session // id public -> session (SSE, lecture HLS, stop)
@@ -148,7 +148,7 @@ func (ls *LiveSessions) Start(streamID, streamKey string) {
 	// Phase 2 — spawn du segmenteur HORS verrou (le flux est déjà 'live' en base ;
 	// en cas d'échec ffmpeg, la session reste enregistrée mais sans audio — stop/SSE
 	// fonctionnent. En pratique ffmpeg est présent dans l'image, ADR 015).
-	seg, err := ls.newSeg()
+	seg, err := ls.newSeg(streamID)
 	if err != nil {
 		log.Error().Err(err).Str("stream_id", streamID).Msg("streaming: segmenteur HLS indisponible")
 		seg = nil
@@ -214,7 +214,9 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 		}
 	}
 	ls.mu.Unlock()
-	ls.recorder().ForgetStream(streamID)
+	rec := ls.recorder()
+	rec.RecordStreamInterruption(InterruptionSegmenterFailed)
+	rec.ForgetStream(streamID)
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
 
@@ -286,6 +288,10 @@ func (ls *LiveSessions) armIngestExpiry(s *session) {
 		// obtenir un ingest aussitôt cassé par Stop.
 		s.expiring = true
 		s.mu.Unlock()
+		// Compté ici et non dans le handler : à ce point la diffusion est
+		// perdue quoi qu'il advienne de l'écriture en base, et c'est cette
+		// perte — pas son enregistrement — que la métrique décrit (STR-244).
+		ls.recorder().RecordStreamInterruption(InterruptionIngestTimeout)
 		if err := handler(s.streamID); err != nil {
 			// Une indisponibilité transitoire de la base ne doit pas désarmer le
 			// garde-fou : tant que la session existe, une nouvelle tentative sera
@@ -431,8 +437,14 @@ func (ls *LiveSessions) TouchListener(streamID, clientKey string) {
 		return
 	}
 	s.mu.Lock()
-	s.touchListener(clientKey, time.Now())
+	departed := s.touchListener(clientKey, time.Now())
 	s.mu.Unlock()
+	// Garde volontaire : TouchListener est sur le chemin chaud HLS et le cas
+	// courant est departed == 0. Sans elle, chaque manifeste paierait une prise
+	// du verrou du registre pour publier un zéro.
+	if departed > 0 {
+		ls.recorder().RecordListenerDepartures(departed)
+	}
 }
 
 // Stats retourne l'audience courante d'un flux en direct. Le second retour est
@@ -446,8 +458,81 @@ func (ls *LiveSessions) Stats(streamID string) (SessionStats, bool) {
 		return SessionStats{}, false
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.stats(time.Now()), true
+	snapshot, departed := s.stats(time.Now())
+	s.mu.Unlock()
+	ls.recorder().RecordListenerDepartures(departed)
+	return snapshot, true
+}
+
+// TotalListeners retourne l'audience estimée cumulée de tous les directs, sans
+// purger : la valeur est lue par le résumé admin (STR-244) et par les scrapes,
+// deux chemins qui ne doivent pas produire d'effet de bord sur le compteur de
+// départs. Le balayage périodique garde ce total frais.
+func (ls *LiveSessions) TotalListeners() int {
+	ls.mu.Lock()
+	sessions := make([]*session, 0, len(ls.byID))
+	for _, s := range ls.byID {
+		sessions = append(sessions, s)
+	}
+	ls.mu.Unlock()
+
+	total := 0
+	for _, s := range sessions {
+		s.mu.Lock()
+		total += len(s.listeners)
+		s.mu.Unlock()
+	}
+	return total
+}
+
+// SweepListeners purge les auditeurs expirés de toutes les sessions vivantes et
+// publie les départs constatés. Retourne le total, pour les tests.
+//
+// Le balayage prend le verrou du registre le temps de copier les sessions, puis
+// celui de chaque session à tour de rôle : jamais les deux ensemble, et jamais
+// pendant l'appel au recorder.
+func (ls *LiveSessions) SweepListeners(now time.Time) int {
+	ls.mu.Lock()
+	sessions := make([]*session, 0, len(ls.byID))
+	for _, s := range ls.byID {
+		sessions = append(sessions, s)
+	}
+	ls.mu.Unlock()
+
+	departed := 0
+	for _, s := range sessions {
+		s.mu.Lock()
+		departed += s.pruneListeners(now)
+		s.mu.Unlock()
+	}
+	ls.recorder().RecordListenerDepartures(departed)
+	return departed
+}
+
+// StartListenerSweep lance le balayage périodique jusqu'à la fermeture de done.
+// Même forme que httpmw.RateLimit.StartEviction : une goroutine, un ticker, un
+// canal d'arrêt.
+//
+// Sans lui, la purge n'aurait lieu qu'à la lecture de Stats — le compteur de
+// départs n'avancerait donc que pendant qu'un diffuseur consulte son tableau de
+// bord, et une diffusion abandonnée garderait indéfiniment ses derniers
+// auditeurs dans l'audience affichée.
+func (ls *LiveSessions) StartListenerSweep(done <-chan struct{}, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case now := <-ticker.C:
+				ls.SweepListeners(now)
+			}
+		}
+	}()
 }
 
 // StopAll annule toutes les sessions (arrêt serveur) et libère les goroutines

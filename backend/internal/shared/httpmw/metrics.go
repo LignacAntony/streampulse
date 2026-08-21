@@ -83,6 +83,19 @@ func Metrics(reg prometheus.Registerer, mux *http.ServeMux) http.Handler {
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "path"})
 
+	// Débit sortant (STR-244, ADR 041). Le volume écrit est déjà compté par le
+	// statusRecorder pour l'access log : il ne restait qu'à le publier. Un seul
+	// label `path` — la question posée est « quelle route transporte les octets »
+	// (en pratique : les segments .ts), pas « avec quelle méthode ».
+	//
+	// Ce compteur mesure le sens serveur → auditeur. Le push d'ingest, lui, est
+	// du volume ENTRANT : il traverse r.Body, que ce middleware n'enveloppe pas,
+	// et n'est donc pas compté ici (cf. ADR 041 §2).
+	responseBytes := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "http_response_bytes_total",
+		Help: "Octets de corps de réponse HTTP écrits vers les clients.",
+	}, []string{"path"})
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if skipObservability(r.URL.Path) {
 			mux.ServeHTTP(w, r)
@@ -107,6 +120,10 @@ func Metrics(reg prometheus.Registerer, mux *http.ServeMux) http.Handler {
 			method := methodLabel(r.Method)
 			pattern := routePattern(mux, r)
 			requests.WithLabelValues(method, pattern, strconv.Itoa(status)).Inc()
+			// Add et non Inc : sr.bytes est un volume, pas un événement. Une
+			// réponse vide (204, 304) ajoute 0 mais crée quand même la série,
+			// ce qui vaut mieux qu'un trou dans le graphe.
+			responseBytes.WithLabelValues(pattern).Add(float64(sr.bytes))
 			if _, longLived := longLivedPatterns[pattern]; !longLived {
 				duration.WithLabelValues(method, pattern).Observe(time.Since(start).Seconds())
 			}

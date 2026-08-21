@@ -188,12 +188,43 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 - `streampulse_live_streams_active` : `GaugeFunc` branché sur `LiveSessions.ActiveCount()` — lit l'état réel à chaque scrape, aucune dérive possible.
 - Auditeurs = **estimation** `rate(playlist) × durée de segment` (HLS est sans connexion persistante) ; latence et erreurs viennent des métriques HTTP de l'ADR 019.
 
+### Débit, départs et interruptions (STR-244, ADR 041)
+
+- `http_response_bytes_total{path}` : octets de **corps de réponse** écrits vers les clients,
+  alimenté par le `statusRecorder` qui les comptait déjà pour l'access log. Panneau
+  « Débit de streaming » = `rate(...) * 8` (bits/s). ⚠️ Le sens **entrant** (push d'ingest)
+  passe par `r.Body`, hors du middleware : il n'est **pas** compté.
+- `streampulse_listener_departures_total` : auditeurs dont la fenêtre a expiré **pendant que
+  le flux diffusait**. Nommé « départs » et non « déconnexions » : HLS étant sans connexion,
+  fermeture volontaire et coupure réseau expirent identiquement. L'arrêt d'un flux détruit la
+  map sans passer par `pruneListeners` → les auditeurs d'une fin normale ne sont jamais comptés.
+- `streampulse_stream_interruptions_total{reason}` : `ingest_timeout` (le diffuseur ne pousse
+  plus) ou `segmenter_failed` (ffmpeg mort seul). Table de valeurs **close**. Aucune des deux
+  nouvelles familles ne porte de `stream_id` — ce serait un second porteur à purger (ADR 022).
+- `LiveSessions.StartListenerSweep(ctx.Done(), 30s)` dans `main.go` : sans ce balayage la purge
+  n'aurait lieu qu'à la lecture de `/stats`, et le compteur de départs n'avancerait que pendant
+  qu'un diffuseur regarde son tableau de bord.
+- stderr de ffmpeg → zerolog (`ffmpegLogWriter`, niveau `warn`, champs `stream_id` +
+  `component="ffmpeg-hls"`). Avant, `cmd.Stderr = os.Stderr` : les lignes n'étaient pas du JSON,
+  donc écartées par tous les panneaux Loki qui filtrent `| json`. Requête :
+  `{service="api"} | json | component="ffmpeg-hls"`.
+- Dashboards : rows « Métier » / « Technique » sur `live-streaming.json` et `api-backend.json`,
+  `links` croisés (`keepTime: true`) sur les quatre. Alertes métier dans le groupe
+  `streampulse-metier` de `alerting/rules.yml`.
+
 ### Traces OpenTelemetry (STR-164, ADR 020)
 
 - `observability.NewTracer(ctx, cfg)` : OTLP/HTTP vers Tempo, noop si `OTEL_EXPORTER_OTLP_ENDPOINT` vide (`go run` local). Shutdown flush déféré dans `main.go`.
 - Chaîne middleware : `CORS(Tracing(mux, AccessLog(logger, Metrics(reg, mux))))` — spans nommés par pattern de route, `/health`+`/metrics` non tracés.
 - SQL : `otelpgx` sur le pool (`pool.go`) — un span par query, sans les arguments.
 - Logs corrélés : `trace_id`/`span_id` ajoutés par `AccessLog` quand un span est actif → bouton TraceID dans Grafana (Loki `derivedFields`).
+- **Trace depuis le mobile (STR-244, ADR 041)** : `TraceContext` (`mobile/lib/core/network/`) —
+  objet **pur**, comme `InterruptionPolicy` — génère un `traceparent` W3C posé par un
+  intercepteur Dio, placé **avant** l'intercepteur d'auth (une requête rejouée après 401 repart
+  avec un identifiant neuf). Échantillonné à 100 % par défaut ; `--dart-define=TRACE_SAMPLED=false`
+  pour réduire. ⚠️ **just_audio n'est pas couvert** : il ouvre ses propres connexions HTTP hors
+  des intercepteurs Dio (même raison que pour `Authorization`, ADR 034) — segments HLS et
+  binaires de pistes ne portent pas de trace.
 
 ### Alertes Grafana (STR-167, ADR 021)
 
@@ -307,6 +338,7 @@ Demandes de rôle diffuseur : domaine `internal/broadcaster/` ([ADR 014](docs/ad
 | DELETE | `/api/admin/users/{id}` | `admin.Handler.Delete` | Oui — rôle admin — hard delete (cascade), stoppe d'abord les lives du user ; mêmes 409 |
 | GET | `/api/admin/streams` | `admin.Handler.ListStreams` | Oui — rôle admin — liste de modération paginée (tous les live, publics et privés, avec l'identité du diffuseur), réponse `{streams, total}` |
 | POST | `/api/admin/streams/{id}/stop` | `admin.Handler.StopStream` | Oui — rôle admin — interruption immédiate (`live→ended`, sans contrôle de propriétaire) + entrée `audit_logs` best-effort ; 204/404/409 |
+| GET | `/api/admin/metrics` | `admin.Handler.Metrics` | Oui — rôle admin — résumé de supervision JSON (flux live, audience estimée, compteurs HTTP, population de comptes). **Distinct de `/metrics`** : celui-ci est l'exposition Prometheus (texte brut, non authentifiée, bloquée par Caddy en prod) ; ici l'autorisation vient du **rôle applicatif**. Les chiffres HTTP sont des **cumuls depuis le boot** lus dans le registre local — pas des taux glissants, Grafana reste la source des évolutions (STR-244, ADR 041) |
 | GET | `/api/admin/broadcaster-requests` | `broadcaster.Handler.List` | Oui — rôle admin — liste les demandes (filtre `?status=`) |
 | POST | `/api/admin/broadcaster-requests/{id}/approve` | `broadcaster.Handler.Approve` | Oui — rôle admin — valide + promeut l'utilisateur |
 | POST | `/api/admin/broadcaster-requests/{id}/reject` | `broadcaster.Handler.Reject` | Oui — rôle admin — refuse + `review_note` |
@@ -704,6 +736,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `LOG_LEVEL` | Niveau minimal des logs JSON (`trace`\|`debug`\|`info`\|`warn`\|`error`) — ADR 018 | `info` |
 | `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint OTLP/HTTP Tempo pour les traces (vide = tracing désactivé) — ADR 020 | `http://tempo:4318` |
+| `ALERT_EMAIL_TO` | Destinataire des alertes Grafana (STR-244, ADR 041). Interpolé par le provisioning Grafana depuis l'environnement de **son** process : à passer explicitement dans le service `grafana` des deux compose, pas seulement dans le `.env`. Défaut `.invalid` (RFC 2606, non délivrable) en dev ; **sans défaut en prod** (`:?`) — un déploiement qui ne sait pas à qui adresser ses alertes doit refuser de démarrer plutôt que de les router vers le vide | `alertes@streampulse.invalid` |
 
 ## Santé des services
 
@@ -769,7 +802,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `044-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `045-...` — 044 est réservé par une PR ouverte). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.

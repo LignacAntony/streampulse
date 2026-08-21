@@ -43,6 +43,10 @@ check-legal-assets:
 check-adr-index:
 	python3 scripts/check-adr-index.py
 
+.PHONY: check-dashboards
+check-dashboards:
+	python3 scripts/check-dashboards.py
+
 # Couverture Go, unitaires seuls — informatif, ne fait jamais échouer.
 #
 # Seuil explicite à 0 : sans lui le script retomberait sur son défaut de 80 %,

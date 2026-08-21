@@ -219,6 +219,12 @@ services:
       GF_SMTP_HOST: mailpit:1025
       GF_SMTP_FROM_ADDRESS: alertes@streampulse.dev
       GF_SMTP_SKIP_VERIFY: "true"
+      # Destinataire des alertes (STR-244). Lu par contactpoints.yml via
+      # l'interpolation d'environnement du provisioning Grafana. La valeur par
+      # défaut vise .invalid — TLD réservé par la RFC 2606, jamais délivrable :
+      # une alerte mal configurée ne peut donc pas atterrir chez un tiers, et
+      # elle reste visible dans Mailpit en développement.
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-alertes@streampulse.invalid}
     depends_on:
       prometheus:
         condition: service_healthy
