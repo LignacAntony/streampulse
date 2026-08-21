@@ -65,6 +65,12 @@ class AccessibleIconButton extends StatelessWidget {
       label: label,
       button: true,
       enabled: onPressed != null,
+      // `onTap` explicite : `excludeSemantics` retire l'action tap de
+      // l'IconButton sous-jacent, et sans la redéclarer ici le nœud portait le
+      // rôle « bouton » sans aucune action. L'activation retombait alors sur un
+      // tap synthétisé par la plateforme — TalkBack n'émettait pas d'ACTION_CLICK
+      // et le nœud Android n'était pas marqué *clickable* (revue PR #332).
+      onTap: onPressed,
       // Le libellé du Semantics fait autorité : sans cette exclusion, le tooltip
       // posé en dessous ajouterait une seconde annonce du même texte.
       excludeSemantics: true,

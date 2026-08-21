@@ -4,16 +4,6 @@ import 'package:streampulse/core/layout/breakpoints.dart';
 
 void main() {
   group('Breakpoints', () {
-    test('une colonne sur téléphone, plus au-delà', () {
-      expect(Breakpoints.columnsFor(375), 1); // iPhone portrait
-      expect(Breakpoints.columnsFor(599), 1);
-      expect(Breakpoints.columnsFor(600), 2); // rupture medium
-      expect(Breakpoints.columnsFor(839), 2);
-      expect(Breakpoints.columnsFor(840), 3); // rupture expanded
-      // Trois au maximum : au-delà les cartes deviennent trop étroites.
-      expect(Breakpoints.columnsFor(2000), 3);
-    });
-
     test('la largeur de contenu est bornée, jamais étirée', () {
       // Téléphone en portrait : la contrainte ne mord pas, rien ne change là où
       // l'application passe l'essentiel de son temps.
@@ -22,11 +12,6 @@ void main() {
       // étiré, une ligne de trois mots traversant tout l'écran.
       expect(Breakpoints.contentMaxWidth(812), Breakpoints.medium);
       expect(Breakpoints.contentMaxWidth(1200), Breakpoints.medium);
-    });
-
-    test('isWide s\'aligne sur la rupture medium', () {
-      expect(Breakpoints.isWide(599), isFalse);
-      expect(Breakpoints.isWide(600), isTrue);
     });
   });
 

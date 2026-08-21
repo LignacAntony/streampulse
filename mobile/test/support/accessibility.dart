@@ -85,3 +85,85 @@ void expectNoTooltipOnlyTapTargets(WidgetTester tester) {
         'ou poser un Semantics(label:).',
   );
 }
+
+/// Relève les nœuds portant le rôle **bouton** mais aucune action `tap`.
+///
+/// `Semantics(button: true, excludeSemantics: true)` sans `onTap` produit
+/// exactement ça : l'exclusion retire l'action de l'enfant, et le nœud garde un
+/// rôle sans opération. L'activation retombe alors sur un tap synthétisé par la
+/// plateforme au lieu d'`ACTION_CLICK` (revue PR #332).
+List<String> buttonsWithoutTapAction(WidgetTester tester) {
+  final found = <String>[];
+
+  void walk(SemanticsNode node) {
+    final data = node.getSemanticsData();
+    final isButton = data.flagsCollection.isButton;
+    final hasTap = data.actions & SemanticsAction.tap.index != 0;
+    if (isButton && !hasTap && data.label.isNotEmpty) {
+      found.add(data.label);
+    }
+    node.visitChildren((child) {
+      walk(child);
+      return true;
+    });
+  }
+
+  void visitOwner(PipelineOwner owner) {
+    final root = owner.semanticsOwner?.rootSemanticsNode;
+    if (root != null) walk(root);
+    owner.visitChildren(visitOwner);
+  }
+
+  visitOwner(tester.binding.rootPipelineOwner);
+  return found;
+}
+
+/// Compte les nœuds sémantiques dont le libellé contient [fragment].
+///
+/// Sert à prouver l'absence de **double annonce** : un conteneur qui pose une
+/// phrase composée sans masquer ses enfants laisse ceux-ci former un second
+/// nœud, et le lecteur d'écran répète l'information.
+int semanticNodesMentioning(WidgetTester tester, String fragment) {
+  var count = 0;
+
+  void walk(SemanticsNode node) {
+    if (node.getSemanticsData().label.contains(fragment)) count++;
+    node.visitChildren((child) {
+      walk(child);
+      return true;
+    });
+  }
+
+  void visitOwner(PipelineOwner owner) {
+    final root = owner.semanticsOwner?.rootSemanticsNode;
+    if (root != null) walk(root);
+    owner.visitChildren(visitOwner);
+  }
+
+  visitOwner(tester.binding.rootPipelineOwner);
+  return count;
+}
+
+/// Rend les libellés des nœuds contenant [fragment] — variante de
+/// [semanticNodesMentioning] qui montre ce qui est réellement annoncé.
+List<String> semanticLabelsMentioning(WidgetTester tester, String fragment) {
+  final found = <String>[];
+
+  void walk(SemanticsNode node) {
+    final label = node.getSemanticsData().label;
+    if (label.contains(fragment)) found.add(label);
+    node.visitChildren((child) {
+      walk(child);
+      return true;
+    });
+  }
+
+  void visitOwner(PipelineOwner owner) {
+    final root = owner.semanticsOwner?.rootSemanticsNode;
+    if (root != null) walk(root);
+    owner.visitChildren(visitOwner);
+  }
+
+  visitOwner(tester.binding.rootPipelineOwner);
+  return found;
+}

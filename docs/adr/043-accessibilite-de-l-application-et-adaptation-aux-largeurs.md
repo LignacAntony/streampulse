@@ -77,6 +77,26 @@ version cherchait l'arbre sémantique sur le mauvais `PipelineOwner`, n'en
 trouvait aucun, et rendait sereinement une liste vide. Un vérificateur qui ne
 trouve pas son sujet échoue désormais bruyamment.
 
+### Deux défauts que ces gardes ne voyaient pas, trouvés en revue
+
+Les vérificateurs regardent la présence d'un libellé et la taille des cibles,
+pas la **forme** de l'arbre. Deux défauts leur ont échappé (PR #332) :
+
+- **La ligne de playlist était annoncée deux fois.** Le `Semantics(container:)`
+  posait bien la phrase composée, mais sans `excludeSemantics` : la `ListTile`
+  étant tapable, ses `title`/`subtitle` formaient leur propre nœud à côté. Un
+  lecteur d'écran annonçait la phrase entière **puis** « Sunrise, Neon Lights
+  3:34 » — la lecture fragmentée que ce changement prétendait supprimer, plus un
+  doublon. Seul le `leading` avait été exclu.
+- **Le rôle « bouton » sans action `tap`.** `excludeSemantics: true` retire
+  l'action de l'enfant ; sans la redéclarer par `onTap:`, le nœud portait un rôle
+  sans opération, et l'activation retombait sur un tap synthétisé par la
+  plateforme au lieu d'`ACTION_CLICK`.
+
+Deux gardes maison couvrent désormais ces formes : `buttonsWithoutTapAction` et
+`semanticLabelsMentioning`. Les deux ont été vérifiées **contre le code
+d'avant** — elles échouent sans le correctif.
+
 ### Ce que ces gardes ne couvrent pas
 
 L'ordre de parcours, la pertinence des libellés, et le comportement réel de
@@ -120,17 +140,19 @@ aurait retiré une capacité que les deux plateformes offrent, pour un gain nul
 en accessibilité — quelqu'un qui fixe son téléphone sur un support de vélo n'a
 pas le choix de l'orientation.
 
-Deux mécanismes, parce que les deux problèmes sont distincts :
+Un seul mécanisme : **borner la largeur du contenu**. Une ligne de texte au-delà
+de ~70 caractères se lit mal — ce n'est pas une question de plateforme mais de
+typographie, et c'est exactement ce qui rendait le paysage illisible.
 
-1. **Borner la largeur du contenu** — répond au portrait étiré. Une ligne de
-   texte au-delà de ~70 caractères se lit mal ; ce n'est pas une question de
-   plateforme mais de typographie.
-2. **Multiplier les colonnes** — répond à la tablette, où borner la largeur
-   laisserait deux tiers de l'écran vides.
+La rupture est celle de Material 3 (compact < 600). La reprendre plutôt que
+d'inventer la nôtre évite d'avoir à la défendre, et l'aligne sur les composants
+Material déjà utilisés.
 
-Les valeurs sont les classes de taille de Material 3 (compact < 600, medium
-600–839, expanded ≥ 840). Les reprendre plutôt que d'inventer les nôtres évite
-d'avoir à les défendre, et les aligne sur les composants Material déjà utilisés.
+> **Réduit en revue (PR #332).** La première version livrait aussi un
+> `columnsFor` pour le cas tablette — sans aucun appelant. De l'API publique et
+> ses tests à maintenir pour un comportement inexistant : retiré. Le passage en
+> plusieurs colonnes reviendra avec l'écran qui en a besoin, et il sera alors
+> jugeable sur pièce.
 
 `ResponsiveContent` **n'a aucun effet sur un téléphone en portrait** : la
 contrainte n'y mord pas. Rien ne change là où l'application passe l'essentiel de
@@ -157,9 +179,9 @@ soigner un cas rare est une régression déguisée.
   traitées, les écrans d'authentification et de profil ne le sont pas encore.
 - `AccessibleIconButton` n'expose pas toute la surface d'`IconButton`
   (`padding`, `splashRadius`, `constraints`) — à élargir au besoin.
-- Les colonnes multiples sont disponibles (`Breakpoints.columnsFor`) mais
-  encore appliquées nulle part : les écrans de liste bornent leur largeur sans
-  passer en grille.
+- Le cas tablette n'est pas traité : les écrans de liste bornent leur largeur et
+  centrent, ils ne passent pas en grille. Un écran large montre donc une colonne
+  entourée de vide — mieux qu'une ligne étirée, moins bien qu'une grille.
 
 ---
 

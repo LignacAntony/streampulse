@@ -393,6 +393,10 @@ class _TrackTile extends StatelessWidget {
       ].join(', '),
       button: true,
       selected: isCurrent,
+      // `onTap` sur le Semantics et non seulement sur la ListTile : sans lui, le
+      // nœud porte le rôle « bouton » sans exposer d'action, et l'activation
+      // retombe sur un tap synthétisé par la plateforme (revue PR #332).
+      onTap: onPlay,
       child: _row(context, isCurrent, cacheStatus),
     );
   }
@@ -404,19 +408,33 @@ class _TrackTile extends StatelessWidget {
   ) {
     return ListTile(
       onTap: onPlay,
+      // TOUT le contenu descriptif est exclu, pas seulement l'entête.
+      //
+      // Le `Semantics` parent ne masquait rien : la ListTile étant tapable, ses
+      // `title`/`subtitle` formaient leur propre nœud À CÔTÉ du libellé composé.
+      // Un lecteur d'écran annonçait donc la phrase entière, puis « Sunrise,
+      // Neon Lights 3:34 » — exactement la lecture fragmentée que ce changement
+      // prétendait supprimer, plus un doublon (revue PR #332).
+      //
+      // Le bouton « Retirer » du `trailing` reste hors de l'exclusion : il a sa
+      // propre action et son propre libellé.
       leading: ExcludeSemantics(
         child: queueTrackLeading(context, index: index, isCurrent: isCurrent),
       ),
-      title: Text(
-        track.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: queueTrackTitleStyle(context, isCurrent: isCurrent),
+      title: ExcludeSemantics(
+        child: Text(
+          track.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: queueTrackTitleStyle(context, isCurrent: isCurrent),
+        ),
       ),
-      subtitle: Text(
-        trackSubtitle(artist: track.artist, durationS: track.durationS),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      subtitle: ExcludeSemantics(
+        child: Text(
+          trackSubtitle(artist: track.artist, durationS: track.durationS),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

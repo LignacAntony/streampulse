@@ -79,6 +79,23 @@ void main() {
     handle.dispose();
   });
 
+  // Un nœud « bouton » sans action tap n'est pas opérable : l'activation retombe
+  // sur un tap synthétisé par la plateforme au lieu d'ACTION_CLICK. C'est ce que
+  // produisait `excludeSemantics: true` sans `onTap` (revue PR #332).
+  testWidgets('le nœud expose réellement une action tap', (tester) async {
+    final handle = await _pump(
+      tester,
+      AccessibleIconButton(
+        icon: Icons.pause,
+        label: 'Mettre en pause',
+        onPressed: () {},
+      ),
+    );
+
+    expect(buttonsWithoutTapAction(tester), isEmpty);
+    handle.dispose();
+  });
+
   testWidgets('un bouton désactivé garde son nom', (tester) async {
     final handle = await _pump(
       tester,

@@ -349,6 +349,9 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       // Pendant le chargement il n'y a rien à activer : l'annoncer évite qu'un
       // appui à l'aveugle passe pour une panne.
       enabled: !(_audio.isBusy || _audio.isReconnecting),
+      // Même raison qu'AccessibleIconButton : `excludeSemantics` retire l'action
+      // de l'InkWell, il faut la redéclarer sinon le nœud n'est pas opérable.
+      onTap: _audio.togglePlayPause,
       excludeSemantics: true,
       child: Material(
         color: colors.primary,

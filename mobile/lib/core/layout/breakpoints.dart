@@ -13,14 +13,17 @@ import 'package:flutter/widgets.dart';
 /// était honnête et immédiat, mais il aurait retiré une capacité que les deux
 /// plateformes offrent — et le sujet demande une interface « responsive ».
 ///
-/// C'est donc l'adaptation qui est retenue, avec **deux mécanismes distincts**
-/// parce que les deux problèmes sont distincts :
+/// C'est donc l'adaptation qui est retenue, par un mécanisme unique :
+/// **borner la largeur du contenu** ([contentMaxWidth]). Une ligne de texte
+/// au-delà de ~70 caractères se lit mal — ce n'est pas une question de
+/// plateforme mais de typographie, et c'est exactement ce qui rendait le
+/// paysage illisible.
 ///
-/// 1. **Borner la largeur du contenu** ([contentMaxWidth]) — répond au portrait
-///    étiré. Une ligne de texte au-delà de ~70 caractères se lit mal ; ce n'est
-///    pas une question de plateforme mais de typographie.
-/// 2. **Multiplier les colonnes** ([columnsFor]) — répond à la tablette, où
-///    borner la largeur laisserait deux tiers de l'écran vides.
+/// Le cas tablette — passer en plusieurs colonnes plutôt que de laisser deux
+/// tiers de l'écran vides — n'est **pas** traité ici. Une API `columnsFor` avait
+/// été écrite pour lui, sans aucun appelant : de l'échafaudage à maintenir sans
+/// comportement derrière (revue PR #332). Elle reviendra avec l'écran qui en a
+/// besoin.
 ///
 /// ## Pourquoi ces valeurs
 ///
@@ -36,9 +39,6 @@ class Breakpoints {
   /// En deçà : téléphone en portrait. Une seule colonne.
   static const double medium = 600;
 
-  /// Au-delà : tablette, ou téléphone en paysage sur les grands modèles.
-  static const double expanded = 840;
-
   /// Largeur maximale d'une colonne de contenu.
   ///
   /// Bornée à [medium] : au-delà, la ligne devient trop longue pour l'œil, quel
@@ -48,18 +48,6 @@ class Breakpoints {
   static double contentMaxWidth(double width) =>
       width <= medium ? width : medium;
 
-  /// Nombre de colonnes pour une grille de cartes.
-  ///
-  /// Trois au maximum : au-delà, les cartes deviennent trop étroites pour leur
-  /// contenu et on perd ce qu'on croyait gagner.
-  static int columnsFor(double width) {
-    if (width >= expanded) return 3;
-    if (width >= medium) return 2;
-    return 1;
-  }
-
-  /// Vrai quand l'écran a la place d'afficher plus d'une colonne.
-  static bool isWide(double width) => width >= medium;
 }
 
 /// Centre et borne son enfant au-delà de la rupture (cf. [Breakpoints.contentMaxWidth]).

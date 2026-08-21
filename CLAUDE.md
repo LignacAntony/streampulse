@@ -586,7 +586,15 @@ wrappers minces vers `AuthScreen(initialTab: ...)`.
 - **Responsive** : `Breakpoints` + `ResponsiveContent` (`core/layout/`). Le paysage est
   autorisé par les deux manifestes — décision prise d'**adapter** plutôt que de verrouiller
   le portrait. `ResponsiveContent` borne et centre au-delà de 600 px ; **sans effet en
-  portrait téléphone**, la contrainte n'y mord pas.
+  portrait téléphone**, la contrainte n'y mord pas. Pas de grille tablette : l'API avait
+  été écrite sans appelant, elle reviendra avec l'écran qui en a besoin.
+- ⚠️ Un `Semantics(container:, label:)` **ne masque pas ses enfants**. Sur une `ListTile`
+  tapable, `title`/`subtitle` forment leur propre nœud à côté de la phrase composée : il
+  faut les envelopper dans `ExcludeSemantics` (en laissant les boutons d'action dehors).
+- ⚠️ `excludeSemantics: true` **retire l'action tap de l'enfant**. Sans `onTap:` redéclaré
+  sur le `Semantics`, le nœud porte le rôle « bouton » sans opération et l'activation
+  retombe sur un tap synthétisé. Gardes : `buttonsWithoutTapAction`,
+  `semanticLabelsMentioning` (`test/support/accessibility.dart`).
 - ⚠️ **Ne pas lancer `dart format` sur des fichiers existants** : la version courante du
   formateur réécrit des lignes non touchées et peut introduire des lints. Ne formater que
   les fichiers qu'on crée.
