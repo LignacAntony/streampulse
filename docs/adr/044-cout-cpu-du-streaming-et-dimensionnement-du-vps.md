@@ -183,15 +183,17 @@ Sur un CX22, un vCPU-mois vaut 1,90 € (3,79 € ÷ 2). Avec la marge de 2× :
 
 **Le vrai coût d'un auditeur n'est pas son CPU, c'est son trafic.** À 128 kbit/s, une écoute
 continue consomme **42 Go par mois**. Les 20 To inclus couvrent donc **~475 auditeurs
-permanents** ; au-delà, Hetzner facture le téraoctet supplémentaire, ce qui porte un auditeur
-continu à ~0,04 €/mois — soit **trente fois son coût CPU**. Le premier plafond que rencontrera
+permanents** ; au-delà, le trafic sortant est facturé au téraoctet — à 1 €/To, un auditeur
+continu revient alors à ~0,04 €/mois, soit **trente fois son coût CPU**. (Le tarif au téraoctet
+est à confirmer en même temps que le plan du serveur ; l'ordre de grandeur, lui, ne dépend pas
+de sa valeur exacte : c'est le rapport entre trafic et processeur qui compte.) Le premier plafond que rencontrera
 StreamPulse en croissance est celui du réseau, pas celui du processeur.
 
 ## Alternatives écartées
 
 - **`pprof.StartCPUProfile`** — donne la répartition du CPU *à l'intérieur* du process Go, pas
-  son total, et ne voit pas du tout les process fils. Or ce sont eux qui portent 76 % de la
-  charge sur le chemin MP3. Excellent pour optimiser, inapte à chiffrer.
+  son total, et ne voit pas du tout les process fils. Or ce sont eux qui portent 84 % de la
+  charge sur le chemin MP3 (19,11 s sur 22,72 s à N=20). Excellent pour optimiser, inapte à chiffrer.
 - **`docker stats` / cgroups** — mesurerait tout le conteneur d'un coup, générateur de charge
   compris, sans moyen de le défalquer, et imposerait de lancer la pile Docker pour chaque point
   du balayage. `getrusage` donne la même grandeur sans dépendance et avec la séparation
