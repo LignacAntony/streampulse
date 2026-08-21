@@ -1,0 +1,67 @@
+name: Retour utilisateur
+description: Signaler un problème ou proposer une amélioration sur l'application
+title: "[Retour] "
+labels: ["retour-utilisateur"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps. Ce formulaire s'adresse aux **utilisateurs**
+        de StreamPulse — aucune connaissance technique n'est attendue.
+
+        Pour un défaut de sécurité, n'ouvrez pas d'issue publique : écrivez
+        directement à l'équipe.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version de l'application
+      description: >-
+        Visible dans Profil, tout en bas de l'écran. Sans elle, un retour n'est
+        rattachable à aucune version, et « ça ne marche pas » devient
+        intraçable.
+      placeholder: 1.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: plateforme
+    attributes:
+      label: Sur quoi utilisez-vous l'application ?
+      options:
+        - Android
+        - iOS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: À quel titre utilisez-vous StreamPulse ?
+      options:
+        - J'écoute (auditeur)
+        - Je diffuse (diffuseur)
+        - J'administre
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Que s'est-il passé ?
+      description: >-
+        Ce que vous faisiez, ce que vous attendiez, ce qui s'est produit à la
+        place. Les trois comptent : sans l'attente, on ne sait pas ce qui est
+        anormal.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Comment le reproduire
+      description: Les étapes, dans l'ordre. Une par ligne.
+      placeholder: |
+        1. Ouvrir l'onglet Découvrir
+        2. Appuyer sur un flux en direct
+        3. …
