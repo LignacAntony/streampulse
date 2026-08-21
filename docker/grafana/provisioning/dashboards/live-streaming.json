@@ -4,7 +4,8 @@
   "tags": [
     "streampulse",
     "live",
-    "str-166"
+    "str-166",
+    "str-244"
   ],
   "schemaVersion": 39,
   "editable": false,
@@ -14,12 +15,64 @@
     "to": "now"
   },
   "refresh": "15s",
+  "links": [
+    {
+      "type": "link",
+      "title": "API Backend",
+      "url": "/d/streampulse-api",
+      "icon": "dashboard",
+      "tooltip": "Latences, erreurs et volumétrie HTTP côté API",
+      "keepTime": true,
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "tags": []
+    },
+    {
+      "type": "link",
+      "title": "Logs & Erreurs",
+      "url": "/d/streampulse-logs",
+      "icon": "dashboard",
+      "tooltip": "Journaux corrélés, erreurs cliquables vers Tempo",
+      "keepTime": true,
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "tags": []
+    },
+    {
+      "type": "link",
+      "title": "Infrastructure",
+      "url": "/d/streampulse-infra",
+      "icon": "dashboard",
+      "tooltip": "CPU, mémoire et goroutines de la machine",
+      "keepTime": true,
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "tags": []
+    }
+  ],
   "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Métier — audience et continuité des diffusions",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": [],
+      "description": "Ce que vivent les auditeurs et les diffuseurs. Les incidents lus ici se comptent en écoutes perdues, pas en codes HTTP — c'est la séparation que demande le sujet, portée sur un seul dashboard (STR-244)."
+    },
     {
       "id": 1,
       "type": "stat",
       "title": "Flux en direct",
-      "description": "Lu à chaque scrape depuis le registre de sessions : reflète l'état réel, pas un compteur incrémenté.",
+      "description": "Lu à chaque scrape depuis le registre de sessions (GaugeFunc, ADR 022) : la valeur dérive de l'état réel et ne peut pas diverger.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -28,7 +81,7 @@
         "h": 6,
         "w": 4,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "targets": [
         {
@@ -38,20 +91,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
+          "unit": "short"
         },
         "overrides": []
       }
@@ -60,7 +100,7 @@
       "id": 2,
       "type": "stat",
       "title": "Auditeurs (estimé, total)",
-      "description": "HLS est sans connexion persistante : le nombre d'auditeurs est estimé à partir du débit de requêtes de playlist, chaque client en demandant une par segment (~10 s). Voir ADR 022.",
+      "description": "Estimation : fréquence de demande du manifeste × durée d'un segment (10 s). HLS n'a pas de connexion persistante, deux auditeurs derrière une même adresse comptent pour un (ADR 025).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -69,7 +109,7 @@
         "h": 6,
         "w": 4,
         "x": 4,
-        "y": 0
+        "y": 1
       },
       "targets": [
         {
@@ -79,8 +119,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         },
         "overrides": []
       }
@@ -88,8 +127,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Latence HLS p95",
-      "description": "Temps de service des manifestes et segments (histogramme HTTP, ADR 019).",
+      "title": "Débit sortant HLS",
+      "description": "Octets de manifestes et de segments servis aux auditeurs, convertis en bits/s (STR-244). Ne compte pas le push d'ingest du diffuseur : celui-ci arrive dans le corps de requête, que le compteur n'observe pas.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -98,7 +137,169 @@
         "h": 6,
         "w": 4,
         "x": 8,
-        "y": 0
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_response_bytes_total{path=~\"/api/streams/\\\\{id\\\\}/(playlist.m3u8|segments/\\\\{segment\\\\})\"}[5m])) * 8"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Départs d'auditeurs",
+      "description": "Auditeurs dont la fenêtre d'activité a expiré alors que le flux diffusait toujours. Fermeture volontaire du lecteur et coupure réseau expirent de la même façon : la métrique mesure des départs, pas des « déconnexions brutales » (ADR 041). Les auditeurs d'une diffusion qui se termine normalement ne sont jamais comptés ici.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(streampulse_listener_departures_total[5m])) * 60"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cpm"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Auditeurs estimés par flux",
+      "description": "Même estimation que la statistique globale, détaillée par diffusion. Les séries disparaissent à l'arrêt du flux (ForgetStream, ADR 022).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "round(sum by (stream_id) (rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)",
+          "legendFormat": "{{stream_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Débit de streaming (bits/s)",
+      "description": "Volume réellement écrit vers les clients. L'écart entre les deux courbes est ce que consomme l'API hors diffusion (JSON, upload de pistes servi, documentation).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_response_bytes_total{path=~\"/api/streams/\\\\{id\\\\}/(playlist.m3u8|segments/\\\\{segment\\\\})\"}[5m])) * 8",
+          "legendFormat": "HLS (manifestes + segments)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(http_response_bytes_total[5m])) * 8",
+          "legendFormat": "Toutes routes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Interruptions de diffusion (15 min glissantes)",
+      "description": "Diffusions terminées sans que le diffuseur l'ait demandé. ingest_timeout : plus aucun push audio pendant le délai de grâce — côté diffuseur. segmenter_failed : ffmpeg s'est arrêté seul — côté serveur. Les deux n'appellent pas la même intervention, d'où le label.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(streampulse_stream_interruptions_total[15m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 200,
+      "type": "row",
+      "title": "Technique — santé du service HLS",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": [],
+      "description": "Le versant infrastructure : latence, codes d'erreur, saturation. Un incident ici n'est pas forcément visible d'un auditeur, et un incident métier ci-dessus peut se produire sans qu'aucune de ces courbes ne bouge."
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Latence HLS p95",
+      "description": "95e centile du temps de service des manifestes et segments.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 26
       },
       "targets": [
         {
@@ -115,7 +316,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 9,
       "type": "stat",
       "title": "Taux d'erreurs segments .ts",
       "description": "Part des requêtes de segments en échec (4xx/5xx). 206 Partial Content (requêtes Range des players) et 304 Not Modified sont des réponses normales, exclues du numérateur.",
@@ -126,8 +327,8 @@
       "gridPos": {
         "h": 6,
         "w": 4,
-        "x": 12,
-        "y": 0
+        "x": 4,
+        "y": 26
       },
       "targets": [
         {
@@ -161,39 +362,10 @@
       }
     },
     {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Auditeurs estimés par flux",
-      "description": "rate(playlist) × durée cible de segment, par stream_id. Les séries disparaissent à l'arrêt du flux.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 6
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "round(sum by (stream_id) (rate(streampulse_hls_requests_total{kind=\"playlist\",status=\"200\"}[2m])) * 10)",
-          "legendFormat": "{{stream_id}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 6,
+      "id": 10,
       "type": "timeseries",
       "title": "Requêtes HLS par seconde (playlist / segment)",
+      "description": "Débit de requêtes servies aux auditeurs, par nature.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -202,7 +374,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 32
       },
       "targets": [
         {
@@ -219,9 +391,10 @@
       }
     },
     {
-      "id": 7,
+      "id": 11,
       "type": "timeseries",
       "title": "Erreurs HLS par seconde et par status (4xx/5xx)",
+      "description": "Erreurs de lecture, détaillées par code.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -229,8 +402,8 @@
       "gridPos": {
         "h": 9,
         "w": 12,
-        "x": 0,
-        "y": 24
+        "x": 12,
+        "y": 32
       },
       "targets": [
         {
@@ -247,10 +420,10 @@
       }
     },
     {
-      "id": 8,
+      "id": 12,
       "type": "timeseries",
       "title": "Rejets de capacité HLS (503)",
-      "description": "Le limiteur HLS_MAX_CONCURRENT (STR-88) répond avant le handler : ces rejets ne portent pas de stream_id et se lisent dans les métriques HTTP (ADR 019). Un plateau non nul signale une capacité atteinte.",
+      "description": "Requêtes refusées par le limiteur HLS_MAX_CONCURRENT (STR-88). Un 503 ici n'est pas une panne : c'est la protection qui fonctionne, mais des auditeurs n'ont pas été servis.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -259,7 +432,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 41
       },
       "targets": [
         {

@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Paramètres de segmentation HLS (cf. ADR 015).
@@ -20,6 +23,12 @@ const (
 	hlsSegmentPattern = "seg_%05d.ts" // nom de fichier des segments (sur disque)
 	hlsSegmentPrefix  = "segments/"   // préfixe des URI de segments dans le manifeste
 	hlsShutdownGrace  = 5 * time.Second
+
+	// ffmpegLogLineMax borne une « ligne » de stderr avant émission forcée. Sous
+	// -loglevel warning ffmpeg n'écrit pas de barre de progression (celle-ci est
+	// séparée par des \r, pas des \n), mais un flux corrompu peut produire une
+	// avalanche : la borne garantit que le tampon ne grandit pas sans fin.
+	ffmpegLogLineMax = 4 << 10 // 4 Ko
 )
 
 // Erreurs d'ingest, mappées vers un status HTTP par le handler.
@@ -37,15 +46,82 @@ var segmentNamePattern = regexp.MustCompile(`^seg_\d+\.ts$`)
 // manifeste HLS + des segments MPEG-TS dans un répertoire temporaire dédié.
 // L'audio est remuxé sans ré-encodage (-c:a copy).
 type hlsSegmenter struct {
-	dir   string         // répertoire de travail (manifeste + segments)
-	cmd   *exec.Cmd      // nil dans les tests (segmenteur simulé)
-	stdin io.WriteCloser // entrée où copier l'audio du diffuseur
-	done  chan struct{}  // fermé quand le process ffmpeg a terminé
+	dir    string           // répertoire de travail (manifeste + segments)
+	cmd    *exec.Cmd        // nil dans les tests (segmenteur simulé)
+	stdin  io.WriteCloser   // entrée où copier l'audio du diffuseur
+	done   chan struct{}    // fermé quand le process ffmpeg a terminé
+	stderr *ffmpegLogWriter // nil dans les tests ; vidé de son reliquat à close()
+}
+
+// ffmpegLogWriter route le stderr d'un ffmpeg de segmentation vers zerolog,
+// une ligne de log JSON par ligne de sortie (STR-244, ADR 041).
+//
+// Avant, hls.go faisait `cmd.Stderr = os.Stderr` : les lignes partaient en clair
+// dans la sortie du conteneur, où Alloy les transmettait telles quelles à Loki.
+// Or tous les panneaux du dashboard « Logs & Erreurs » filtrent avec `| json` —
+// ces lignes étaient donc écartées en JSONParserErr. Une erreur ffmpeg pendant
+// une diffusion était invisible dans Grafana.
+//
+// Le transcodeur d'ingest (transcode.go) résout le même problème avec un
+// tailBuffer, qui convient à un process court dont on lit la fin après coup.
+// Le segmenteur, lui, vit toute la diffusion : ses erreurs doivent apparaître
+// quand elles surviennent, d'où l'émission au fil de l'eau.
+//
+// os/exec n'appelle Write que depuis la goroutine de recopie qu'il crée pour un
+// Stderr non-*os.File, et cmd.Wait() l'attend : aucun accès concurrent, donc
+// pas de verrou. Le reliquat sans saut de ligne final est vidé par close(),
+// après la terminaison du process.
+type ffmpegLogWriter struct {
+	streamID string
+	buf      bytes.Buffer
+}
+
+func (w *ffmpegLogWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p)
+	for {
+		line, err := w.buf.ReadBytes('\n')
+		if err != nil {
+			// Pas de saut de ligne : garder en tampon jusqu'au prochain Write,
+			// sauf si le tampon dépasse la borne — sinon un ffmpeg qui n'en
+			// émettrait jamais ferait grandir la mémoire sans limite.
+			if len(line) >= ffmpegLogLineMax {
+				w.emit(line)
+			} else {
+				w.buf.Write(line)
+			}
+			return len(p), nil
+		}
+		w.emit(line)
+	}
+}
+
+// emit journalise une ligne de stderr. Niveau warn et non error : ffmpeg écrit
+// à ce flux des avertissements bénins (paquets non monotones, ré-horodatage)
+// aussi bien que des erreurs fatales, et il ne les distingue pas dans un format
+// exploitable. Les faire toutes passer en error déclencherait l'alerte 5xx sur
+// du bruit ; warn les rend cherchables sans mentir sur leur gravité.
+func (w *ffmpegLogWriter) emit(line []byte) {
+	msg := string(bytes.TrimRight(line, "\r\n"))
+	if msg == "" {
+		return
+	}
+	log.Warn().Str("stream_id", w.streamID).Str("component", "ffmpeg-hls").Msg(msg)
+}
+
+// flush vide le reliquat resté sans saut de ligne. Appelé après la terminaison
+// du process : plus aucun Write ne peut survenir.
+func (w *ffmpegLogWriter) flush() {
+	if w.buf.Len() > 0 {
+		w.emit(w.buf.Bytes())
+		w.buf.Reset()
+	}
 }
 
 // newHLSSegmenter crée le répertoire de travail et démarre ffmpeg. En cas
 // d'échec (ffmpeg absent, etc.) le répertoire est nettoyé et l'erreur remontée.
-func newHLSSegmenter() (*hlsSegmenter, error) {
+// streamID ne sert qu'à étiqueter les logs de stderr : plusieurs diffusions
+// coexistent, une ligne ffmpeg anonyme serait inexploitable.
+func newHLSSegmenter(streamID string) (*hlsSegmenter, error) {
 	dir, err := os.MkdirTemp("", "streampulse-hls-")
 	if err != nil {
 		return nil, fmt.Errorf("hls: create work dir: %w", err)
@@ -76,7 +152,8 @@ func newHLSSegmenter() (*hlsSegmenter, error) {
 	// diffusion.
 	//nolint:noctx // arrêt géré explicitement par close(), cf. ci-dessus
 	cmd := exec.Command("ffmpeg", args...) // #nosec G204 -- args 100% statiques/serveur (os.MkdirTemp), aucune entrée utilisateur
-	cmd.Stderr = os.Stderr                 // warnings/erreurs ffmpeg vers les logs du conteneur
+	stderr := &ffmpegLogWriter{streamID: streamID}
+	cmd.Stderr = stderr // warnings/erreurs ffmpeg en JSON structuré (STR-244)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -89,7 +166,7 @@ func newHLSSegmenter() (*hlsSegmenter, error) {
 		return nil, fmt.Errorf("hls: start ffmpeg: %w", err)
 	}
 
-	s := &hlsSegmenter{dir: dir, cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	s := &hlsSegmenter{dir: dir, cmd: cmd, stdin: stdin, done: make(chan struct{}), stderr: stderr}
 	go func() {
 		_ = cmd.Wait()
 		close(s.done)
@@ -124,6 +201,12 @@ func (s *hlsSegmenter) close() {
 			_ = s.cmd.Process.Kill()
 			<-s.done
 		}
+	}
+	// Après <-s.done : cmd.Wait() a rendu la main, donc la recopie de stderr est
+	// terminée et plus aucun Write ne viendra. Vider le reliquat ici est le seul
+	// moyen de ne pas perdre une dernière ligne sans saut de ligne final.
+	if s.stderr != nil {
+		s.stderr.flush()
 	}
 	_ = os.RemoveAll(s.dir)
 }

@@ -39,7 +39,7 @@ mechanism: the login and renewal queries join on `is_active = true`. The
 
 ## 2. Roles × routes
 
-The 51 routes mounted in `backend/cmd/api/main.go`.
+The 52 routes mounted in `backend/cmd/api/main.go`.
 
 - **no** — refused: 401 without a token, 403 when the role is insufficient
 - **yes** — allowed
@@ -125,6 +125,7 @@ Moderation covers accounts and live streams, not private content.
 | `PATCH`, `DELETE /api/admin/users/{id}` | no | no | no | yes |
 | `GET /api/admin/streams` | no | no | no | yes |
 | `POST /api/admin/streams/{id}/stop` | no | no | no | yes |
+| `GET /api/admin/metrics` | no | no | no | yes |
 | `GET /api/admin/broadcaster-requests` | no | no | no | yes |
 | `POST /api/admin/broadcaster-requests/{id}/approve`, `/reject` | no | no | no | yes |
 

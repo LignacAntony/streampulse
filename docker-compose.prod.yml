@@ -236,6 +236,15 @@ services:
       GF_SMTP_USER: ${SMTP_USERNAME:-}
       GF_SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       GF_SMTP_FROM_ADDRESS: ${SMTP_FROM:-noreply@streampulse.com}
+      # Destinataire des alertes (STR-244), interpolé par le provisioning de
+      # Grafana depuis l'environnement de SON process — d'où ce passage explicite.
+      #
+      # `:?` et non une valeur par défaut : un déploiement qui ne sait pas à qui
+      # adresser ses alertes doit refuser de démarrer, pas démarrer en silence.
+      # Sans cette ligne, `$ALERT_EMAIL_TO` s'expansait en chaîne vide et TOUTES
+      # les alertes partaient nulle part — pire que l'ancienne adresse en dur,
+      # qui produisait au moins une enveloppe délivrable (revue PR #328).
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:?adresse de destination des alertes requise en production (cf. .env.example)}
     depends_on:
       prometheus:
         condition: service_healthy

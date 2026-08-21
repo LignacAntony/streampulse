@@ -2,6 +2,11 @@
   "uid": "streampulse-logs",
   "title": "StreamPulse — Logs & Erreurs",
   "tags": ["streampulse", "logs", "str-167"],
+  "links": [
+    { "type": "link", "title": "Live Streaming", "url": "/d/streampulse-live", "icon": "dashboard", "tooltip": "Audience, débit et interruptions de diffusion", "keepTime": true, "targetBlank": false, "asDropdown": false, "includeVars": false, "tags": [] },
+    { "type": "link", "title": "API Backend", "url": "/d/streampulse-api", "icon": "dashboard", "tooltip": "Latences, erreurs et volumétrie HTTP côté API", "keepTime": true, "targetBlank": false, "asDropdown": false, "includeVars": false, "tags": [] },
+    { "type": "link", "title": "Infrastructure", "url": "/d/streampulse-infra", "icon": "dashboard", "tooltip": "CPU, mémoire et goroutines de la machine", "keepTime": true, "targetBlank": false, "asDropdown": false, "includeVars": false, "tags": [] }
+  ],
   "schemaVersion": 39,
   "editable": false,
   "timezone": "browser",

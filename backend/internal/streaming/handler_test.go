@@ -748,7 +748,7 @@ func TestHandler_Ingest_TranscodesMP3ToAAC(t *testing.T) {
 
 	var received syncWriter
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) {
+	ls.newSeg = func(string) (*hlsSegmenter, error) {
 		seg := fakeSegmenter(t)
 		seg.stdin = nopWriteCloser{&received}
 		return seg, nil
@@ -853,7 +853,7 @@ func TestHandler_Ingest_TransportErrorIsNotReportedAs415(t *testing.T) {
 func TestHandler_Ingest_AACIsPassedThroughUntouched(t *testing.T) {
 	var received syncWriter
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) {
+	ls.newSeg = func(string) (*hlsSegmenter, error) {
 		seg := fakeSegmenter(t)
 		seg.stdin = nopWriteCloser{&received}
 		return seg, nil
@@ -928,7 +928,7 @@ func TestHandler_Playlist_NotReadyReturnsJSON409(t *testing.T) {
 		t.Fatalf("remove playlist: %v", err)
 	}
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return seg, nil }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return seg, nil }
 	ls.Start("sid-nr", "KEYNR")
 	defer ls.StopAll()
 

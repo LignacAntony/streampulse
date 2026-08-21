@@ -228,6 +228,18 @@ listener dropping out are not the same event. *Decision:* separate business
 metrics, and **delete** per-stream series when a stream ends. *Consequence:*
 cardinality does not grow with every broadcast.
 
+**ADR 041 — Throughput, listener departures and the admin summary.** *Context:*
+outbound bandwidth was never measured, nothing counted listeners leaving, and
+the admin role had no access to any metric. *Decision:* publish the byte counter
+the access log already kept, count departures and stream interruptions as
+business metrics, split each dashboard into business and technical rows, and
+serve `GET /api/admin/metrics` from the **process's own** Prometheus registry
+rather than by querying the Prometheus server. *Consequence:* the admin summary
+reports totals since process start, not sliding rates — and HLS being
+connectionless, a listener closing the player and a listener losing the network
+are indistinguishable, so the metric is named *departures*, never
+*disconnections*.
+
 ## Contracts and cross-cutting concerns
 
 **ADR 012 — OpenAPI as the source of truth.** *Context:* a client and a server

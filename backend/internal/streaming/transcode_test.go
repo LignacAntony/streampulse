@@ -383,7 +383,7 @@ func TestTranscodePipeline_MP3ToHLS(t *testing.T) {
 
 	mp3 := generateTestAudio(t, "mp3", "libmp3lame", 25)
 
-	seg, err := newHLSSegmenter()
+	seg, err := newHLSSegmenter("stream-test")
 	if err != nil {
 		t.Fatalf("newHLSSegmenter: %v", err)
 	}

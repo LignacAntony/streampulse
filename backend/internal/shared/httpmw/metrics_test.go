@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -52,6 +53,27 @@ func gatherFamily(t *testing.T, reg *prometheus.Registry, name string) []map[str
 		}
 	}
 	return out
+}
+
+// gatherSum agrège toutes les séries d'une famille de compteurs.
+func gatherSum(t *testing.T, reg *prometheus.Registry, name string) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		total := 0.0
+		for _, m := range f.GetMetric() {
+			total += m.GetCounter().GetValue()
+		}
+		return total
+	}
+	t.Fatalf("famille %s absente du registre", name)
+	return 0
 }
 
 func TestMetrics_CountsWithRoutePatternLabels(t *testing.T) {
@@ -196,5 +218,68 @@ func TestMetrics_SkipsHealthAndMetrics(t *testing.T) {
 
 	if series := gatherFamily(t, reg, "http_requests_total"); len(series) != 0 {
 		t.Errorf("/health et /metrics ne doivent produire aucune série, got %v", series)
+	}
+}
+
+// bodyHandler écrit un corps de taille fixe, pour vérifier que le compteur
+// d'octets suit ce qui part réellement sur le réseau.
+func bodyHandler(body string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+}
+
+func TestMetrics_CountsResponseBytesByPath(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	mw := Metrics(reg, newTestMux(bodyHandler("0123456789"))) // 10 octets
+
+	serve(mw, http.MethodGet, "/api/streams")
+	serve(mw, http.MethodGet, "/api/streams")
+
+	expected := `
+		# HELP http_response_bytes_total Octets de corps de réponse HTTP écrits vers les clients.
+		# TYPE http_response_bytes_total counter
+		http_response_bytes_total{path="/api/streams"} 20
+	`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "http_response_bytes_total"); err != nil {
+		t.Fatalf("octets inattendus: %v", err)
+	}
+}
+
+// Le débit doit être mesuré là où il compte : les segments HLS. Ils sont servis
+// via un ReadSeeker (http.ServeContent) et non par un simple Write — si le
+// recorder était contourné par une optimisation ReadFrom, le compteur resterait
+// à zéro précisément sur la route qui transporte tout le volume.
+func TestMetrics_CountsResponseBytesOnStreamedContent(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	payload := strings.Repeat("A", 4096)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "seg_00001.ts", time.Time{}, strings.NewReader(payload))
+	})
+	mw := Metrics(reg, newTestMux(h))
+
+	serve(mw, http.MethodGet, "/api/streams/abc/playlist.m3u8")
+
+	for _, labels := range gatherFamily(t, reg, "http_response_bytes_total") {
+		if labels["path"] != "/api/streams/{id}/playlist.m3u8" {
+			t.Fatalf("série inattendue: %v", labels)
+		}
+	}
+	if got := gatherSum(t, reg, "http_response_bytes_total"); got != float64(len(payload)) {
+		t.Errorf("octets = %v, want %d", got, len(payload))
+	}
+}
+
+// Une route de longue durée est exclue de l'histogramme de latence mais PAS du
+// compteur d'octets : c'est justement sur ces routes que passe le volume.
+func TestMetrics_ResponseBytesCoverLongLivedRoutes(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	mw := Metrics(reg, newTestMux(bodyHandler("event: ended\n\n")))
+
+	serve(mw, http.MethodGet, "/api/streams/42/events")
+
+	series := gatherFamily(t, reg, "http_response_bytes_total")
+	if len(series) != 1 || series[0]["path"] != "/api/streams/{id}/events" {
+		t.Fatalf("la route SSE doit compter ses octets, got %v", series)
 	}
 }

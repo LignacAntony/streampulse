@@ -124,6 +124,20 @@ func (r *pgRepository) CountActiveAdmins(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
+// UserCounts retourne la population de comptes pour le résumé admin (STR-244).
+func (r *pgRepository) UserCounts(ctx context.Context) (UserCounts, error) {
+	row, err := r.q.AdminUserCounts(ctx)
+	if err != nil {
+		return UserCounts{}, fmt.Errorf("repo: user counts: %w", err)
+	}
+	return UserCounts{
+		Total:        row.Total,
+		Active:       row.Active,
+		Broadcasters: row.Broadcasters,
+		Admins:       row.Admins,
+	}, nil
+}
+
 // DeleteUser traduit une suppression de 0 ligne (id inconnu, ou déjà supprimé)
 // en NotFound, au même titre qu'un UUID invalide.
 func (r *pgRepository) DeleteUser(ctx context.Context, userID string) error {
