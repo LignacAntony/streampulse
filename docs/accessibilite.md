@@ -4,10 +4,15 @@ Ce document déclare le niveau d'accessibilité visé par la **documentation** d
 StreamPulse, les règles qui l'assurent, et les écarts qui subsistent.
 
 > **Périmètre.** Il porte sur les documents de `docs/` et le `README`. Il ne
-> porte **pas** sur l'accessibilité de l'application Flutter elle-même, qui est
-> un chantier distinct et n'est pas couverte ici. Les deux comptent, séparément,
-> et confondre les deux reviendrait à déclarer conforme quelque chose qui ne
-> l'est pas.
+> porte **pas** sur l'accessibilité de l'application Flutter elle-même. Les deux
+> comptent, séparément, et confondre les deux reviendrait à déclarer conforme
+> quelque chose qui ne l'est pas.
+>
+> Le volet application est traité depuis STR-244 :
+> [ADR 043](adr/043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md)
+> décrit ce qui est fait — libellés sémantiques, vérificateurs WCAG en CI,
+> adaptation aux largeurs — **et ce qui ne l'est pas** : aucune vérification au
+> lecteur d'écran réel, faute d'appareil. Aucune conformité n'y est déclarée.
 
 ---
 

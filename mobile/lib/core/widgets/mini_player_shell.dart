@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'accessible_icon_button.dart';
 
 /// Coquille commune aux mini-players (direct STR-109 et file d'attente
 /// US-05-04) : bandeau de 60 px au-dessus de la navigation, icône, titre et
@@ -139,12 +140,22 @@ class PlaybackToggleButton extends StatelessWidget {
     } else {
       icon = Icons.play_arrow;
     }
-    return IconButton(
+    // Le libellé décrit l'ACTION, pas l'état ni l'icône : annoncer « Pause »
+    // sur un flux à l'arrêt laisse croire que l'appui met en pause.
+    final String label;
+    if (showReplay) {
+      label = 'Réessayer la lecture';
+    } else if (isPlaying) {
+      label = 'Mettre en pause';
+    } else {
+      label = 'Lire';
+    }
+    return AccessibleIconButton(
+      icon: icon,
+      label: label,
       onPressed: onPressed,
       color: Theme.of(context).colorScheme.primary,
       iconSize: 30,
-      icon: Icon(icon),
-      tooltip: isPlaying ? 'Pause' : 'Lecture',
     );
   }
 }

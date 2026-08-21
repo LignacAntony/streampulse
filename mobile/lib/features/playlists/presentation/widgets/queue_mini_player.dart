@@ -5,6 +5,7 @@ import '../../../../core/widgets/mini_player_shell.dart';
 import '../providers/playlist_queue_controller.dart';
 import 'playback_queue_sheet.dart';
 import 'queue_progress.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 
 /// Mini-player de la file d'attente (US-05-04) : pendant du mini-player du
 /// direct, avec les contrôles que seule une file justifie (précédent/suivant).
@@ -47,11 +48,11 @@ class QueueMiniPlayer extends StatelessWidget {
       progress: const QueueProgressLine(),
       onTap: () => PlaybackQueueSheet.show(context),
       actions: [
-        IconButton(
+        AccessibleIconButton(
           key: const Key('queue_mini_previous'),
+          icon: Icons.skip_previous,
+          label: 'Piste précédente',
           onPressed: queue.hasPrevious ? queue.previous : null,
-          icon: const Icon(Icons.skip_previous),
-          tooltip: 'Piste précédente',
         ),
         PlaybackToggleButton(
           key: const Key('queue_mini_play_pause'),
@@ -60,17 +61,17 @@ class QueueMiniPlayer extends StatelessWidget {
           isPlaying: queue.isPlaying,
           onPressed: queue.togglePlayPause,
         ),
-        IconButton(
+        AccessibleIconButton(
           key: const Key('queue_mini_next'),
+          icon: Icons.skip_next,
+          label: 'Piste suivante',
           onPressed: queue.hasNext ? queue.next : null,
-          icon: const Icon(Icons.skip_next),
-          tooltip: 'Piste suivante',
         ),
-        IconButton(
+        AccessibleIconButton(
           key: const Key('queue_mini_stop'),
+          icon: Icons.close,
+          label: 'Arrêter la lecture',
           onPressed: queue.stop,
-          icon: const Icon(Icons.close),
-          tooltip: 'Arrêter',
         ),
       ],
     );

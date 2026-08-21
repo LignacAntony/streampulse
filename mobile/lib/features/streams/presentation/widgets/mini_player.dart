@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/mini_player_shell.dart';
 import '../providers/audio_player_controller.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 
 /// Mini-player persistant (STR-109) : surface de contrôle in-app du flux en
 /// cours, affichée au-dessus de la barre de navigation quand quelque chose joue.
@@ -44,10 +45,10 @@ class MiniPlayer extends StatelessWidget {
           isPlaying: audio.isPlaying,
           onPressed: audio.togglePlayPause,
         ),
-        IconButton(
+        AccessibleIconButton(
+          icon: Icons.close,
+          label: 'Arrêter l\'écoute',
           onPressed: audio.stop,
-          icon: const Icon(Icons.close),
-          tooltip: 'Arrêter',
         ),
       ],
     );

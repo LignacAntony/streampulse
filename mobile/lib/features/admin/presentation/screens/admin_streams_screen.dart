@@ -8,6 +8,7 @@ import '../../data/repositories/admin_streams_repository_impl.dart';
 import '../../domain/entities/admin_stream.dart';
 import '../../domain/repositories/admin_streams_repository.dart';
 import '../providers/admin_streams_provider.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 
 /// Écran de supervision des flux en direct (US-08-02) : liste paginée des
 /// flux publics/privés avec l'identité du diffuseur, interruption forcée
@@ -264,9 +265,12 @@ class _StreamTile extends StatelessWidget {
             ),
           ],
         ),
-        trailing: IconButton(
+        trailing: AccessibleIconButton(
           key: Key('admin_stream_stop_${stream.id}'),
-          icon: const Icon(Icons.stop_circle_outlined),
+          icon: Icons.stop_circle_outlined,
+          // Nomme la cible : dans une liste, dix boutons « Interrompre » se
+          // suivent et rien ne dit lequel on a sous le doigt.
+          label: 'Interrompre le flux ${stream.title}',
           tooltip: 'Interrompre',
           onPressed: () => onStop(stream),
         ),

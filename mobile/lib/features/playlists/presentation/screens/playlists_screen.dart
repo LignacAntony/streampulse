@@ -16,6 +16,7 @@ import '../providers/playlist_queue_controller.dart';
 import '../providers/playlists_controller.dart';
 import '../track_labels.dart';
 import '../widgets/playlist_form_sheet.dart';
+import '../../../../core/layout/breakpoints.dart';
 
 /// Écran « Bibliothèque » : liste des playlists de l'utilisateur avec création,
 /// renommage et suppression (US-05-02). Remplace le `PlaceholderScreen` de
@@ -194,10 +195,13 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
           ],
         ],
       ),
+      // Cf. discover_screen : contenu borné au-delà de la rupture (STR-244).
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: authenticated ? _onRefresh : () async {},
-          child: _buildBody(context, controller),
+        child: ResponsiveContent(
+          child: RefreshIndicator(
+            onRefresh: authenticated ? _onRefresh : () async {},
+            child: _buildBody(context, controller),
+          ),
         ),
       ),
     );

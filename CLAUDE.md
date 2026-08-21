@@ -600,6 +600,37 @@ wrappers minces vers `AuthScreen(initialTab: ...)`.
 **Toasts** : `toastification` via les helpers `showAuthSuccessToast / ErrorToast / InfoToast`
 (`presentation/widgets/auth_toasts.dart`). `ToastificationWrapper` est posé dans `app.dart`.
 
+### Accessibilité et adaptation aux largeurs (STR-244, ADR 043)
+
+- ⚠️ **Un `tooltip` n'est pas un `label`.** Vérifié sur l'arbre sémantique : un
+  `IconButton(tooltip: 'X')` rend `label="" tooltip="X"`. Android s'en sert à défaut de
+  description ; **iOS en fait un *hint***, donc VoiceOver annonce « bouton » sans nom.
+  Utiliser `AccessibleIconButton` (`core/widgets/`), qui pose les deux, et dont le libellé
+  décrit l'**action** (« Mettre en pause »), jamais l'icône ni l'état.
+- Une **ligne de liste** porte une phrase unique via `Semantics(container: true, label: ...)`
+  et masque ses enfants : sinon un lecteur d'écran annonce « 3 », « Sunrise », « Neon Lights »
+  en trois arrêts sans jamais dire laquelle joue. Les boutons d'une liste **nomment leur
+  cible** (« Interrompre le flux X »).
+- Tests : `test/support/accessibility.dart` — `expectMeetsAccessibilityGuidelines` (les 4
+  vérificateurs de `flutter_test`) et `expectNoTooltipOnlyTapTargets`, plus stricte car
+  `labeledTapTargetGuideline` accepte un tooltip seul. Toujours `tester.ensureSemantics()`
+  avant de monter le widget, sinon il n'y a pas d'arbre à inspecter.
+- **Responsive** : `Breakpoints` + `ResponsiveContent` (`core/layout/`). Le paysage est
+  autorisé par les deux manifestes — décision prise d'**adapter** plutôt que de verrouiller
+  le portrait. `ResponsiveContent` borne et centre au-delà de 600 px ; **sans effet en
+  portrait téléphone**, la contrainte n'y mord pas. Pas de grille tablette : l'API avait
+  été écrite sans appelant, elle reviendra avec l'écran qui en a besoin.
+- ⚠️ Un `Semantics(container:, label:)` **ne masque pas ses enfants**. Sur une `ListTile`
+  tapable, `title`/`subtitle` forment leur propre nœud à côté de la phrase composée : il
+  faut les envelopper dans `ExcludeSemantics` (en laissant les boutons d'action dehors).
+- ⚠️ `excludeSemantics: true` **retire l'action tap de l'enfant**. Sans `onTap:` redéclaré
+  sur le `Semantics`, le nœud porte le rôle « bouton » sans opération et l'activation
+  retombe sur un tap synthétisé. Gardes : `buttonsWithoutTapAction`,
+  `semanticLabelsMentioning` (`test/support/accessibility.dart`).
+- ⚠️ **Ne pas lancer `dart format` sur des fichiers existants** : la version courante du
+  formateur réécrit des lignes non touchées et peut introduire des lints. Ne formater que
+  les fichiers qu'on crée.
+
 ### Conventions Flutter — State management
 
 Choisir **le plus simple qui suffit**, dans cet ordre :
@@ -771,7 +802,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `045-...` — 043 et 044 sont réservés par des PR ouvertes). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `045-...` — 044 est réservé par une PR ouverte). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.
