@@ -166,3 +166,10 @@ construction. La discipline se lit dans les chiffres.
   widget compile ses shaders, coût qui ne se reproduit pas en régime permanent.
 - **Pas dans la CI.** GitHub Actions n'a pas d'appareil. La mesure reste manuelle et datée ;
   c'est la garde de reconstruction qui tient la ligne entre deux relevés.
+- **Des chiffres plutôt que des captures d'écran DevTools.** Le ticket demandait des captures de
+  la timeline. Les tableaux ci-dessus contiennent la **même donnée** — `FrameTiming` est
+  exactement ce que l'onglet Performance de DevTools affiche —, mais sous une forme qu'on peut
+  rejouer (`make frame-budget`), comparer d'un run à l'autre et faire échouer : les deux
+  scénarios **assertent** leur budget, une régression les fait rougir. Une image, elle, prouve
+  qu'un jour donné l'écran ressemblait à ça, et rien ne la contredit jamais. Le relevé est daté
+  et son appareil nommé pour qu'il reste vérifiable.
