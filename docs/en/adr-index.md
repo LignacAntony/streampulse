@@ -174,6 +174,15 @@ the system notification travels the same path as a tap in the app.
 **involuntary** reloads. *Consequence:* a token expiry no longer reshuffles the
 queue every fifteen minutes.
 
+**ADR 043 — App accessibility and width adaptation.** *Context:* one `Semantics`
+call across 147 files, no layout adaptation, and landscape allowed by both
+manifests. *Decision:* give icon-only controls a real semantic **label** — a
+tooltip lands in the node's `tooltip` field, which iOS turns into a hint, so the
+button has no name for VoiceOver — run Flutter's WCAG guidelines in CI alongside
+a stricter in-house check, and **adapt** to width rather than locking portrait.
+*Consequence:* screen-reader behaviour is still unverified on real devices, and
+that gap is declared rather than glossed over.
+
 ## Administration
 
 **ADR 017 — Admin dashboard, user management.** *Context:* administration must

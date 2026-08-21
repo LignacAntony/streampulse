@@ -16,6 +16,7 @@ import 'package:streampulse/features/playlists/presentation/screens/playlist_det
 
 import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
+import 'package:streampulse/core/widgets/accessible_icon_button.dart';
 
 class _FakeCacheRepository implements OfflineCacheRepository {
   @override
@@ -23,7 +24,11 @@ class _FakeCacheRepository implements OfflineCacheRepository {
   @override
   Future<bool> isOffline(String playlistId) async => false;
   @override
-  Future<void> enableOffline(String id, String name, List<PlaylistTrack> t) async {}
+  Future<void> enableOffline(
+    String id,
+    String name,
+    List<PlaylistTrack> t,
+  ) async {}
   @override
   Future<void> disableOffline(String id) async {}
   @override
@@ -31,7 +36,13 @@ class _FakeCacheRepository implements OfflineCacheRepository {
   @override
   Future<List<CachedTrackStatus>> downloadStatuses(String id) async => [];
   @override
-  Future<void> updateTrackStatus(String t, String p, {required TrackCacheStatus status, String? filePath, int? fileSize}) async {}
+  Future<void> updateTrackStatus(
+    String t,
+    String p, {
+    required TrackCacheStatus status,
+    String? filePath,
+    int? fileSize,
+  }) async {}
   @override
   Future<String?> cachedFilePath(String t) async => null;
   @override
@@ -41,16 +52,16 @@ class _FakeCacheRepository implements OfflineCacheRepository {
 }
 
 PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
-      id: id,
-      title: title,
-      artist: 'Neon Lights',
-      durationS: 214,
-      position: position,
-    );
+  id: id,
+  title: title,
+  artist: 'Neon Lights',
+  durationS: 214,
+  position: position,
+);
 
 class _FakePlaylistRepository implements PlaylistRepository {
   _FakePlaylistRepository({List<PlaylistTrack>? initial})
-      : _tracks = initial ?? [];
+    : _tracks = initial ?? [];
 
   List<PlaylistTrack> _tracks;
   List<Track> library = const [];
@@ -186,7 +197,10 @@ void main() {
   group('PlaylistDetailScreen', () {
     testWidgets('affiche les pistes numérotées dans l\'ordre', (tester) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       await tester.pumpWidget(_harness(repo));
       await tester.pumpAndSettle();
@@ -199,10 +213,14 @@ void main() {
       expect(find.byKey(const Key('playlist_tracks_list')), findsOneWidget);
     });
 
-    testWidgets('le bouton Lire lance la playlist depuis le début (US-05-04)',
-        (tester) async {
+    testWidgets('le bouton Lire lance la playlist depuis le début (US-05-04)', (
+      tester,
+    ) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       final service = FakeQueuePlaybackService();
       final queue = _queueController(service);
@@ -221,10 +239,14 @@ void main() {
       expect(find.byIcon(Icons.graphic_eq), findsOneWidget);
     });
 
-    testWidgets('un appui sur une piste démarre la file à cette piste',
-        (tester) async {
+    testWidgets('un appui sur une piste démarre la file à cette piste', (
+      tester,
+    ) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       final service = FakeQueuePlaybackService();
       final queue = _queueController(service);
@@ -242,18 +264,23 @@ void main() {
       expect(queue.currentIndex, 1);
     });
 
-    testWidgets('playlist vide : ni bouton Lire, ni file lancée',
-        (tester) async {
+    testWidgets('playlist vide : ni bouton Lire, ni file lancée', (
+      tester,
+    ) async {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('playlist_play_button')), findsNothing);
     });
 
-    testWidgets('« Lire en aléatoire » lance la file mélangée (US-05-05)',
-        (tester) async {
+    testWidgets('« Lire en aléatoire » lance la file mélangée (US-05-05)', (
+      tester,
+    ) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       final service = FakeQueuePlaybackService();
       final queue = _queueController(service);
@@ -271,19 +298,21 @@ void main() {
       expect(service.lastItems.map((i) => i.id).toList(), ['t1', 't2']);
     });
 
-    testWidgets('playlist vide : « Lire en aléatoire » est neutralisé',
-        (tester) async {
+    testWidgets('playlist vide : « Lire en aléatoire » est neutralisé', (
+      tester,
+    ) async {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
-      final button = tester.widget<IconButton>(
+      final button = tester.widget<AccessibleIconButton>(
         find.byKey(const Key('playlist_shuffle_play_button')),
       );
       expect(button.onPressed, isNull);
     });
 
-    testWidgets('playlist vide : message dédié + appel à l\'action',
-        (tester) async {
+    testWidgets('playlist vide : message dédié + appel à l\'action', (
+      tester,
+    ) async {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
@@ -296,24 +325,24 @@ void main() {
       expect(find.byKey(const Key('track_picker_empty')), findsOneWidget);
     });
 
-    testWidgets('une seule poignée de drag par ligne, y compris sur desktop',
-        (tester) async {
+    testWidgets('une seule poignée de drag par ligne, y compris sur desktop', (
+      tester,
+    ) async {
       // Plateforme desktop forcée : c'est là que ReorderableListView ajoute sa
       // propre poignée. Sans `buildDefaultDragHandles: false`, elle s'empile sur
       // celle de la ligne et le test voit deux icônes.
       final repo = _FakePlaylistRepository(
         initial: [_track('t1', 'Midnight Drive', 0)],
       );
-      await tester.pumpWidget(
-        _harness(repo, platform: TargetPlatform.macOS),
-      );
+      await tester.pumpWidget(_harness(repo, platform: TargetPlatform.macOS));
       await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.drag_handle), findsOneWidget);
     });
 
-    testWidgets('échec d\'un pull-to-refresh sur liste non vide : toast',
-        (tester) async {
+    testWidgets('échec d\'un pull-to-refresh sur liste non vide : toast', (
+      tester,
+    ) async {
       final repo = _FakePlaylistRepository(
         initial: [_track('t1', 'Midnight Drive', 0)],
       );
@@ -337,7 +366,10 @@ void main() {
 
     testWidgets('le drag-and-drop persiste le nouvel ordre', (tester) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       await tester.pumpWidget(_harness(repo));
       await tester.pumpAndSettle();
@@ -351,7 +383,10 @@ void main() {
 
     testWidgets('échec du réordonnancement : toast d\'erreur', (tester) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       )..reorderError = const ConflictException('La playlist a changé');
       await tester.pumpWidget(_harness(repo));
       await tester.pumpAndSettle();
@@ -362,10 +397,14 @@ void main() {
       await _dismissToasts(tester);
     });
 
-    testWidgets('retirer une piste demande confirmation puis retire',
-        (tester) async {
+    testWidgets('retirer une piste demande confirmation puis retire', (
+      tester,
+    ) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       await tester.pumpWidget(_harness(repo));
       await tester.pumpAndSettle();
@@ -374,8 +413,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Rien n'est retiré tant que la confirmation n'est pas donnée.
-      expect(find.text('Retirer « Midnight Drive » de la playlist ?'),
-          findsOneWidget);
+      expect(
+        find.text('Retirer « Midnight Drive » de la playlist ?'),
+        findsOneWidget,
+      );
       expect(repo.removeCalls, 0);
 
       await tester.tap(find.byKey(const Key('playlist_track_confirm_remove')));
@@ -388,7 +429,10 @@ void main() {
 
     testWidgets('annuler la confirmation ne retire rien', (tester) async {
       final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0), _track('t2', 'Sunrise', 1)],
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+        ],
       );
       await tester.pumpWidget(_harness(repo));
       await tester.pumpAndSettle();
@@ -402,14 +446,20 @@ void main() {
       expect(find.text('Midnight Drive'), findsOneWidget);
     });
 
-    testWidgets('le sélecteur n\'affiche que les pistes absentes',
-        (tester) async {
-      final repo = _FakePlaylistRepository(
-        initial: [_track('t1', 'Midnight Drive', 0)],
-      )..library = const [
-          Track(id: 't1', title: 'Midnight Drive', artist: null, durationS: null),
-          Track(id: 't2', title: 'Sunrise', artist: null, durationS: null),
-        ];
+    testWidgets('le sélecteur n\'affiche que les pistes absentes', (
+      tester,
+    ) async {
+      final repo =
+          _FakePlaylistRepository(initial: [_track('t1', 'Midnight Drive', 0)])
+            ..library = const [
+              Track(
+                id: 't1',
+                title: 'Midnight Drive',
+                artist: null,
+                durationS: null,
+              ),
+              Track(id: 't2', title: 'Sunrise', artist: null, durationS: null),
+            ];
       await tester.pumpWidget(_harness(repo));
       await tester.pumpAndSettle();
 

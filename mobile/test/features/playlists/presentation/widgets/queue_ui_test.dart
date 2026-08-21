@@ -8,13 +8,10 @@ import 'package:streampulse/features/playlists/presentation/providers/playlist_q
 import 'package:streampulse/features/playlists/presentation/widgets/queue_mini_player.dart';
 
 import '../../../../support/fake_queue_playback_service.dart';
+import 'package:streampulse/core/widgets/accessible_icon_button.dart';
 
-Track _track(String id, String title) => Track(
-      id: id,
-      title: title,
-      artist: 'Neon Lights',
-      durationS: 214,
-    );
+Track _track(String id, String title) =>
+    Track(id: id, title: title, artist: 'Neon Lights', durationS: 214);
 
 final _tracks = [
   _track('t1', 'Midnight Drive'),
@@ -34,15 +31,8 @@ Widget _host(PlaylistQueueController controller, Widget child) {
 /// L'ordre compte : le widget est monté **avant** l'émission de l'état du
 /// lecteur, car sous `testWidgets` seule une `pump` fait avancer la boucle
 /// d'événements (le temps y est simulé).
-Future<
-    ({
-      PlaylistQueueController controller,
-      FakeQueuePlaybackService service,
-    })> _pumpPlaying(
-  WidgetTester tester,
-  Widget child, {
-  int startIndex = 0,
-}) async {
+Future<({PlaylistQueueController controller, FakeQueuePlaybackService service})>
+_pumpPlaying(WidgetTester tester, Widget child, {int startIndex = 0}) async {
   final service = FakeQueuePlaybackService();
   final controller = PlaylistQueueController(
     service: service,
@@ -85,8 +75,9 @@ void main() {
       expect(find.byKey(const Key('queue_mini_player')), findsNothing);
     });
 
-    testWidgets('affiche la piste en cours et sa position dans la file',
-        (tester) async {
+    testWidgets('affiche la piste en cours et sa position dans la file', (
+      tester,
+    ) async {
       await _pumpPlaying(tester, const QueueMiniPlayer());
 
       expect(find.text('Midnight Drive'), findsOneWidget);
@@ -98,7 +89,7 @@ void main() {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
 
       // Sur la première piste, « précédent » n'a rien à faire.
-      final previous = tester.widget<IconButton>(
+      final previous = tester.widget<AccessibleIconButton>(
         find.byKey(const Key('queue_mini_previous')),
       );
       expect(previous.onPressed, isNull);
@@ -120,8 +111,9 @@ void main() {
       expect(find.byIcon(Icons.replay), findsOneWidget);
     });
 
-    testWidgets('la croix arrête la lecture et masque la barre',
-        (tester) async {
+    testWidgets('la croix arrête la lecture et masque la barre', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
 
       await tester.tap(find.byKey(const Key('queue_mini_stop')));
@@ -133,8 +125,9 @@ void main() {
   });
 
   group('PlaybackQueueSheet (US-05-04)', () {
-    testWidgets('liste la file entière et marque la piste en cours',
-        (tester) async {
+    testWidgets('liste la file entière et marque la piste en cours', (
+      tester,
+    ) async {
       await _pumpPlaying(tester, const QueueMiniPlayer(), startIndex: 1);
       await _openQueueSheet(tester);
 
@@ -158,26 +151,29 @@ void main() {
       expect(t.controller.currentIndex, 2);
     });
 
-    testWidgets('les modes de lecture sont réglables depuis la file (US-05-05)',
-        (tester) async {
-      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
-      await _openQueueSheet(tester);
+    testWidgets(
+      'les modes de lecture sont réglables depuis la file (US-05-05)',
+      (tester) async {
+        final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+        await _openQueueSheet(tester);
 
-      expect(find.byKey(const Key('queue_shuffle_button')), findsOneWidget);
-      expect(find.text('Répétition'), findsOneWidget);
+        expect(find.byKey(const Key('queue_shuffle_button')), findsOneWidget);
+        expect(find.text('Répétition'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('queue_repeat_button')));
-      await tester.pumpAndSettle();
-      expect(find.text('Répéter la file'), findsOneWidget);
-      expect(t.service.repeatMode, QueueRepeatMode.all);
+        await tester.tap(find.byKey(const Key('queue_repeat_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('Répéter la file'), findsOneWidget);
+        expect(t.service.repeatMode, QueueRepeatMode.all);
 
-      await tester.tap(find.byKey(const Key('queue_repeat_button')));
-      await tester.pumpAndSettle();
-      expect(find.text('Répéter la piste'), findsOneWidget);
-    });
+        await tester.tap(find.byKey(const Key('queue_repeat_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('Répéter la piste'), findsOneWidget);
+      },
+    );
 
-    testWidgets('en aléatoire, la file affiche l\'ordre réellement joué',
-        (tester) async {
+    testWidgets('en aléatoire, la file affiche l\'ordre réellement joué', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       // Le lecteur jouera t2, t3, t1.
       t.service.shuffledOrder = [1, 2, 0];
@@ -195,8 +191,9 @@ void main() {
       expect(t.controller.positionInOrder, 2);
     });
 
-    testWidgets('la barre affiche l\'avancement de la piste (STR-230)',
-        (tester) async {
+    testWidgets('la barre affiche l\'avancement de la piste (STR-230)', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
 
@@ -216,8 +213,9 @@ void main() {
       expect(slider.max, 200000);
     });
 
-    testWidgets('glisser la barre déplace la lecture (STR-230)',
-        (tester) async {
+    testWidgets('glisser la barre déplace la lecture (STR-230)', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
       t.service.emitDuration(const Duration(seconds: 200));
@@ -239,8 +237,9 @@ void main() {
       );
     });
 
-    testWidgets('durée inconnue : barre neutralisée plutôt que fausse',
-        (tester) async {
+    testWidgets('durée inconnue : barre neutralisée plutôt que fausse', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
 
@@ -258,8 +257,9 @@ void main() {
       expect(slider.max, 214000);
     });
 
-    testWidgets('file terminée : la poignée est neutralisée (revue #292)',
-        (tester) async {
+    testWidgets('file terminée : la poignée est neutralisée (revue #292)', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
       t.service.emitDuration(const Duration(seconds: 200));
@@ -277,8 +277,9 @@ void main() {
       expect(slider.onChanged, isNull);
     });
 
-    testWidgets('changement de piste : pas de durée périmée (revue #292)',
-        (tester) async {
+    testWidgets('changement de piste : pas de durée périmée (revue #292)', (
+      tester,
+    ) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
       t.service.emitDuration(const Duration(seconds: 200));

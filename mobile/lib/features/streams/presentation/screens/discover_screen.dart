@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/discover_notifier.dart';
 import '../widgets/message_view.dart';
 import '../widgets/stream_tile.dart';
+import '../../../../core/layout/breakpoints.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -28,10 +29,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Découvrir')),
+      // Contenu borné et centré au-delà de la rupture (STR-246) : sans cela,
+      // une ligne de flux traverse 800 px en paysage pour trois mots. Sans
+      // effet sur un téléphone en portrait, où la contrainte ne mord pas.
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _notifier.load,
-          child: _buildBody(context, notifier),
+        child: ResponsiveContent(
+          child: RefreshIndicator(
+            onRefresh: _notifier.load,
+            child: _buildBody(context, notifier),
+          ),
         ),
       ),
     );
