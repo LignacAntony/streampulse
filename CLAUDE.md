@@ -474,6 +474,30 @@ Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
   dans le **lecteur**, `duration_s` de la base ne servant que de valeur d'attente (déclaré par le
   client à l'upload, il peut mentir). Le serveur ne coûte rien : `Range` déjà géré (ADR 034 §1).
 
+### Contrôle du volume et temps d'écoute (STR-244, ADR 042)
+
+- **Le volume vit sur `PlaybackTransport`** (`volume` / `volumeStream` / `setVolume`),
+  pas sur un contrôleur : un glissement émet des dizaines de valeurs par seconde. Le
+  curseur `VolumeSlider` (`core/widgets/`) s'abonne **directement** au flux — même règle
+  que `queue_progress.dart`. Sur le transport et non sur une interface dérivée : le même
+  curseur sert le direct et la file d'attente.
+- `VolumeLevel` (`core/audio/`, objet **pur**) : le réglage de l'auditeur est la source de
+  vérité, l'atténuation (ducking, ADR 033) est un **facteur** qui en dérive. ⚠️ L'ancien
+  schéma capturait `player.volume` avant d'atténuer : un réglage fait **pendant**
+  l'interruption était écrasé à sa levée. `volumeStream` publie le réglage, jamais le
+  niveau effectif — sinon le curseur sauterait à chaque notification.
+- Persistance : `VolumeStore` → `shared_preferences`, **pas** `SecureStorage` (une seule
+  responsabilité : les jetons). Appliqué **avant le premier rendu** dans `main()`, sinon
+  la lecture démarre au défaut puis saute — ça s'entend. `onChanged` applique,
+  `onChangeEnd` enregistre.
+- `ListeningClock` + `ListeningTime` : un direct n'a pas de barre de progression (pas de
+  fin connue) mais un **temps d'écoute**. ⚠️ Ne pas utiliser `positionStream` : le
+  contrôleur recharge l'URL à chaque reprise (STR-118), la position repartirait de zéro à
+  chaque coupure réseau. L'horloge est pilotée par l'**état de lecture** et se met en
+  pause pendant une reconnexion.
+- La source de temps du widget est **injectable** : `tester.pump(Duration)` n'avance que
+  l'horloge simulée de Flutter, un `DateTime.now()` en dur rendrait le widget invérifiable.
+
 ### Modes shuffle et repeat (US-05-05)
 
 Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).

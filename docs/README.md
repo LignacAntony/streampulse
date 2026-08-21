@@ -166,6 +166,7 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 038 | [038-gestion-profil-utilisateur.md](adr/038-gestion-profil-utilisateur.md) | Gestion du profil utilisateur (table `profiles` dédiée) *(ex-ADR 012)* |
 | 039 | [039-supervision-admin-des-flux-et-journal-daudit.md](adr/039-supervision-admin-des-flux-et-journal-daudit.md) | Supervision admin des flux actifs et journal d'audit *(ex-ADR 018)* |
 | 040 | [040-distribution-mobile-signature-et-canal.md](adr/040-distribution-mobile-signature-et-canal.md) | Distribution mobile : signature Android dégradable, pas de canal iOS |
+| 042 | [042-controle-du-volume-et-temps-decoute.md](adr/042-controle-du-volume-et-temps-decoute.md) | Contrôle du volume dans l'application et temps d'écoute d'un direct |
 | 043 | [043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md](adr/043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md) | Accessibilité de l'application mobile et adaptation aux largeurs d'écran |
 
 ---

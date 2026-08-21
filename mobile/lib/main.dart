@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'app/app.dart';
 import 'app/app_providers.dart';
 import 'core/audio/stream_audio_handler.dart';
+import 'core/audio/volume_store.dart';
 
 // StreamPulseApp pose le MultiProvider racine (injection de dépendances)
 // au-dessus de l'arbre de widgets.
@@ -36,6 +37,21 @@ Future<void> main() async {
   } catch (e) {
     if (kDebugMode) {
       debugPrint('main: configuration de la session audio échouée: $e');
+    }
+  }
+
+  // Niveau sonore de la session précédente (STR-244). Appliqué avant le premier
+  // rendu : le retrouver après coup ferait démarrer la lecture au volume par
+  // défaut puis sauter, ce qui s'entend.
+  //
+  // Best-effort, comme la session audio : un magasin de préférences indisponible
+  // ne doit pas empêcher l'application de démarrer — on repart du défaut.
+  try {
+    final stored = await const SharedPreferencesVolumeStore().read();
+    if (stored != null) await audioHandler.setVolume(stored);
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('main: volume enregistré illisible: $e');
     }
   }
 

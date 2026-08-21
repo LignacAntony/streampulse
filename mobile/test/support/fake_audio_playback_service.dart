@@ -33,6 +33,19 @@ class FakeAudioPlaybackService implements AudioPlaybackService {
   @override
   bool get playing => _playing;
 
+  final _volumeCtrl = StreamController<double>.broadcast();
+  double _volume = 1;
+
+  @override
+  double get volume => _volume;
+  @override
+  Stream<double> get volumeStream => _volumeCtrl.stream;
+  @override
+  Future<void> setVolume(double volume) async {
+    _volume = volume.clamp(0.0, 1.0);
+    if (!_volumeCtrl.isClosed) _volumeCtrl.add(_volume);
+  }
+
   @override
   Future<void> loadUri(String url, {required NowPlaying now}) async {
     loadCalls++;

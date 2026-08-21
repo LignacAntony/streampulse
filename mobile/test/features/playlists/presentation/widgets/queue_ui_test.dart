@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import 'package:provider/provider.dart';
 
+import 'package:streampulse/core/audio/playback_transport.dart';
+import 'package:streampulse/core/audio/volume_store.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/widgets/queue_mini_player.dart';
@@ -19,9 +21,21 @@ final _tracks = [
   _track('t3', 'Afterglow'),
 ];
 
-Widget _host(PlaylistQueueController controller, Widget child) {
-  return ChangeNotifierProvider<PlaylistQueueController>.value(
-    value: controller,
+/// [service] sert aussi de [PlaybackTransport] : c'est le même objet qui porte
+/// la file et le volume en production (STR-244), le fake doit donc l'être aussi.
+Widget _host(
+  PlaylistQueueController controller,
+  Widget child, {
+  FakeQueuePlaybackService? service,
+}) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<PlaylistQueueController>.value(value: controller),
+      Provider<PlaybackTransport>.value(
+        value: service ?? FakeQueuePlaybackService(),
+      ),
+      Provider<VolumeStore>(create: (_) => InMemoryVolumeStore()),
+    ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
 }
@@ -47,7 +61,7 @@ _pumpPlaying(WidgetTester tester, Widget child, {int startIndex = 0}) async {
     playlistId: 'p-1',
     startIndex: startIndex,
   );
-  await tester.pumpWidget(_host(controller, child));
+  await tester.pumpWidget(_host(controller, child, service: service));
   service.emitState(PlayerState(true, ProcessingState.ready));
   await tester.pump();
   return (controller: controller, service: service);

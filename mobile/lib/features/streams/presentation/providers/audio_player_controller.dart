@@ -41,10 +41,14 @@ typedef ManifestUnavailableProbe = Future<bool> Function(String streamId);
 /// Contrôleur du lecteur audio HLS, **hissé au niveau application** (STR-109,
 /// cf. [ADR 031]). Pilote un [AudioPlaybackService] partagé (service de premier
 /// plan `audio_service`) : la lecture survit à la navigation et à la mise en
-/// arrière-plan. Expose un état applicatif simple + play/pause (le volume est
-/// délégué au système, boutons matériels — pas de contrôle in-app), et gère
-/// les erreurs (STR-118) par une **reconnexion automatique bornée** (perte
-/// réseau) puis un état d'erreur clair (flux indisponible).
+/// arrière-plan. Expose un état applicatif simple + play/pause, et gère les
+/// erreurs (STR-118) par une **reconnexion automatique bornée** (perte réseau)
+/// puis un état d'erreur clair (flux indisponible).
+///
+/// Le **volume ne passe pas par ce contrôleur** (STR-244) : il vit sur le
+/// transport, et le curseur s'y abonne directement. Un glissement émet des
+/// dizaines de valeurs par seconde ; les faire transiter par un `notifyListeners`
+/// app-level reconstruirait tout l'arbre sous ce contrôleur à cette cadence.
 class AudioPlayerController extends PlaybackController {
   AudioPlayerController({
     required AudioPlaybackService service,

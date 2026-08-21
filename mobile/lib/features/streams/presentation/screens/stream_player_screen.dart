@@ -7,9 +7,11 @@ import '../../../../core/errors/exceptions.dart';
 import '../../../../core/permissions/notification_permission.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../domain/entities/live_stream.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
+import '../../../../core/widgets/volume_slider.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
-import '../../../../core/widgets/accessible_icon_button.dart';
+import '../widgets/listening_time.dart';
 
 /// Lecteur audio HLS plein écran (STR-108/117, cf. ADR 023). L'audio est piloté
 /// par le [AudioPlayerController] **partagé** app-level (STR-109) : la lecture
@@ -67,7 +69,8 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     // Arrivée par deep-link : pas de métadonnées → placeholder pour l'update optimiste.
     final isPlaceholder = widget.stream == null;
     final wasFavorited = controller.isFavorited(widget.streamId);
-    final favorite = widget.stream ??
+    final favorite =
+        widget.stream ??
         LiveStream(id: widget.streamId, title: 'Flux', startedAt: null);
     try {
       await controller.toggle(favorite);
@@ -96,8 +99,9 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     final subtitle =
         widget.stream?.broadcasterName ?? _audio.nowPlaying?.broadcaster;
     final listeners = widget.stream?.listenerCount;
-    final isFavorited =
-        context.watch<FavoritesController>().isFavorited(widget.streamId);
+    final isFavorited = context.watch<FavoritesController>().isFavorited(
+      widget.streamId,
+    );
 
     return Scaffold(
       body: SafeArea(
@@ -119,25 +123,37 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                       Text(
                         title,
                         textAlign: TextAlign.center,
-                        style: text.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                        style: text.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       if (subtitle != null && subtitle.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           subtitle,
-                          style:
-                              text.titleMedium?.copyWith(color: colors.primary),
+                          style: text.titleMedium?.copyWith(
+                            color: colors.primary,
+                          ),
                         ),
                       ],
                       if (listeners != null) ...[
                         const SizedBox(height: 10),
                         _listeners(colors, text, listeners),
                       ],
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      // Temps d'écoute plutôt qu'une barre de progression : un
+                      // direct n'a pas de fin connue, donc pas de fraction à
+                      // remplir (STR-244).
+                      ListeningTime(controller: _audio),
+                      const SizedBox(height: 16),
                       _statusLine(colors, text),
                       const SizedBox(height: 28),
                       _controls(colors, isFavorited),
+                      const SizedBox(height: 20),
+                      // Le curseur s'abonne seul au flux de volume : il est donc
+                      // posé HORS du ListenableBuilder pour ce qui le concerne,
+                      // et n'entraîne aucune reconstruction de l'écran.
+                      const VolumeSlider(),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -255,8 +271,9 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       return _busyLine(colors, text, 'Chargement…');
     }
     if (_audio.hasError || _audio.isEnded) {
-      final msg =
-          _audio.isEnded ? 'Le direct est terminé' : 'Flux indisponible';
+      final msg = _audio.isEnded
+          ? 'Le direct est terminé'
+          : 'Flux indisponible';
       return Text(
         msg,
         textAlign: TextAlign.center,
@@ -276,12 +293,16 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
         SizedBox(
           width: 14,
           height: 14,
-          child:
-              CircularProgressIndicator(strokeWidth: 2, color: colors.primary),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colors.primary,
+          ),
         ),
         const SizedBox(width: 10),
-        Text(label,
-            style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
+        Text(
+          label,
+          style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+        ),
       ],
     );
   }
@@ -308,7 +329,10 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       icon = SizedBox(
         width: 28,
         height: 28,
-        child: CircularProgressIndicator(strokeWidth: 3, color: colors.onPrimary),
+        child: CircularProgressIndicator(
+          strokeWidth: 3,
+          color: colors.onPrimary,
+        ),
       );
     } else if (_audio.hasError || _audio.isEnded) {
       icon = Icon(Icons.replay, size: 36, color: colors.onPrimary);
