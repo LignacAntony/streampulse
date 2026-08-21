@@ -30,6 +30,35 @@ generate-openapi-client:
 loadtest:
 	cd backend && go test -tags loadtest -race -count=1 -run TestLoad -v -timeout 5m ./internal/streaming/loadtest/
 
+# Mesure du coût CPU de N flux simultanés (STR-243) — modèle de dimensionnement
+# et de coût du VPS, cf. ADR 044.
+#
+# SANS `-race`, à la différence de `loadtest` : le détecteur de données multiplie
+# le temps CPU du code Go par un ordre de grandeur, sans toucher à celui des
+# process ffmpeg. Un modèle de coût mesuré sous `-race` serait donc faux, et
+# faux de façon asymétrique — le pire cas, celui qui ne se voit pas. Le test
+# refuse de tourner dans cette configuration.
+#
+# Variables : LOADTEST_STREAMS (défaut 1,5,10,20), LOADTEST_BROADCAST_SECONDS
+# (défaut 45). Compter ~15 min sur le balayage complet.
+.PHONY: loadtest-cpu
+loadtest-cpu:
+	cd backend && go test -tags loadtest -count=1 -run TestStreamCPU -v -timeout 40m ./internal/streaming/loadtest/
+
+# Preuve de fluidité 60 FPS sur appareil (STR-243), cf. docs/performance-mobile.md.
+#
+# `flutter drive` et non `flutter test` : seul le premier accepte `--profile`,
+# et une mesure de trame en mode debug ne prouve rien (JIT sans optimisation).
+# DEVICE est obligatoire — mesurer sur « le premier appareil venu » rendrait le
+# chiffre ininterprétable ; `flutter devices` donne les identifiants.
+.PHONY: frame-budget
+frame-budget:
+	@test -n "$(DEVICE)" || { echo ">> frame-budget: préciser DEVICE=<id> (voir 'flutter devices')"; exit 1; }
+	cd mobile && flutter drive \
+	  --driver=test_driver/integration_test.dart \
+	  --target=integration_test/frame_budget_test.dart \
+	  --profile -d $(DEVICE)
+
 .PHONY: check-android-security
 check-android-security:
 	python3 scripts/check-android-network-security.py

@@ -200,6 +200,12 @@ func (c *collector) durations(kind string) []time.Duration {
 	return out
 }
 
+func (c *collector) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.samples)
+}
+
 func (c *collector) failures() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -265,10 +271,14 @@ func timedGet(ctx context.Context, client *http.Client, url, token, kind string,
 
 // listen est la boucle d'un auditeur : GET playlist → GET des segments pas
 // encore vus → pause pollInterval, jusqu'à annulation du contexte.
-func listen(ctx context.Context, base, token string, col *collector) {
+//
+// L'identifiant du flux est un paramètre et non la constante du fichier :
+// la mesure CPU (STR-243) fait écouter des flux dont les identifiants sont
+// générés, un par diffusion simultanée.
+func listen(ctx context.Context, base, id, token string, col *collector) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	seen := make(map[string]bool)
-	playlistURL := fmt.Sprintf("%s/api/streams/%s/playlist.m3u8", base, streamID)
+	playlistURL := fmt.Sprintf("%s/api/streams/%s/playlist.m3u8", base, id)
 	for ctx.Err() == nil {
 		if body := timedGet(ctx, client, playlistURL, token, "playlist", col); body != nil {
 			for _, seg := range segmentRe.FindAllString(string(body), -1) {
@@ -276,7 +286,7 @@ func listen(ctx context.Context, base, token string, col *collector) {
 					continue
 				}
 				seen[seg] = true
-				segURL := fmt.Sprintf("%s/api/streams/%s/segments/%s", base, streamID, seg)
+				segURL := fmt.Sprintf("%s/api/streams/%s/segments/%s", base, id, seg)
 				timedGet(ctx, client, segURL, token, "segment", col)
 			}
 		}
@@ -365,7 +375,7 @@ func TestLoad_50Listeners(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			listen(loadCtx, srv.URL, token, col)
+			listen(loadCtx, srv.URL, streamID, token, col)
 		}()
 	}
 	wg.Wait()
