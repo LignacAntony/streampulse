@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/audio/listening_clock.dart';
 import '../providers/audio_player_controller.dart';
 
-/// Temps d'écoute d'un direct (STR-245).
+/// Temps d'écoute d'un direct (STR-244).
 ///
 /// Le sujet demande une barre de progression au lecteur. Un direct n'en a pas :
 /// il n'a pas de fin connue, donc pas de fraction à remplir, et une barre qui

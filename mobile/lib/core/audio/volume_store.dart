@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Persistance du niveau sonore choisi par l'auditeur (STR-245).
+/// Persistance du niveau sonore choisi par l'auditeur (STR-244).
 ///
 /// Interface séparée de l'implémentation (principe D) pour la même raison que
 /// `AudioPlaybackService` : le noyau audio n'a pas à connaître le magasin, et

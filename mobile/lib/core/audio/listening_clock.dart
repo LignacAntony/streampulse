@@ -1,4 +1,4 @@
-/// Temps d'écoute cumulé d'un direct (STR-245).
+/// Temps d'écoute cumulé d'un direct (STR-244).
 ///
 /// Un direct n'a pas de durée — il n'a pas de fin connue — mais il a un temps
 /// d'écoute, et c'est cela que l'auditeur veut voir : « ça fait 12 minutes que

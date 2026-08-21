@@ -36,7 +36,7 @@ abstract class PlaybackTransport {
 
   bool get playing;
 
-  /// Niveau sonore **choisi par l'auditeur**, dans `[0, 1]` (STR-245).
+  /// Niveau sonore **choisi par l'auditeur**, dans `[0, 1]` (STR-244).
   ///
   /// Ce n'est pas nécessairement le niveau appliqué au lecteur à l'instant t :
   /// pendant l'atténuation d'une interruption (ducking, ADR 033) le lecteur

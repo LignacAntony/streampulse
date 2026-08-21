@@ -21,7 +21,7 @@ final _tracks = [
 ];
 
 /// [service] sert aussi de [PlaybackTransport] : c'est le même objet qui porte
-/// la file et le volume en production (STR-245), le fake doit donc l'être aussi.
+/// la file et le volume en production (STR-244), le fake doit donc l'être aussi.
 Widget _host(
   PlaylistQueueController controller,
   Widget child, {

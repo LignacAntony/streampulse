@@ -40,7 +40,7 @@ Future<void> main() async {
     }
   }
 
-  // Niveau sonore de la session précédente (STR-245). Appliqué avant le premier
+  // Niveau sonore de la session précédente (STR-244). Appliqué avant le premier
   // rendu : le retrouver après coup ferait démarrer la lecture au volume par
   // défaut puis sauter, ce qui s'entend.
   //

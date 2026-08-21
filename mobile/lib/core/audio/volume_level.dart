@@ -1,4 +1,4 @@
-/// Niveau sonore de l'application, en deux valeurs distinctes (STR-245) :
+/// Niveau sonore de l'application, en deux valeurs distinctes (STR-244) :
 /// celle que l'auditeur a choisie, et celle réellement envoyée au lecteur.
 ///
 /// Les deux divergent pendant l'atténuation d'une interruption transitoire

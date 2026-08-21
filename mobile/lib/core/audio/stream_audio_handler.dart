@@ -49,7 +49,7 @@ class StreamAudioHandler extends BaseAudioHandler
   final _errors = StreamController<Object>.broadcast();
   final _interruptions = InterruptionPolicy();
 
-  /// Réglage de l'auditeur et atténuation en cours (STR-245). La règle qui les
+  /// Réglage de l'auditeur et atténuation en cours (STR-244). La règle qui les
   /// combine vit dans [VolumeLevel], objet pur — le handler ne fait que
   /// l'appliquer au lecteur.
   VolumeLevel _volumeLevel = const VolumeLevel();

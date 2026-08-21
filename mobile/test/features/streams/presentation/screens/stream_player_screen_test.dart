@@ -102,7 +102,7 @@ Widget _harness({
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<FavoritesController>.value(value: controller),
-      // Le curseur de volume (STR-245) lit le transport, pas le contrôleur de
+      // Le curseur de volume (STR-244) lit le transport, pas le contrôleur de
       // lecture : un fake suffit, il n'a rien à simuler d'autre.
       Provider<PlaybackTransport>.value(value: FakeAudioPlaybackService()),
       Provider<VolumeStore>(create: (_) => InMemoryVolumeStore()),

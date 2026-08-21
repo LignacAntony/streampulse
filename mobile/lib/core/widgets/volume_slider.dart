@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../audio/playback_transport.dart';
 import '../audio/volume_store.dart';
 
-/// Réglage du niveau sonore de l'application (STR-245).
+/// Réglage du niveau sonore de l'application (STR-244).
 ///
 /// Le volume appartient au **transport**, pas à une source : le même curseur
 /// sert donc au direct et à la file d'attente, et lit l'interface la plus
@@ -111,7 +111,7 @@ class _VolumeSliderState extends State<VolumeSlider> {
           onPressed: _toggleMute,
           icon: Icon(_icon, color: colors.onSurfaceVariant),
           // Un tooltip n'est pas lu par TalkBack/VoiceOver comme un libellé :
-          // il faut les deux (STR-245).
+          // il faut les deux (STR-244).
           tooltip: _volume <= 0 ? 'Rétablir le son' : 'Couper le son',
         ),
         Expanded(

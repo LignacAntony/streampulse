@@ -73,7 +73,7 @@ class PlaybackQueueSheet extends StatelessWidget {
           const QueueProgressSlider(),
           // Volume ici pour la même raison que la barre d'avancement : le
           // bandeau de 60 px n'a pas la place d'un curseur qu'on vise au pouce
-          // (STR-245). Il pilote le même transport que pendant un direct.
+          // (STR-244). Il pilote le même transport que pendant un direct.
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: VolumeSlider(showLabel: false),

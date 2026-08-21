@@ -45,7 +45,7 @@ typedef ManifestUnavailableProbe = Future<bool> Function(String streamId);
 /// erreurs (STR-118) par une **reconnexion automatique bornée** (perte réseau)
 /// puis un état d'erreur clair (flux indisponible).
 ///
-/// Le **volume ne passe pas par ce contrôleur** (STR-245) : il vit sur le
+/// Le **volume ne passe pas par ce contrôleur** (STR-244) : il vit sur le
 /// transport, et le curseur s'y abonne directement. Un glissement émet des
 /// dizaines de valeurs par seconde ; les faire transiter par un `notifyListeners`
 /// app-level reconstruirait tout l'arbre sous ce contrôleur à cette cadence.

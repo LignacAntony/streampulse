@@ -142,7 +142,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                       const SizedBox(height: 16),
                       // Temps d'écoute plutôt qu'une barre de progression : un
                       // direct n'a pas de fin connue, donc pas de fraction à
-                      // remplir (STR-245).
+                      // remplir (STR-244).
                       ListeningTime(controller: _audio),
                       const SizedBox(height: 16),
                       _statusLine(colors, text),

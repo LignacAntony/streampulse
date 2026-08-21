@@ -474,7 +474,7 @@ Voir [ADR 034](docs/adr/034-lecture-dune-playlist-avec-file-dattente.md).
   dans le **lecteur**, `duration_s` de la base ne servant que de valeur d'attente (déclaré par le
   client à l'upload, il peut mentir). Le serveur ne coûte rien : `Range` déjà géré (ADR 034 §1).
 
-### Contrôle du volume et temps d'écoute (STR-245, ADR 042)
+### Contrôle du volume et temps d'écoute (STR-244, ADR 042)
 
 - **Le volume vit sur `PlaybackTransport`** (`volume` / `volumeStream` / `setVolume`),
   pas sur un contrôleur : un glissement émet des dizaines de valeurs par seconde. Le

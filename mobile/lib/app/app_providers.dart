@@ -71,7 +71,7 @@ class StreamPulseApp extends StatelessWidget {
         Provider<QueuePlaybackService>.value(value: queueService),
         // Le volume ne dépend pas de la source : le curseur lit l'interface la
         // plus étroite qui le porte (principe I) et fonctionne donc aussi bien
-        // pendant un direct que pendant une file d'attente (STR-245).
+        // pendant un direct que pendant une file d'attente (STR-244).
         Provider<PlaybackTransport>.value(value: audioService),
         Provider<VolumeStore>(
           create: (_) => const SharedPreferencesVolumeStore(),
