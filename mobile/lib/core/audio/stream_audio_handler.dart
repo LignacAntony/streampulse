@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'audio_playback_service.dart';
 import 'interruption_policy.dart';
 import 'queue_playback_service.dart';
+import 'volume_level.dart';
 
 /// Implémentation de [AudioPlaybackService] et [QueuePlaybackService] via
 /// `audio_service` + `just_audio` (STR-109/US-05-04, cf. ADR 031, 033 et 034).
@@ -48,22 +49,35 @@ class StreamAudioHandler extends BaseAudioHandler
   final _errors = StreamController<Object>.broadcast();
   final _interruptions = InterruptionPolicy();
 
-  /// Volume appliqué pendant l'atténuation (ducking) d'une interruption
-  /// transitoire (notification).
-  static const double _duckVolume = 0.4;
+  /// Réglage de l'auditeur et atténuation en cours (STR-244). La règle qui les
+  /// combine vit dans [VolumeLevel], objet pur — le handler ne fait que
+  /// l'appliquer au lecteur.
+  VolumeLevel _volumeLevel = const VolumeLevel();
 
-  /// Volume à restaurer après un ducking (capturé juste avant, pour ne pas
-  /// écraser un réglage éventuel plutôt que de remettre 1.0 en dur).
-  double _preDuckVolume = 1;
-
-  /// Vrai entre un `duck` et sa restauration : on ne touche au volume qu'après
-  /// avoir réellement atténué (sinon une reprise écraserait un réglage éventuel).
-  bool _ducked = false;
+  final _volumes = StreamController<double>.broadcast();
 
   /// File d'attente courante, vide en lecture de direct. Sert à choisir les
   /// contrôles de la notification (précédent/suivant n'ont de sens qu'ici) et à
   /// republier le `MediaItem` à chaque changement de piste.
   List<MediaItem> _queueItems = const [];
+
+  @override
+  double get volume => _volumeLevel.user;
+
+  @override
+  Stream<double> get volumeStream => _volumes.stream;
+
+  @override
+  Future<void> setVolume(double volume) async {
+    final next = _volumeLevel.withUser(volume);
+    if (next == _volumeLevel) return;
+    _volumeLevel = next;
+    // Le niveau publié est celui de l'auditeur, le niveau appliqué tient compte
+    // d'une atténuation en cours : régler le volume pendant une notification
+    // doit s'entendre tout de suite, sans annuler l'atténuation.
+    _volumes.add(next.user);
+    await _player.setVolume(next.effective);
+  }
 
   @override
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
@@ -340,9 +354,8 @@ class StreamAudioHandler extends BaseAudioHandler
         // l'application a abandonnée entre-temps (garde `_hasSource`).
         unawaited(play());
       case InterruptionAction.duck:
-        _preDuckVolume = _player.volume; // capture avant d'atténuer
-        _ducked = true;
-        unawaited(_player.setVolume(_duckVolume));
+        _volumeLevel = _volumeLevel.withDucked(true);
+        unawaited(_player.setVolume(_volumeLevel.effective));
       case InterruptionAction.unduck:
         _restoreVolumeIfDucked();
       case InterruptionAction.none:
@@ -350,12 +363,13 @@ class StreamAudioHandler extends BaseAudioHandler
     }
   }
 
-  /// Restaure le volume d'avant l'atténuation **uniquement** si on avait
-  /// effectivement atténué — sinon on ne touche pas à un réglage éventuel.
+  /// Lève l'atténuation en revenant au niveau **choisi par l'auditeur**, et non
+  /// à un niveau capturé avant le duck : si le curseur a bougé entre-temps,
+  /// c'est le nouveau réglage qui doit survivre à l'interruption.
   void _restoreVolumeIfDucked() {
-    if (!_ducked) return;
-    _ducked = false;
-    unawaited(_player.setVolume(_preDuckVolume));
+    if (!_volumeLevel.ducked) return;
+    _volumeLevel = _volumeLevel.withDucked(false);
+    unawaited(_player.setVolume(_volumeLevel.effective));
   }
 
   /// Mappe un événement just_audio vers l'état `audio_service` qui pilote la
