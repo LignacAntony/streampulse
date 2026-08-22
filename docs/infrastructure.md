@@ -44,8 +44,8 @@ Aucune valeur secrète ne doit être committée dans le dépôt.
 | `POSTGRES_USER` | postgres | Utilisateur PostgreSQL (init du volume) | `streampulse` | Oui |
 | `POSTGRES_PASSWORD` | postgres | Mot de passe PostgreSQL (init du volume) | `changeme` | **Oui — à changer** |
 | `POSTGRES_DB` | postgres | Nom de la base de données (init du volume) | `streampulse_db` | Oui |
-| `DATABASE_URL` | api | DSN complète, lue par le migrator au démarrage et en fallback du pool | aucun | Oui |
 | `GRAFANA_ADMIN_PASSWORD` | grafana | Mot de passe admin Grafana | `changeme` | **Oui — à changer** |
+| `ALERT_EMAIL_TO` | grafana | Destinataire des alertes Grafana. Défaut `.invalid` non délivrable en dev ; **obligatoire en prod** (cf. [ADR 041](./adr/041-metriques-metier-debit-departs-et-resume-admin.md)) | `alertes@streampulse.invalid` | **Oui (prod)** |
 | `API_PORT` | api / hôte | Port exposé de l'API Go sur l'hôte | `8080` | Non |
 
 ### Variables consommées par l'API Go
@@ -64,6 +64,10 @@ caractères → l'API refuse de démarrer.
 | `DB_USER` | Utilisateur PostgreSQL | aucun | **Oui** |
 | `DB_PASSWORD` | Mot de passe PostgreSQL | aucun | **Oui** |
 | `DB_NAME` | Nom de la base PostgreSQL | aucun | **Oui** |
+| `DB_SSLMODE` | Mode TLS de la connexion PostgreSQL (`disable` en interne Docker, `require` / `verify-full` sur une base managée) | `disable` | Non |
+| `HTTP_READ_TIMEOUT_SECONDS` | Timeout de lecture du serveur HTTP (les chemins longs, ingest et SSE, gèrent leurs propres échéances) | `5` | Non |
+| `HTTP_WRITE_TIMEOUT_SECONDS` | Timeout d'écriture du serveur HTTP | `10` | Non |
+| `HTTP_IDLE_TIMEOUT_SECONDS` | Timeout d'inactivité des connexions keep-alive | `120` | Non |
 | `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live (doit dépasser 30 s, le backoff mobile max — refusé au démarrage sinon) | `45` | Non |
 | `INGEST_STOP_TIMEOUT_SECONDS` | Timeout d'une tentative d'arrêt automatique en base | `10` | Non |
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules. En développement, `localhost` / `127.0.0.1` sont autorisés d'office quel que soit le port ; cette variable sert surtout en production | aucun | Non |

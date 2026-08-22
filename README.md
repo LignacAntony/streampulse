@@ -108,7 +108,7 @@ Vue d'ensemble, schéma des composants, flux d'une requête et chaîne d'observa
 | **Observabilité** | Stack LGTM : Loki (logs), Grafana (dashboards + alertes), Tempo (traces), Prometheus (métriques) ([ADR 001](./docs/adr/001-choix-stack-observabilite.md)). |
 
 Toutes les décisions d'architecture significatives sont consignées sous forme d'**ADR**
-(*Architecture Decision Records*), 38 à ce jour, chacune reliée à son ticket Linear :
+(*Architecture Decision Records*), 44 à ce jour, chacune reliée à son ticket Linear :
 
 - **[Index complet de la documentation](./docs/README.md)** : ordre de lecture recommandé
 - **[Index des ADR](./docs/adr/)** : une décision par fichier, numérotée
@@ -118,7 +118,7 @@ Le code applique les **principes SOLID** de bout en bout : interfaces étroites 
 
 ## Tests
 
-Le projet compte **40 fichiers de tests Go** et **36 fichiers de tests Flutter**. Les tests sont
+Le projet compte **51 fichiers de tests Go** et **51 fichiers de tests Flutter**. Les tests sont
 **colocalisés avec le code** qu'ils couvrent (`*_test.go` à côté du package, `mobile/test/`
 en miroir de `mobile/lib/`).
 
@@ -147,34 +147,48 @@ cd mobile && flutter test
 make loadtest
 ```
 
+```bash
+# Preuves de performance (STR-243, voir docs/performance-mobile.md)
+make loadtest-cpu               # coût CPU de N flux simultanés (~15 min, sans -race)
+make frame-budget DEVICE=<id>   # relevé de fluidité 60 FPS sur appareil réel
+```
+
 **Conventions** : tests Go en **stdlib uniquement** (pas de testify), stubs légers pour les
 handlers et `fakeRepo` en mémoire pour les services ; côté Flutter, les abstractions du domaine
 permettent de substituer des fakes (ex. `fake_audio_playback_service.dart`).
 
-### Couverture actuelle (backend Go)
+### Couverture des tests
 
-**48,8 %** des instructions sur l'ensemble du module, et **54,4 %** en excluant les packages
-`internal/*/db` générés par sqlc, qui ne sont pas censés être testés directement.
+Le sujet demande **80 % minimum** en test unitaire, sur un périmètre déclaré. Une **porte de CI
+échoue sous 80 %** sur ce périmètre (handlers, services, repositories, middlewares, configuration,
+observabilité) : la couverture ne peut plus se dégrader sous le seuil sans bloquer la PR. Le
+relevé courant est de **81,05 %** sur ce périmètre (**63,6 %** brut, tout inclus), tenu à jour
+dans le document de couverture lié ci-dessous.
 
-| Package | Couverture | | Package | Couverture |
-| --- | --- | --- | --- | --- |
-| `observability` | 94,1 % | | `streaming` | 65,6 % |
-| `shared/httpmw` | 94,0 % | | `auth` | 62,7 % |
-| `config` | 81,3 % | | `track` | 57,4 % |
-| `shared/httpjson` | 75,8 % | | `profiles` | 54,0 % |
-| `openapi` | 73,3 % | | `admin` | 52,4 % |
-| | | | `broadcaster` | 44,8 % |
-| | | | `shared/apperror` | 40,9 % |
-| | | | `playlist` | 40,0 % |
+Quatre familles sont exclues du calcul, chacune pour une raison assumée et appliquée par un
+script (pas par convention orale) : le code généré par sqlc (`internal/*/db`), la racine de
+composition `cmd/api` (câblage des routes, qui demande un test de bout en bout encore à écrire),
+les enveloppes minces de `internal/infrastructure` (exercées via les tests d'intégration) et le
+socle de test `internal/testsupport`.
 
-> Chiffres obtenus avec `go test -coverprofile` sur le module complet. Les packages
-> `infrastructure/*` (migrator, seeder, pool) et `cmd/api` sont à 0 % : ils sont couverts par
-> les tests d'intégration sous build tag `integration`, exclus de `go test ./...`.
+Deux familles de tests, **toutes deux rejouées en CI à chaque PR** :
+
+- **unitaires** (`go test ./...`) : handlers contre des stubs, services contre des dépôts en
+  mémoire, fonctions pures ; aucune dépendance externe ;
+- **d'intégration** (`go test -tags integration ./...`) : repositories contre un vrai
+  PostgreSQL, pour vérifier les règles qui vivent dans le **schéma** (unicité, cascades,
+  contraintes différées) et qu'un dépôt en mémoire laisserait passer.
+
+Côté Flutter, la couverture est à **~68 %**, sans seuil gardé (le sujet ne l'exige que pour le Go).
+
+> Périmètre chiffré, exclusions justifiées et procédure de rejeu (`make coverage` /
+> `make coverage-gate`) : **[docs/couverture-de-tests.md](./docs/couverture-de-tests.md)**.
 
 ### Intégration continue
 
-La **CI rejoue lint → tests → build à chaque PR** (et sur `develop` / `main`) et publie
-`coverage.txt` en artefact téléchargeable depuis l'onglet *Actions*.
+La **CI rejoue à chaque PR** (et sur `develop` / `main`) : lint Go, **tests unitaires et
+d'intégration avec la porte de couverture**, build du binaire, puis analyse et tests Flutter.
+Le profil `coverage.txt` est publié en artefact téléchargeable depuis l'onglet *Actions*.
 
 Le **test de charge ne tourne pas sur les PR** : le harnais vivant sous *build tag*, la CI
 garantit seulement qu'il **compile** (`go vet -tags loadtest`). Son exécution réelle est un
@@ -252,12 +266,12 @@ Le projet suit la méthodologie [**12-Factor App**](https://12factor.net/fr/conf
 | `DB_USER` | Utilisateur PostgreSQL | aucun | **oui** | `streampulse` |
 | `DB_PASSWORD` | Mot de passe PostgreSQL | aucun | **oui** | `<mot de passe fort>` |
 | `DB_NAME` | Nom de la base PostgreSQL | aucun | **oui** | `streampulse_db` |
+| `DB_SSLMODE` | Mode TLS de la connexion PostgreSQL. `disable` convient au réseau interne Docker ; une base managée exigera `require` ou `verify-full` | `disable` | non | `disable` |
 | `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live (doit dépasser 30 s, le backoff mobile max, sinon l'API refuse de démarrer) | `45` | non | `45` |
 | `INGEST_STOP_TIMEOUT_SECONDS` | Timeout d'une tentative d'arrêt automatique en base | `10` | non | `10` |
 | `POSTGRES_USER` | Alias compose pour `DB_USER` (init du conteneur Postgres) | aucun | **oui (compose)** | `streampulse` |
 | `POSTGRES_PASSWORD` | Alias compose pour `DB_PASSWORD` | aucun | **oui (compose)** | `<mot de passe fort>` |
 | `POSTGRES_DB` | Alias compose pour `DB_NAME` | aucun | **oui (compose)** | `streampulse_db` |
-| `DATABASE_URL` | DSN PostgreSQL complète. Utilisée par le **migrator** au démarrage, et en **fallback** du pool si les `DB_*` ne sont pas résolues | aucun | **oui (compose)** | `pgx5://user:pwd@postgres:5432/streampulse_db?sslmode=disable` |
 | `GRAFANA_ADMIN_PASSWORD` | Mot de passe admin Grafana | aucun | **oui (compose)** | `<mot de passe fort>` |
 
 **Email (réinitialisation de mot de passe, alertes)** : laisser `SMTP_HOST` vide affiche les
@@ -272,11 +286,15 @@ tokens dans les logs (mode dev) ; en local, `mailpit` sert de relay de test (UI 
 | `SMTP_PASSWORD` | Mot de passe du relay SMTP | aucun | non | `<mot de passe smtp>` |
 | `SMTP_FROM` | Adresse expéditeur des emails | aucun (`noreply@streampulse.com` dans `.env.example`) | non | `noreply@streampulse.com` |
 | `APP_BASE_URL` | Schéma d'URL des liens contenus dans les emails, **deep link** vers l'app Flutter | aucun (`streampulse://app` dans `.env.example`) | non | `streampulse://app` |
+| `ALERT_EMAIL_TO` | Destinataire des alertes Grafana (consommé par **Grafana**, pas par l'API). Défaut `.invalid` non délivrable en dev ; **obligatoire en prod** (STR-244, [ADR 041](./docs/adr/041-metriques-metier-debit-departs-et-resume-admin.md)) | `alertes@streampulse.invalid` | **oui (prod)** | `equipe@streampulse.com` |
 
-**Réseau, streaming et stockage**
+**Serveur HTTP, réseau, streaming et stockage**
 
 | Variable | Description | Défaut | Requis | Exemple |
 | --- | --- | --- | --- | --- |
+| `HTTP_READ_TIMEOUT_SECONDS` | Timeout de lecture du serveur HTTP, en secondes. Les chemins longs (ingest audio, SSE) gèrent leurs propres échéances | `5` | non | `5` |
+| `HTTP_WRITE_TIMEOUT_SECONDS` | Timeout d'écriture du serveur HTTP, en secondes | `10` | non | `10` |
+| `HTTP_IDLE_TIMEOUT_SECONDS` | Timeout d'inactivité des connexions keep-alive, en secondes | `120` | non | `120` |
 | `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules. En dev, `localhost` / `127.0.0.1` sont autorisés d'office quel que soit le port | aucun | non | `https://app.streampulse.com` |
 | `STREAM_INGEST_BASE_URL` | Préfixe de l'URL d'ingest renvoyée au diffuseur : `{base}/api/streams/ingest/{stream_key}` ([ADR 013](./docs/adr/013-domaine-streaming.md)) | `http://localhost:8080` | non | `https://api.streampulse.win` |
 | `STORAGE_PATH` | Répertoire racine des fichiers audio uploadés, **hors répertoire servi** ([ADR 032](./docs/adr/032-domaine-track-upload-audio.md)) | `./data/tracks` | non | `/data/tracks` (volume Docker) |
