@@ -142,7 +142,6 @@ type measurement struct {
 	wall     time.Duration
 	server   cpuUsage      // CPU serveur, générateurs défalqués
 	genCPU   time.Duration // CPU des générateurs, pour mémoire
-	childRSS int64         // pic RSS du plus gros process fils (octets)
 	ready    int           // flux dont le manifeste a répondu 200
 	pushOK   int           // POST d'ingest terminés en 2xx
 	requests int           // requêtes auditeur émises (0 si aucun auditeur)
@@ -254,7 +253,6 @@ func measureStreams(t *testing.T, p ingestProfile, n, listenersPer int, window t
 	m.wall = time.Since(start)
 	m.server = after.sub(before)
 	m.server.children -= m.genCPU
-	m.childRSS = childMaxRSS()
 
 	srv.Close()
 	return m
@@ -291,10 +289,20 @@ func waitManifest(ctx context.Context, url, token string, timeout time.Duration)
 
 // childMaxRSS rend le pic de RSS du plus gros process fils.
 //
-// ⚠️ getrusage ne rend PAS la somme des fils : ru_maxrss est le maximum d'un
-// seul d'entre eux. C'est exactement ce qu'on veut ici — le coût RAM d'UN
-// ffmpeg, que l'on multiplie ensuite par le nombre de process du modèle. Et
-// l'unité change avec l'OS : octets sur darwin, kibioctets sur linux. Une
+// ⚠️ Deux propriétés à ne pas confondre, la seconde ayant produit une phrase
+// fausse dans l'ADR 044 avant la revue de la PR #333 :
+//
+//  1. getrusage ne rend PAS la somme des fils — ru_maxrss est le maximum d'UN
+//     seul d'entre eux. C'est la grandeur voulue ici : le coût RAM d'un ffmpeg,
+//     que le modèle multiplie ensuite par le nombre de process.
+//  2. Ce maximum est CUMULÉ sur toute la vie du process de test, jamais remis à
+//     zéro par le noyau. Il ne peut donc que croître, et il est impossible d'en
+//     tirer une valeur « par point de balayage » : chaque point hériterait du
+//     pic de tous les précédents. La première version l'affichait par N, ce qui
+//     laissait lire une stabilité qu'un compteur monotone ne peut pas établir.
+//     D'où un unique relevé, en fin de balayage, nommé pour ce qu'il est.
+//
+// L'unité change aussi avec l'OS : octets sur darwin, kibioctets sur linux. Une
 // conversion implicite ferait un facteur 1024 dans un dimensionnement de VPS.
 func childMaxRSS() int64 {
 	var ru syscall.Rusage
@@ -388,10 +396,10 @@ func TestStreamCPU_Sweep(t *testing.T) {
 				m := measureStreams(t, p, n, 0, window)
 				t.Logf("N=%-3d ffmpeg=%-3d prêts=%d/%d push2xx=%d/%d wall=%5.1fs "+
 					"CPU serveur=%6.2fs (go=%5.2fs ffmpeg=%6.2fs) => %.2f cœurs "+
-					"| générateurs défalqués=%6.2fs | pic RSS d'un fils=%.0f Mo",
+					"| générateurs défalqués=%6.2fs",
 					n, n*p.serverFFmpeg, m.ready, n, m.pushOK, n, m.wall.Seconds(),
 					m.server.total().Seconds(), m.server.self.Seconds(), m.server.children.Seconds(),
-					m.cores(), m.genCPU.Seconds(), float64(m.childRSS)/(1<<20))
+					m.cores(), m.genCPU.Seconds())
 				if m.ready == n {
 					xs = append(xs, float64(n))
 					ys = append(ys, m.cores())
@@ -405,16 +413,40 @@ func TestStreamCPU_Sweep(t *testing.T) {
 				p.name, slope, intercept, slope*100+intercept, slope*100+intercept)
 		})
 	}
+
+	// Un seul relevé, et hors des sous-tests : ru_maxrss est un high-water
+	// cumulé sur tout le binaire (cf. childMaxRSS). L'afficher par point aurait
+	// suggéré une mesure par-N que ce compteur ne peut pas rendre.
+	t.Logf("pic RSS du plus gros ffmpeg observé sur l'ensemble du balayage : %.0f Mo "+
+		"(high-water depuis le démarrage du binaire, tous profils et tous N confondus)",
+		float64(childMaxRSS())/(1<<20))
 }
 
 // TestStreamCPU_Listeners chiffre le SECOND terme du modèle de coût : ce que
 // coûte un auditeur, à nombre de flux constant.
 //
-// Le balayage ci-dessus mesure des flux sans auditeur — il isole le coût de la
-// segmentation. Un modèle de dimensionnement a besoin des deux termes, sinon
-// « 100 flux » ne dit rien du parc d'auditeurs qui les écoute. La différence
-// entre les deux points, sur une fenêtre identique, donne le coût marginal d'un
-// auditeur.
+// ## Deux phases d'une MÊME diffusion, et non deux diffusions
+//
+// La première version comparait deux runs indépendants de 45 s. Le signal
+// cherché (~0,018 cœur pour 50 auditeurs) était du même ordre que la
+// variabilité run-à-run du socle ffmpeg : un run un peu plus chargé que l'autre
+// suffisait à rendre l'écart nul ou négatif, et « auditeurs par cœur » sortait
+// alors en négatif ou en +Inf sans qu'aucune garde ne le signale (revue PR
+// #333). Mesurer les deux phases dans la même diffusion fait s'ANNULER ce
+// socle au lieu de le soustraire entre deux estimations bruitées.
+//
+// ## Pourquoi RUSAGE_SELF seul suffit ici
+//
+// Un auditeur ne coûte aucun ffmpeg : les segments qu'il télécharge sont déjà
+// écrits, le segmenteur travaille exactement pareil qu'il y ait zéro ou
+// cinquante auditeurs. Tout son coût est donc dans le process Go. C'est aussi
+// ce qui rend la mesure par phases possible : RUSAGE_SELF se lit à n'importe
+// quel instant, alors que RUSAGE_CHILDREN attend la récolte des fils.
+//
+// ⚠️ Biais assumé, comme pour le balayage : les auditeurs simulés tournent DANS
+// le process mesuré. Le CPU de leur propre client HTTP est indissociable de
+// celui du serveur. Le chiffre rendu est donc un MAJORANT du coût réel d'un
+// auditeur — direction sûre pour un dimensionnement, mais elle se dit.
 func TestStreamCPU_Listeners(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg absent du PATH : mesure CPU ignorée")
@@ -423,29 +455,100 @@ func TestStreamCPU_Listeners(t *testing.T) {
 		t.Fatal("mesure CPU compilée avec -race : chiffres inexploitables, utiliser `make loadtest-cpu`")
 	}
 
-	window := broadcastWindow(t)
-	// Une fenêtre trop courte rend un chiffre FAUX, pas un chiffre imprécis :
-	// les segments durent 10 s, et tant qu'il n'y en a qu'un ou deux les
-	// auditeurs passent leur temps à re-demander le même manifeste sans rien
-	// télécharger. Mesuré : 0,05 mcœur par auditeur sur une fenêtre de 12 s,
-	// contre 0,37 sur 45 s — un facteur 7 dans le mauvais sens, et rien à
-	// l'écran pour le signaler. Sauter plutôt que publier.
-	if window < 40*time.Second {
-		t.Skipf("fenêtre de %s trop courte : moins de quatre segments, le coût d'un auditeur y est sous-estimé d'un facteur ~7", window)
+	phase := broadcastWindow(t)
+	// Une phase trop courte rend un chiffre FAUX, pas imprécis : les segments
+	// durent 10 s, et tant qu'il n'y en a qu'un ou deux les auditeurs
+	// re-demandent le même manifeste sans rien télécharger.
+	if phase < 40*time.Second {
+		t.Skipf("phase de %s trop courte : moins de quatre segments, le coût d'un auditeur y serait sous-estimé", phase)
 	}
-	idle := measureStreams(t, profileAAC, 1, 0, window)
-	loaded := measureStreams(t, profileAAC, 1, listeners, window)
 
-	t.Logf("1 flux, 0 auditeur   : CPU=%6.2fs sur %5.1fs => %.3f cœurs",
-		idle.server.total().Seconds(), idle.wall.Seconds(), idle.cores())
-	t.Logf("1 flux, %d auditeurs : CPU=%6.2fs sur %5.1fs => %.3f cœurs (%d requêtes, %d échecs)",
-		listeners, loaded.server.total().Seconds(), loaded.wall.Seconds(), loaded.cores(),
-		loaded.requests, loaded.failures)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	if loaded.requests == 0 {
+	ls := streaming.NewLiveSessions(ctx)
+	t.Cleanup(ls.StopAll)
+	srv := startServer(t, ls)
+	token := mintToken(t)
+
+	const id, key = streamID + "-listeners", streamKey + "-listeners"
+	ls.Start(id, key)
+	// La diffusion doit couvrir les deux phases plus le démarrage du segmenteur.
+	startGenerator(t, ctx, srv.URL+"/api/streams/ingest/"+key, profileAAC, 2*phase+40*time.Second)
+
+	playlistURL := fmt.Sprintf("%s/api/streams/%s/playlist.m3u8", srv.URL, id)
+	if err := waitManifest(ctx, playlistURL, token, 40*time.Second); err != nil {
+		t.Fatalf("flux de mesure indisponible : %v", err)
+	}
+
+	// Phase A — le flux tourne, personne n'écoute. Socle : recopie de l'ingest.
+	idleCPU, err := phaseSelfCPU(ctx, phase)
+	if err != nil {
+		t.Fatalf("phase sans auditeur: %v", err)
+	}
+
+	// Phase B — mêmes conditions, 50 auditeurs en plus.
+	col := &collector{}
+	listenCtx, stopListen := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	for i := 0; i < listeners; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			listen(listenCtx, srv.URL, id, token, col)
+		}()
+	}
+	loadedCPU, err := phaseSelfCPU(ctx, phase)
+	stopListen()
+	wg.Wait()
+	if err != nil {
+		t.Fatalf("phase avec auditeurs: %v", err)
+	}
+
+	idle, loaded := cores(idleCPU, phase), cores(loadedCPU, phase)
+	t.Logf("phase A — 1 flux, 0 auditeur    : CPU Go=%5.2fs sur %s => %.4f cœur",
+		idleCPU.Seconds(), phase, idle)
+	t.Logf("phase B — 1 flux, %d auditeurs : CPU Go=%5.2fs sur %s => %.4f cœur (%d requêtes, %d échecs)",
+		listeners, loadedCPU.Seconds(), phase, loaded, col.count(), col.failures())
+
+	if col.count() == 0 {
 		t.Fatal("aucune requête auditeur collectée : mesure sans objet")
 	}
-	perListener := (loaded.cores() - idle.cores()) / float64(listeners)
-	t.Logf("coût marginal d'un auditeur : %.5f cœur (%.2f mcœur), soit %.0f auditeurs par cœur",
+	if col.failures() > 0 {
+		t.Errorf("%d requêtes auditeur en échec : le coût mesuré n'est pas celui d'un service nominal", col.failures())
+	}
+
+	perListener := (loaded - idle) / float64(listeners)
+	// Garde volontaire : sans elle, un écart négatif produirait un « auditeurs
+	// par cœur » négatif ou infini, publié comme s'il voulait dire quelque chose.
+	if perListener <= 0 {
+		t.Fatalf("mesure NON CONCLUANTE : le CPU serveur n'a pas augmenté avec %d auditeurs "+
+			"(socle %.4f cœur, chargé %.4f) — bruit supérieur au signal, rallonger LOADTEST_BROADCAST_SECONDS",
+			listeners, idle, loaded)
+	}
+	t.Logf("coût marginal d'un auditeur : %.5f cœur (%.2f mcœur) — MAJORANT, client in-process inclus ; "+
+		"soit au moins %.0f auditeurs par cœur",
 		perListener, perListener*1000, 1/perListener)
+}
+
+// phaseSelfCPU mesure le temps CPU du process Go consommé pendant `d`.
+//
+// RUSAGE_SELF et non le total : cf. l'en-tête de TestStreamCPU_Listeners. La
+// lecture est instantanée, ce qui autorise le découpage en phases qu'un
+// RUSAGE_CHILDREN — qui n'est alimenté qu'à la récolte des fils — interdirait.
+func phaseSelfCPU(ctx context.Context, d time.Duration) (time.Duration, error) {
+	before, err := readCPU()
+	if err != nil {
+		return 0, err
+	}
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-time.After(d):
+	}
+	after, err := readCPU()
+	if err != nil {
+		return 0, err
+	}
+	return after.sub(before).self, nil
 }

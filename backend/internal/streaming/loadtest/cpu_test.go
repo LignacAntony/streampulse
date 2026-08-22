@@ -88,6 +88,27 @@ func processCPU(cmd *exec.Cmd) time.Duration {
 	return cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()
 }
 
+// ⚠️ Ce que processCPU NE retire PAS : le CPU du CLIENT HTTP.
+//
+// Le harnais est in-process (ADR 016) : le générateur pousse son POST chunké et
+// les auditeurs simulés font leurs GET depuis le process même qui héberge le
+// serveur, en boucle locale. RUSAGE_SELF étant global au process, l'envoi du
+// corps, les io.Copy et le framing des requêtes atterrissent dans la même
+// colonne que le travail du serveur, sans moyen de les séparer — il n'y a qu'un
+// compteur pour les deux rôles.
+//
+// En production, le diffuseur pousse depuis sa machine et l'auditeur écoute
+// depuis son téléphone : ce terme n'existe pas. Les chiffres publiés sont donc
+// des MAJORANTS du coût réel, biais d'autant plus marqué sur les auditeurs que
+// servir un segment déjà écrit coûte peu.
+//
+// Direction sûre pour un dimensionnement — on surestime la facture, jamais
+// l'inverse — mais l'ADR 044 documentait la soustraction du ffmpeg générateur
+// sans dire un mot de celui-ci, ce qui laissait croire la mesure purgée de tout
+// ce qui est côté client (revue PR #333). Le fermer pour de bon demanderait de
+// sortir les clients du process, c'est-à-dire de renoncer au in-process — et
+// donc aux mesures mémoire/goroutines qui l'ont fait choisir.
+
 // cores exprime un temps CPU en cœurs moyens occupés sur une fenêtre : c'est
 // l'unité qui se convertit directement en vCPU facturés.
 func cores(cpu, wall time.Duration) float64 {

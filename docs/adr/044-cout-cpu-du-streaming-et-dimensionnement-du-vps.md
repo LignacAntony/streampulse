@@ -47,10 +47,13 @@ Trois propriétés de `getrusage` ont dicté le protocole, plutôt que l'inverse
   `cmd.ProcessState.UserTime()`/`SystemTime()` — en production, le diffuseur encode sur *sa*
   machine, pas sur la nôtre. Sans cette soustraction, le coût « par flux » aurait été surestimé
   d'un facteur ~2,9 sur le chemin AAC (1,56 s de générateur pour 0,81 s de serveur à N=1).
-- **`ru_maxrss` est le maximum d'un seul fils, pas leur somme** — et son unité change avec l'OS
-  (octets sur darwin, kibioctets sur linux). C'est exactement la grandeur utile ici : le coût
-  RAM d'**un** ffmpeg, que le modèle multiplie ensuite. Une conversion implicite aurait glissé un
-  facteur 1024 dans un dimensionnement de serveur.
+- **`ru_maxrss` est le maximum d'un seul fils, pas leur somme, et il est cumulé sur toute la vie
+  du process.** Le premier point en fait la grandeur utile — le coût RAM d'**un** ffmpeg, que le
+  modèle multiplie ensuite. Le second interdit d'en tirer une valeur par point de balayage :
+  le compteur n'étant jamais remis à zéro, chaque point hériterait du pic de tous les précédents.
+  D'où un unique relevé en fin de balayage. Et son unité change avec l'OS (octets sur darwin,
+  kibioctets sur linux) : une conversion implicite aurait glissé un facteur 1024 dans un
+  dimensionnement de serveur.
 
 ### 2. Mesurer **sans** `-race`, et refuser de mesurer avec
 
@@ -93,64 +96,125 @@ Un manifeste qui n'apparaît pas dans le temps imparti n'interrompt pas le balay
 
 Un second test (`TestStreamCPU_Listeners`) chiffre l'autre terme du modèle — ce que coûte un
 auditeur à nombre de flux constant — sans quoi « 100 flux » ne dirait rien du parc qui les écoute.
+Il procède en **deux phases d'une même diffusion** plutôt qu'en deux diffusions : le socle ffmpeg
+s'y annule au lieu d'être soustrait entre deux estimations dont le bruit dépasse le signal
+cherché. Détail et raison dans la section Mesures.
 
-## Mesures (run du 2026-08-21)
+## Mesures
 
 `make loadtest-cpu` — Apple M3 (Mac15,3), 8 cœurs, 8 Go, ffmpeg 8.1.2, darwin/arm64, fenêtre de
-45 s, générateurs défalqués, sans `-race`.
+45 s, générateurs défalqués, sans `-race`. **Run de référence : 2026-08-22.**
+
+### Ce que la mesure ne retire pas
+
+Le CPU du **client HTTP** reste dedans. Le harnais est in-process (ADR 016) : le générateur
+pousse son POST et les auditeurs simulés font leurs GET depuis le process même qui héberge le
+serveur. `RUSAGE_SELF` étant global au process, l'envoi du corps, les `io.Copy` et le framing des
+requêtes atterrissent dans la même colonne que le travail du serveur — un seul compteur pour les
+deux rôles, aucun moyen de les séparer.
+
+En production, le diffuseur pousse depuis sa machine et l'auditeur écoute depuis son téléphone :
+ce terme n'existe pas. **Tous les chiffres ci-dessous sont donc des majorants**, biais d'autant
+plus marqué sur les auditeurs que servir un segment déjà écrit coûte peu. Direction sûre pour un
+dimensionnement — on surestime la facture, jamais l'inverse — mais la première version de cette
+ADR documentait la soustraction du ffmpeg générateur sans dire un mot de celui-ci, ce qui
+laissait croire la mesure purgée de tout ce qui est côté client (revue PR #333). Le fermer
+demanderait de sortir les clients du process, c'est-à-dire de renoncer au in-process — et donc
+aux mesures mémoire/goroutines qui l'ont fait choisir.
 
 ### Ingest AAC — 1 ffmpeg par flux
 
 | Flux | ffmpeg serveur | CPU serveur | dont Go | dont ffmpeg | Cœurs moyens |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 1 | 0,81 s | 0,61 s | 0,19 s | 0,02 |
-| 5 | 5 | 2,86 s | 1,95 s | 0,91 s | 0,06 |
-| 10 | 10 | 4,02 s | 2,57 s | 1,45 s | 0,09 |
-| 20 | 20 | 6,01 s | 3,41 s | 2,59 s | 0,13 |
+| 1 | 1 | 0,58 s | 0,41 s | 0,17 s | 0,01 |
+| 5 | 5 | 1,96 s | 1,21 s | 0,74 s | 0,04 |
+| 10 | 10 | 3,96 s | 2,36 s | 1,60 s | 0,09 |
+| 20 | 20 | 7,33 s | 4,46 s | 2,87 s | 0,16 |
 
-**Modèle** : `cœurs ≈ 0,0057 × N + 0,025` → **100 flux ≈ 0,60 cœur**.
+**Modèle** : `cœurs ≈ 0,0080 × N + 0,006` → **100 flux ≈ 0,80 cœur**.
 
-Le chemin AAC est dominé par le **serveur Go**, pas par ffmpeg (3,41 s contre 2,59 s à N=20) :
+Le chemin AAC est dominé par le **serveur Go**, pas par ffmpeg (4,46 s contre 2,87 s à N=20) :
 `-c:a copy` ne fait que remuxer, l'essentiel du travail est la recopie de l'ingest et le service
-HTTP. L'ajustement sur les seuls points 5–20 donne une pente de 0,0047 cœur/flux, soit 0,51 cœur
-à N=100 : le modèle publié est donc le **majorant** des deux, ce qui est le bon sens pour un
-dimensionnement.
+HTTP.
 
 ### Ingest MP3 — 2 ffmpeg par flux (transcodage, ADR 030)
 
 | Flux | ffmpeg serveur | CPU serveur | dont Go | dont ffmpeg | Cœurs moyens |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 2 | 1,85 s | 0,50 s | 1,36 s | 0,04 |
-| 5 | 10 | 8,54 s | 1,56 s | 6,98 s | 0,19 |
-| 10 | 20 | 12,50 s | 1,90 s | 10,60 s | 0,28 |
-| 20 | 40 | 22,72 s | 3,61 s | 19,11 s | 0,51 |
+| 1 | 2 | 2,10 s | 0,54 s | 1,56 s | 0,05 |
+| 5 | 10 | 9,01 s | 1,72 s | 7,29 s | 0,20 |
+| 10 | 20 | 16,65 s | 3,05 s | 13,60 s | 0,37 |
+| 20 | 40 | 22,01 s | 3,27 s | 18,74 s | 0,49 |
 
-**Modèle** : `cœurs ≈ 0,0235 × N + 0,042` → **100 flux ≈ 2,39 cœurs**.
+**Modèle** : `cœurs ≈ 0,0227 × N + 0,074` → **100 flux ≈ 2,35 cœurs**.
 
-Le rapport entre les deux chemins est de **4,1×**, et non de 2× comme le laissait supposer le
-simple décompte de process : le second ffmpeg ne *double* pas la charge, il **ré-encode**, alors
-que le premier ne faisait que recopier des paquets. C'est le chiffre qui manquait au « à
-surveiller » de l'ADR 030. La linéarité y est franche (pente mesurée sur l'intervalle 10→20 :
-0,023 cœur/flux, contre 0,0235 pour l'ajustement global), donc l'extrapolation à 100 est solide.
+Ici ce sont les ffmpeg qui portent la charge — 85 % à N=20 (18,74 s sur 22,01 s) : le second
+process ne *double* pas le coût, il **ré-encode**, là où le segmenteur ne faisait que recopier
+des paquets.
 
-### Auditeurs
+### Reproductibilité — deux runs, et ce qu'ils permettent d'affirmer
 
-| Scénario | CPU serveur | Cœurs moyens |
-|---|---:|---:|
-| 1 flux, 0 auditeur | 0,57 s | 0,013 |
-| 1 flux, 50 auditeurs (1100 requêtes, 0 échec) | 1,39 s | 0,031 |
+| | 2026-08-21 | 2026-08-22 | Écart |
+|---|---:|---:|---:|
+| 100 flux AAC | 0,60 cœur | 0,80 cœur | **+33 %** |
+| 100 flux MP3 | 2,39 cœurs | 2,35 cœurs | −2 % |
 
-**Coût marginal d'un auditeur : 0,37 mcœur**, soit **~2 700 auditeurs par cœur**. Un auditeur
-coûte 15 fois moins qu'un flux AAC et 64 fois moins qu'un flux MP3 — le dimensionnement se joue
-sur les diffuseurs, pas sur l'audience.
+Le chemin MP3 est stable à 2 % près, l'AAC varie de 33 % — et c'est cohérent : le signal AAC est
+petit (0,16 cœur à N=20 contre 0,49), donc le bruit de la machine y pèse proportionnellement plus.
+Un poste de développement n'est pas un banc.
+
+Ce que ces deux runs autorisent à écrire, et rien de plus :
+
+- **100 flux AAC : de l'ordre de 0,6 à 0,8 cœur.** « Moins d'un vCPU » est solide ; trois
+  décimales ne le seraient pas.
+- **100 flux transcodés : 2,4 cœurs**, à quelques pour cent près.
+- **Le transcodage coûte 3 à 4 fois un flux AAC** (2,8× sur le run du 22, 4,1× sur celui du 21).
+  C'est ce rapport, pas sa décimale, qui chiffre le « à surveiller » de l'ADR 030.
+
+### Auditeurs — deux phases d'une même diffusion
+
+Mesurer un auditeur en comparant **deux diffusions** ne marchait pas : le signal cherché
+(~0,02 cœur pour 50 auditeurs) est du même ordre que la variabilité run-à-run du socle ffmpeg, si
+bien qu'un run un peu plus chargé que l'autre rendait l'écart nul — voire négatif, et
+« auditeurs par cœur » sortait en négatif ou en `+Inf` sans qu'aucune garde ne le signale (revue
+PR #333).
+
+Les deux termes sont donc mesurés dans **une seule diffusion**, en deux phases consécutives : le
+socle s'annule au lieu d'être soustrait entre deux estimations bruitées.
+
+| Phase | Ce qui tourne | CPU Go sur 45 s | Cœurs |
+|---|---|---:|---:|
+| A | 1 flux, 0 auditeur | 0,40 s | 0,0088 |
+| B | 1 flux, 50 auditeurs (1600 requêtes, 0 échec) | 1,57 s | 0,0349 |
+
+**Coût marginal d'un auditeur : 0,52 mcœur**, soit **au moins ~1 900 auditeurs par cœur**.
+
+Deux remarques de méthode. D'abord, seul `RUSAGE_SELF` est lu : un auditeur ne coûte aucun ffmpeg
+— les segments qu'il télécharge sont déjà écrits, le segmenteur travaille pareil qu'il y ait zéro
+ou cinquante auditeurs. C'est aussi ce qui rend le découpage en phases possible, `RUSAGE_SELF` se
+lisant à tout instant là où `RUSAGE_CHILDREN` attend la récolte des fils. Ensuite, le test
+**échoue** si l'écart entre les deux phases est nul ou négatif : une mesure non concluante doit se
+voir, pas se publier.
+
+Ce chiffre est plus élevé que les 0,37 mcœur du premier run — la méthode d'alors soustrayait des
+totaux de run entiers, socle ffmpeg compris, et sous-estimait. Un auditeur reste **15 fois moins
+cher qu'un flux AAC et 44 fois moins qu'un flux transcodé** : le dimensionnement se joue sur les
+diffuseurs, pas sur l'audience.
 
 ### Mémoire et disque
 
-`ru_maxrss` du plus gros process fils : **16 Mo**, stable sur toute la plage (le segmenteur ne
-bufferise pas). Le modèle RAM est donc `16 Mo × ffmpeg`, soit 1,6 Go pour 100 flux AAC et
-**3,2 Go pour 100 flux MP3**. Le disque est négligeable : 6 segments de 10 s à 128 kbit/s
-(`hlsListSize`, `hlsSegmentSeconds`) ≈ **1 Mo par flux**, dans un répertoire temporaire supprimé
-à l'arrêt.
+Pic de RSS du plus gros process fils : **16 Mo**.
+
+⚠️ C'est un **high-water cumulé sur toute la vie du binaire de test**, que le noyau ne remet jamais
+à zéro. Il ne peut donc que croître, et aucune valeur « par point de balayage » ne peut en être
+tirée — chaque point hériterait du pic de tous les précédents. La première version de cette ADR
+en concluait « 16 Mo, stable sur toute la plage » : une stabilité qu'un compteur monotone est
+incapable d'établir (revue PR #333). Ce qu'on peut affirmer est plus modeste et suffit : **aucun
+ffmpeg n'a dépassé 16 Mo**, ni en AAC ni en transcodage, ni à N=1 ni à N=20.
+
+Le modèle RAM est donc `≤ 16 Mo × ffmpeg`, soit au plus 1,6 Go pour 100 flux AAC et **3,2 Go pour
+100 flux MP3**. Le disque est négligeable : 6 segments de 10 s à 128 kbit/s (`hlsListSize`,
+`hlsSegmentSeconds`) ≈ **1 Mo par flux**, dans un répertoire temporaire supprimé à l'arrêt.
 
 ## Dimensionnement et coût du VPS
 
@@ -174,13 +238,13 @@ mesuré et n'est pas inventé ici : la manière honnête de le fermer est de rej
 sur le VPS (`make loadtest-cpu`, ffmpeg est déjà dans l'image). Les capacités ci-dessous
 retiennent une marge de **2×** en attendant, et doivent être lues comme un ordre de grandeur.
 
-| Contrainte | Ingest AAC | Ingest MP3 |
+| Contrainte (2 vCPU, 4 Go, marge 2×) | Ingest AAC | Ingest MP3 |
 |---|---|---|
-| CPU (2 vCPU, marge 2×) | ~170 flux | ~40 flux |
-| RAM ffmpeg seule (4 Go) | ~100 flux (1,6 Go) | ~50 flux (3,2 Go) |
-| **Mur effectif** | **~100 flux — la RAM** | **~40 flux — le CPU** |
+| CPU | ~125 flux | ~44 flux |
+| RAM ffmpeg seule | ~100 flux (1,6 Go) | ~50 flux (3,2 Go) |
+| **Mur effectif** | **~100 flux — la RAM** | **~44 flux — le CPU** |
 
-La RAM est donc la contrainte du chemin AAC, pas le processeur : sur un CX22, il reste à peine
+La RAM est la contrainte du chemin AAC, pas le processeur : sur un CX22, il resterait à peine
 2 Go pour l'API, PostgreSQL et toute la pile d'observabilité (Prometheus, Loki, Tempo, Grafana,
 Alloy) une fois 100 segmenteurs lancés. Le palier suivant, **CX32 à 6,80 €/mois** (+3,01 €),
 double les deux ressources d'un coup et sort de cette zone.
@@ -191,23 +255,22 @@ Sur un CX22, un vCPU-mois vaut 1,90 € (3,79 € ÷ 2). Avec la marge de 2× :
 
 | Unité | Coût CPU/mois | Remarque |
 |---|---:|---|
-| Un flux **AAC** | **≈ 0,022 €** | 2,2 centimes |
-| Un flux **MP3** | **≈ 0,089 €** | 4× le précédent |
-| Un auditeur | ≈ 0,0014 € | négligeable devant sa bande passante |
+| Un flux **AAC** | **≈ 0,030 €** | 3 centimes |
+| Un flux **MP3** | **≈ 0,086 €** | ~3× le précédent |
+| Un auditeur | ≈ 0,002 € | négligeable devant sa bande passante |
 
 **Le vrai coût d'un auditeur n'est pas son CPU, c'est son trafic.** À 128 kbit/s, une écoute
 continue consomme **42 Go par mois**. Les 20 To inclus couvrent donc **~475 auditeurs
 permanents** ; au-delà, le trafic sortant est facturé au téraoctet — à 1 €/To, un auditeur
-continu revient alors à ~0,04 €/mois, soit **trente fois son coût CPU**. (Le tarif au téraoctet
+continu revient alors à ~0,04 €/mois, soit **vingt fois son coût CPU**. (Le tarif au téraoctet
 est à confirmer en même temps que le plan du serveur ; l'ordre de grandeur, lui, ne dépend pas
-de sa valeur exacte : c'est le rapport entre trafic et processeur qui compte.) Le premier plafond que rencontrera
-StreamPulse en croissance est celui du réseau, pas celui du processeur.
+de sa valeur exacte : c'est le rapport entre trafic et processeur qui compte.)
 
 ## Alternatives écartées
 
 - **`pprof.StartCPUProfile`** — donne la répartition du CPU *à l'intérieur* du process Go, pas
-  son total, et ne voit pas du tout les process fils. Or ce sont eux qui portent 84 % de la
-  charge sur le chemin MP3 (19,11 s sur 22,72 s à N=20). Excellent pour optimiser, inapte à chiffrer.
+  son total, et ne voit pas du tout les process fils. Or ce sont eux qui portent 85 % de la
+  charge sur le chemin MP3 (18,74 s sur 22,01 s à N=20). Excellent pour optimiser, inapte à chiffrer.
 - **`docker stats` / cgroups** — mesurerait tout le conteneur d'un coup, générateur de charge
   compris, sans moyen de le défalquer, et imposerait de lancer la pile Docker pour chaque point
   du balayage. `getrusage` donne la même grandeur sans dépendance et avec la séparation
@@ -226,7 +289,7 @@ StreamPulse en croissance est celui du réseau, pas celui du processeur.
   configuration du premier.
 - `listen()` du harnais prend désormais l'identifiant du flux en paramètre : la mesure fait
   écouter des flux dont les identifiants sont générés, un par diffusion simultanée.
-- **Le transcodage est le poste de coût du service** (4,1× un flux AAC). Si un parc de diffuseurs
+- **Le transcodage est le poste de coût du service** (3 à 4× un flux AAC). Si un parc de diffuseurs
   non-AAC se constitue, deux leviers existent avant d'acheter du vCPU : documenter l'AAC comme
   format recommandé côté diffuseur, ou borner le nombre de transcodages simultanés comme
   `HLS_MAX_CONCURRENT` borne déjà les auditeurs (ADR 016 §2).
