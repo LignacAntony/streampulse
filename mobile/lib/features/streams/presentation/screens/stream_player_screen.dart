@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/permissions/notification_permission.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/widgets/chat_panel.dart';
@@ -263,10 +264,10 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
-          IconButton(
+          AccessibleIconButton(
+            icon: Icons.keyboard_arrow_down,
+            label: 'Réduire le lecteur',
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.keyboard_arrow_down),
-            tooltip: 'Réduire',
           ),
           const Spacer(),
           ListenableBuilder(

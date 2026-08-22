@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 
 import '../../../../core/audio/audio_playback_service.dart';
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/audio/listening_clock.dart';
 
 export '../../../../core/audio/audio_playback_service.dart'
     show NowPlaying, PlaybackStatus;
@@ -25,6 +26,19 @@ abstract class PlaybackController extends ChangeNotifier {
   /// mini-player et l'affichage plein écran.
   NowPlaying? get nowPlaying;
 
+  /// Temps d'écoute cumulé du direct en cours, à l'instant [now] (STR-244).
+  ///
+  /// Porté par le contrôleur **app-level** et non par le widget qui l'affiche :
+  /// la lecture survit à la navigation (ADR 031), donc le décompte doit y
+  /// survivre aussi. Dans le `State` d'un écran, revenir en arrière puis rouvrir
+  /// le plein écran repartait de zéro alors que le direct jouait depuis dix
+  /// minutes (revue PR #331).
+  ///
+  /// Méthode et non getter notifiant : la valeur change en continu, et la faire
+  /// passer par `notifyListeners` reconstruirait tout l'arbre chaque seconde.
+  /// Le widget bat son propre tic et lit ici.
+  Duration listeningElapsed(DateTime now);
+
   Future<void> load(NowPlaying now);
   Future<void> togglePlayPause();
 
@@ -41,10 +55,14 @@ typedef ManifestUnavailableProbe = Future<bool> Function(String streamId);
 /// Contrôleur du lecteur audio HLS, **hissé au niveau application** (STR-109,
 /// cf. [ADR 031]). Pilote un [AudioPlaybackService] partagé (service de premier
 /// plan `audio_service`) : la lecture survit à la navigation et à la mise en
-/// arrière-plan. Expose un état applicatif simple + play/pause (le volume est
-/// délégué au système, boutons matériels — pas de contrôle in-app), et gère
-/// les erreurs (STR-118) par une **reconnexion automatique bornée** (perte
-/// réseau) puis un état d'erreur clair (flux indisponible).
+/// arrière-plan. Expose un état applicatif simple + play/pause, et gère les
+/// erreurs (STR-118) par une **reconnexion automatique bornée** (perte réseau)
+/// puis un état d'erreur clair (flux indisponible).
+///
+/// Le **volume ne passe pas par ce contrôleur** (STR-244) : il vit sur le
+/// transport, et le curseur s'y abonne directement. Un glissement émet des
+/// dizaines de valeurs par seconde ; les faire transiter par un `notifyListeners`
+/// app-level reconstruirait tout l'arbre sous ce contrôleur à cette cadence.
 class AudioPlayerController extends PlaybackController {
   AudioPlayerController({
     required AudioPlaybackService service,
@@ -77,6 +95,11 @@ class AudioPlayerController extends PlaybackController {
   // non, c'est probablement la fenêtre de démarrage (manifeste pas encore prêt).
   bool _hasPlayed = false;
   PlaybackStatus _status = PlaybackStatus.idle;
+
+  /// Horloge du temps d'écoute (STR-244). Pilotée par les transitions d'état
+  /// ci-dessous, jamais par la position du lecteur : celle-ci repart de zéro à
+  /// chaque rechargement de source, donc à chaque reprise après erreur.
+  final _listeningClock = ListeningClock();
   Object? _error;
 
   @override
@@ -108,6 +131,11 @@ class AudioPlayerController extends PlaybackController {
   @override
   Future<void> load(NowPlaying now) async {
     onTakeOver?.call();
+    // Changer de flux remet le décompte à zéro ; le relancer (reprise après
+    // erreur) passe par _start() et le conserve.
+    if (_nowPlaying?.streamId != now.streamId) {
+      _listeningClock.reset();
+    }
     _nowPlaying = now;
     _retryCount = 0;
     _hasPlayed = false;
@@ -268,8 +296,19 @@ class AudioPlayerController extends PlaybackController {
   void _setStatus(PlaybackStatus status) {
     if (_disposed || _status == status) return;
     _status = status;
+    // L'horloge ne tourne que pendant une lecture effective. Une reconnexion
+    // n'en est pas une : l'auditeur n'entend rien, et un compteur qui court sur
+    // du silence surestimerait ce qu'il a réellement écouté.
+    if (status == PlaybackStatus.playing) {
+      _listeningClock.start(DateTime.now());
+    } else {
+      _listeningClock.pause(DateTime.now());
+    }
     notifyListeners();
   }
+
+  @override
+  Duration listeningElapsed(DateTime now) => _listeningClock.elapsedAt(now);
 
   @override
   void dispose() {

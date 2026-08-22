@@ -16,6 +16,8 @@ import 'package:streampulse/features/playlists/presentation/screens/playlist_det
 
 import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
+import 'package:streampulse/core/widgets/accessible_icon_button.dart';
+import '../../../../support/accessibility.dart';
 
 class _FakeCacheRepository implements OfflineCacheRepository {
   @override
@@ -276,7 +278,7 @@ void main() {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
-      final button = tester.widget<IconButton>(
+      final button = tester.widget<AccessibleIconButton>(
         find.byKey(const Key('playlist_shuffle_play_button')),
       );
       expect(button.onPressed, isNull);
@@ -436,4 +438,64 @@ void main() {
       expect(find.byKey(const Key('track_picker_empty')), findsOneWidget);
     });
   });
+  group('PlaylistDetailScreen — accessibilité (STR-244)', () {
+    testWidgets('une ligne de piste est annoncée UNE fois, en une phrase',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0)],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      // La phrase composée est bien posée…
+      expect(
+        find.bySemanticsLabel(RegExp(r'Piste 1, .*')),
+        findsOneWidget,
+      );
+
+      // …et le titre n'apparaît pas EN PLUS dans un nœud séparé.
+      //
+      // C'est le défaut relevé en revue (#332) : le `Semantics` conteneur ne
+      // masquait pas ses enfants, et la ListTile étant tapable, ses title et
+      // subtitle formaient leur propre nœud. Un lecteur d'écran annonçait la
+      // phrase entière PUIS « Midnight Drive, … » — la lecture fragmentée que
+      // le changement prétendait supprimer, plus un doublon.
+      const titre = 'Midnight Drive';
+      // …et le titre ne forme pas un nœud à lui seul.
+      //
+      // Défaut relevé en revue (#332) : le `Semantics` conteneur ne masquait pas
+      // ses enfants, et la ListTile étant tapable, ses title/subtitle formaient
+      // leur propre nœud. Un lecteur d'écran annonçait la phrase composée PUIS
+      // « Midnight Drive, Neon Lights 3:34 » — la lecture fragmentée que le
+      // changement prétendait supprimer, plus un doublon.
+      //
+      // On vise le titre SEUL : « Retirer Midnight Drive de la playlist » est le
+      // bouton d'action, il a son propre libellé et doit rester distinct.
+      final labels = semanticLabelsMentioning(tester, titre);
+      expect(
+        labels.where((l) => l == titre || l.startsWith('\$titre,')),
+        isEmpty,
+        reason: 'le titre ne doit pas former de nœud séparé, il appartient à '
+            'la phrase composée. Nœuds trouvés : \$labels',
+      );
+      expect(labels.any((l) => l.startsWith('Piste 1, ')), isTrue);
+
+      handle.dispose();
+    });
+
+    testWidgets('la ligne expose une action tap, pas seulement un rôle',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0)],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      expect(buttonsWithoutTapAction(tester), isEmpty);
+      handle.dispose();
+    });
+  });
+
 }

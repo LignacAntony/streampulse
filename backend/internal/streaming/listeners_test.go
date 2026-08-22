@@ -14,7 +14,7 @@ func TestSession_TouchListener_CountsDistinctClients(t *testing.T) {
 	s.touchListener("10.0.0.2", now)
 	s.touchListener("10.0.0.1", now) // même client : ne compte pas deux fois
 
-	got := s.stats(now)
+	got, _ := s.stats(now)
 	if got.Listeners != 2 {
 		t.Errorf("Listeners = %d, want 2", got.Listeners)
 	}
@@ -35,7 +35,7 @@ func TestSession_Listeners_ExpireAfterWindow(t *testing.T) {
 	later := start.Add(listenerWindow + time.Second)
 	s.touchListener("10.0.0.1", later)
 
-	got := s.stats(later)
+	got, _ := s.stats(later)
 	if got.Listeners != 1 {
 		t.Errorf("Listeners = %d, want 1", got.Listeners)
 	}
@@ -52,13 +52,13 @@ func TestSession_Peak_SurvivesDepartures(t *testing.T) {
 	// Le pic est celui OBSERVÉ aux instants de lecture : il se fige au moment
 	// où l'audience est mesurée, pas à l'insertion — sans quoi chaque requête
 	// de manifeste devrait balayer toute la map (cf. touchListener).
-	if got := s.stats(start); got.Peak != 3 {
+	if got, _ := s.stats(start); got.Peak != 3 {
 		t.Fatalf("Peak à la mesure = %d, want 3", got.Peak)
 	}
 
 	// Tout le monde part : le compte courant retombe, le pic reste.
 	later := start.Add(listenerWindow + time.Second)
-	got := s.stats(later)
+	got, _ := s.stats(later)
 
 	if got.Listeners != 0 {
 		t.Errorf("Listeners = %d, want 0", got.Listeners)
@@ -84,7 +84,7 @@ func TestSession_TouchListener_DoesNotScanOnHotPath(t *testing.T) {
 		t.Error("touchListener a purgé sur le chemin chaud")
 	}
 	// La lecture, elle, purge.
-	if got := s.stats(later); got.Listeners != 1 {
+	if got, _ := s.stats(later); got.Listeners != 1 {
 		t.Errorf("après stats: Listeners = %d, want 1", got.Listeners)
 	}
 }
@@ -132,8 +132,8 @@ func TestSession_Listeners_Capped(t *testing.T) {
 		s.touchListener(fmt.Sprintf("client-%d", i), now)
 	}
 
-	if got := s.stats(now).Listeners; got > maxTrackedListeners {
-		t.Errorf("Listeners = %d, dépasse le plafond %d", got, maxTrackedListeners)
+	if snapshot, _ := s.stats(now); snapshot.Listeners > maxTrackedListeners {
+		t.Errorf("Listeners = %d, dépasse le plafond %d", snapshot.Listeners, maxTrackedListeners)
 	}
 }
 

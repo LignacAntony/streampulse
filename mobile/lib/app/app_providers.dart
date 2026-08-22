@@ -39,6 +39,7 @@ import '../features/chat/data/datasources/chat_websocket_source.dart';
 import '../features/chat/data/repositories/chat_ban_repository.dart';
 import '../features/chat/presentation/providers/chat_controller.dart';
 import '../features/streams/presentation/providers/stream_notifier.dart';
+import '../core/audio/volume_store.dart';
 
 /// Conteneur racine d'injection de dépendances (remplace `ProviderScope`).
 ///
@@ -71,6 +72,13 @@ class StreamPulseApp extends StatelessWidget {
       providers: [
         Provider<AudioPlaybackService>.value(value: audioService),
         Provider<QueuePlaybackService>.value(value: queueService),
+        // Le volume ne dépend pas de la source : le curseur lit l'interface la
+        // plus étroite qui le porte (principe I) et fonctionne donc aussi bien
+        // pendant un direct que pendant une file d'attente (STR-244).
+        Provider<PlaybackTransport>.value(value: audioService),
+        Provider<VolumeStore>(
+          create: (_) => const SharedPreferencesVolumeStore(),
+        ),
         Provider<SecureStorage>(create: (_) => SecureStorage()),
         Provider<DioClient>(
           create: (ctx) => DioClient(ctx.read<SecureStorage>()),

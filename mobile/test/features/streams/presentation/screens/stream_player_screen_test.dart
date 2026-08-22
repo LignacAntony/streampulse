@@ -15,6 +15,9 @@ import 'package:streampulse/features/streams/domain/repositories/stream_reposito
 import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 import 'package:streampulse/features/streams/presentation/screens/stream_player_screen.dart';
+import 'package:streampulse/core/audio/playback_transport.dart';
+import 'package:streampulse/core/audio/volume_store.dart';
+import '../../../../support/fake_audio_playback_service.dart';
 
 class _FakePlaybackController extends PlaybackController {
   _FakePlaybackController([this._status = PlaybackStatus.idle]);
@@ -38,6 +41,11 @@ class _FakePlaybackController extends PlaybackController {
   NowPlaying? get nowPlaying => null;
   @override
   Future<void> load(NowPlaying now) async {}
+
+  // Le temps d'écoute appartient au contrôleur app-level (STR-244) : ce fake
+  // n'a rien à décompter, l'écran ne fait que l'afficher.
+  @override
+  Duration listeningElapsed(DateTime now) => Duration.zero;
   @override
   Future<void> togglePlayPause() async {}
   @override
@@ -139,6 +147,8 @@ Widget _harness({
       ChangeNotifierProvider<ProfileController>(
         create: (_) => ProfileController(_FakeProfileRepository())..load(),
       ),
+      Provider<PlaybackTransport>.value(value: FakeAudioPlaybackService()),
+      Provider<VolumeStore>(create: (_) => InMemoryVolumeStore()),
     ],
     child: ToastificationWrapper(
       child: MaterialApp(

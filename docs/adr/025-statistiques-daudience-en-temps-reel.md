@@ -46,6 +46,15 @@ parcourues par requête. `touchListener` est donc O(1) ; la purge vit dans
 `stats()`, appelé toutes les 5 s par un seul lecteur, et en dernier recours
 quand le plafond est atteint.
 
+> **Mise à jour (STR-244, [ADR 041](041-metriques-metier-debit-departs-et-resume-admin.md) §2)** —
+> un balayage périodique (`StartListenerSweep`, 30 s) purge désormais toutes les
+> sessions, indépendamment de `stats()`. Le chemin chaud est inchangé : c'est une
+> goroutine dédiée, pas un ajout à `touchListener`. Deux conséquences : la purge
+> alimente le compteur `streampulse_listener_departures_total`, qui sans cela
+> n'aurait avancé que pendant qu'un diffuseur regarde son tableau de bord ; et une
+> diffusion abandonnée cesse d'afficher ses derniers auditeurs même si personne ne
+> consulte ses statistiques.
+
 Le pic (`peak_listeners`) est par conséquent le maximum **observé aux instants
 de lecture**, à 5 s près, et non un maximum instantané continu : le compte n'est
 exact qu'après purge. Il survit aux départs mais pas à l'arrêt du flux ni au

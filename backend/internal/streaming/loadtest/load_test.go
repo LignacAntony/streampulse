@@ -107,63 +107,31 @@ func mintToken(t *testing.T) string {
 	return tok
 }
 
-// startBroadcast lance ffmpeg (sine AAC temps réel, ~90 s de matière) et pousse
-// sa sortie ADTS sur l'ingest via un POST chunké — le chemin exact d'un vrai
-// diffuseur. L'annulation de ctx tue ffmpeg (CommandContext) et coupe le POST.
+// startBroadcast lance le diffuseur simulé du test de charge : ffmpeg sine AAC
+// temps réel poussé sur l'ingest par un POST chunké, ~90 s de matière.
+//
+// Délègue à startGenerator (streams_test.go) plutôt que de refaire la même
+// chorégraphie os/exec + pipe. Elle a un piège — os/exec interdit `Wait` avant
+// la fin des lectures du pipe stdout — qui ne doit exister qu'à un seul endroit :
+// dupliqué, il faudrait le corriger deux fois (revue PR #333). Le temps CPU du
+// générateur est relevé par startGenerator ; ce test ne s'en sert pas.
 func startBroadcast(t *testing.T, ctx context.Context, ingestURL string) {
 	t.Helper()
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error",
-		"-re", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
-		"-t", "90", "-c:a", "aac", "-b:a", "128k", "-f", "adts", "-")
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatalf("StdoutPipe: %v", err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("démarrage ffmpeg: %v", err)
-	}
-	// La goroutine POST lit `out` (stdout ffmpeg) : os/exec interdit d'appeler
-	// Wait avant la fin des lectures du pipe. On attend donc la fin de la
-	// goroutine (via done) AVANT de laisser le cleanup appeler Wait.
-	done := make(chan struct{})
-	t.Cleanup(func() {
-		<-done
-		_ = cmd.Wait() // récolte le process après cancel + fin des lectures du pipe
-	})
-	go func() {
-		defer close(done)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, ingestURL, out)
-		if err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", "audio/aac")
-		resp, err := http.DefaultClient.Do(req)
-		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-		}
-	}()
+	startGenerator(t, ctx, ingestURL, profileAAC, 90*time.Second)
 }
 
 // waitFirstManifest bloque jusqu'à ce que la playlist réponde 200 (premier
-// segment produit par ffmpeg, ~10-12 s) — deadline 30 s.
-func waitFirstManifest(t *testing.T, client *http.Client, url, token string) {
+// segment produit par ffmpeg, ~10-12 s) — deadline 30 s, échec fatal.
+//
+// Mince enveloppe sur waitManifest (streams_test.go), qui rend une erreur : la
+// mesure CPU a besoin de traiter un manifeste absent comme un RÉSULTAT (c'est
+// la forme que prend un point de rupture), ce test comme un échec. Une seule
+// boucle de sondage HLS à garder en phase (revue PR #333).
+func waitFirstManifest(t *testing.T, _ *http.Client, url, token string) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := client.Do(req)
-		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
+	if err := waitManifest(context.Background(), url, token, 30*time.Second); err != nil {
+		t.Fatalf("aucun manifeste disponible : %v (ffmpeg n'a rien produit)", err)
 	}
-	t.Fatal("aucun manifeste disponible après 30 s (ffmpeg n'a rien produit)")
 }
 
 // sample : une requête auditeur mesurée.
@@ -198,6 +166,12 @@ func (c *collector) durations(kind string) []time.Duration {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+func (c *collector) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.samples)
 }
 
 func (c *collector) failures() int {
@@ -265,10 +239,14 @@ func timedGet(ctx context.Context, client *http.Client, url, token, kind string,
 
 // listen est la boucle d'un auditeur : GET playlist → GET des segments pas
 // encore vus → pause pollInterval, jusqu'à annulation du contexte.
-func listen(ctx context.Context, base, token string, col *collector) {
+//
+// L'identifiant du flux est un paramètre et non la constante du fichier :
+// la mesure CPU (STR-243) fait écouter des flux dont les identifiants sont
+// générés, un par diffusion simultanée.
+func listen(ctx context.Context, base, id, token string, col *collector) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	seen := make(map[string]bool)
-	playlistURL := fmt.Sprintf("%s/api/streams/%s/playlist.m3u8", base, streamID)
+	playlistURL := fmt.Sprintf("%s/api/streams/%s/playlist.m3u8", base, id)
 	for ctx.Err() == nil {
 		if body := timedGet(ctx, client, playlistURL, token, "playlist", col); body != nil {
 			for _, seg := range segmentRe.FindAllString(string(body), -1) {
@@ -276,7 +254,7 @@ func listen(ctx context.Context, base, token string, col *collector) {
 					continue
 				}
 				seen[seg] = true
-				segURL := fmt.Sprintf("%s/api/streams/%s/segments/%s", base, streamID, seg)
+				segURL := fmt.Sprintf("%s/api/streams/%s/segments/%s", base, id, seg)
 				timedGet(ctx, client, segURL, token, "segment", col)
 			}
 		}
@@ -365,7 +343,7 @@ func TestLoad_50Listeners(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			listen(loadCtx, srv.URL, token, col)
+			listen(loadCtx, srv.URL, streamID, token, col)
 		}()
 	}
 	wg.Wait()

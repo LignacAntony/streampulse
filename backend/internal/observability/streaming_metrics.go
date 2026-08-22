@@ -21,8 +21,10 @@ const defaultDrainDelay = 30 * time.Second
 // pattern de route. Les séries d'un flux sont supprimées à son arrêt, si
 // bien que la cardinalité active suit le nombre de directs simultanés.
 type StreamingMetrics struct {
-	requests   *prometheus.CounterVec
-	drainDelay time.Duration // injectable en test
+	requests      *prometheus.CounterVec
+	departures    prometheus.Counter
+	interruptions *prometheus.CounterVec
+	drainDelay    time.Duration // injectable en test
 }
 
 // NewStreamingMetrics enregistre les métriques métier du streaming.
@@ -32,8 +34,45 @@ func NewStreamingMetrics(reg prometheus.Registerer) *StreamingMetrics {
 			Name: "streampulse_hls_requests_total",
 			Help: "Requêtes de lecture HLS servies aux auditeurs, par flux.",
 		}, []string{"stream_id", "kind", "status"}),
+
+		// Départs d'auditeurs et interruptions de diffusion (STR-244, ADR 041) :
+		// le versant « métier / expérience » que le sujet oppose aux 5xx.
+		//
+		// Ni l'un ni l'autre ne porte de stream_id, à la différence de la famille
+		// ci-dessus. Un second porteur de ce label doublerait la surface de purge
+		// que l'ADR 022 a mise en place pour borner la cardinalité, alors que le
+		// détail par flux est déjà lisible sur streampulse_hls_requests_total.
+		departures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "streampulse_listener_departures_total",
+			Help: "Auditeurs dont la fenêtre d'activité HLS a expiré pendant que le flux diffusait encore.",
+		}),
+		interruptions: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "streampulse_stream_interruptions_total",
+			Help: "Diffusions terminées autrement que par un arrêt volontaire du diffuseur.",
+		}, []string{"reason"}),
+
 		drainDelay: defaultDrainDelay,
 	}
+}
+
+// RecordListenerDepartures compte n auditeurs sortis du suivi d'audience.
+//
+// C'est une estimation, comme le compte d'auditeurs dont elle dérive : HLS
+// n'ayant pas de connexion persistante, un lecteur fermé proprement et un
+// lecteur coupé par le réseau expirent exactement de la même façon. La métrique
+// mesure donc des **départs**, pas des « déconnexions brutales » — l'inverse
+// serait une affirmation que le protocole ne permet pas (ADR 041 §3).
+func (m *StreamingMetrics) RecordListenerDepartures(n int) {
+	if n <= 0 {
+		return
+	}
+	m.departures.Add(float64(n))
+}
+
+// RecordStreamInterruption compte une diffusion qui s'est arrêtée sans que le
+// diffuseur l'ait demandé.
+func (m *StreamingMetrics) RecordStreamInterruption(reason string) {
+	m.interruptions.WithLabelValues(reason).Inc()
 }
 
 // RecordHLSRequest compte une lecture HLS (kind = playlist|segment).

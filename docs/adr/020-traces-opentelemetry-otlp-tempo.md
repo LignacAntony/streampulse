@@ -81,13 +81,17 @@ de fond périodiques apparaissent : un sampler dédié éviterait d'exporter ces
 en un clic depuis un log Loki (bouton TraceID) : span serveur otelhttp → spans SQL
 otelpgx.
 
-⚠️ **La trace commence au serveur, pas au mobile.** Le critère du sujet demande de
-suivre une requête « de l'application mobile jusqu'à la base de données » ; ce que
-cet ADR livre s'arrête à `API → DB`. Le propagateur W3C est bien armé côté serveur
-(`tracer.go`), donc un `traceparent` entrant serait honoré — mais aucun n'est émis :
-`grep -r traceparent mobile/` ne rend rien. Il manque un intercepteur Dio d'une
-quinzaine de lignes. Tant qu'il n'existe pas, le critère n'est pas couvert, et il ne
-faut pas prétendre l'inverse en soutenance.
+> **Mise à jour (STR-244, [ADR 041](041-metriques-metier-debit-departs-et-resume-admin.md) §7)** —
+> la trace commence désormais au mobile. Cet ADR ne livrait que `API → DB` : le
+> propagateur W3C était armé côté serveur (`tracer.go`) mais aucun `traceparent`
+> n'était émis. `TraceContext` + un intercepteur Dio (`core/network/`) comblent
+> l'écart pour tout ce qui passe par Dio.
+>
+> ⚠️ **La lecture audio reste hors trace.** just_audio ouvre ses propres connexions
+> HTTP, hors des intercepteurs Dio — la même raison qui oblige à lui passer
+> l'en-tête `Authorization` séparément (ADR 034 §4). Segments HLS et binaires de
+> pistes ne portent donc pas d'identifiant de trace, et c'est le trajet le plus
+> volumineux. Ne pas prétendre l'inverse en soutenance.
 
 ## Alternatives écartées
 

@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,6 +48,13 @@ type stubAdminService struct {
 	stopStreamErr      error
 	gotStopStreamID    string
 	gotStopStreamActor string
+
+	overview    Overview
+	overviewErr error
+}
+
+func (s *stubAdminService) Overview(context.Context) (Overview, error) {
+	return s.overview, s.overviewErr
 }
 
 func (s *stubAdminService) ListUsers(_ context.Context, in ListUsersInput) ([]AdminUser, int64, error) {
@@ -469,5 +478,65 @@ func TestHandler_StopStream_RequiresToken(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// --- GET /api/admin/metrics (STR-244, ADR 041) ---
+
+func doMetrics(t *testing.T, h *Handler, role string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/metrics", nil)
+	if role != "" {
+		token, err := auth.GenerateAccessToken(testAdminID, role, testHandlerSecret, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("generate token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testHandlerSecret, auth.RequireRole("admin", http.HandlerFunc(h.Metrics))).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandler_Metrics_OK(t *testing.T) {
+	stub := &stubAdminService{overview: Overview{
+		UptimeSeconds: 3600,
+		Streams:       StreamsStats{Live: 2, ListenersEstimated: 17},
+		HTTP:          HTTPStats{RequestsTotal: 1000, ServerErrorsTotal: 5, ServerErrorRate: 0.005, ResponseBytesTotal: 4096},
+		Users:         UserCounts{Total: 42, Active: 40, Broadcasters: 5, Admins: 2},
+	}}
+
+	rec := doMetrics(t, NewHandler(stub), "admin")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	var got Overview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("réponse non JSON: %v (%s)", err, rec.Body)
+	}
+	if got.Streams.Live != 2 || got.Users.Total != 42 || got.HTTP.RequestsTotal != 1000 {
+		t.Errorf("résumé = %+v", got)
+	}
+}
+
+// Le rôle applicatif est la seule autorisation : c'est ce qui distingue cette
+// route de /metrics, qui n'en a aucune et vit derrière le reverse proxy.
+func TestHandler_Metrics_ForbiddenForNonAdmin(t *testing.T) {
+	if rec := doMetrics(t, NewHandler(&stubAdminService{}), "broadcaster"); rec.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Metrics_RequiresToken(t *testing.T) {
+	if rec := doMetrics(t, NewHandler(&stubAdminService{}), ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_Metrics_PropagatesServiceError(t *testing.T) {
+	stub := &stubAdminService{overviewErr: apperror.Internal("metrics", errors.New("base indisponible"))}
+	if rec := doMetrics(t, NewHandler(stub), "admin"); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", rec.Code, rec.Body)
 	}
 }

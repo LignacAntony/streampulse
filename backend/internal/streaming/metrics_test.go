@@ -8,15 +8,18 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
 // stubRecorder capture les appels du domaine vers l'infra métriques.
 type stubRecorder struct {
-	mu        sync.Mutex
-	requests  []string // "streamID|kind|status"
-	forgotten []string
+	mu            sync.Mutex
+	requests      []string // "streamID|kind|status"
+	forgotten     []string
+	departures    int
+	interruptions []string // raisons, dans l'ordre
 }
 
 func (s *stubRecorder) RecordHLSRequest(streamID, kind, status string) {
@@ -31,6 +34,30 @@ func (s *stubRecorder) ForgetStream(streamID string) {
 	s.forgotten = append(s.forgotten, streamID)
 }
 
+func (s *stubRecorder) RecordListenerDepartures(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.departures += n
+}
+
+func (s *stubRecorder) RecordStreamInterruption(reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.interruptions = append(s.interruptions, reason)
+}
+
+func (s *stubRecorder) departureCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.departures
+}
+
+func (s *stubRecorder) interruptionReasons() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.interruptions...)
+}
+
 func (s *stubRecorder) forgottenIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -39,7 +66,7 @@ func (s *stubRecorder) forgottenIDs() []string {
 
 func TestLiveSessions_ActiveCount(t *testing.T) {
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
 
 	if got := ls.ActiveCount(); got != 0 {
 		t.Fatalf("ActiveCount() au repos = %d, want 0", got)
@@ -65,7 +92,7 @@ func TestLiveSessions_ActiveCount(t *testing.T) {
 func TestLiveSessions_ForgetsStreamOnStop(t *testing.T) {
 	rec := &stubRecorder{}
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
 	ls.SetMetrics(rec)
 
 	ls.Start("stream-a", "key-a")
@@ -81,7 +108,7 @@ func TestLiveSessions_ForgetsStreamOnStop(t *testing.T) {
 func TestLiveSessions_ForgetsAllStreamsOnStopAll(t *testing.T) {
 	rec := &stubRecorder{}
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
 	ls.SetMetrics(rec)
 
 	ls.Start("stream-a", "key-a")
@@ -97,7 +124,7 @@ func TestLiveSessions_NilRecorderIsSafe(t *testing.T) {
 	// Aucun recorder injecté (tests existants, binaires sans métriques) :
 	// le domaine ne doit pas paniquer.
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
 
 	ls.Start("stream-a", "key-a")
 	ls.Stop("stream-a")
@@ -208,4 +235,202 @@ func TestHandler_RecordsErrorsOfLiveStreams(t *testing.T) {
 	if len(got) != 1 || !strings.HasPrefix(got[0], "live|segment|4") {
 		t.Fatalf("erreur d'un flux live = %v, want [live|segment|404]", got)
 	}
+}
+
+// --- Départs d'auditeurs et interruptions de diffusion (STR-244, ADR 041) ---
+
+func TestLiveSessions_SweepCountsListenerDepartures(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.SetMetrics(rec)
+	ls.Start("stream-a", "key-a")
+
+	ls.TouchListener("stream-a", "10.0.0.1")
+	ls.TouchListener("stream-a", "10.0.0.2")
+	if got := rec.departureCount(); got != 0 {
+		t.Fatalf("aucun départ attendu tant que la fenêtre court, got %d", got)
+	}
+
+	// Un balayage postérieur à la fenêtre : les deux auditeurs sont sortis.
+	if got := ls.SweepListeners(time.Now().Add(listenerWindow + time.Second)); got != 2 {
+		t.Fatalf("SweepListeners = %d, want 2", got)
+	}
+	if got := rec.departureCount(); got != 2 {
+		t.Errorf("départs publiés = %d, want 2", got)
+	}
+
+	// Un second balayage ne recompte pas les mêmes : la purge les a retirés.
+	ls.SweepListeners(time.Now().Add(2 * listenerWindow))
+	if got := rec.departureCount(); got != 2 {
+		t.Errorf("départs après second balayage = %d, want 2 (pas de double comptage)", got)
+	}
+}
+
+// Un flux qui s'arrête normalement emmène ses auditeurs avec lui : ce ne sont
+// pas des départs. Compter l'inverse ferait grimper la métrique à chaque fin de
+// diffusion réussie, exactement le signal qu'elle est censée ne pas donner.
+func TestLiveSessions_StopDoesNotCountListenerDepartures(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.SetMetrics(rec)
+	ls.Start("stream-a", "key-a")
+
+	ls.TouchListener("stream-a", "10.0.0.1")
+	ls.TouchListener("stream-a", "10.0.0.2")
+	ls.Stop("stream-a")
+
+	if got := rec.departureCount(); got != 0 {
+		t.Errorf("départs après un arrêt volontaire = %d, want 0", got)
+	}
+	// Le balayage qui suit ne trouve plus la session : rien de plus à compter.
+	ls.SweepListeners(time.Now().Add(listenerWindow + time.Second))
+	if got := rec.departureCount(); got != 0 {
+		t.Errorf("départs après balayage post-arrêt = %d, want 0", got)
+	}
+}
+
+func TestLiveSessions_TotalListeners(t *testing.T) {
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.Start("stream-a", "key-a")
+	ls.Start("stream-b", "key-b")
+
+	ls.TouchListener("stream-a", "10.0.0.1")
+	ls.TouchListener("stream-a", "10.0.0.2")
+	ls.TouchListener("stream-b", "10.0.0.3")
+	ls.TouchListener("stream-b", "10.0.0.3") // même client : compté une fois
+
+	if got := ls.TotalListeners(); got != 3 {
+		t.Errorf("TotalListeners = %d, want 3", got)
+	}
+}
+
+func TestLiveSessions_CountsInterruptionOnIngestExpiry(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.SetMetrics(rec)
+
+	ended := make(chan string, 1)
+	ls.SetIngestDisconnectHandler(10*time.Millisecond, func(streamID string) error {
+		ended <- streamID
+		return nil
+	})
+	ls.Start("stream-a", "key-a")
+
+	select {
+	case <-ended:
+	case <-time.After(2 * time.Second):
+		t.Fatal("le bail d'ingest n'a jamais expiré")
+	}
+
+	// La métrique doit être posée AVANT l'appel au handler : à ce point la
+	// diffusion est déjà perdue, quel que soit le sort de l'écriture en base.
+	if got := rec.interruptionReasons(); len(got) != 1 || got[0] != InterruptionIngestTimeout {
+		t.Errorf("interruptions = %v, want [%s]", got, InterruptionIngestTimeout)
+	}
+}
+
+func TestLiveSessions_StopCountsNoInterruption(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.SetMetrics(rec)
+
+	ls.Start("stream-a", "key-a")
+	ls.Stop("stream-a")
+
+	if got := rec.interruptionReasons(); len(got) != 0 {
+		t.Errorf("un arrêt volontaire ne doit pas compter d'interruption, got %v", got)
+	}
+}
+
+// Mort spontanée de ffmpeg : la diffusion s'arrête sans que le diffuseur l'ait
+// demandé, et la raison doit distinguer cette panne serveur d'une perte de
+// connexion côté diffuseur — les deux n'appellent pas la même intervention.
+func TestLiveSessions_CountsInterruptionOnSegmenterDeath(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	seg := fakeSegmenter(t)
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return seg, nil }
+	ls.SetMetrics(rec)
+	ls.Start("s1", "KEY1")
+
+	close(seg.done) // ffmpeg s'arrête seul
+
+	if !waitFor(func() bool { return len(rec.interruptionReasons()) > 0 }, 2*time.Second) {
+		t.Fatal("aucune interruption comptée après la mort du segmenteur")
+	}
+	if got := rec.interruptionReasons(); got[0] != InterruptionSegmenterFailed {
+		t.Errorf("raison = %q, want %q", got[0], InterruptionSegmenterFailed)
+	}
+}
+
+func TestLiveSessions_StartListenerSweep(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.SetMetrics(rec)
+	ls.Start("stream-a", "key-a")
+
+	// Auditeur déjà expiré au moment où le balayage passera.
+	ls.mu.Lock()
+	s := ls.byID["stream-a"]
+	ls.mu.Unlock()
+	s.mu.Lock()
+	s.listeners = map[string]time.Time{"10.0.0.1": time.Now().Add(-2 * listenerWindow)}
+	s.mu.Unlock()
+
+	done := make(chan struct{})
+	ls.StartListenerSweep(done, 5*time.Millisecond)
+	t.Cleanup(func() { close(done) })
+
+	if !waitFor(func() bool { return rec.departureCount() > 0 }, 2*time.Second) {
+		t.Fatal("le balayage périodique n'a jamais publié de départ")
+	}
+	if got := ls.TotalListeners(); got != 0 {
+		t.Errorf("auditeur expiré toujours suivi après balayage: %d", got)
+	}
+}
+
+// La fermeture du canal doit arrêter la goroutine : sinon elle survivrait à
+// l'arrêt du serveur et le test suivant la verrait encore tourner.
+func TestLiveSessions_StartListenerSweep_StopsOnDone(t *testing.T) {
+	rec := &stubRecorder{}
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+	ls.SetMetrics(rec)
+	ls.Start("stream-a", "key-a")
+
+	done := make(chan struct{})
+	ls.StartListenerSweep(done, time.Millisecond)
+	close(done)
+
+	// Laisser au ticker le temps de battre plusieurs fois s'il tournait encore,
+	// puis vérifier qu'un auditeur expiré n'est PAS purgé — preuve que plus
+	// personne ne balaie.
+	ls.mu.Lock()
+	s := ls.byID["stream-a"]
+	ls.mu.Unlock()
+	s.mu.Lock()
+	s.listeners = map[string]time.Time{"10.0.0.1": time.Now().Add(-2 * listenerWindow)}
+	s.mu.Unlock()
+
+	time.Sleep(50 * time.Millisecond)
+	if got := ls.TotalListeners(); got != 1 {
+		t.Errorf("le balayage tourne encore après la fermeture du canal (auditeurs = %d)", got)
+	}
+}
+
+// Un intervalle nul ou négatif ne doit pas lancer de goroutine qui tournerait
+// en boucle serrée : time.NewTicker panique sur une durée <= 0.
+func TestLiveSessions_StartListenerSweep_IgnoresNonPositiveInterval(t *testing.T) {
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("pas de ffmpeg en test") }
+
+	ls.StartListenerSweep(make(chan struct{}), 0)
+	ls.StartListenerSweep(make(chan struct{}), -time.Second)
+	// Absence de panique = succès ; time.NewTicker(0) paniquerait.
 }

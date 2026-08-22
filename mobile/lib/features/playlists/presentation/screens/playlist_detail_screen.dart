@@ -19,6 +19,7 @@ import '../track_labels.dart';
 import '../widgets/playlist_form_sheet.dart';
 import '../widgets/queue_track_visuals.dart';
 import '../widgets/track_picker_sheet.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 
 /// Écran de détail d'une playlist (US-05-03) : pistes ordonnées, ajout depuis la
 /// bibliothèque, retrait, et réorganisation par drag-and-drop.
@@ -169,10 +170,10 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
-          IconButton(
+          AccessibleIconButton(
             key: const Key('playlist_shuffle_play_button'),
-            icon: const Icon(Icons.shuffle),
-            tooltip: 'Lire en aléatoire',
+            icon: Icons.shuffle,
+            label: 'Lire la playlist en aléatoire',
             onPressed: controller.tracks.isEmpty
                 ? null
                 : () => _onPlay(
@@ -180,10 +181,10 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
                       shuffle: true,
                     ),
           ),
-          IconButton(
+          AccessibleIconButton(
             key: const Key('playlist_add_track_button'),
-            icon: const Icon(Icons.playlist_add),
-            tooltip: 'Ajouter une piste',
+            icon: Icons.playlist_add,
+            label: 'Ajouter une piste à la playlist',
             onPressed: _onAdd,
           ),
         ],
@@ -376,27 +377,74 @@ class _TrackTile extends StatelessWidget {
       },
     );
 
+    // Une ligne se lit visuellement d'un coup : numéro, titre, artiste, et un
+    // point coloré pour la piste en cours. Un lecteur d'écran parcourt les
+    // fragments un par un et ne voit pas le point. Le conteneur porte donc la
+    // phrase entière et masque ses enfants — sinon TalkBack annoncerait « 3 »,
+    // puis « Sunrise », puis « Neon Lights, 3:34 », sans jamais dire laquelle
+    // est en train de jouer.
+    return Semantics(
+      container: true,
+      label: [
+        'Piste ${index + 1}',
+        track.title,
+        if (track.artist != null && track.artist!.isNotEmpty) track.artist!,
+        if (isCurrent) 'en cours de lecture',
+      ].join(', '),
+      button: true,
+      selected: isCurrent,
+      // `onTap` sur le Semantics et non seulement sur la ListTile : sans lui, le
+      // nœud porte le rôle « bouton » sans exposer d'action, et l'activation
+      // retombe sur un tap synthétisé par la plateforme (revue PR #332).
+      onTap: onPlay,
+      child: _row(context, isCurrent, cacheStatus),
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    bool isCurrent,
+    TrackCacheStatus? cacheStatus,
+  ) {
     return ListTile(
       onTap: onPlay,
-      leading: queueTrackLeading(context, index: index, isCurrent: isCurrent),
-      title: Text(
-        track.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: queueTrackTitleStyle(context, isCurrent: isCurrent),
+      // TOUT le contenu descriptif est exclu, pas seulement l'entête.
+      //
+      // Le `Semantics` parent ne masquait rien : la ListTile étant tapable, ses
+      // `title`/`subtitle` formaient leur propre nœud À CÔTÉ du libellé composé.
+      // Un lecteur d'écran annonçait donc la phrase entière, puis « Sunrise,
+      // Neon Lights 3:34 » — exactement la lecture fragmentée que ce changement
+      // prétendait supprimer, plus un doublon (revue PR #332).
+      //
+      // Le bouton « Retirer » du `trailing` reste hors de l'exclusion : il a sa
+      // propre action et son propre libellé.
+      leading: ExcludeSemantics(
+        child: queueTrackLeading(context, index: index, isCurrent: isCurrent),
       ),
-      subtitle: Text(
-        trackSubtitle(artist: track.artist, durationS: track.durationS),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: ExcludeSemantics(
+        child: Text(
+          track.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: queueTrackTitleStyle(context, isCurrent: isCurrent),
+        ),
+      ),
+      subtitle: ExcludeSemantics(
+        child: Text(
+          trackSubtitle(artist: track.artist, durationS: track.durationS),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (cacheStatus != null) _cacheIcon(context, cacheStatus),
-          IconButton(
+          AccessibleIconButton(
             key: Key('playlist_track_remove_${track.id}'),
-            icon: const Icon(Icons.remove_circle_outline),
+            icon: Icons.remove_circle_outline,
+            // Nomme la piste : dans une liste, tous ces boutons se ressemblent.
+            label: 'Retirer ${track.title} de la playlist',
             tooltip: 'Retirer de la playlist',
             onPressed: () => onRemove(track),
           ),

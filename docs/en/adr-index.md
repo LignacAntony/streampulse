@@ -174,6 +174,25 @@ the system notification travels the same path as a tap in the app.
 **involuntary** reloads. *Consequence:* a token expiry no longer reshuffles the
 queue every fifteen minutes.
 
+**ADR 042 — In-app volume and live listening time.** *Context:* the brief lists
+a volume control and a progress bar; the code documented the absence of the
+former as a deliberate choice. *Decision:* put volume on `PlaybackTransport` —
+so one slider serves both live and queue — keep the listener's setting as the
+source of truth with ducking as a factor derived from it, and show a live's
+elapsed **listening time** rather than a progress bar. *Consequence:* a volume
+change made during an interruption survives it, and the elapsed counter survives
+a reconnection, where the player's own position would reset because the
+controller reloads the source.
+
+**ADR 043 — App accessibility and width adaptation.** *Context:* one `Semantics`
+call across 147 files, no layout adaptation, and landscape allowed by both
+manifests. *Decision:* give icon-only controls a real semantic **label** — a
+tooltip lands in the node's `tooltip` field, which iOS turns into a hint, so the
+button has no name for VoiceOver — run Flutter's WCAG guidelines in CI alongside
+a stricter in-house check, and **adapt** to width rather than locking portrait.
+*Consequence:* screen-reader behaviour is still unverified on real devices, and
+that gap is declared rather than glossed over.
+
 ## Administration
 
 **ADR 017 — Admin dashboard, user management.** *Context:* administration must
@@ -218,6 +237,18 @@ listener dropping out are not the same event. *Decision:* separate business
 metrics, and **delete** per-stream series when a stream ends. *Consequence:*
 cardinality does not grow with every broadcast.
 
+**ADR 041 — Throughput, listener departures and the admin summary.** *Context:*
+outbound bandwidth was never measured, nothing counted listeners leaving, and
+the admin role had no access to any metric. *Decision:* publish the byte counter
+the access log already kept, count departures and stream interruptions as
+business metrics, split each dashboard into business and technical rows, and
+serve `GET /api/admin/metrics` from the **process's own** Prometheus registry
+rather than by querying the Prometheus server. *Consequence:* the admin summary
+reports totals since process start, not sliding rates — and HLS being
+connectionless, a listener closing the player and a listener losing the network
+are indistinguishable, so the metric is named *departures*, never
+*disconnections*.
+
 ## Contracts and cross-cutting concerns
 
 **ADR 012 — OpenAPI as the source of truth.** *Context:* a client and a server
@@ -240,6 +271,18 @@ the key is absent, and Android artefacts attached to each GitHub release.
 *Consequence:* iOS is not distributed — TestFlight requires a paid Apple
 Developer account the team does not have, and that absence is stated rather than
 faked.
+
+**ADR 044 — CPU cost of streaming and VPS sizing.** *Context:* the brief asks
+what 100 concurrent streams cost in CPU, and nothing in the repository measured
+the processor or named the server's price. *Decision:* measure with
+`getrusage`, counting child processes separately and subtracting the load
+generator's own ffmpeg, on a sweep over the number of *streams* rather than the
+number of listeners — and refuse to publish a figure measured under `-race`.
+*Consequence:* 100 AAC streams cost 0.6–0.8 core across two runs, 100 transcoded
+streams 2.4 — a 3–4× gap that turns ADR 030's "worth watching" into a number.
+Every figure is an upper bound: the simulated clients share the measured
+process, so their own HTTP work cannot be separated from the server's. And the
+first ceiling StreamPulse will hit as it grows is bandwidth, not CPU.
 
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

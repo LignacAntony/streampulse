@@ -92,7 +92,32 @@ const (
 	refreshRateLimitRefill = time.Second
 
 	rateLimitEviction = 10 * time.Minute
+
+	// Balayage des auditeurs expirés (STR-244). Calé sur la fenêtre d'audience
+	// elle-même : plus rapproché, on balaierait des maps que rien n'a fait
+	// vieillir ; plus lâche, une diffusion abandonnée garderait ses derniers
+	// auditeurs affichés plus longtemps que la fenêtre ne le promet.
+	listenerSweepInterval = 30 * time.Second
 )
+
+// httpCountersAdapter branche observability.HTTPStats (qui connaît Prometheus)
+// sur admin.HTTPCounters (que le domaine déclare sans le connaître). Sans cet
+// adaptateur, l'un des deux devrait importer l'autre : soit du Prometheus dans
+// un domaine métier, soit un domaine métier dans l'infrastructure.
+type httpCountersAdapter struct{ stats *observability.HTTPStats }
+
+func (a httpCountersAdapter) HTTPTotals() (admin.HTTPTotals, error) {
+	totals, err := a.stats.Totals()
+	if err != nil {
+		return admin.HTTPTotals{}, err
+	}
+	return admin.HTTPTotals{
+		Requests:      totals.Requests,
+		ClientErrors:  totals.ClientErrors,
+		ServerErrors:  totals.ServerErrors,
+		ResponseBytes: totals.ResponseBytes,
+	}, nil
+}
 
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -182,6 +207,10 @@ func run() error {
 	streamingHandler.SetMetrics(streamingMetrics)
 	streamingHandler.SetTrustProxyHeaders(cfg.TrustProxyHeaders)
 	observability.RegisterLiveStreamsGauge(prometheus.DefaultRegisterer, streamingSessions.ActiveCount)
+	// Purge périodique des auditeurs expirés (STR-244) : sans elle, la purge
+	// n'aurait lieu qu'à la lecture de /stats — le compteur de départs
+	// n'avancerait que pendant qu'un diffuseur regarde son tableau de bord.
+	streamingSessions.StartListenerSweep(ctx.Done(), listenerSweepInterval)
 
 	// Réconciliation : les sessions LiveSessions sont en mémoire et reparties
 	// vides ; on termine les flux restés 'live' en base (orphelins d'un précédent
@@ -227,6 +256,14 @@ func run() error {
 	// (STR-228). Injecté après coup plutôt qu'au constructeur : adminRepo dépend
 	// lui-même de streamingSvc via NewService juste au-dessus.
 	streamingSvc.SetAuditRecorder(adminRepo)
+
+	// Résumé de supervision admin (STR-244, ADR 041) : audience lue dans le
+	// registre de sessions, compteurs HTTP lus dans le registre Prometheus local
+	// — aucune dépendance réseau ajoutée à une route applicative.
+	adminSvc.SetOverviewSources(
+		streamingSessions,
+		httpCountersAdapter{stats: observability.NewHTTPStats(prometheus.DefaultGatherer)},
+	)
 
 	// Chat en direct entre auditeurs (US-09-01) : domaine chat, hub in-memory,
 	// WebSocket. Le service chat résout le diffuseur via streaming.Service (ISP).
@@ -297,6 +334,13 @@ func run() error {
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListStreams))))
 	mux.Handle("POST /api/admin/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.StopStream))))
+
+	// Métriques globales pour le rôle admin (STR-244). Distinct de /metrics :
+	// celui-ci est l'exposition Prometheus (texte brut, non authentifiée, bloquée
+	// par Caddy en production) ; celui-là rend en JSON les chiffres clés à
+	// l'administrateur *applicatif*, autorisé par son rôle.
+	mux.Handle("GET /api/admin/metrics", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Metrics))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).
