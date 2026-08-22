@@ -20,6 +20,8 @@ go test ./path/to/pkg/... # Run a single package's tests
 go build -o bin/api ./cmd/api
 make loadtest             # Test de charge HLS 50 auditeurs (STR-90) — depuis la racine, requiert ffmpeg
 # Décision + run de référence : docs/adr/016-scalabilite-test-de-charge-et-limiteur-hls.md
+make loadtest-cpu         # Coût CPU de N flux simultanés (STR-243) — SANS -race, ~15 min
+# Modèle de capacité + coût du VPS : docs/adr/044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md
 sqlc generate              # Regénérer le code SQL → Go après modif d'une query
 
 # Mobile (Flutter) — dans mobile/
@@ -29,6 +31,9 @@ flutter run               # Lancer sur device/émulateur connecté
 flutter test              # Run all tests
 flutter test test/path/to_test.dart  # Run a single test file
 flutter analyze           # Lint
+
+# Preuve de fluidité 60 FPS sur appareil (STR-243) — depuis la racine, `flutter devices` pour l'id
+make frame-budget DEVICE=<id>
 
 # Docker
 docker compose up -d
@@ -647,7 +652,10 @@ Choisir **le plus simple qui suffit**, dans cet ordre :
 - ⚠️ **Un flux haute fréquence ne traverse jamais un `ChangeNotifier` app-level.** Position de
   lecture, niveau audio, chrono : à ~5 Hz, un `notifyListeners()` reconstruit tout l'arbre sous le
   contrôleur. Le contrôleur expose le `Stream` tel quel, le widget qui l'affiche s'y abonne seul
-  (exemple : `queue_progress.dart`, STR-230).
+  (exemple : `queue_progress.dart`, STR-230). Cette règle est **gardée en CI** :
+  `test/performance/rebuild_budget_test.dart` échoue si une position se met à traverser
+  `notifyListeners()`. Les temps de trame réels se relèvent sur appareil
+  (`make frame-budget DEVICE=<id>`) — cf. `docs/performance-mobile.md`.
 - ⚠️ **Un getter de `Stream` rend souvent un objet neuf à chaque accès** (`StreamController.stream`
   le fait) : un `StreamBuilder` branché dessus se réabonne à chaque reconstruction. Sans conséquence
   sur un flux continu, fatal sur un flux qui n'émet qu'une fois (une durée de piste). S'abonner une
@@ -791,6 +799,7 @@ xcrun simctl openurl booted \
 | `docs/README.md` | Index de toute la documentation, ordre de lecture recommandé |
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
+| `docs/performance-mobile.md` | Preuves de fluidité 60 FPS : garde de reconstruction (CI) + relevé de trames sur appareil (STR-243) |
 | `docs/README.md` (§ Index complet des ADR) | **Les 40 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
@@ -802,7 +811,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `045-...` — 044 est réservé par une PR ouverte). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `045-...`). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.

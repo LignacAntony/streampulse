@@ -115,6 +115,7 @@ document dans les deux langues.
 | [politique-confidentialite.md](politique-confidentialite.md) | Politique de confidentialité destinée aux utilisateurs (embarquée dans l'application) |
 | [cgu.md](cgu.md) | Conditions générales d'utilisation (embarquées dans l'application) |
 | [couverture-de-tests.md](couverture-de-tests.md) | Couverture Go : périmètre déclaré, porte de qualité à 80 %, tests d'intégration et ce qui reste hors d'atteinte |
+| [performance-mobile.md](performance-mobile.md) | Preuves de fluidité 60 FPS : garde de reconstruction en CI et relevé de trames sur appareil |
 | [distribution-mobile.md](distribution-mobile.md) | Build, signature et livraison de l'application Android ; pourquoi iOS n'est pas distribué |
 | [../CHANGELOG.md](../CHANGELOG.md) | Historique des versions généré automatiquement par release-please |
 
@@ -169,15 +170,14 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 041 | [041-metriques-metier-debit-departs-et-resume-admin.md](adr/041-metriques-metier-debit-departs-et-resume-admin.md) | Métriques métier : débit, départs d'auditeurs, interruptions et résumé admin |
 | 042 | [042-controle-du-volume-et-temps-decoute.md](adr/042-controle-du-volume-et-temps-decoute.md) | Contrôle du volume dans l'application et temps d'écoute d'un direct |
 | 043 | [043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md](adr/043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md) | Accessibilité de l'application mobile et adaptation aux largeurs d'écran |
+| 044 | [044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md](adr/044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md) | Coût CPU du streaming, modèle de capacité et dimensionnement du VPS |
 
 ---
 
 ## Convention ADR
 
 - Toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`,
-  avec **le numéro suivant** (prochain : `045-...`). Le numéro **044** est réservé par une
-  PR ouverte — il n'apparaît pas encore dans ce tableau mais n'est pas libre.
-  Le numéro est un **identifiant**,
+  avec **le numéro suivant** (prochain : `045-...`). Le numéro est un **identifiant**,
   attribué dans l'ordre d'enregistrement — il ne suit pas nécessairement l'ordre chronologique
   des décisions (cf. 037/038/039, renumérotées après collision).
 - Un numéro n'est **jamais réutilisé** : une ADR remplacée passe en statut

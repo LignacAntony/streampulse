@@ -272,5 +272,17 @@ the key is absent, and Android artefacts attached to each GitHub release.
 Developer account the team does not have, and that absence is stated rather than
 faked.
 
+**ADR 044 — CPU cost of streaming and VPS sizing.** *Context:* the brief asks
+what 100 concurrent streams cost in CPU, and nothing in the repository measured
+the processor or named the server's price. *Decision:* measure with
+`getrusage`, counting child processes separately and subtracting the load
+generator's own ffmpeg, on a sweep over the number of *streams* rather than the
+number of listeners — and refuse to publish a figure measured under `-race`.
+*Consequence:* 100 AAC streams cost 0.6–0.8 core across two runs, 100 transcoded
+streams 2.4 — a 3–4× gap that turns ADR 030's "worth watching" into a number.
+Every figure is an upper bound: the simulated clients share the measured
+process, so their own HTTP work cannot be separated from the server's. And the
+first ceiling StreamPulse will hit as it grows is bandwidth, not CPU.
+
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

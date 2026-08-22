@@ -71,6 +71,11 @@ dev_dependencies:
   # Contrôle du temps virtuel dans les tests (timers de backoff — STR-118)
   fake_async: ^1.3.1
 
+  # Mesure de trames sur appareil (STR-243). `flutter test` simule le temps et
+  # ne rastérise rien : un budget de 60 FPS ne s'y vérifie pas.
+  integration_test:
+    sdk: flutter
+
   # Génération de code
   build_runner: ^2.4.9
   freezed: ^2.5.2

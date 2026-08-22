@@ -101,8 +101,17 @@ depuis (STR-241) : `go vet -tags loadtest,integration ./...` dans le job Test de
 vérifie que le run passe encore. Une assertion `var _ streaming.StreamService = stubService{}`
 a également été ajoutée au harnais.
 
-Les chiffres ci-dessus mesurent **N auditeurs sur un flux**. Le coût CPU de **N flux
-simultanés** — la question posée par le sujet — reste à mesurer (STR-243).
+Les chiffres ci-dessus mesurent **N auditeurs sur un flux**, et jamais le processeur. Le coût
+CPU de **N flux simultanés** — la question posée par le sujet — est mesuré depuis par
+l'[ADR 044](044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md) (STR-243), qui ajoute au
+harnais une comptabilité `getrusage` et un balayage sur le nombre de **flux** : 100 flux AAC
+≈ 0,6 cœur, 100 flux transcodés ≈ 2,4 cœurs, un auditeur ≈ 0,37 mcœur.
+
+⚠️ Les deux mesures ne se lancent pas de la même façon. `make loadtest` compile avec `-race`,
+ce qui est juste pour la latence et les fuites mais **fausse tout modèle de coût CPU** : le
+détecteur multiplie le temps CPU du code Go sans toucher à celui des process ffmpeg, donc
+déforme la répartition entre les deux. `make loadtest-cpu` mesure sans lui, et refuse de tourner
+autrement.
 
 ## Conséquences
 
