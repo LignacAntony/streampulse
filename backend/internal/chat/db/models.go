@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.31.1
 
-package admindb
+package chatdb
 
 import (
 	"time"
@@ -44,7 +44,7 @@ type ChatMessage struct {
 	UserID    pgtype.UUID
 	Content   string
 	CreatedAt time.Time
-	DeletedAt pgtype.Timestamptz
+	DeletedAt *time.Time
 }
 
 type Favorite struct {
@@ -58,7 +58,7 @@ type PasswordResetToken struct {
 	UserID    pgtype.UUID
 	TokenHash string
 	ExpiresAt time.Time
-	UsedAt    pgtype.Timestamptz
+	UsedAt    *time.Time
 	CreatedAt time.Time
 }
 
@@ -116,12 +116,12 @@ type Stream struct {
 	Category    pgtype.Text
 	Status      string
 	IsPublic    bool
-	StartedAt   pgtype.Timestamptz
-	EndedAt     pgtype.Timestamptz
+	StartedAt   *time.Time
+	EndedAt     *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	StreamKey   string
-	ArchivedAt  pgtype.Timestamptz
+	ArchivedAt  *time.Time
 }
 
 type Track struct {

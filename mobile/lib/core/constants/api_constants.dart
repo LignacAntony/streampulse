@@ -36,6 +36,12 @@ class ApiConstants {
   static String trackStream(String trackId) =>
       '$baseUrl/api/tracks/$trackId/stream';
 
+  // Chat WebSocket (US-09-01)
+  static String chatWebSocket(String streamId) {
+    final wsBase = baseUrl.replaceFirst('http', 'ws');
+    return '$wsBase/ws/streams/$streamId/chat';
+  }
+
   // Utilisateur connecté
   static const String me = '/api/users/me';
 }

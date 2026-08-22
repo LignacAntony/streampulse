@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../../../core/network/dio_client.dart';
 import '../../../admin/presentation/screens/admin_streams_screen.dart';
 import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../chat/data/repositories/chat_ban_repository.dart';
+import '../../../chat/presentation/screens/banned_users_screen.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../../../playlists/presentation/providers/offline_playlist_controller.dart';
@@ -159,6 +162,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 12),
           _SettingsCard(profile: profile, runSave: _runSave),
+          if (profile.role == 'broadcaster' || profile.role == 'admin') ...[
+            const SizedBox(height: 28),
+            const _BroadcasterCard(),
+          ],
           if (profile.role == 'admin') ...[
             const SizedBox(height: 28),
             const _AdminCard(),
@@ -333,6 +340,35 @@ class _SettingsCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BroadcasterCard extends StatelessWidget {
+  const _BroadcasterCard();
+
+  void _openBannedUsers(BuildContext context) {
+    final dio = context.read<DioClient>().dio;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BannedUsersScreen(
+          repository: ChatBanRepositoryImpl(dio),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.block, color: colors.primary),
+        title: const Text('Utilisateurs bannis du chat'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _openBannedUsers(context),
       ),
     );
   }

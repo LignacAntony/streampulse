@@ -226,6 +226,16 @@ func (s *Service) SetAuditRecorder(rec AuditRecorder) {
 	s.audit = rec
 }
 
+// BroadcasterID retourne l'identifiant du propriétaire (diffuseur) d'un flux.
+// Utilisé par le domaine chat via l'interface ISP StreamOwnerResolver.
+func (s *Service) BroadcasterID(ctx context.Context, streamID string) (string, error) {
+	stream, err := s.repo.GetByID(ctx, streamID)
+	if err != nil {
+		return "", err
+	}
+	return stream.UserID, nil
+}
+
 // CreateStream valide l'entrée, génère le stream_key et persiste le flux avec
 // le statut initial 'idle'.
 func (s *Service) CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error) {

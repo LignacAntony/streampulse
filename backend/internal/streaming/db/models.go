@@ -30,6 +30,23 @@ type BroadcasterRequest struct {
 	UpdatedAt  time.Time
 }
 
+type ChatBan struct {
+	ID           pgtype.UUID
+	BannedUserID pgtype.UUID
+	BannedBy     pgtype.UUID
+	Reason       pgtype.Text
+	CreatedAt    time.Time
+}
+
+type ChatMessage struct {
+	ID        pgtype.UUID
+	StreamID  pgtype.UUID
+	UserID    pgtype.UUID
+	Content   string
+	CreatedAt time.Time
+	DeletedAt *time.Time
+}
+
 type Favorite struct {
 	UserID    pgtype.UUID
 	StreamID  pgtype.UUID

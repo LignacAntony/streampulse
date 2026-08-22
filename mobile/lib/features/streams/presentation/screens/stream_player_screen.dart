@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/permissions/notification_permission.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../chat/presentation/providers/chat_controller.dart';
+import '../../../chat/presentation/widgets/chat_panel.dart';
+import '../../../profile/presentation/providers/profile_controller.dart';
 import '../../domain/entities/live_stream.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
@@ -34,18 +37,14 @@ class StreamPlayerScreen extends StatefulWidget {
 
 class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   late final PlaybackController _audio;
+  ChatController? _chat;
+  ProfileController? _profileController;
 
   @override
   void initState() {
     super.initState();
-    // Contrôleur partagé (le service audio survit à la navigation, STR-109) :
-    // l'écran ne le possède pas et ne le détruit pas.
     _audio = widget.controller ?? context.read<AudioPlayerController>();
-    // Ouvrir le lecteur = intention d'écouter → on demande (Android 13+) la
-    // permission notifications pour que les contrôles média soient visibles.
     unawaited(ensureNotificationPermission());
-    // (Re)démarre ce flux uniquement s'il n'est pas déjà en cours : revenir sur
-    // l'écran d'un flux en lecture ne le relance pas (autoplay sinon, STR-108).
     if (_audio.nowPlaying?.streamId != widget.streamId) {
       _audio.load(
         NowPlaying(
@@ -58,12 +57,46 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<FavoritesController>().ensureLoaded();
+      _tryConnectChat();
     });
+  }
+
+  void _tryConnectChat() {
+    final pc = context.read<ProfileController>();
+    final profile = pc.profile;
+    if (profile != null) {
+      _connectChat(profile.id);
+      return;
+    }
+    _profileController = pc;
+    _profileController!.addListener(_onProfileLoaded);
+    if (!pc.isLoading) pc.load();
+  }
+
+  void _onProfileLoaded() {
+    final profile = _profileController?.profile;
+    if (profile == null) return;
+    _profileController!.removeListener(_onProfileLoaded);
+    _profileController = null;
+    if (!mounted) return;
+    _connectChat(profile.id);
+  }
+
+  void _connectChat(String userId) {
+    _chat = context.read<ChatController>();
+    _chat!.connect(widget.streamId, userId);
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _profileController?.removeListener(_onProfileLoaded);
+    _chat?.disconnect();
+    super.dispose();
   }
 
   Future<void> _toggleFavorite() async {
     final controller = context.read<FavoritesController>();
-    // Arrivée par deep-link : pas de métadonnées → placeholder pour l'update optimiste.
     final isPlaceholder = widget.stream == null;
     final wasFavorited = controller.isFavorited(widget.streamId);
     final favorite = widget.stream ??
@@ -89,62 +122,138 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    // Métadonnées : celles passées en navigation, sinon celles du flux en cours
-    // dans le contrôleur partagé (ouverture via le mini-player, sans `extra`).
     final title = widget.stream?.title ?? _audio.nowPlaying?.title ?? 'Flux';
     final subtitle =
         widget.stream?.broadcasterName ?? _audio.nowPlaying?.broadcaster;
     final listeners = widget.stream?.listenerCount;
     final isFavorited =
         context.watch<FavoritesController>().isFavorited(widget.streamId);
+    final profile = context.watch<ProfileController>().profile;
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
             _header(colors),
+            _compactStreamInfo(colors, text, title, subtitle, listeners, isFavorited),
             Expanded(
-              child: ListenableBuilder(
-                listenable: _audio,
-                builder: (context, _) => SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      _artwork(colors),
-                      const SizedBox(height: 20),
-                      Icon(Icons.graphic_eq, size: 40, color: colors.primary),
-                      const SizedBox(height: 20),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: text.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+              child: _chat != null && profile != null
+                  ? ListenableBuilder(
+                      listenable: _chat!,
+                      builder: (context, _) => ChatPanel(
+                        controller: _chat!,
+                        currentUserId: profile.id,
                       ),
-                      if (subtitle != null && subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          style:
-                              text.titleMedium?.copyWith(color: colors.primary),
-                        ),
-                      ],
-                      if (listeners != null) ...[
-                        const SizedBox(height: 10),
-                        _listeners(colors, text, listeners),
-                      ],
-                      const SizedBox(height: 24),
-                      _statusLine(colors, text),
-                      const SizedBox(height: 28),
-                      _controls(colors, isFavorited),
-                      const SizedBox(height: 24),
-                    ],
-                  ),
-                ),
-              ),
+                    )
+                  : Center(
+                      child: Text(
+                        'Connectez-vous pour accéder au chat',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _compactStreamInfo(
+    ColorScheme colors,
+    TextTheme text,
+    String title,
+    String? subtitle,
+    int? listeners,
+    bool isFavorited,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.outlineVariant, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [colors.primary, colors.primary.withValues(alpha: 0.4)],
+              ),
+            ),
+            child: Icon(Icons.radio, size: 24, color: colors.onPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                if (subtitle != null && subtitle.isNotEmpty)
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodySmall?.copyWith(color: colors.primary),
+                  ),
+                if (listeners != null)
+                  Row(
+                    children: [
+                      Icon(Icons.headphones, size: 12, color: colors.secondary),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$listeners',
+                        style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          ListenableBuilder(
+            listenable: _audio,
+            builder: (context, _) => _compactPlayButton(colors),
+          ),
+          IconButton(
+            onPressed: _toggleFavorite,
+            iconSize: 22,
+            color: isFavorited ? colors.primary : colors.onSurfaceVariant,
+            icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactPlayButton(ColorScheme colors) {
+    final Widget icon;
+    if (_audio.isBusy || _audio.isReconnecting) {
+      icon = SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2, color: colors.onPrimary),
+      );
+    } else if (_audio.hasError || _audio.isEnded) {
+      icon = Icon(Icons.replay, size: 22, color: colors.onPrimary);
+    } else if (_audio.isPlaying) {
+      icon = Icon(Icons.pause, size: 24, color: colors.onPrimary);
+    } else {
+      icon = Icon(Icons.play_arrow, size: 24, color: colors.onPrimary);
+    }
+
+    return Material(
+      color: colors.primary,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _audio.togglePlayPause,
+        child: SizedBox(width: 40, height: 40, child: Center(child: icon)),
       ),
     );
   }
@@ -160,8 +269,6 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
             tooltip: 'Réduire',
           ),
           const Spacer(),
-          // Le badge « EN DIRECT » disparaît quand le flux est terminé ou en
-          // erreur (il ne se rebuild pas avec le reste du header → listenable).
           ListenableBuilder(
             listenable: _audio,
             builder: (context, _) => (_audio.isEnded || _audio.hasError)
@@ -197,139 +304,6 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _artwork(ColorScheme colors) {
-    return Container(
-      width: 180,
-      height: 180,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [colors.primary, colors.primary.withValues(alpha: 0.4)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: colors.primary.withValues(alpha: 0.5),
-            blurRadius: 40,
-            spreadRadius: 4,
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(4),
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: colors.surface,
-        ),
-        child: Icon(Icons.radio, size: 72, color: colors.onSurfaceVariant),
-      ),
-    );
-  }
-
-  Widget _listeners(ColorScheme colors, TextTheme text, int count) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.headphones, size: 16, color: colors.secondary),
-        const SizedBox(width: 6),
-        Text(
-          '$count auditeurs',
-          style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
-      ],
-    );
-  }
-
-  /// Ligne d'état : reconnexion (STR-118), chargement, erreur (flux indisponible
-  /// / terminé), ou lecture/pause.
-  Widget _statusLine(ColorScheme colors, TextTheme text) {
-    if (_audio.isReconnecting) {
-      return _busyLine(colors, text, 'Reconnexion…');
-    }
-    if (_audio.isBusy) {
-      return _busyLine(colors, text, 'Chargement…');
-    }
-    if (_audio.hasError || _audio.isEnded) {
-      final msg =
-          _audio.isEnded ? 'Le direct est terminé' : 'Flux indisponible';
-      return Text(
-        msg,
-        textAlign: TextAlign.center,
-        style: text.bodyMedium?.copyWith(color: colors.error),
-      );
-    }
-    return Text(
-      _audio.isPlaying ? 'À l’écoute' : 'En pause',
-      style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-    );
-  }
-
-  Widget _busyLine(ColorScheme colors, TextTheme text, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 14,
-          height: 14,
-          child:
-              CircularProgressIndicator(strokeWidth: 2, color: colors.primary),
-        ),
-        const SizedBox(width: 10),
-        Text(label,
-            style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant)),
-      ],
-    );
-  }
-
-  Widget _controls(ColorScheme colors, bool isFavorited) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        IconButton(
-          onPressed: _toggleFavorite,
-          iconSize: 28,
-          color: isFavorited ? colors.primary : colors.onSurfaceVariant,
-          icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
-          tooltip: isFavorited ? 'Retirer des favoris' : 'Ajouter aux favoris',
-        ),
-        _playPauseButton(colors),
-      ],
-    );
-  }
-
-  Widget _playPauseButton(ColorScheme colors) {
-    final Widget icon;
-    if (_audio.isBusy || _audio.isReconnecting) {
-      icon = SizedBox(
-        width: 28,
-        height: 28,
-        child: CircularProgressIndicator(strokeWidth: 3, color: colors.onPrimary),
-      );
-    } else if (_audio.hasError || _audio.isEnded) {
-      icon = Icon(Icons.replay, size: 36, color: colors.onPrimary);
-    } else if (_audio.isPlaying) {
-      icon = Icon(Icons.pause, size: 40, color: colors.onPrimary);
-    } else {
-      icon = Icon(Icons.play_arrow, size: 40, color: colors.onPrimary);
-    }
-
-    return Material(
-      color: colors.primary,
-      shape: const CircleBorder(),
-      elevation: 4,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: _audio.togglePlayPause,
-        child: SizedBox(
-          width: 76,
-          height: 76,
-          child: Center(child: icon),
-        ),
-      ),
     );
   }
 }
