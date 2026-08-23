@@ -162,14 +162,14 @@ permettent de substituer des fakes (ex. `fake_audio_playback_service.dart`).
 Le sujet demande **80 % minimum** en test unitaire, sur un périmètre déclaré. Une **porte de CI
 échoue sous 80 %** sur ce périmètre (handlers, services, repositories, middlewares, configuration,
 observabilité) : la couverture ne peut plus se dégrader sous le seuil sans bloquer la PR. Le
-relevé courant est de **81,05 %** sur ce périmètre (**63,6 %** brut, tout inclus), tenu à jour
-dans le document de couverture lié ci-dessous.
+relevé courant, au-dessus du seuil, est tenu à jour dans le document de couverture lié ci-dessous
+(il bouge à chaque merge, d'où l'absence de décimale figée ici).
 
 Quatre familles sont exclues du calcul, chacune pour une raison assumée et appliquée par un
 script (pas par convention orale) : le code généré par sqlc (`internal/*/db`), la racine de
 composition `cmd/api` (câblage des routes, qui demande un test de bout en bout encore à écrire),
-les enveloppes minces de `internal/infrastructure` (exercées via les tests d'intégration) et le
-socle de test `internal/testsupport`.
+les enveloppes minces de `internal/infrastructure` (enveloppes de pilotes tiers, non testées à ce
+jour) et le socle de test `internal/testsupport`.
 
 Deux familles de tests, **toutes deux rejouées en CI à chaque PR** :
 
@@ -376,8 +376,8 @@ Projet réalisé par **3 développeurs**. Chacun a porté ses fonctionnalités d
 | Contributeur | GitHub | Périmètre principal |
 | --- | --- | --- |
 | **Antony Lignac** | [@LignacAntony](https://github.com/LignacAntony) | Backend Go, infrastructure, observabilité, streaming, administration |
-| **Thierry Maignan** | [@thierrymgn](https://github.com/thierrymgn) | Moteur HLS, lecteur audio mobile, authentification, CI/CD |
-| **Baptiste Ballesteros** | [@Oceloott](https://github.com/Oceloott) | Bibliothèque, playlists, favoris, profil utilisateur |
+| **Thierry Maignan** | [@thierrymgn](https://github.com/thierrymgn) | Moteur HLS, lecteur audio mobile, parcours de compte (mot de passe, rôles, RGPD), CI/CD |
+| **Baptiste Ballesteros** | [@Oceloott](https://github.com/Oceloott) | Authentification JWT, bibliothèque, playlists, favoris, profil utilisateur |
 
 ### Détail par domaine
 
