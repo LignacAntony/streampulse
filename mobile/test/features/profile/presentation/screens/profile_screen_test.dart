@@ -124,14 +124,14 @@ Widget _buildHarness(UserProfile profile) {
   final router = GoRouter(
     initialLocation: '/profile',
     routes: [
-      GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
+      GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
       GoRoute(
         path: '/broadcaster-request',
-        builder: (_, __) => const _MarkerScreen('BROADCASTER_REQUEST'),
+        builder: (_, _) => const _MarkerScreen('BROADCASTER_REQUEST'),
       ),
       GoRoute(
         path: '/login',
-        builder: (_, __) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
+        builder: (_, _) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
       ),
     ],
   );

@@ -72,10 +72,10 @@ Widget _buildHarness(_FakeAuthRepository fake) {
   final router = GoRouter(
     initialLocation: '/register',
     routes: [
-      GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
       GoRoute(
         path: '/login',
-        builder: (_, __) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
+        builder: (_, _) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
       ),
     ],
   );

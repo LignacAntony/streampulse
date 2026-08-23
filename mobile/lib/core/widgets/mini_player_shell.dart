@@ -89,7 +89,7 @@ class MiniPlayerShell extends StatelessWidget {
                 ],
               ),
             ),
-            if (line != null) line,
+            ?line,
           ],
         ),
       ),
