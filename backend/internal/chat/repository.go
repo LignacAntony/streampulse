@@ -15,12 +15,13 @@ import (
 )
 
 type pgRepository struct {
-	q *chatdb.Queries
+	pool *pgxpool.Pool
+	q    *chatdb.Queries
 }
 
 // NewRepository construit le repository PostgreSQL du domaine chat.
 func NewRepository(pool *pgxpool.Pool) Repository {
-	return &pgRepository{q: chatdb.New(pool)}
+	return &pgRepository{pool: pool, q: chatdb.New(pool)}
 }
 
 func (r *pgRepository) InsertMessage(ctx context.Context, streamID, userID, content string) (Message, error) {
