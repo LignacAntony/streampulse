@@ -234,19 +234,9 @@ func TestRepository_GetUsername(t *testing.T) {
 	ctx := context.Background()
 	tag := pgtest.UniqueTag(t)
 
-	pgtest.InsertUser(t, repo.pool, tag, "user")
+	userID := pgtest.InsertUser(t, repo.pool, tag, "user")
 
-	username, err := repo.GetUsername(ctx, tag)
-	if err == nil && username == tag {
-		return
-	}
-
-	var userID string
-	if err := repo.pool.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, tag).Scan(&userID); err != nil {
-		t.Fatalf("relecture ID: %v", err)
-	}
-
-	username, err = repo.GetUsername(ctx, userID)
+	username, err := repo.GetUsername(ctx, userID)
 	if err != nil {
 		t.Fatalf("GetUsername: %v", err)
 	}
