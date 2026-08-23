@@ -9,6 +9,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 
@@ -23,12 +25,20 @@ const (
 	defaultAPIPort                     = "8080"
 	defaultDBHost                      = "localhost"
 	defaultDBPort                      = "5432"
+	defaultDBSSLMode                   = "disable"
 	defaultStreamIngestBaseURL         = "http://localhost:8080"
 	defaultStoragePath                 = "./data/tracks"
 	defaultHLSMaxConcurrent            = 256
 	defaultIngestReconnectGraceSeconds = 45
 	defaultIngestStopTimeoutSeconds    = 10
 	defaultLogLevel                    = "info"
+
+	// Timeouts du serveur HTTP. Les chemins longs (ingest, SSE) ne s'en
+	// remettent pas à ces valeurs : ils neutralisent la write deadline et
+	// renouvellent la read deadline à chaque bloc (cf. streaming/handler.go).
+	defaultHTTPReadTimeoutSeconds  = 5
+	defaultHTTPWriteTimeoutSeconds = 10
+	defaultHTTPIdleTimeoutSeconds  = 120
 
 	minJWTSecretLen = 32
 
@@ -46,6 +56,61 @@ var validLogLevels = map[string]bool{
 	"warn": true, "error": true, "fatal": true, "panic": true,
 }
 
+// envKeys énumère les variables d'environnement lues par Load, avec leur valeur
+// par défaut quand elles en ont une. Table unique et non deux listes parallèles :
+// une clé oubliée d'un côté diverge en silence.
+//
+// Le bind est nécessaire parce que viper.Unmarshal n'itère que sur les clés
+// qu'il connaît — AutomaticEnv() ne suffit pas à en révéler une. Une clé devient
+// connue par SetDefault *ou* par BindEnv ; les clés sans défaut (secrets, SMTP,
+// endpoints) ne dépendent donc que de cette table. On lie toutes les clés, avec
+// ou sans défaut, pour n'avoir jamais à se demander laquelle des deux voies
+// couvre quel champ.
+//
+// TestEnvKeys_CouvrentTousLesChampsDeConfig la garde alignée sur les tags
+// mapstructure de Config.
+//
+// CORS_ALLOWED_ORIGINS y figure alors que le champ porte `mapstructure:"-"` :
+// il est lu à part via v.GetString puis découpé (parseCSV).
+var envKeys = []struct {
+	key string
+	def any // nil = pas de défaut (valeur requise, ou vide acceptée)
+}{
+	{key: "GO_ENV", def: defaultGoEnv},
+	{key: "API_PORT", def: defaultAPIPort},
+	{key: "JWT_SECRET"},
+
+	{key: "DB_HOST", def: defaultDBHost},
+	{key: "DB_PORT", def: defaultDBPort},
+	{key: "DB_USER"},
+	{key: "DB_PASSWORD"},
+	{key: "DB_NAME"},
+	{key: "DB_SSLMODE", def: defaultDBSSLMode},
+
+	{key: "SMTP_HOST"},
+	{key: "SMTP_PORT"},
+	{key: "SMTP_USERNAME"},
+	{key: "SMTP_PASSWORD"},
+	{key: "SMTP_FROM"},
+
+	{key: "APP_BASE_URL"},
+	{key: "CORS_ALLOWED_ORIGINS"},
+	{key: "STREAM_INGEST_BASE_URL", def: defaultStreamIngestBaseURL},
+	{key: "STORAGE_PATH", def: defaultStoragePath},
+
+	{key: "HLS_MAX_CONCURRENT", def: defaultHLSMaxConcurrent},
+	{key: "INGEST_RECONNECT_GRACE_SECONDS", def: defaultIngestReconnectGraceSeconds},
+	{key: "INGEST_STOP_TIMEOUT_SECONDS", def: defaultIngestStopTimeoutSeconds},
+	{key: "TRUST_PROXY_HEADERS", def: false},
+	{key: "HTTP_READ_TIMEOUT_SECONDS", def: defaultHTTPReadTimeoutSeconds},
+	{key: "HTTP_WRITE_TIMEOUT_SECONDS", def: defaultHTTPWriteTimeoutSeconds},
+	{key: "HTTP_IDLE_TIMEOUT_SECONDS", def: defaultHTTPIdleTimeoutSeconds},
+
+	{key: "LOG_LEVEL", def: defaultLogLevel},
+	{key: "LOG_PRETTY", def: false},
+	{key: "OTEL_EXPORTER_OTLP_ENDPOINT"},
+}
+
 // Config représente la configuration complète de l'API StreamPulse.
 //
 // Toutes les valeurs proviennent de variables d'environnement —
@@ -60,6 +125,11 @@ type Config struct {
 	DBUser     string `mapstructure:"DB_USER"`
 	DBPassword string `mapstructure:"DB_PASSWORD"`
 	DBName     string `mapstructure:"DB_NAME"`
+
+	// DBSSLMode : mode TLS de la connexion PostgreSQL. `disable` par défaut —
+	// la base n'est jointe que par le réseau interne Docker — mais paramétrable,
+	// une base managée exigeant `require` ou `verify-full`.
+	DBSSLMode string `mapstructure:"DB_SSLMODE"`
 
 	// SMTP — optionnel. Si SMTPHost est vide, le LogMailer est utilisé.
 	SMTPHost     string `mapstructure:"SMTP_HOST"`
@@ -101,6 +171,13 @@ type Config struct {
 	// le compteur sature à 1.
 	TrustProxyHeaders bool `mapstructure:"TRUST_PROXY_HEADERS"`
 
+	// Timeouts du serveur HTTP, en secondes. Externalisés pour respecter le
+	// zéro-hardcoding : un déploiement derrière un proxy lent ou un réseau
+	// dégradé peut avoir besoin de les élargir sans reconstruire l'image.
+	HTTPReadTimeoutSeconds  int `mapstructure:"HTTP_READ_TIMEOUT_SECONDS"`
+	HTTPWriteTimeoutSeconds int `mapstructure:"HTTP_WRITE_TIMEOUT_SECONDS"`
+	HTTPIdleTimeoutSeconds  int `mapstructure:"HTTP_IDLE_TIMEOUT_SECONDS"`
+
 	// CORSAllowedOrigins : origines autorisées par CORS (CSV dans CORS_ALLOWED_ORIGINS).
 	CORSAllowedOrigins []string `mapstructure:"-"`
 
@@ -122,19 +199,13 @@ type Config struct {
 func Load() (*Config, error) {
 	v := viper.New()
 
-	// Valeurs par défaut pour les variables non sensibles.
-	v.SetDefault("GO_ENV", defaultGoEnv)
-	v.SetDefault("API_PORT", defaultAPIPort)
-	v.SetDefault("DB_HOST", defaultDBHost)
-	v.SetDefault("DB_PORT", defaultDBPort)
-	v.SetDefault("STREAM_INGEST_BASE_URL", defaultStreamIngestBaseURL)
-	v.SetDefault("STORAGE_PATH", defaultStoragePath)
-	v.SetDefault("HLS_MAX_CONCURRENT", defaultHLSMaxConcurrent)
-	v.SetDefault("INGEST_RECONNECT_GRACE_SECONDS", defaultIngestReconnectGraceSeconds)
-	v.SetDefault("INGEST_STOP_TIMEOUT_SECONDS", defaultIngestStopTimeoutSeconds)
-	v.SetDefault("TRUST_PROXY_HEADERS", false)
-	v.SetDefault("LOG_LEVEL", defaultLogLevel)
-	v.SetDefault("LOG_PRETTY", false)
+	// Valeurs par défaut, posées avant la lecture du .env (elles restent de plus
+	// basse précédence quoi qu'il arrive).
+	for _, e := range envKeys {
+		if e.def != nil {
+			v.SetDefault(e.key, e.def)
+		}
+	}
 
 	// Charge .env à la racine du repo si présent (dev local uniquement).
 	v.SetConfigName(".env")
@@ -153,19 +224,9 @@ func Load() (*Config, error) {
 	// Override par les variables d'environnement (priorité max).
 	v.AutomaticEnv()
 
-	// Bind explicite — viper.Unmarshal ne lit pas AutomaticEnv() seul.
-	for _, key := range []string{
-		"GO_ENV", "API_PORT", "JWT_SECRET",
-		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
-		"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM",
-		"APP_BASE_URL", "CORS_ALLOWED_ORIGINS", "STREAM_INGEST_BASE_URL",
-		"STORAGE_PATH",
-		"HLS_MAX_CONCURRENT", "INGEST_RECONNECT_GRACE_SECONDS",
-		"INGEST_STOP_TIMEOUT_SECONDS", "LOG_LEVEL", "LOG_PRETTY",
-		"OTEL_EXPORTER_OTLP_ENDPOINT",
-	} {
-		if err := v.BindEnv(key); err != nil {
-			return nil, fmt.Errorf("config: bind %s: %w", key, err)
+	for _, e := range envKeys {
+		if err := v.BindEnv(e.key); err != nil {
+			return nil, fmt.Errorf("config: bind %s: %w", e.key, err)
 		}
 	}
 
@@ -272,11 +333,65 @@ func (c *Config) IngestStopTimeout() time.Duration {
 }
 
 // DBDSN retourne la DSN PostgreSQL prête à passer à database/sql ou pgx.
+// sslMode retombe sur le défaut quand le champ est vide, pour qu'un Config
+// construit à la main (tests, outillage) produise une DSN utilisable sans
+// passer par Load.
+func (c *Config) sslMode() string {
+	if c.DBSSLMode == "" {
+		return defaultDBSSLMode
+	}
+	return c.DBSSLMode
+}
+
 func (c *Config) DBDSN() string {
 	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName,
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.sslMode(),
 	)
+}
+
+// DatabaseURL rend la connexion au format URL attendu par pgx.
+//
+// Dérivée de DBDSN plutôt que lue dans DATABASE_URL : cette variable était une
+// seconde source de vérité en doublon avec les DB_*, et .env.example y
+// dupliquait le mot de passe en dur — changer POSTGRES_PASSWORD sans la mettre à
+// jour cassait silencieusement les migrations.
+func (c *Config) DatabaseURL() string { return c.databaseURL("postgres") }
+
+// MigrationURL rend la même connexion pour golang-migrate.
+//
+// Le schéma diffère de DatabaseURL, et ce n'est pas cosmétique : golang-migrate
+// résout son pilote **par le schéma de l'URL**, et le pilote importé par
+// internal/infrastructure/migrator est `database/pgx/v5`, qui s'enregistre sous
+// le seul nom « pgx5 ». Une URL en « postgres:// » le fait échouer au démarrage
+// sur « unknown driver postgres (forgotten import?) ».
+//
+// L'inverse est vrai aussi : pgx.ParseConfig n'accepte que « postgres:// » ou
+// « postgresql:// » et rejette « pgx5:// ». Aucune URL unique ne peut donc
+// servir les deux — d'où deux méthodes plutôt qu'une valeur partagée.
+func (c *Config) MigrationURL() string { return c.databaseURL("pgx5") }
+
+func (c *Config) databaseURL(scheme string) string {
+	u := &url.URL{
+		Scheme:   scheme,
+		User:     url.UserPassword(c.DBUser, c.DBPassword),
+		Host:     net.JoinHostPort(c.DBHost, c.DBPort),
+		Path:     "/" + c.DBName,
+		RawQuery: url.Values{"sslmode": {c.sslMode()}}.Encode(),
+	}
+	return u.String()
+}
+
+func (c *Config) HTTPReadTimeout() time.Duration {
+	return time.Duration(c.HTTPReadTimeoutSeconds) * time.Second
+}
+
+func (c *Config) HTTPWriteTimeout() time.Duration {
+	return time.Duration(c.HTTPWriteTimeoutSeconds) * time.Second
+}
+
+func (c *Config) HTTPIdleTimeout() time.Duration {
+	return time.Duration(c.HTTPIdleTimeoutSeconds) * time.Second
 }
 
 // validate vérifie que les variables requises sont présentes et que
@@ -314,6 +429,26 @@ func (c *Config) validate() error {
 	}
 	if c.IngestStopTimeoutSeconds <= 0 {
 		return fmt.Errorf("config: INGEST_STOP_TIMEOUT_SECONDS invalide %d (attendu: > 0)", c.IngestStopTimeoutSeconds)
+	}
+
+	// Sans SMTP_HOST, email.NewFromConfig retombe sur LogMailer, qui écrit le
+	// jeton de réinitialisation en clair dans les logs pour permettre le
+	// workflow sans serveur mail. C'est acceptable en développement, jamais en
+	// production : Loki n'a pas de rétention, et quiconque lit les logs prendrait
+	// la main sur tout compte ayant demandé une réinitialisation. On refuse de
+	// démarrer plutôt que de le découvrir après coup.
+	for name, v := range map[string]int{
+		"HTTP_READ_TIMEOUT_SECONDS":  c.HTTPReadTimeoutSeconds,
+		"HTTP_WRITE_TIMEOUT_SECONDS": c.HTTPWriteTimeoutSeconds,
+		"HTTP_IDLE_TIMEOUT_SECONDS":  c.HTTPIdleTimeoutSeconds,
+	} {
+		if v <= 0 {
+			return fmt.Errorf("config: %s invalide %d (attendu: > 0)", name, v)
+		}
+	}
+
+	if c.IsProd() && strings.TrimSpace(c.SMTPHost) == "" {
+		return errors.New("config: SMTP_HOST est requis en production (sans lui les jetons de réinitialisation partiraient dans les logs)")
 	}
 
 	return nil

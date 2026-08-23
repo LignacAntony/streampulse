@@ -1,7 +1,7 @@
 name: streampulse
 description: Plateforme audio hybride live & on-demand — StreamPulse
 publish_to: none
-version: 1.0.0+1
+version: 1.2.0+1
 
 environment:
   sdk: ^3.11.4
@@ -32,6 +32,11 @@ dependencies:
   # Stockage sécurisé (tokens JWT)
   flutter_secure_storage: ^9.0.0
 
+  # Préférences non sensibles — niveau sonore du lecteur (STR-244).
+  # Séparé de flutter_secure_storage à dessein : celui-ci n'a qu'une
+  # responsabilité, les jetons, et un volume n'est pas un secret.
+  shared_preferences: ^2.3.0
+
   # Lecture audio (live HLS + on-demand)
   just_audio: ^0.9.40
   audio_service: ^0.18.12
@@ -42,11 +47,16 @@ dependencies:
   # Permission notifications (Android 13+) pour la notification média (STR-109)
   permission_handler: ^11.3.1
 
-  # WebSocket (chat live)
-  web_socket_channel: ^3.0.1
-
   # Typographie
   google_fonts: ^6.2.1
+
+  # Cache hors ligne (US-09-02)
+  path_provider: ^2.1.0
+  sqflite: ^2.3.0
+  connectivity_plus: ^6.0.0
+
+  # Chemins de fichiers
+  path: ^1.9.0
 
   # Utilitaires
   equatable: ^2.0.5
@@ -60,6 +70,11 @@ dev_dependencies:
 
   # Contrôle du temps virtuel dans les tests (timers de backoff — STR-118)
   fake_async: ^1.3.1
+
+  # Mesure de trames sur appareil (STR-243). `flutter test` simule le temps et
+  # ne rastérise rien : un budget de 60 FPS ne s'y vérifie pas.
+  integration_test:
+    sdk: flutter
 
   # Génération de code
   build_runner: ^2.4.9
@@ -75,3 +90,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # Copies exactes de docs/politique-confidentialite.md et docs/cgu.md.
+    # Embarquées et non servies par l'API : la case de consentement de
+    # l'inscription doit pouvoir les ouvrir sans réseau et sans compte.
+    # `make check-legal-assets` échoue si elles divergent de docs/.
+    - assets/legal/

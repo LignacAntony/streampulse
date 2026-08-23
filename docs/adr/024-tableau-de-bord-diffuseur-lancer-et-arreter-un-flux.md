@@ -65,7 +65,7 @@ seulement improbable. Coût accepté : un mapper et un datasource supplémentair
 ### 4. Fraîcheur du statut par SSE, avec resynchronisation à chaque reconnexion
 
 Un flux peut s'arrêter sans que le diffuseur y soit pour quelque chose : interruption par un
-administrateur ([ADR 018](018-supervision-admin-des-flux-et-journal-daudit.md)) ou nettoyage des
+administrateur ([ADR 039](039-supervision-admin-des-flux-et-journal-daudit.md)) ou nettoyage des
 flux orphelins. Le tableau de bord souscrit donc à `GET /api/streams/{id}/events` tant qu'un flux
 est en direct.
 

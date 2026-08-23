@@ -77,11 +77,35 @@ de fond périodiques apparaissent : un sampler dédié éviterait d'exporter ces
 ### 5. Resource et corrélation
 
 `service.name = streampulse-api` (aligné sur le label des logs) +
-`deployment.environment.name`. La trace complète du critère (mobile → API → DB) se
-lit ainsi : requête du mobile → span serveur otelhttp → spans SQL otelpgx, visible
-dans Grafana → Explore → Tempo, ou en un clic depuis un log Loki (bouton TraceID).
-L'instrumentation du client Flutter (OTEL Dart, header `traceparent` sortant) est
-hors du scope de ce ticket backend.
+`deployment.environment.name`. La trace se lit dans Grafana → Explore → Tempo, ou
+en un clic depuis un log Loki (bouton TraceID) : span serveur otelhttp → spans SQL
+otelpgx.
+
+> **Mise à jour (STR-244, [ADR 041](041-metriques-metier-debit-departs-et-resume-admin.md) §7)** —
+> la trace commence désormais au mobile. Cet ADR ne livrait que `API → DB` : le
+> propagateur W3C était armé côté serveur (`tracer.go`) mais aucun `traceparent`
+> n'était émis. `TraceContext` + un intercepteur Dio (`core/network/`) comblent
+> l'écart pour tout ce qui passe par Dio.
+>
+> ⚠️ **La lecture audio reste hors trace.** just_audio ouvre ses propres connexions
+> HTTP, hors des intercepteurs Dio — la même raison qui oblige à lui passer
+> l'en-tête `Authorization` séparément (ADR 034 §4). Segments HLS et binaires de
+> pistes ne portent donc pas d'identifiant de trace, et c'est le trajet le plus
+> volumineux. Ne pas prétendre l'inverse en soutenance.
+
+## Alternatives écartées
+
+**Jaeger plutôt que Tempo.** UI plus riche, requêtes par service et opération. Écarté : Tempo
+s'intègre nativement à Grafana, déjà présent pour les métriques et les logs — une seule interface
+et, surtout, le lien direct log → trace via `derivedFields`. Jaeger imposerait un second frontal.
+
+**OTLP/gRPC au lieu de HTTP.** Plus efficace en réseau. Écarté : le gain est nul à ce volume, et
+HTTP traverse sans configuration un environnement où seul le port 4318 est ouvert entre conteneurs.
+
+**Sampling probabiliste.** Réduirait le volume de traces. Écarté : à l'échelle du projet, tout
+tracer coûte moins cher que rater la trace de l'incident qu'on cherche. `ParentBased(AlwaysSample)`
+reste le bon réglage tant que Tempo n'est pas saturé — à revoir si le trafic change d'ordre de
+grandeur.
 
 ## Conséquences
 

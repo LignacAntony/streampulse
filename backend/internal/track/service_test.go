@@ -6,12 +6,10 @@ import (
 	"errors"
 	"io"
 	"math"
-	"net/http"
 	"os"
 	"testing"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
-	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
 )
 
 const testUserID = "00000000-0000-0000-0000-000000000001"
@@ -192,9 +190,9 @@ func TestCreate_RejectsNonAudio(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for non-audio content")
 	}
-	var he *httpjson.Error
-	if !errors.As(err, &he) || he.Status != http.StatusUnsupportedMediaType {
-		t.Fatalf("expected 415 httpjson.Error, got %v", err)
+	appErr, ok := apperror.As(err)
+	if !ok || appErr.Code != apperror.CodeUnsupportedMedia {
+		t.Fatalf("expected apperror CodeUnsupportedMedia, got %v", err)
 	}
 	if storage.saveCalled {
 		t.Error("storage.Save must NOT be called for rejected content")
@@ -302,12 +300,15 @@ func TestCreate_QuotaExceeded(t *testing.T) {
 		Size:    int64(len(mp3Header)),
 		Content: bytes.NewReader(mp3Header),
 	})
-	var he *httpjson.Error
-	if !errors.As(err, &he) || he.Status != http.StatusForbidden {
-		t.Fatalf("expected 403 httpjson.Error, got %v", err)
+	appErr, ok := apperror.As(err)
+	if !ok || appErr.Code != apperror.CodeForbidden {
+		t.Fatalf("expected apperror CodeForbidden, got %v", err)
 	}
-	if he.Code != "storage_quota_exceeded" {
-		t.Errorf("code: got %q, want storage_quota_exceeded", he.Code)
+	// Le code public est contractuel : openapi.yaml l'expose et le mobile s'en
+	// sert pour distinguer un quota d'un refus d'accès banal. Le statut HTTP qui
+	// en découle est verrouillé côté handler (TestUpload_QuotaExceeded).
+	if appErr.PublicCode != "storage_quota_exceeded" {
+		t.Errorf("code public: got %q, want storage_quota_exceeded", appErr.PublicCode)
 	}
 	if storage.saveCalled || repo.createCalled {
 		t.Error("nothing must be stored when quota is exceeded")
@@ -326,8 +327,8 @@ func TestCreate_NonAudioWinsOverQuota(t *testing.T) {
 		Size:    int64(len(pdfHeader)),
 		Content: bytes.NewReader(pdfHeader),
 	})
-	var he *httpjson.Error
-	if !errors.As(err, &he) || he.Status != http.StatusUnsupportedMediaType {
+	appErr, ok := apperror.As(err)
+	if !ok || appErr.Code != apperror.CodeUnsupportedMedia {
 		t.Fatalf("expected 415 (not audio) to win over 403 (quota), got %v", err)
 	}
 }

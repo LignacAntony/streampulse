@@ -11,10 +11,12 @@ import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/playlist_repository.dart';
+import '../providers/offline_playlist_controller.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../providers/playlists_controller.dart';
 import '../track_labels.dart';
 import '../widgets/playlist_form_sheet.dart';
+import '../../../../core/layout/breakpoints.dart';
 
 /// Écran « Bibliothèque » : liste des playlists de l'utilisateur avec création,
 /// renommage et suppression (US-05-02). Remplace le `PlaceholderScreen` de
@@ -193,10 +195,13 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
           ],
         ],
       ),
+      // Cf. discover_screen : contenu borné au-delà de la rupture (STR-244).
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: authenticated ? _onRefresh : () async {},
-          child: _buildBody(context, controller),
+        child: ResponsiveContent(
+          child: RefreshIndicator(
+            onRefresh: authenticated ? _onRefresh : () async {},
+            child: _buildBody(context, controller),
+          ),
         ),
       ),
     );
@@ -474,6 +479,7 @@ class _PlaylistCard extends StatelessWidget {
                     onDelete: onDelete,
                   ),
                 ),
+                _OfflineBadge(playlistId: playlist.id),
               ],
             ),
           ),
@@ -499,6 +505,48 @@ class _PlaylistCard extends StatelessWidget {
   String _trackCountLabel(int count) {
     if (count == 0) return 'Aucun titre';
     return '$count ${count == 1 ? 'titre' : 'titres'}';
+  }
+}
+
+class _OfflineBadge extends StatelessWidget {
+  const _OfflineBadge({required this.playlistId});
+
+  final String playlistId;
+
+  @override
+  Widget build(BuildContext context) {
+    final isOffline = context.select<OfflinePlaylistController, bool>(
+      (c) => c.isOffline(playlistId),
+    );
+    if (!isOffline) return const Positioned(bottom: 0, left: 0, child: SizedBox.shrink());
+
+    final isDownloading = context.select<OfflinePlaylistController, bool>(
+      (c) => c.isDownloading(playlistId),
+    );
+
+    final colors = Theme.of(context).colorScheme;
+
+    return Positioned(
+      bottom: 8,
+      left: 8,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colors.scrim.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: isDownloading
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.onInverseSurface,
+                ),
+              )
+            : Icon(Icons.cloud_done, size: 16, color: colors.onInverseSurface),
+      ),
+    );
   }
 }
 

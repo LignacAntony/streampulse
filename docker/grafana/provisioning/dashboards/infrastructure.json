@@ -2,6 +2,11 @@
   "uid": "streampulse-infra",
   "title": "StreamPulse — Infrastructure",
   "tags": ["streampulse", "infra", "str-165"],
+  "links": [
+    { "type": "link", "title": "Live Streaming", "url": "/d/streampulse-live", "icon": "dashboard", "tooltip": "Audience, débit et interruptions de diffusion", "keepTime": true, "targetBlank": false, "asDropdown": false, "includeVars": false, "tags": [] },
+    { "type": "link", "title": "API Backend", "url": "/d/streampulse-api", "icon": "dashboard", "tooltip": "Latences, erreurs et volumétrie HTTP côté API", "keepTime": true, "targetBlank": false, "asDropdown": false, "includeVars": false, "tags": [] },
+    { "type": "link", "title": "Logs & Erreurs", "url": "/d/streampulse-logs", "icon": "dashboard", "tooltip": "Journaux corrélés, erreurs cliquables vers Tempo", "keepTime": true, "targetBlank": false, "asDropdown": false, "includeVars": false, "tags": [] }
+  ],
   "schemaVersion": 39,
   "editable": false,
   "timezone": "browser",

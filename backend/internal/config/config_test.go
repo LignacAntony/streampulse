@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -255,6 +256,40 @@ func TestConfig_DBDSN(t *testing.T) {
 	}
 }
 
+// Les deux URL de connexion ne diffèrent que par leur schéma, et ce détail
+// décide si l'API démarre. golang-migrate résout son pilote par le schéma :
+// `database/pgx/v5` ne s'enregistre que sous « pgx5 », et une URL « postgres://
+// » fait échouer le démarrage sur « unknown driver postgres (forgotten
+// import?) ». pgx.ParseConfig, lui, rejette « pgx5:// ».
+//
+// Rien d'autre ne couvre cette contrainte : la CI compile et joue les tests
+// unitaires, elle ne démarre jamais le binaire.
+func TestConfig_URLsDeConnexion(t *testing.T) {
+	cfg := &Config{
+		DBHost:     "db.example.com",
+		DBPort:     "5432",
+		DBUser:     "u",
+		DBPassword: "p",
+		DBName:     "n",
+	}
+
+	const credsEtCible = "://u:p@db.example.com:5432/n?sslmode=disable"
+
+	if got, want := cfg.DatabaseURL(), "postgres"+credsEtCible; got != want {
+		t.Errorf("DatabaseURL() = %q, want %q", got, want)
+	}
+	if got, want := cfg.MigrationURL(), "pgx5"+credsEtCible; got != want {
+		t.Errorf("MigrationURL() = %q, want %q", got, want)
+	}
+
+	// Les deux doivent désigner la même base : seul le schéma change.
+	if strings.TrimPrefix(cfg.DatabaseURL(), "postgres") !=
+		strings.TrimPrefix(cfg.MigrationURL(), "pgx5") {
+		t.Errorf("les deux URL ne pointent pas sur la même base:\n  %s\n  %s",
+			cfg.DatabaseURL(), cfg.MigrationURL())
+	}
+}
+
 func TestConfig_IsDev_IsProd(t *testing.T) {
 	tests := []struct {
 		env      string
@@ -362,4 +397,109 @@ func TestLoad_OTELEndpoint(t *testing.T) {
 			t.Errorf("OTELExporterOTLPEndpoint = %q", cfg.OTELExporterOTLPEndpoint)
 		}
 	})
+}
+
+// TestEnvKeys_CouvrentTousLesChampsDeConfig garde boundEnvKeys aligné sur la
+// structure Config.
+//
+// Un champ dont la clé n'est ni dans boundEnvKeys ni dans un SetDefault est
+// invisible pour viper.Unmarshal : la variable d'environnement reste sans
+// effet, sans le moindre message. Exiger la présence dans boundEnvKeys pour
+// *tous* les champs supprime la question « ce champ a-t-il un défaut ? » —
+// c'est une condition suffisante, vérifiable mécaniquement.
+func TestEnvKeys_CouvrentTousLesChampsDeConfig(t *testing.T) {
+	bound := make(map[string]bool, len(envKeys))
+	for _, e := range envKeys {
+		bound[e.key] = true
+	}
+
+	typ := reflect.TypeOf(Config{})
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		tag := field.Tag.Get("mapstructure")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if !bound[tag] {
+			t.Errorf("champ %s : %q absent de envKeys — la variable d'environnement serait ignorée", field.Name, tag)
+		}
+	}
+}
+
+// TestLoad_TrustProxyHeaders verrouille la lecture de la variable.
+//
+// STR-240 : la clé manquait à boundEnvKeys, et son absence de
+// docker-compose.prod.yml laissait le défaut `false` s'appliquer en production
+// — derrière Caddy, tous les auditeurs partagent l'adresse du proxy et le
+// comptage sature à un. Le SetDefault suffisait en fait à rendre la clé
+// lisible ; ce test l'établit plutôt que de le supposer.
+func TestLoad_TrustProxyHeaders(t *testing.T) {
+	t.Run("absent → false", func(t *testing.T) {
+		setEnv(t, validVars())
+		// Neutralise explicitement : la variable peut être exportée dans le
+		// shell (CI ou poste de dev), ce qui rendrait l'assertion faussement
+		// verte ou instable.
+		t.Setenv("TRUST_PROXY_HEADERS", "")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if cfg.TrustProxyHeaders {
+			t.Error("TrustProxyHeaders = true, attendu false par défaut")
+		}
+	})
+
+	t.Run("true → true", func(t *testing.T) {
+		setEnv(t, validVars())
+		t.Setenv("TRUST_PROXY_HEADERS", "true")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() unexpected error: %v", err)
+		}
+		if !cfg.TrustProxyHeaders {
+			t.Error("TrustProxyHeaders = false alors que TRUST_PROXY_HEADERS=true")
+		}
+	})
+}
+
+// Les timeouts HTTP sont exprimés en secondes dans l'environnement et
+// consommés en time.Duration par le serveur. Une conversion oubliée donnerait
+// des timeouts de quelques nanosecondes — le serveur couperait toute requête.
+func TestConfig_TimeoutsHTTP(t *testing.T) {
+	cfg := &Config{
+		HTTPReadTimeoutSeconds:  15,
+		HTTPWriteTimeoutSeconds: 30,
+		HTTPIdleTimeoutSeconds:  120,
+	}
+	cas := []struct {
+		nom  string
+		got  time.Duration
+		want time.Duration
+	}{
+		{"lecture", cfg.HTTPReadTimeout(), 15 * time.Second},
+		{"écriture", cfg.HTTPWriteTimeout(), 30 * time.Second},
+		{"inactivité", cfg.HTTPIdleTimeout(), 120 * time.Second},
+	}
+	for _, tc := range cas {
+		if tc.got != tc.want {
+			t.Errorf("timeout %s = %v, want %v", tc.nom, tc.got, tc.want)
+		}
+	}
+}
+
+// sslMode retombe sur le défaut quand le champ est vide : un Config construit
+// à la main dans un test ou un outil doit produire une DSN utilisable sans
+// passer par Load.
+func TestConfig_SSLModeParDefaut(t *testing.T) {
+	vide := &Config{DBHost: "h", DBPort: "1", DBUser: "u", DBPassword: "p", DBName: "n"}
+	if got := vide.DBDSN(); !strings.Contains(got, "sslmode="+defaultDBSSLMode) {
+		t.Errorf("DSN = %q, want le sslmode par défaut %q", got, defaultDBSSLMode)
+	}
+
+	explicite := &Config{DBHost: "h", DBPort: "1", DBUser: "u", DBPassword: "p", DBName: "n", DBSSLMode: "require"}
+	if got := explicite.DBDSN(); !strings.Contains(got, "sslmode=require") {
+		t.Errorf("DSN = %q, want sslmode=require", got)
+	}
 }

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: StreamPulse API
-  version: 0.1.0
+  version: 1.2.0
   description: REST API for the StreamPulse backend.
 servers:
   - url: /
@@ -578,6 +578,40 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/metrics:
+    get:
+      tags:
+        - Admin
+      operationId: getAdminMetrics
+      summary: Global supervision summary (admin only).
+      description: >-
+        Key operational figures for the application administrator (STR-244):
+        live streams and estimated audience, HTTP traffic, and account
+        population. Distinct from the Prometheus `/metrics` endpoint, which is
+        unauthenticated plain text scraped from the internal network and blocked
+        by the reverse proxy in production; here the authorisation derives from
+        the caller's application role.
+
+
+        The HTTP figures are cumulative counters read from the process's own
+        Prometheus registry, so they cover the lifetime of the running process —
+        not a sliding window. The Grafana dashboards remain the place to read
+        rates over time.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The supervision summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMetricsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/admin/streams:
@@ -2436,6 +2470,106 @@ components:
         username:
           type: string
           example: alice
+    AdminMetricsResponse:
+      type: object
+      required:
+        - uptime_seconds
+        - streams
+        - http
+        - users
+      properties:
+        uptime_seconds:
+          type: integer
+          format: int64
+          description: Seconds elapsed since the API process started.
+          example: 86400
+        streams:
+          $ref: "#/components/schemas/AdminMetricsStreams"
+        http:
+          $ref: "#/components/schemas/AdminMetricsHTTP"
+        users:
+          $ref: "#/components/schemas/AdminMetricsUsers"
+    AdminMetricsStreams:
+      type: object
+      required:
+        - live
+        - listeners_estimated
+      properties:
+        live:
+          type: integer
+          description: Number of streams currently broadcasting.
+          example: 3
+        listeners_estimated:
+          type: integer
+          description: >-
+            Estimated listeners across all live streams. HLS has no persistent
+            connection, so audience is inferred from recent manifest requests
+            (ADR 025) — two listeners behind one address count as one.
+          example: 37
+    AdminMetricsHTTP:
+      type: object
+      required:
+        - requests_total
+        - client_errors_total
+        - server_errors_total
+        - response_bytes_total
+        - server_error_rate
+      properties:
+        requests_total:
+          type: integer
+          format: int64
+          description: HTTP requests served since process start.
+          example: 12045
+        client_errors_total:
+          type: integer
+          format: int64
+          description: Responses with a 4xx status since process start.
+          example: 87
+        server_errors_total:
+          type: integer
+          format: int64
+          description: Responses with a 5xx status since process start.
+          example: 3
+        response_bytes_total:
+          type: integer
+          format: int64
+          description: >-
+            Response body bytes written to clients since process start. Inbound
+            broadcaster ingest is not counted — it travels through the request
+            body, which this counter does not observe.
+          example: 91234567
+        server_error_rate:
+          type: number
+          format: double
+          description: >-
+            server_errors_total divided by requests_total, since process start.
+            Zero when no request has been served yet.
+          example: 0.00024
+    AdminMetricsUsers:
+      type: object
+      required:
+        - total
+        - active
+        - broadcasters
+        - admins
+      properties:
+        total:
+          type: integer
+          format: int64
+          example: 42
+        active:
+          type: integer
+          format: int64
+          description: Accounts with is_active true.
+          example: 40
+        broadcasters:
+          type: integer
+          format: int64
+          example: 5
+        admins:
+          type: integer
+          format: int64
+          example: 2
     AdminStreamListResponse:
       type: object
       required:

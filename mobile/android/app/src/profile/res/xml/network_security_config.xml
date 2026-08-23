@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Politique réseau des builds profile (STR-240).
+
+  Le trafic en clair est autorisé sans restriction : en développement l'API et
+  le flux HLS tournent sur http://<ip>:8080 sans TLS, et l'adresse varie selon
+  le montage — localhost via `adb reverse`, 10.0.2.2 sur l'émulateur, IP LAN du
+  Mac sur un device en Wi-Fi (cf. mobile/README.md). Ces plages ne s'énumèrent
+  pas dans un `<domain>`.
+
+  Cette permissivité ne concerne que cette variante de build : le release
+  applique src/main/res/xml/network_security_config.xml, qui refuse le clair
+  hors boucle locale.
+
+  ⚠️ Garder aligné sur src/debug/res/xml/network_security_config.xml. Les deux
+  variantes de développement portent la même politique ; le modèle de source
+  sets Android n'offrant pas d'inclusion, la duplication est subie. Une
+  divergence fait échouer `make check-android-security`.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

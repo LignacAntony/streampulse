@@ -1,3 +1,13 @@
+# Surveillance de sécurité (STR-241, critère RNCP Ce3.3.4).
+#
+# Trois angles complémentaires, volontairement séparés en trois jobs pour que
+# l'onglet Actions dise *ce qui* est cassé sans ouvrir les logs :
+#   - trivy-fs    : CVE des dépendances Go déclarées dans go.sum
+#   - trivy-image : CVE de l'image livrée (base alpine + ffmpeg) — invisibles
+#                   d'un scan du code source, alors qu'elles composent
+#                   l'essentiel de ce qui tourne réellement en production
+#   - gosec       : défauts du code que nous écrivons (injection, permissions,
+#                   crypto), pas de ses dépendances
 name: Security
 
 env:
@@ -11,46 +21,225 @@ on:
     branches:
       - develop
       - main
+  # Une vulnérabilité détectée après le merge est déjà sur develop. Scanner la
+  # PR est le seul moment où le refus coûte encore zéro.
+  pull_request:
+    branches:
+      - develop
+      - main
+  # Le code ne bouge pas mais la base de CVE, si : une dépendance saine
+  # vendredi peut être critique lundi. D'où le passage périodique.
   schedule:
     - cron: "0 6 * * 1"
 
 jobs:
-  trivy:
-    name: Trivy filesystem scan
+  # ===========================================================================
+  # Dépendances Go du dépôt (go.mod / go.sum).
+  # ===========================================================================
+  trivy-fs:
+    name: Trivy — dépendances Go
     runs-on: ubuntu-latest
     permissions:
+      # Les permissions d'un job REMPLACENT celles du workflow : `contents: read`
+      # doit être redonné ici, sinon le checkout échoue.
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      # Étape de constat : produit le SARIF consommé par l'onglet Security
+      # (historique, dédoublonnage, annotations de PR). Non bloquante — c'est
+      # l'étape de garde plus bas qui décide de casser le build.
+      - name: Scan du système de fichiers (rapport SARIF)
+        # Tag figé, jamais @master : cette action s'exécute avec le checkout et
+        # le GITHUB_TOKEN du dépôt. Une référence mutable, c'est accepter à
+        # l'avance du code qu'on n'a pas relu. Dependabot la fait avancer.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./backend
           severity: CRITICAL,HIGH
+          # Sans ce drapeau, trivy-action IGNORE `severity` en sortie SARIF et
+          # remonte toutes les sévérités jusqu'aux informatives : le tableau
+          # Security devient illisible et plus personne ne le regarde.
+          limit-severities-for-sarif: true
           format: sarif
-          output: trivy-results.sarif
+          output: trivy-fs.sarif
 
-      - name: Upload Trivy SARIF to GitHub Code Scanning
+      # if: always() — sans lui, l'échec d'une étape précédente laisse l'onglet
+      # Security figé sur le scan de la veille : un dépôt vulnérable y paraît
+      # sain. Un tableau de bord muet est pire qu'un tableau de bord rouge.
+      # `always()` : un scan qui échoue doit quand même publier ce qu'il a
+      # trouvé, sinon l'onglet Security se vide en silence et l'absence de
+      # findings devient indiscernable d'un scan cassé.
+      #
+      # La seconde condition écarte les PR de fork : GitHub y ramène le
+      # GITHUB_TOKEN à `security-events: read`, l'upload échouerait donc en
+      # « Resource not accessible by integration » et peindrait le check en
+      # rouge pour une raison que le contributeur externe ne peut pas corriger.
+      # Le scan, lui, tourne toujours et peut toujours bloquer.
+      #
+      # Le premier membre est indispensable : sur `push` et `schedule`,
+      # `github.event.pull_request` est nul, et `null == false` vaut *faux* en
+      # expression GitHub — tester la seule appartenance à un fork couperait
+      # l'upload précisément quand on en a besoin.
+      - name: Publication du SARIF vers Code Scanning
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.fork == false)
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: trivy-results.sarif
+          sarif_file: trivy-fs.sarif
+          # `category` distingue les trois SARIF de ce workflow. Sans elle, le
+          # dernier upload écrase les précédents et deux scans sur trois
+          # disparaissent du tableau.
+          category: trivy-fs
 
-  gosec:
-    name: Gosec static analysis
+      # Étape de garde : c'est elle qui rend le job rouge. Le scan SARIF seul
+      # laissait passer les CRITICAL sans que personne ne soit interrompu.
+      # `ignore-unfixed` : une CVE sans correctif publié ne se corrige pas — la
+      # laisser bloquante gèlerait toutes les PR sans action possible. On garde
+      # donc la garde sur le corrigeable, et le SARIF continue de tout tracer.
+      - name: Garde — échec sur CRITICAL corrigeable
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./backend
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+  # ===========================================================================
+  # Image Docker réellement livrée : c'est ce qui tourne sur le VPS.
+  # ===========================================================================
+  trivy-image:
+    name: Trivy — image Docker
     runs-on: ubuntu-latest
+    # Hors des PR. Le job reconstruit toute l'image (compilation Go + base
+    # alpine + ffmpeg), en doublon du job Build de ci.yml, pour un résultat qui
+    # ne bouge qu'au changement du Dockerfile ou des dépendances système — pas à
+    # chaque itération de PR. Le coût est payé sur chaque push et chaque cron.
+    #
+    # Risque résiduel assumé : une PR qui introduit une CVE via le Dockerfile
+    # n'est plus refusée avant merge, elle rend `develop` rouge juste après. La
+    # production reste protégée — le déploiement part de `main`, après une CI
+    # verte (cd.yml).
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Même contexte de build que la CD (docker/build-push-action → ./backend),
+      # sans push : on scanne ce que la CD publierait, pas une approximation.
+      - name: Build de l'image API
+        run: docker build -t streampulse-api:${{ github.sha }} ./backend
+
+      - name: Scan de l'image (rapport SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: streampulse-api:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-image.sarif
+
+      # `always()` : un scan qui échoue doit quand même publier ce qu'il a
+      # trouvé, sinon l'onglet Security se vide en silence et l'absence de
+      # findings devient indiscernable d'un scan cassé.
+      #
+      # La seconde condition écarte les PR de fork : GitHub y ramène le
+      # GITHUB_TOKEN à `security-events: read`, l'upload échouerait donc en
+      # « Resource not accessible by integration » et peindrait le check en
+      # rouge pour une raison que le contributeur externe ne peut pas corriger.
+      # Le scan, lui, tourne toujours et peut toujours bloquer.
+      #
+      # Le premier membre est indispensable : sur `push` et `schedule`,
+      # `github.event.pull_request` est nul, et `null == false` vaut *faux* en
+      # expression GitHub — tester la seule appartenance à un fork couperait
+      # l'upload précisément quand on en a besoin.
+      - name: Publication du SARIF vers Code Scanning
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.fork == false)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Garde — échec sur CRITICAL corrigeable
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: streampulse-api:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+  # ===========================================================================
+  # Analyse statique du code Go que nous écrivons.
+  # ===========================================================================
+  gosec:
+    name: Gosec — analyse statique Go
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Nécessaire à l'upload SARIF : sans elle, les findings gosec n'existaient
+      # que dans les logs du job — aucun historique, aucun suivi d'un run à
+      # l'autre, rien à montrer d'une revue de sécurité.
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          # Aligné sur backend/go.mod (go 1.25.0) et sur ci.yml. Compiler
+          # l'analyse avec un toolchain plus ancien que le code analysé, c'est
+          # accepter des faux négatifs sur tout ce qui utilise du récent.
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
 
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+        # Version figée : `@latest` ferait tourner, sur notre checkout, du code
+        # publié entre-temps par un tiers. Dependabot ne suit pas les `go
+        # install` d'un workflow — cette ligne se relève à la main, au rythme
+        # des notes de version gosec.
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
 
+      # -out écrit le SARIF, -stdout + -verbose=text gardent une sortie lisible
+      # dans les logs. gosec sort en code != 0 dès qu'il trouve quelque chose :
+      # le fichier est écrit avant, et l'upload le récupère via if: always().
       - name: Run gosec
         working-directory: ./backend
-        run: gosec --exclude-generated ./...
+        run: gosec -exclude-generated -fmt sarif -out ../gosec.sarif -stdout -verbose=text ./...
+
+      # `always()` : un scan qui échoue doit quand même publier ce qu'il a
+      # trouvé, sinon l'onglet Security se vide en silence et l'absence de
+      # findings devient indiscernable d'un scan cassé.
+      #
+      # La seconde condition écarte les PR de fork : GitHub y ramène le
+      # GITHUB_TOKEN à `security-events: read`, l'upload échouerait donc en
+      # « Resource not accessible by integration » et peindrait le check en
+      # rouge pour une raison que le contributeur externe ne peut pas corriger.
+      # Le scan, lui, tourne toujours et peut toujours bloquer.
+      #
+      # Le premier membre est indispensable : sur `push` et `schedule`,
+      # `github.event.pull_request` est nul, et `null == false` vaut *faux* en
+      # expression GitHub — tester la seule appartenance à un fork couperait
+      # l'upload précisément quand on en a besoin.
+      - name: Publication du SARIF vers Code Scanning
+        if: >-
+          always() &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.fork == false)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec

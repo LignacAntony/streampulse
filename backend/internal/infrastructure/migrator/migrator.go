@@ -2,7 +2,6 @@ package migrator
 
 import (
 	"errors"
-	"os"
 
 	"github.com/rs/zerolog/log"
 
@@ -11,15 +10,12 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-// Run applique toutes les migrations en attente.
-// Utilise DATABASE_URL injecté via variable d'environnement.
-func Run() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal().Msg("DATABASE_URL non définie")
-	}
-
-	m, err := migrate.New("file://migrations", dbURL)
+// Run applique toutes les migrations en attente. La DSN vient de la config
+// (dérivée des DB_*), et non plus d'un DATABASE_URL lu directement dans
+// l'environnement — cette variable était une seconde source de vérité que rien
+// ne validait ni ne gardait synchrone avec les DB_*.
+func Run(databaseURL string) {
+	m, err := migrate.New("file://migrations", databaseURL)
 	if err != nil {
 		log.Fatal().Err(err).Msg("migrate init")
 	}

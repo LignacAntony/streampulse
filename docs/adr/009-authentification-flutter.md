@@ -21,8 +21,10 @@ Le client Flutter doit :
    en cas d'incident réseau.
 5. Ne jamais fuir d'information technique du backend dans l'UI (messages d'erreur).
 
-L'architecture globale (Clean Architecture + Riverpod) est posée dans [ADR 005](005-architecture-flutter-clean.md) ;
-cet ADR couvre uniquement les décisions spécifiques à l'auth.
+L'architecture globale (Clean Architecture par feature) est posée dans
+[ADR 005](005-architecture-flutter-clean.md), et le state management retenu — `provider` +
+`ChangeNotifier` — dans [ADR 036](036-state-management-flutter-provider.md) ; cet ADR couvre
+uniquement les décisions spécifiques à l'auth.
 
 ---
 
@@ -79,10 +81,12 @@ Conséquence : la déconnexion locale réussit même si le serveur est injoignab
 n'invalidera pas le refresh token côté DB dans ce cas, mais celui-ci expire de toute façon
 sous 7 jours (cf. ADR 006).
 
-L'écran d'accueil (`home_screen.dart`) complète le logout par
-**`ref.invalidate(loginControllerProvider)`** et **`ref.invalidate(registerControllerProvider)`** —
-indispensable pour ne pas conserver d'`AsyncValue<TokenPair>` ou d'`AsyncValue<User>` en mémoire
-après déconnexion.
+L'écran qui déclenche la déconnexion (`profile_screen.dart`, `_logout()`) complète l'appel par
+la remise à zéro **explicite** des contrôleurs app-level qui portent de l'état lié au compte :
+`BroadcasterController.reset()` et `FavoritesController.reset()`. Sans package de state
+management à invalidations déclaratives, c'est le prix à payer — et la raison pour laquelle la
+plupart des autres contrôleurs sont **locaux à leur écran**, donc reconstruits vierges à la
+reconnexion (cf. [ADR 036](036-state-management-flutter-provider.md) §3).
 
 ### 4. Hard-coding du message d'erreur sur 401
 
@@ -109,11 +113,19 @@ qui délèguent à `AuthScreen(initialTab: ...)` pour préserver les routes `/lo
 Après inscription réussie, `RegisterView` reçoit un callback `onRegistered` depuis `AuthScreen`
 qui bascule l'onglet sur Connexion sans navigation.
 
-### 6. Gestion d'état : `AsyncNotifier` Riverpod
+### 6. Gestion d'état : `ChangeNotifier` + `provider`
 
-`LoginController` et `RegisterController` héritent d'`AsyncNotifier<T?>` (T = `TokenPair`/`User`).
-Les écrans écoutent l'état via `ref.listen` pour déclencher toasts (succès/erreur) et navigation,
-et via `ref.watch` pour le flag `isLoading` qui désactive le bouton et affiche un spinner.
+`LoginController` et `RegisterController` étendent `ChangeNotifier` et n'exposent qu'un flag
+`isLoading` : leur méthode `submit()` **renvoie** le résultat (`TokenPair`, `User`) et **laisse
+remonter** l'exception. Le flux est donc impératif — l'écran `await` l'appel dans son callback,
+puis déclenche toast et navigation — et non réactif via un écouteur d'état.
+
+C'est délibéré : un contrôleur qui ne publie que « une requête est en cours » n'a **aucun état
+initial ambigu** à distinguer d'un succès. Le flag est lu par `context.watch` pour désactiver le
+bouton et afficher un spinner ; le résultat, lui, ne transite jamais par le notifier. Le piège
+d'état initial rencontré côté réinitialisation de mot de passe
+([ADR 011](011-reinitialisation-mot-de-passe-flutter.md) §3) ne peut structurellement pas se
+produire dans ce schéma.
 
 ### 7. Notifications : `toastification`
 
@@ -195,7 +207,8 @@ sont dismissés (`dismissAll`) avant d'en afficher un nouveau, pour éviter l'em
 
 ## Références
 
-- [ADR 005](005-architecture-flutter-clean.md) — Clean Architecture + Riverpod.
+- [ADR 005](005-architecture-flutter-clean.md) — Clean Architecture par feature.
+- [ADR 036](036-state-management-flutter-provider.md) — `provider` + `ChangeNotifier` (supersede l'ADR 005 sur le state management).
 - [ADR 006](006-authentification-jwt.md) — Format JWT + rotation refresh côté backend.
 - `mobile/lib/core/network/dio_client.dart` — intercepteur auth + refresh sérialisé.
 - `mobile/lib/core/storage/secure_storage.dart` — wrapper `flutter_secure_storage`.

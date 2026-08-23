@@ -72,7 +72,10 @@ poignée de séries — et le label reste cantonné à cette seule famille.
 ### 4. Architecture : interface étroite pour les événements, GaugeFunc pour l'état
 
 - Le domaine `internal/streaming` déclare `MetricsRecorder`
-  (`RecordHLSRequest`, `ForgetStream`) et ignore Prometheus ; l'implémentation
+  (`RecordHLSRequest`, `ForgetStream` — plus `RecordListenerDepartures` et
+  `RecordStreamInterruption` depuis
+  [ADR 041](041-metriques-metier-debit-departs-et-resume-admin.md)) et ignore
+  Prometheus ; l'implémentation
   `StreamingMetrics` vit dans `internal/observability` et est injectée par
   `main.go` — même schéma ISP que `admin.LiveStopper`. Un `noopRecorder` est
   posé par défaut : le domaine tourne sans observabilité (tests, binaires nus).
@@ -103,6 +106,24 @@ Deux précisions issues de la revue :
   Content` aux requêtes `Range` (courantes chez AVPlayer/ExoPlayer) et `304 Not
   Modified` aux requêtes conditionnelles : le taux d'erreurs ne retient que
   `4xx|5xx`, sinon un flux parfaitement sain afficherait un taux d'erreurs élevé.
+
+## Alternatives écartées
+
+**Compter les auditeurs par connexion persistante.** La mesure exacte, celle qu'on aurait avec du
+WebSocket ou du SSE. Impossible en HLS : le protocole est une suite de requêtes indépendantes, un
+lecteur qui ferme l'application ne signale rien. D'où l'estimation
+`rate(playlist) × durée de segment`, assumée comme telle dans le nom du panel plutôt que présentée
+comme un compte réel.
+
+**Conserver les séries `stream_id` après l'arrêt du flux.** Permettrait de consulter l'historique
+d'audience d'une diffusion terminée. Écarté : la cardinalité croîtrait à chaque diffusion, sans
+borne, pour une donnée qui a sa place dans une table et non dans Prometheus. D'où `ForgetStream`
+sur `Stop`, `reap` et `StopAll`.
+
+**Maintenir la gauge des flux actifs à la main** (incrément au démarrage, décrément à l'arrêt).
+Écarté : toute transition manquée — panique, arrêt brutal, chemin d'erreur oublié — fait dériver
+le compteur définitivement. `GaugeFunc` branché sur `ActiveCount()` lit l'état réel à chaque
+scrape ; la dérive est structurellement impossible.
 
 ## Conséquences
 

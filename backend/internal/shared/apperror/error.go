@@ -14,7 +14,10 @@ const (
 	CodeForbidden       Code = "forbidden"
 	CodeNotFound        Code = "not_found"
 	CodeConflict        Code = "conflict"
-	CodeInternal        Code = "internal"
+	// CodeUnsupportedMedia : le corps est bien formé, c'est son type qui est
+	// refusé (415). Distinct de CodeInvalidArgument, qui vaut 400.
+	CodeUnsupportedMedia Code = "unsupported_media_type"
+	CodeInternal         Code = "internal"
 )
 
 // Error transporte un code stable, un message public et une cause interne.
@@ -22,6 +25,22 @@ type Error struct {
 	Code    Code
 	Message string
 	Err     error
+
+	// PublicCode, s'il est renseigné, remplace Code dans la réponse HTTP.
+	//
+	// Il laisse un domaine exposer un code stable et spécifique — un client
+	// mobile distingue « quota de stockage atteint » d'un refus d'accès banal —
+	// sans connaître le transport : Code continue seul de décider du statut,
+	// PublicCode ne nomme que le cas métier. Ignoré sur les 5xx, où la réponse
+	// reste volontairement opaque.
+	PublicCode string
+}
+
+// Coded attache un code public spécifique à l'erreur et la retourne, pour
+// s'enchaîner sur un constructeur : apperror.Forbidden(msg).Coded("quota_exceeded").
+func (e *Error) Coded(public string) *Error {
+	e.PublicCode = public
+	return e
 }
 
 func (e *Error) Error() string {
@@ -63,6 +82,10 @@ func Forbidden(message string) *Error {
 
 func NotFound(message string) *Error {
 	return New(CodeNotFound, message)
+}
+
+func UnsupportedMedia(message string) *Error {
+	return New(CodeUnsupportedMedia, message)
 }
 
 func Conflict(message string) *Error {

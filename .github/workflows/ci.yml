@@ -20,6 +20,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -32,14 +33,49 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.4.0
+          # Aligné sur le gosec du job Security (v2.28.0). Le v2.4.0 précédent
+          # embarquait un gosec dont l'analyse d'intervalle ne remontait pas
+          # jusqu'aux clamps, ce qui obligeait à poser des #nosec G115 sur des
+          # conversions pourtant déjà bornées — annotations que le lint récent
+          # signale comme superflues. Deux analyseurs sur le même code avec des
+          # verdicts divergents ne se réconcilient pas à la main longtemps.
+          version: v2.12.2
           working-directory: ./backend
           skip-cache: true
+          # `config verify` télécharge le schéma JSON depuis golangci-lint.run à
+          # chaque run. Le lint dépend donc de la disponibilité d'un site tiers,
+          # et un simple timeout fait échouer la CI sans qu'aucune ligne de code
+          # soit en cause — arrivé sur la PR #312, alors que le même commit
+          # passait ailleurs à la même minute. La validation du fichier n'apporte
+          # rien ici : `.golangci.yml` bouge rarement, et une clé invalide fait
+          # de toute façon échouer golangci-lint juste après.
+          verify: false
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: lint
+
+    # Les tests d'intégration existaient depuis la revue de la PR #264 mais
+    # aucun workflow ne passait `-tags integration` : ils n'avaient jamais
+    # tourné en CI. Toute la couche persistance — 93 fonctions sur les sept
+    # domaines — n'était donc exercée par rien.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,14 +89,129 @@ jobs:
         working-directory: ./backend
         run: go mod download
 
+      # apt-get sans DEBIAN_FRONTEND peut attendre une saisie interactive
+      # (needrestart, conffile) et ne jamais rendre la main : cette étape a
+      # pendu six heures sur la PR #316 avant que GitHub ne tue le job à son
+      # timeout par défaut. Le job apparaissait alors `cancelled` et Build
+      # `skipped` — un symptôme qui ressemble à une annulation manuelle et
+      # envoie chercher la cause au mauvais endroit. Même incident sur le HEAD
+      # de `develop` en début de semaine.
+      #
+      # Trois gardes : mode non interactif, réessais sur les aléas de miroir,
+      # et une borne de temps. Une installation de paquet qui dépasse cinq
+      # minutes est en panne, pas lente.
       - name: Install ffmpeg (segmentation HLS — cf. ADR 015)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if sudo -E apt-get update -qq && sudo -E apt-get install -y --no-install-recommends ffmpeg; then
+              ffmpeg -version | head -1
+              exit 0
+            fi
+            echo "::warning::installation de ffmpeg échouée (tentative $attempt/3)"
+            sleep 5
+          done
+          echo "::error::ffmpeg n'a pas pu être installé après 3 tentatives"
+          exit 1
 
+      # Les fichiers sous build tag sont exclus de `go build ./...` comme de
+      # `go test ./...` : ils pourrissent sans que rien n'échoue. C'est ce qui
+      # est arrivé au harnais de charge, resté trois semaines et demie
+      # non compilable après un élargissement de StreamService (STR-241).
+      #
+      # La liste reste déclarée à la main — `go vet -tags` attend un ensemble de
+      # tags simultanément satisfiables, qu'une dérivation aveugle ne garantit
+      # pas — mais elle est désormais gardée : un tag présent dans l'arbre et
+      # absent d'ici fait échouer le job. Sans cette garde, un futur fichier sous
+      # un nouveau tag retomberait exactement dans le trou que cette étape
+      # prétend fermer. Même principe que envKeys côté config.
+      - name: Vérifier la compilation des fichiers sous build tag
+        working-directory: ./backend
+        env:
+          DECLARED_TAGS: "integration loadtest"
+        run: |
+          set -euo pipefail
+
+          # Tags simples présents dans l'arbre. `ignore` est la convention Go
+          # pour un fichier volontairement hors build : rien à vérifier.
+          found=$(grep -rhE '^//go:build ' --include='*.go' . \
+            | sed 's|^//go:build ||' \
+            | tr -s ' ()&|!' '\n' \
+            | grep -E '^[a-z0-9_]+$' \
+            | grep -vx 'ignore' \
+            | sort -u || true)
+
+          # `while read` plutôt que `for tag in $found` : zsh ne découpe pas une
+          # expansion non quotée, le second se comporterait donc différemment
+          # sur un poste de dev et sur le runner. Un garde-fou qu'on ne peut pas
+          # rejouer en local n'en est pas un.
+          missing=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            case " $DECLARED_TAGS " in
+              *" $tag "*) ;;
+              *) missing="$missing $tag" ;;
+            esac
+          done <<EOF
+          $found
+          EOF
+
+          if [ -n "$missing" ]; then
+            echo "::error::build tag présent dans l'arbre mais absent de DECLARED_TAGS :$missing"
+            echo "Ajoutez-le à DECLARED_TAGS (ci.yml), sinon ces fichiers cesseront de compiler sans bruit."
+            exit 1
+          fi
+
+          echo "tags vérifiés : $DECLARED_TAGS"
+          go vet -tags "$(echo $DECLARED_TAGS | tr ' ' ',')" ./...
+
+      # -tags integration : les tests de repository tournent contre le service
+      # PostgreSQL ci-dessus. Sans PostgreSQL ils se sautent proprement, donc la
+      # même commande reste jouable en local.
       - name: Run tests
         working-directory: ./backend
-        run: go test -v -race -coverprofile=coverage.txt ./...
+        env:
+          TEST_DATABASE_URL: postgres://test:test@localhost:15432/test?sslmode=disable
+        run: |
+          set -o pipefail
+          go test -v -race -tags integration -covermode=atomic \
+            -coverprofile=coverage.txt ./... | tee /tmp/go-test.log
+
+      # Sans cette garde, une base injoignable donnerait un diagnostic faux :
+      # les tests d'intégration se sautent au lieu d'échouer (c'est voulu en
+      # local), la couche repository n'est donc pas exercée, et la porte
+      # suivante échouerait sur « couverture insuffisante » — envoyant chercher
+      # des tests manquants alors que c'est PostgreSQL qui n'a pas répondu.
+      #
+      # Le compromis « sauter plutôt qu'échouer » est bon sur un poste de
+      # développement ; en CI on veut l'inverse, et nommé.
+      - name: Vérifier que les tests d'intégration ont réellement tourné
+        run: |
+          set -euo pipefail
+
+          # On compte les PASS, pas les RUN : un test sauté est aussi « lancé »,
+          # et c'est précisément le cas qu'on veut distinguer.
+          PASSES=$(grep -cE '^--- PASS: +TestRepository_' /tmp/go-test.log || true)
+          SKIPS=$(grep -cE '^--- SKIP: +TestRepository_' /tmp/go-test.log || true)
+
+          if [ "$PASSES" -eq 0 ]; then
+            echo "::error::aucun test d'intégration n'a réussi ($SKIPS sauté(s)) — PostgreSQL était-il joignable ? Vérifier TEST_DATABASE_URL et le service postgres."
+            exit 1
+          fi
+          echo "tests d'intégration exécutés : $PASSES (sautés : $SKIPS)"
+
+      # La porte que ce job n'avait pas. Le profil était produit puis archivé
+      # sans jamais être lu : une PR faisant tomber la couverture à 10 % passait
+      # au vert. Le périmètre exclu est déclaré et justifié dans le script.
+      # Rejouable en local via `make coverage-gate`.
+      - name: Porte de couverture (80 % sur le périmètre déclaré)
+        run: python3 scripts/check-coverage.py backend/coverage.txt
 
       - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -69,6 +220,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: test
     steps:
       - uses: actions/checkout@v4
@@ -83,9 +235,67 @@ jobs:
         working-directory: ./backend
         run: go build ./cmd/api
 
+  android-network-policy:
+    name: Android network policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Vérifie que le trafic en clair reste refusé en release (STR-240). Sans
+      # ce job, la propriété ne tient qu'à la vigilance du relecteur : un commit
+      # qui rebascule la valeur, ré-ajoute usesCleartextTraffic ou supprime la
+      # configuration rouvrirait le trou sans bruit. Rejouable en local via
+      # `make check-android-security`.
+      - name: Vérifier la politique de trafic en clair
+        run: make check-android-security
+
+  # Job à part, et non une étape de android-network-policy : les deux gardes
+  # n'ont aucun rapport, et un « android-network-policy » rouge n'enverrait
+  # personne chercher une dérive des CGU.
+  legal-assets:
+    name: Documents légaux synchronisés
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Les documents légaux existent en deux exemplaires : docs/ est le
+      # livrable, mobile/assets/legal/ est ce que lit l'utilisateur — Flutter
+      # refusant un asset hors du répertoire du paquet. Sans cette garde, une
+      # correction n'atterrissant que d'un côté ferait dire deux choses
+      # différentes au même document selon l'endroit où on le lit.
+      # Rejouable en local via `make check-legal-assets`.
+      - name: Vérifier la synchronisation des documents légaux
+        run: make check-legal-assets
+
+      # Le périmètre bilingue promet que l'index anglais des décisions couvre
+      # toutes les ADR. Sans garde, une ADR ajoutée sans son entrée laisse un
+      # index qui se prétend exhaustif — et un lecteur anglophone n'a aucun
+      # moyen de savoir ce qui lui manque.
+      # Rejouable en local via `make check-adr-index`.
+      - name: Vérifier l'exhaustivité de l'index anglais des ADR
+        run: make check-adr-index
+
+  # Les dashboards Grafana sont provisionnés `editable: false` : la vérité vit
+  # dans git et personne ne les ouvre avant une mise en production. Une accolade
+  # mal échappée dans une requête PromQL, un lien croisé mort ou un uid en double
+  # ne se voient donc qu'à ce moment-là — et sans message d'erreur, juste un
+  # panneau vide. Rejouable en local via `make check-dashboards`.
+  dashboards:
+    name: Dashboards Grafana valides
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Valider les dashboards provisionnés
+        run: make check-dashboards
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -105,6 +315,7 @@ jobs:
   flutter-test:
     name: Flutter Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: flutter-analyze
     steps:
       - uses: actions/checkout@v4

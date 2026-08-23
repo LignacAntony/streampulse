@@ -8,6 +8,9 @@ import 'package:streampulse/features/streams/domain/repositories/stream_reposito
 import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 import 'package:streampulse/features/streams/presentation/screens/stream_player_screen.dart';
+import 'package:streampulse/core/audio/playback_transport.dart';
+import 'package:streampulse/core/audio/volume_store.dart';
+import '../../../../support/fake_audio_playback_service.dart';
 
 /// Contrôleur de lecture fake (sans just_audio) : pilotable par [status] pour
 /// tester le rendu des états (STR-118), méthodes no-op.
@@ -33,6 +36,11 @@ class _FakePlaybackController extends PlaybackController {
   NowPlaying? get nowPlaying => null;
   @override
   Future<void> load(NowPlaying now) async {}
+
+  // Le temps d'écoute appartient au contrôleur app-level (STR-244) : ce fake
+  // n'a rien à décompter, l'écran ne fait que l'afficher.
+  @override
+  Duration listeningElapsed(DateTime now) => Duration.zero;
   @override
   Future<void> togglePlayPause() async {}
   @override
@@ -97,8 +105,14 @@ Widget _harness({
   required FavoritesController controller,
   PlaybackStatus playbackStatus = PlaybackStatus.idle,
 }) {
-  return ChangeNotifierProvider<FavoritesController>.value(
-    value: controller,
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<FavoritesController>.value(value: controller),
+      // Le curseur de volume (STR-244) lit le transport, pas le contrôleur de
+      // lecture : un fake suffit, il n'a rien d'autre à simuler.
+      Provider<PlaybackTransport>.value(value: FakeAudioPlaybackService()),
+      Provider<VolumeStore>(create: (_) => InMemoryVolumeStore()),
+    ],
     child: ToastificationWrapper(
       child: MaterialApp(
         home: StreamPlayerScreen(

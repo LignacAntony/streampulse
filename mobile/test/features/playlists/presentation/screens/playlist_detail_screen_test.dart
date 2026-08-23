@@ -4,14 +4,43 @@ import 'package:provider/provider.dart';
 import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
+import 'package:streampulse/core/offline/entities/cached_track_status.dart';
+import 'package:streampulse/core/offline/offline_cache_repository.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
+import 'package:streampulse/features/playlists/presentation/providers/offline_playlist_controller.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlist_detail_screen.dart';
 
+import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
+import 'package:streampulse/core/widgets/accessible_icon_button.dart';
+import '../../../../support/accessibility.dart';
+
+class _FakeCacheRepository implements OfflineCacheRepository {
+  @override
+  Future<Set<String>> offlinePlaylistIds() async => {};
+  @override
+  Future<bool> isOffline(String playlistId) async => false;
+  @override
+  Future<void> enableOffline(String id, String name, List<PlaylistTrack> t) async {}
+  @override
+  Future<void> disableOffline(String id) async {}
+  @override
+  Future<List<PlaylistTrack>> cachedTracks(String id) async => [];
+  @override
+  Future<List<CachedTrackStatus>> downloadStatuses(String id) async => [];
+  @override
+  Future<void> updateTrackStatus(String t, String p, {required TrackCacheStatus status, String? filePath, int? fileSize}) async {}
+  @override
+  Future<String?> cachedFilePath(String t) async => null;
+  @override
+  Future<int> totalCacheSize() async => 0;
+  @override
+  Future<void> clearAll() async {}
+}
 
 PlaylistTrack _track(String id, String title, int position) => PlaylistTrack(
       id: id,
@@ -108,8 +137,16 @@ Widget _harness(
 }) {
   // L'écran lit la file d'attente app-level (US-05-04) pour lancer la lecture et
   // souligner la piste en cours : elle doit exister au-dessus de lui.
-  return ChangeNotifierProvider<PlaylistQueueController>.value(
-    value: queue ?? _queueController(FakeQueuePlaybackService()),
+  return MultiProvider(
+    providers: [
+      Provider<OfflineCacheRepository>.value(value: _FakeCacheRepository()),
+      ChangeNotifierProvider<PlaylistQueueController>.value(
+        value: queue ?? _queueController(FakeQueuePlaybackService()),
+      ),
+      ChangeNotifierProvider<OfflinePlaylistController>.value(
+        value: FakeOfflinePlaylistController(),
+      ),
+    ],
     child: ToastificationWrapper(
       child: MaterialApp(
         // `ReorderableListView` choisit ses poignées par défaut d'après
@@ -241,7 +278,7 @@ void main() {
       await tester.pumpWidget(_harness(_FakePlaylistRepository()));
       await tester.pumpAndSettle();
 
-      final button = tester.widget<IconButton>(
+      final button = tester.widget<AccessibleIconButton>(
         find.byKey(const Key('playlist_shuffle_play_button')),
       );
       expect(button.onPressed, isNull);
@@ -401,4 +438,64 @@ void main() {
       expect(find.byKey(const Key('track_picker_empty')), findsOneWidget);
     });
   });
+  group('PlaylistDetailScreen — accessibilité (STR-244)', () {
+    testWidgets('une ligne de piste est annoncée UNE fois, en une phrase',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0)],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      // La phrase composée est bien posée…
+      expect(
+        find.bySemanticsLabel(RegExp(r'Piste 1, .*')),
+        findsOneWidget,
+      );
+
+      // …et le titre n'apparaît pas EN PLUS dans un nœud séparé.
+      //
+      // C'est le défaut relevé en revue (#332) : le `Semantics` conteneur ne
+      // masquait pas ses enfants, et la ListTile étant tapable, ses title et
+      // subtitle formaient leur propre nœud. Un lecteur d'écran annonçait la
+      // phrase entière PUIS « Midnight Drive, … » — la lecture fragmentée que
+      // le changement prétendait supprimer, plus un doublon.
+      const titre = 'Midnight Drive';
+      // …et le titre ne forme pas un nœud à lui seul.
+      //
+      // Défaut relevé en revue (#332) : le `Semantics` conteneur ne masquait pas
+      // ses enfants, et la ListTile étant tapable, ses title/subtitle formaient
+      // leur propre nœud. Un lecteur d'écran annonçait la phrase composée PUIS
+      // « Midnight Drive, Neon Lights 3:34 » — la lecture fragmentée que le
+      // changement prétendait supprimer, plus un doublon.
+      //
+      // On vise le titre SEUL : « Retirer Midnight Drive de la playlist » est le
+      // bouton d'action, il a son propre libellé et doit rester distinct.
+      final labels = semanticLabelsMentioning(tester, titre);
+      expect(
+        labels.where((l) => l == titre || l.startsWith('\$titre,')),
+        isEmpty,
+        reason: 'le titre ne doit pas former de nœud séparé, il appartient à '
+            'la phrase composée. Nœuds trouvés : \$labels',
+      );
+      expect(labels.any((l) => l.startsWith('Piste 1, ')), isTrue);
+
+      handle.dispose();
+    });
+
+    testWidgets('la ligne expose une action tap, pas seulement un rôle',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Midnight Drive', 0)],
+      );
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      expect(buttonsWithoutTapAction(tester), isEmpty);
+      handle.dispose();
+    });
+  });
+
 }

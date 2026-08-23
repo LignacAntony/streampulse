@@ -311,6 +311,11 @@ func TestTranscoder_CloseIsIdempotent(t *testing.T) {
 		t.Fatalf("copie vers le transcodeur: %v", err)
 	}
 	first := tr.close()
+	// Comparaison d'identité volontaire, d'où le nolint : close() mémorise son
+	// résultat sous un sync.Once, et c'est exactement ce qu'on vérifie. errors.Is
+	// passerait aussi si le second appel fabriquait une erreur *enveloppant* la
+	// première — soit précisément le cas non idempotent que ce test doit exclure.
+	//nolint:errorlint // l'identité du résultat est l'objet du test
 	if second := tr.close(); second != first {
 		t.Fatalf("close non idempotent: %v puis %v", first, second)
 	}
@@ -378,7 +383,7 @@ func TestTranscodePipeline_MP3ToHLS(t *testing.T) {
 
 	mp3 := generateTestAudio(t, "mp3", "libmp3lame", 25)
 
-	seg, err := newHLSSegmenter()
+	seg, err := newHLSSegmenter("stream-test")
 	if err != nil {
 		t.Fatalf("newHLSSegmenter: %v", err)
 	}

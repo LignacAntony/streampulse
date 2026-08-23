@@ -8,11 +8,16 @@ WHERE user_id = sqlc.arg(user_id)::uuid
   AND used_at IS NULL;
 
 -- name: GetValidPasswordResetToken :one
+-- FOR UPDATE : la ligne est verrouillée jusqu'au COMMIT. Sans lui, deux
+-- transactions concurrentes lisent toutes deux used_at IS NULL en READ
+-- COMMITTED et consomment le même jeton — un usage unique qui ne l'est pas
+-- atomiquement.
 SELECT user_id::text
 FROM password_reset_tokens
 WHERE token_hash = $1
   AND expires_at > NOW()
-  AND used_at IS NULL;
+  AND used_at IS NULL
+FOR UPDATE;
 
 -- name: MarkPasswordResetTokenUsed :exec
 UPDATE password_reset_tokens

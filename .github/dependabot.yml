@@ -1,0 +1,100 @@
+# Veille de dépendances (STR-241, critère RNCP Ce3.3.4).
+#
+# Trivy dit qu'une dépendance est vulnérable ; Dependabot est ce qui la met à
+# jour. Sans lui, le scan se contente de constater la dette semaine après
+# semaine — c'est la boucle de correction, pas seulement la détection, qui
+# répond au critère.
+#
+# Cadence hebdomadaire (lundi matin, avant le cron du workflow Security à 06h00
+# UTC) : sur une équipe d'école, un rythme quotidien produit plus de PR que de
+# revues et finit ignoré. Les mises à jour sont GROUPÉES par écosystème pour la
+# même raison — une PR par dépendance noierait la file.
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # Backend Go — la surface la plus exposée : c'est ce code qui reçoit le trafic
+  # public (ingest, HLS, auth). go.mod/go.sum vivent dans /backend, pas à la
+  # racine : `directory` doit pointer là, sinon Dependabot ne trouve rien et
+  # échoue en silence.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      # Le titre des PR est validé par lint-pr-title.yml (Conventional Commits).
+      # Sans ce préfixe, chaque PR Dependabot arriverait avec un titre invalide
+      # et un check rouge à corriger à la main.
+      prefix: chore(deps)
+      prefix-development: chore(deps)
+    labels:
+      - dependencies
+      - go
+    groups:
+      # Mineures et correctives ensemble : compatibles par semver, elles se
+      # relisent en un seul passage. Les majeures restent en PR séparées —
+      # elles cassent par définition et méritent une revue dédiée.
+      go-mineures:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # Mobile Flutter — écosystème `pub`. Le client n'est pas exposé au réseau
+  # comme l'API, mais il embarque le stockage sécurisé des tokens
+  # (flutter_secure_storage) et la pile HTTP (dio) : une CVE y touche
+  # directement les identifiants des utilisateurs.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: pub
+    directory: /mobile
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps)
+    labels:
+      - dependencies
+      - flutter
+    groups:
+      pub-mineures:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — les actions tierces s'exécutent avec le checkout et le
+  # GITHUB_TOKEN du dépôt : une action compromise lit les secrets. Comme on les
+  # épingle désormais sur un tag fixe (security.yml), il faut quelque chose pour
+  # les faire avancer : c'est exactement ce que fait cet updater. `directory: /`
+  # couvre l'ensemble de .github/workflows.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(deps)
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      actions:
+        patterns:
+          - "*"

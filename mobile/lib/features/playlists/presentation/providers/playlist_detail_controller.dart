@@ -15,10 +15,15 @@ import '../../domain/repositories/playlist_repository.dart';
 /// l'exception est relayée à l'écran pour le toast — laisser l'écran afficher un
 /// ordre qui n'existe pas en base serait pire qu'un retour visuel brutal.
 class PlaylistDetailController extends ChangeNotifier {
-  PlaylistDetailController(this._repository, this.playlistId);
+  PlaylistDetailController(
+    this._repository,
+    this.playlistId, {
+    Future<List<PlaylistTrack>> Function(String)? offlineFallback,
+  }) : _offlineFallback = offlineFallback;
 
   final PlaylistRepository _repository;
   final String playlistId;
+  final Future<List<PlaylistTrack>> Function(String)? _offlineFallback;
 
   List<PlaylistTrack> _tracks = const [];
   bool _loading = false;
@@ -48,15 +53,35 @@ class PlaylistDetailController extends ChangeNotifier {
   String? get error => _error;
   bool get isNetworkError => _isNetworkError;
 
-  /// (Re)charge les pistes de la playlist.
+  bool _isOfflineFallback = false;
+
+  bool get isOfflineFallback => _isOfflineFallback;
+
+  /// (Re)charge les pistes de la playlist. En cas d'échec réseau, tente un
+  /// repli sur le cache hors ligne si la playlist a été téléchargée.
   Future<void> load() async {
     _loading = true;
     _clearError();
     _notify();
     try {
       _tracks = await _repository.tracks(playlistId);
+      _isOfflineFallback = false;
     } catch (e) {
-      _setError(e);
+      if (_offlineFallback != null) {
+        try {
+          final cached = await _offlineFallback(playlistId);
+          if (cached.isNotEmpty) {
+            _tracks = cached;
+            _isOfflineFallback = true;
+          } else {
+            _setError(e);
+          }
+        } catch (_) {
+          _setError(e);
+        }
+      } else {
+        _setError(e);
+      }
     } finally {
       _loading = false;
       _notify();

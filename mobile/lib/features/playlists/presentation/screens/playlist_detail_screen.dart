@@ -5,16 +5,21 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/offline/entities/cached_track_status.dart';
+import '../../../../core/offline/offline_cache_repository.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist_track.dart';
 import '../../domain/repositories/playlist_repository.dart';
+import '../providers/offline_playlist_controller.dart';
 import '../providers/playlist_detail_controller.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
+import '../widgets/playlist_form_sheet.dart';
 import '../widgets/queue_track_visuals.dart';
 import '../widgets/track_picker_sheet.dart';
+import '../../../../core/widgets/accessible_icon_button.dart';
 
 /// Écran de détail d'une playlist (US-05-03) : pistes ordonnées, ajout depuis la
 /// bibliothèque, retrait, et réorganisation par drag-and-drop.
@@ -52,6 +57,7 @@ class PlaylistDetailScreen extends StatelessWidget {
               ),
             ),
         playlistId,
+        offlineFallback: ctx.read<OfflineCacheRepository>().cachedTracks,
       )..load(),
       child: _PlaylistDetailBody(title: playlistName ?? 'Playlist'),
     );
@@ -164,13 +170,10 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
-          IconButton(
+          AccessibleIconButton(
             key: const Key('playlist_shuffle_play_button'),
-            icon: const Icon(Icons.shuffle),
-            tooltip: 'Lire en aléatoire',
-            // Point de départ tiré au sort : le lecteur mélange la suite mais
-            // garde la piste de départ en tête. Partir systématiquement de la
-            // première ferait une lecture aléatoire qui commence toujours pareil.
+            icon: Icons.shuffle,
+            label: 'Lire la playlist en aléatoire',
             onPressed: controller.tracks.isEmpty
                 ? null
                 : () => _onPlay(
@@ -178,10 +181,10 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
                       shuffle: true,
                     ),
           ),
-          IconButton(
+          AccessibleIconButton(
             key: const Key('playlist_add_track_button'),
-            icon: const Icon(Icons.playlist_add),
-            tooltip: 'Ajouter une piste',
+            icon: Icons.playlist_add,
+            label: 'Ajouter une piste à la playlist',
             onPressed: _onAdd,
           ),
         ],
@@ -233,31 +236,38 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       );
     }
 
-    return ReorderableListView.builder(
-      key: const Key('playlist_tracks_list'),
-      // Sans ce false, ReorderableListView ajoute ses propres déclencheurs :
-      // une seconde poignée à droite de chaque ligne sur desktop/web, et
-      // l'appui-long-n'importe-où sur mobile — soit exactement le conflit avec
-      // le défilement que la poignée explicite ci-dessous cherche à éviter.
-      buildDefaultDragHandles: false,
-      physics: const AlwaysScrollableScrollPhysics(),
-      // Assez de marge pour que la dernière ligne ne se cache pas sous le FAB.
-      padding: const EdgeInsets.only(bottom: 88),
-      itemCount: controller.tracks.length,
-      onReorder: _onReorder,
-      itemBuilder: (context, index) {
-        final track = controller.tracks[index];
-        return _TrackTile(
-          // La clé porte l'id de la piste : c'est elle qui permet à
-          // ReorderableListView de suivre la ligne pendant le drag.
-          key: Key('playlist_track_${track.id}'),
-          track: track,
-          index: index,
-          playlistId: controller.playlistId,
-          onRemove: _onRemove,
-          onPlay: () => _onPlay(startIndex: index),
-        );
-      },
+    return Column(
+      children: [
+        if (controller.isOfflineFallback)
+          _OfflineBanner()
+        else
+          _OfflineSection(
+            playlistId: controller.playlistId,
+            playlistName: widget.title,
+            tracks: controller.tracks,
+          ),
+        Expanded(
+          child: ReorderableListView.builder(
+            key: const Key('playlist_tracks_list'),
+            buildDefaultDragHandles: false,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: controller.tracks.length,
+            onReorder: _onReorder,
+            itemBuilder: (context, index) {
+              final track = controller.tracks[index];
+              return _TrackTile(
+                key: Key('playlist_track_${track.id}'),
+                track: track,
+                index: index,
+                playlistId: controller.playlistId,
+                onRemove: _onRemove,
+                onPlay: () => _onPlay(startIndex: index),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -291,6 +301,47 @@ Future<bool> _confirmRemoveDialog(BuildContext context, String title) async {
   return confirmed ?? false;
 }
 
+class _OfflineSection extends StatelessWidget {
+  const _OfflineSection({
+    required this.playlistId,
+    required this.playlistName,
+    required this.tracks,
+  });
+
+  final String playlistId;
+  final String playlistName;
+  final List<PlaylistTrack> tracks;
+
+  @override
+  Widget build(BuildContext context) {
+    final offlineController = context.watch<OfflinePlaylistController>();
+    final isOffline = offlineController.isOffline(playlistId);
+    final progress = offlineController.downloadProgress(playlistId);
+
+    final error = offlineController.consumeError();
+    if (error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) showAuthErrorToast(context, error);
+      });
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: OfflineToggleCard(
+        isOffline: isOffline,
+        progress: progress,
+        onChanged: tracks.isEmpty
+            ? null
+            : (_) => offlineController.toggleOffline(
+                  playlistId,
+                  playlistName,
+                  tracks,
+                ),
+      ),
+    );
+  }
+}
+
 class _TrackTile extends StatelessWidget {
   const _TrackTile({
     super.key,
@@ -309,8 +360,6 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Comparaison par id et non par index : l'ordre local peut différer de
-    // celui figé dans la file (réordonnancement après le lancement).
     final isCurrent = context.select<PlaylistQueueController, bool>(
       (queue) =>
           queue.hasQueue &&
@@ -318,31 +367,87 @@ class _TrackTile extends StatelessWidget {
           queue.currentTrack?.id == track.id,
     );
 
+    final cacheStatus = context.select<OfflinePlaylistController, TrackCacheStatus?>(
+      (c) {
+        final statuses = c.trackStatuses(playlistId);
+        for (final s in statuses) {
+          if (s.trackId == track.id) return s.status;
+        }
+        return null;
+      },
+    );
+
+    // Une ligne se lit visuellement d'un coup : numéro, titre, artiste, et un
+    // point coloré pour la piste en cours. Un lecteur d'écran parcourt les
+    // fragments un par un et ne voit pas le point. Le conteneur porte donc la
+    // phrase entière et masque ses enfants — sinon TalkBack annoncerait « 3 »,
+    // puis « Sunrise », puis « Neon Lights, 3:34 », sans jamais dire laquelle
+    // est en train de jouer.
+    return Semantics(
+      container: true,
+      label: [
+        'Piste ${index + 1}',
+        track.title,
+        if (track.artist != null && track.artist!.isNotEmpty) track.artist!,
+        if (isCurrent) 'en cours de lecture',
+      ].join(', '),
+      button: true,
+      selected: isCurrent,
+      // `onTap` sur le Semantics et non seulement sur la ListTile : sans lui, le
+      // nœud porte le rôle « bouton » sans exposer d'action, et l'activation
+      // retombe sur un tap synthétisé par la plateforme (revue PR #332).
+      onTap: onPlay,
+      child: _row(context, isCurrent, cacheStatus),
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    bool isCurrent,
+    TrackCacheStatus? cacheStatus,
+  ) {
     return ListTile(
       onTap: onPlay,
-      leading: queueTrackLeading(context, index: index, isCurrent: isCurrent),
-      title: Text(
-        track.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: queueTrackTitleStyle(context, isCurrent: isCurrent),
+      // TOUT le contenu descriptif est exclu, pas seulement l'entête.
+      //
+      // Le `Semantics` parent ne masquait rien : la ListTile étant tapable, ses
+      // `title`/`subtitle` formaient leur propre nœud À CÔTÉ du libellé composé.
+      // Un lecteur d'écran annonçait donc la phrase entière, puis « Sunrise,
+      // Neon Lights 3:34 » — exactement la lecture fragmentée que ce changement
+      // prétendait supprimer, plus un doublon (revue PR #332).
+      //
+      // Le bouton « Retirer » du `trailing` reste hors de l'exclusion : il a sa
+      // propre action et son propre libellé.
+      leading: ExcludeSemantics(
+        child: queueTrackLeading(context, index: index, isCurrent: isCurrent),
       ),
-      subtitle: Text(
-        trackSubtitle(artist: track.artist, durationS: track.durationS),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      title: ExcludeSemantics(
+        child: Text(
+          track.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: queueTrackTitleStyle(context, isCurrent: isCurrent),
+        ),
+      ),
+      subtitle: ExcludeSemantics(
+        child: Text(
+          trackSubtitle(artist: track.artist, durationS: track.durationS),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
+          if (cacheStatus != null) _cacheIcon(context, cacheStatus),
+          AccessibleIconButton(
             key: Key('playlist_track_remove_${track.id}'),
-            icon: const Icon(Icons.remove_circle_outline),
+            icon: Icons.remove_circle_outline,
+            // Nomme la piste : dans une liste, tous ces boutons se ressemblent.
+            label: 'Retirer ${track.title} de la playlist',
             tooltip: 'Retirer de la playlist',
             onPressed: () => onRemove(track),
           ),
-          // Poignée explicite : sur mobile, un appui long sur toute la ligne
-          // entrerait en conflit avec le défilement.
           ReorderableDragStartListener(
             index: index,
             child: const Padding(
@@ -355,6 +460,64 @@ class _TrackTile extends StatelessWidget {
     );
   }
 
+  Widget _cacheIcon(BuildContext context, TrackCacheStatus status) {
+    final colors = Theme.of(context).colorScheme;
+    return switch (status) {
+      TrackCacheStatus.done => Icon(
+          Icons.check_circle,
+          size: 16,
+          color: colors.primary,
+        ),
+      TrackCacheStatus.downloading => SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colors.primary,
+          ),
+        ),
+      TrackCacheStatus.error => Icon(
+          Icons.error_outline,
+          size: 16,
+          color: colors.error,
+        ),
+      TrackCacheStatus.pending => Icon(
+          Icons.schedule,
+          size: 16,
+          color: colors.onSurfaceVariant,
+        ),
+    };
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      decoration: BoxDecoration(
+        color: colors.tertiaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_done, size: 20, color: colors.onTertiaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Mode hors ligne',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onTertiaryContainer,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _MessageView extends StatelessWidget {

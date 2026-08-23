@@ -71,12 +71,45 @@ type UserTrackPurger interface {
 	PurgeUserTracks(ctx context.Context, userID string, deleteUser func() error) error
 }
 
+// UserCounts est la population de comptes, telle qu'exposée dans le résumé admin.
+type UserCounts struct {
+	Total        int64 `json:"total"`
+	Active       int64 `json:"active"`
+	Broadcasters int64 `json:"broadcasters"`
+	Admins       int64 `json:"admins"`
+}
+
+// HTTPTotals est le cumul des compteurs HTTP du process, tel que le domaine
+// admin en a besoin. Le type vit ici — et non dans internal/observability —
+// pour que le domaine ne dépende pas de Prometheus (même règle que
+// streaming.MetricsRecorder, ADR 022) ; main.go pose l'adaptateur.
+type HTTPTotals struct {
+	Requests      int64
+	ClientErrors  int64
+	ServerErrors  int64
+	ResponseBytes int64
+}
+
+// HTTPCounters lit les compteurs HTTP cumulés du process. Interface étroite
+// (ISP) satisfaite par un adaptateur autour d'observability.HTTPStats.
+type HTTPCounters interface {
+	HTTPTotals() (HTTPTotals, error)
+}
+
+// LiveAudience expose l'état du registre de directs (flux actifs et audience
+// estimée). Interface étroite (ISP) satisfaite par streaming.LiveSessions.
+type LiveAudience interface {
+	ActiveCount() int
+	TotalListeners() int
+}
+
 // Repository est le miroir des requêtes SQL du domaine admin (queries/admin.sql).
 type Repository interface {
 	ListUsers(ctx context.Context, in ListUsersInput) ([]AdminUser, int64, error)
 	GetUser(ctx context.Context, userID string) (AdminUser, error)
 	SetUserActive(ctx context.Context, userID string, active bool) (AdminUser, error)
 	CountActiveAdmins(ctx context.Context) (int64, error)
+	UserCounts(ctx context.Context) (UserCounts, error)
 	DeleteUser(ctx context.Context, userID string) error
 	ListLiveStreams(ctx context.Context, limit, offset int32) ([]AdminStream, int64, error)
 	InsertAuditLog(ctx context.Context, actorID, action, targetType, targetID string) error
@@ -89,10 +122,25 @@ type Service struct {
 	// purger est optionnel (injecté en setter) : nil dans les tests qui ne
 	// couvrent pas la suppression de fichiers.
 	purger UserTrackPurger
+	// audience et counters alimentent Overview ; optionnels pour la même raison
+	// que purger (les tests des autres méthodes ne les fournissent pas).
+	audience LiveAudience
+	counters HTTPCounters
+	// startedAt date le process, pas le service : Overview publie une durée de
+	// fonctionnement, et c'est celle du binaire qui répond.
+	startedAt time.Time
 }
 
 func NewService(repo Repository, stopper LiveStopper, moderator StreamModerator) *Service {
-	return &Service{repo: repo, stopper: stopper, moderator: moderator}
+	return &Service{repo: repo, stopper: stopper, moderator: moderator, startedAt: time.Now()}
+}
+
+// SetOverviewSources branche les sources du résumé admin (STR-244). Même motif
+// setter que SetTrackPurger : ces collaborateurs sont construits après le
+// service dans main.go.
+func (s *Service) SetOverviewSources(audience LiveAudience, counters HTTPCounters) {
+	s.audience = audience
+	s.counters = counters
 }
 
 // SetTrackPurger branche la suppression des fichiers audio d'un utilisateur lors
@@ -143,6 +191,80 @@ func (s *Service) DeleteUser(ctx context.Context, targetID, requesterID string) 
 		return s.purger.PurgeUserTracks(ctx, targetID, deleteUser)
 	}
 	return deleteUser()
+}
+
+// Overview est le résumé de supervision rendu par GET /api/admin/metrics.
+//
+// Les chiffres HTTP sont des **cumuls depuis le démarrage** du process, pas des
+// taux glissants : c'est ce que porte le registre Prometheus local, seule source
+// consultée (cf. observability.HTTPStats). Les champs le disent dans leur nom
+// pour que la différence avec les dashboards Grafana ne se perde pas.
+type Overview struct {
+	UptimeSeconds int64        `json:"uptime_seconds"`
+	Streams       StreamsStats `json:"streams"`
+	HTTP          HTTPStats    `json:"http"`
+	Users         UserCounts   `json:"users"`
+}
+
+// StreamsStats est le volet diffusion du résumé.
+type StreamsStats struct {
+	Live int `json:"live"`
+	// ListenersEstimated est une estimation, comme partout où StreamPulse compte
+	// des auditeurs : HLS n'a pas de connexion persistante (ADR 025).
+	ListenersEstimated int `json:"listeners_estimated"`
+}
+
+// HTTPStats est le volet trafic du résumé.
+type HTTPStats struct {
+	RequestsTotal      int64 `json:"requests_total"`
+	ClientErrorsTotal  int64 `json:"client_errors_total"`
+	ServerErrorsTotal  int64 `json:"server_errors_total"`
+	ResponseBytesTotal int64 `json:"response_bytes_total"`
+	// ServerErrorRate vaut ServerErrorsTotal / RequestsTotal depuis le boot.
+	// Zéro tant qu'aucune requête n'a été servie — et non NaN, qui ne survit
+	// pas à un encodage JSON.
+	ServerErrorRate float64 `json:"server_error_rate"`
+}
+
+// Overview assemble le résumé. Les sources absentes (service construit sans
+// SetOverviewSources) rendent des zéros plutôt qu'une erreur : le résumé est
+// une vue de supervision, pas une transaction — un volet manquant ne doit pas
+// priver l'admin des autres.
+func (s *Service) Overview(ctx context.Context) (Overview, error) {
+	counts, err := s.repo.UserCounts(ctx)
+	if err != nil {
+		return Overview{}, err
+	}
+
+	out := Overview{
+		UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
+		Users:         counts,
+	}
+	if s.audience != nil {
+		out.Streams = StreamsStats{
+			Live:               s.audience.ActiveCount(),
+			ListenersEstimated: s.audience.TotalListeners(),
+		}
+	}
+	if s.counters != nil {
+		totals, cerr := s.counters.HTTPTotals()
+		if cerr != nil {
+			// Le registre local est en mémoire : une erreur ici est anormale et
+			// mérite une trace, mais pas de faire échouer tout le résumé.
+			zerolog.Ctx(ctx).Warn().Err(cerr).Msg("admin: compteurs HTTP indisponibles pour le résumé")
+		} else {
+			out.HTTP = HTTPStats{
+				RequestsTotal:      totals.Requests,
+				ClientErrorsTotal:  totals.ClientErrors,
+				ServerErrorsTotal:  totals.ServerErrors,
+				ResponseBytesTotal: totals.ResponseBytes,
+			}
+			if totals.Requests > 0 {
+				out.HTTP.ServerErrorRate = float64(totals.ServerErrors) / float64(totals.Requests)
+			}
+		}
+	}
+	return out, nil
 }
 
 // ListLiveStreams retourne la liste de modération (tous les live) + total.

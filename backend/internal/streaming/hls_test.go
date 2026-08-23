@@ -3,6 +3,7 @@ package streaming
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // nopWriteCloser adapte un io.Writer en io.WriteCloser (Close no-op).
@@ -41,7 +45,7 @@ func mustWrite(t *testing.T, path, content string) {
 func sessionsWithFakeSeg(t *testing.T) *LiveSessions {
 	t.Helper()
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return fakeSegmenter(t), nil }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return fakeSegmenter(t), nil }
 	return ls
 }
 
@@ -109,7 +113,7 @@ func waitFor(cond func() bool, timeout time.Duration) bool {
 func TestSegmenterDeath_ReapsSession(t *testing.T) {
 	ls := NewLiveSessions(context.Background())
 	seg := fakeSegmenter(t)
-	ls.newSeg = func() (*hlsSegmenter, error) { return seg, nil }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return seg, nil }
 	ls.Start("s1", "KEY1")
 
 	if _, ok := ls.Playlist("s1"); !ok {
@@ -156,7 +160,7 @@ func TestAttachIngest_AfterStop(t *testing.T) {
 
 func TestAttachIngest_SegmenterUnavailable(t *testing.T) {
 	ls := NewLiveSessions(context.Background())
-	ls.newSeg = func() (*hlsSegmenter, error) { return nil, errors.New("ffmpeg absent") }
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("ffmpeg absent") }
 	ls.Start("s1", "KEY1")
 	defer ls.StopAll()
 
@@ -199,7 +203,7 @@ func TestHLSSegmenter_Integration(t *testing.T) {
 
 	aac := generateTestAAC(t, 25)
 
-	seg, err := newHLSSegmenter()
+	seg, err := newHLSSegmenter("stream-test")
 	if err != nil {
 		t.Fatalf("newHLSSegmenter: %v", err)
 	}
@@ -256,4 +260,89 @@ func generateTestAAC(t *testing.T, seconds int) []byte {
 		t.Fatal("AAC de test vide")
 	}
 	return buf.Bytes()
+}
+
+// --- stderr ffmpeg vers zerolog (STR-244, ADR 041) ---
+
+// captureLogs redirige le logger global vers un tampon le temps du test.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := log.Logger
+	log.Logger = zerolog.New(&buf)
+	t.Cleanup(func() { log.Logger = previous })
+	return &buf
+}
+
+func TestFFmpegLogWriter_EmitsOneJSONLinePerStderrLine(t *testing.T) {
+	buf := captureLogs(t)
+	w := &ffmpegLogWriter{streamID: "s1"}
+
+	// Deux lignes en une écriture, une troisième coupée en deux écritures :
+	// ffmpeg n'a aucune raison d'aligner ses écritures sur ses lignes.
+	if _, err := w.Write([]byte("premier avertissement\nsecond\ntroi")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if _, err := w.Write([]byte("sieme\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("%d lignes de log, want 3:\n%s", len(lines), buf.String())
+	}
+	for i, want := range []string{"premier avertissement", "second", "troisieme"} {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(lines[i]), &entry); err != nil {
+			t.Fatalf("ligne %d non JSON (c'est tout le problème que ce code corrige): %v", i, err)
+		}
+		if entry["message"] != want {
+			t.Errorf("message %d = %v, want %q", i, entry["message"], want)
+		}
+		if entry["stream_id"] != "s1" {
+			t.Errorf("stream_id %d = %v, want s1", i, entry["stream_id"])
+		}
+		if entry["component"] != "ffmpeg-hls" {
+			t.Errorf("component %d = %v, want ffmpeg-hls", i, entry["component"])
+		}
+	}
+}
+
+func TestFFmpegLogWriter_FlushEmitsTrailingPartialLine(t *testing.T) {
+	buf := captureLogs(t)
+	w := &ffmpegLogWriter{streamID: "s1"}
+
+	// ffmpeg tué avant d'avoir terminé sa ligne : sans flush, elle serait perdue.
+	if _, err := w.Write([]byte("erreur sans saut de ligne")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("une ligne incomplète ne doit pas être émise avant flush: %s", buf.String())
+	}
+
+	w.flush()
+	if !strings.Contains(buf.String(), "erreur sans saut de ligne") {
+		t.Errorf("flush n'a pas émis le reliquat: %s", buf.String())
+	}
+	w.flush() // idempotent : le tampon est vide
+	if strings.Count(buf.String(), "erreur sans saut de ligne") != 1 {
+		t.Errorf("flush a émis le reliquat deux fois: %s", buf.String())
+	}
+}
+
+// Sans borne, un ffmpeg qui n'émettrait jamais de saut de ligne ferait grandir
+// le tampon aussi longtemps que dure la diffusion.
+func TestFFmpegLogWriter_BoundsUnterminatedLine(t *testing.T) {
+	buf := captureLogs(t)
+	w := &ffmpegLogWriter{streamID: "s1"}
+
+	if _, err := w.Write([]byte(strings.Repeat("x", ffmpegLogLineMax+1))); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("dépassement de la borne : la ligne devait être émise sans attendre un saut de ligne")
+	}
+	if w.buf.Len() != 0 {
+		t.Errorf("tampon résiduel = %d octets, want 0", w.buf.Len())
+	}
 }

@@ -115,6 +115,60 @@ void main() {
       expect(controller.error, 'Pas de connexion réseau');
       expect(controller.isNetworkError, isTrue);
     });
+
+    test('erreur réseau avec fallback hors ligne : pistes du cache', () async {
+      final cached = [_track('c1', 0), _track('c2', 1)];
+      final repo = _FakePlaylistRepository()
+        ..tracksError = const NetworkException();
+      final controller = PlaylistDetailController(
+        repo,
+        'p1',
+        offlineFallback: (_) async => cached,
+      );
+
+      await controller.load();
+
+      expect(controller.error, isNull);
+      expect(controller.isOfflineFallback, isTrue);
+      expect(controller.tracks.map((t) => t.id), ['c1', 'c2']);
+    });
+
+    test('erreur réseau avec fallback vide : affiche l\'erreur', () async {
+      final repo = _FakePlaylistRepository()
+        ..tracksError = const NetworkException();
+      final controller = PlaylistDetailController(
+        repo,
+        'p1',
+        offlineFallback: (_) async => [],
+      );
+
+      await controller.load();
+
+      expect(controller.error, isNotNull);
+      expect(controller.isOfflineFallback, isFalse);
+    });
+
+    test('succès réseau remet isOfflineFallback à faux', () async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 0)],
+      );
+      final controller = PlaylistDetailController(
+        repo,
+        'p1',
+        offlineFallback: (_) async => [_track('c1', 0)],
+      );
+
+      // Première charge échoue → fallback
+      repo.tracksError = const NetworkException();
+      await controller.load();
+      expect(controller.isOfflineFallback, isTrue);
+
+      // Deuxième charge réussit → plus en fallback
+      repo.tracksError = null;
+      await controller.load();
+      expect(controller.isOfflineFallback, isFalse);
+      expect(controller.tracks.map((t) => t.id), ['t1']);
+    });
   });
 
   group('PlaylistDetailController.reorder', () {

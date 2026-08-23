@@ -35,6 +35,7 @@ type AdminService interface {
 	DeleteUser(ctx context.Context, targetID, requesterID string) error
 	ListLiveStreams(ctx context.Context, limit, offset int32) ([]AdminStream, int64, error)
 	StopStream(ctx context.Context, streamID, actorID string) error
+	Overview(ctx context.Context) (Overview, error)
 }
 
 // Handler expose le domaine admin en HTTP (US-08-01). Les routes sont montées
@@ -85,6 +86,25 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	if err := httpjson.Write(w, http.StatusOK, listUsersResponse{Users: users, Total: total}); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode list")
+	}
+}
+
+// Metrics gère GET /api/admin/metrics : résumé de supervision réservé au rôle
+// admin (STR-244).
+//
+// Cette route ne double pas /metrics, elle répond à une autre question. /metrics
+// sert l'exposition Prometheus — texte brut, non authentifié, bloqué par Caddy
+// en production et scrapé depuis le réseau interne (ADR 019). Ici, l'admin
+// **applicatif** obtient en JSON les quelques chiffres qui l'intéressent, avec
+// l'autorisation dérivée de son rôle et non d'un compte Grafana séparé.
+func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
+	overview, err := h.svc.Overview(r.Context())
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	if err := httpjson.Write(w, http.StatusOK, overview); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode metrics")
 	}
 }
 

@@ -221,3 +221,100 @@ func TestDecode(t *testing.T) {
 		})
 	}
 }
+
+func TestAnonymizeIP(t *testing.T) {
+	cas := []struct {
+		nom  string
+		in   string
+		want string
+	}{
+		{"IPv4 avec port", "203.0.113.7:1234", "203.0.113.0/24"},
+		{"IPv4 nue", "198.51.100.42", "198.51.100.0/24"},
+		{"IPv4 déjà en .0", "192.0.2.0", "192.0.2.0/24"},
+		{"IPv6 avec port et crochets", "[2001:db8:1234:5678::1]:443", "2001:db8:1234::/48"},
+		{"IPv6 nue", "2001:db8:abcd:ef01::9", "2001:db8:abcd::/48"},
+		{"IPv4 encodée en IPv6", "::ffff:203.0.113.7", "203.0.113.0/24"},
+		{"boucle locale", "127.0.0.1:8080", "127.0.0.0/24"},
+		{"vide", "", "unknown"},
+		{"non analysable", "pas-une-ip", "unknown"},
+		// Une valeur venue du réseau ne doit pas ressortir telle quelle dans un
+		// journal, même échappée : elle rendrait le champ imprévisible.
+		{"injection", "1.2.3.4 evil\nlog=inject", "unknown"},
+	}
+	for _, tc := range cas {
+		t.Run(tc.nom, func(t *testing.T) {
+			if got := AnonymizeIP(tc.in); got != tc.want {
+				t.Errorf("AnonymizeIP(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// Le dernier octet v4 et les 80 bits bas v6 doivent réellement disparaître :
+// deux adresses du même réseau se réduisent à la même valeur, deux réseaux
+// distincts restent distincts.
+func TestAnonymizeIP_ReduitAuReseau(t *testing.T) {
+	if a, b := AnonymizeIP("203.0.113.7"), AnonymizeIP("203.0.113.250"); a != b {
+		t.Errorf("même /24 doit donner la même valeur: %q vs %q", a, b)
+	}
+	if a, b := AnonymizeIP("203.0.113.7"), AnonymizeIP("203.0.114.7"); a == b {
+		t.Errorf("deux /24 distincts ne doivent pas se confondre: %q", a)
+	}
+}
+
+// Le mapping code applicatif → statut HTTP est le contrat de sortie de toute
+// l'API : une entrée oubliée renverrait un 500 là où le client attend un 404,
+// et le mobile afficherait « erreur serveur » sur une ressource absente.
+func TestStatusFromCode(t *testing.T) {
+	cas := []struct {
+		code apperror.Code
+		want int
+	}{
+		{apperror.CodeInvalidArgument, http.StatusBadRequest},
+		{apperror.CodeUnauthorized, http.StatusUnauthorized},
+		{apperror.CodeForbidden, http.StatusForbidden},
+		{apperror.CodeNotFound, http.StatusNotFound},
+		{apperror.CodeConflict, http.StatusConflict},
+		{apperror.CodeUnsupportedMedia, http.StatusUnsupportedMediaType},
+		{apperror.CodeInternal, http.StatusInternalServerError},
+		// Un code inconnu doit valoir 500, jamais 200 : une erreur non
+		// répertoriée reste une erreur.
+		{apperror.Code("inconnu"), http.StatusInternalServerError},
+	}
+	for _, tc := range cas {
+		t.Run(string(tc.code), func(t *testing.T) {
+			if got := statusFromCode(tc.code); got != tc.want {
+				t.Errorf("statusFromCode(%q) = %d, want %d", tc.code, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestError_MessageEtUnwrap(t *testing.T) {
+	sans := &Error{Status: 400, Code: "bad_request", Message: "corps illisible"}
+	if got, want := sans.Error(), "bad_request: corps illisible"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if sans.Unwrap() != nil {
+		t.Error("Unwrap() sans cause doit rendre nil")
+	}
+
+	cause := errors.New("EOF")
+	avec := &Error{Status: 400, Code: "bad_request", Message: "corps illisible", Err: cause}
+	if got, want := avec.Error(), "bad_request: corps illisible: EOF"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if !errors.Is(avec, cause) {
+		t.Error("la cause doit rester atteignable par errors.Is")
+	}
+
+	// Nil typé : Error() est appelé à travers une interface, où le nil passe
+	// inaperçu jusqu'à la panique.
+	var nul *Error
+	if got := nul.Error(); got != "" {
+		t.Errorf("Error() sur nil = %q, want vide", got)
+	}
+	if nul.Unwrap() != nil {
+		t.Error("Unwrap() sur nil doit rendre nil")
+	}
+}

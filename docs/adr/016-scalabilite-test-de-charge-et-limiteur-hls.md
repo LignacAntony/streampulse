@@ -76,23 +76,42 @@ borne** — un pic d'auditeurs au-delà de la capacité dégraderait tout le mon
   HLS (retry naturel au prochain poll) et trivialement testable. Réévaluable si le besoin
   apparaît.
 
-## Validation (run de référence, 2026-07-19)
+## Validation (dernier run, 2026-08-18)
 
-Sortie locale de `make loadtest` (Apple M3, 8 Go, Go 1.26.1, ffmpeg 8.1.2), limiteur monté
-à 256 dans le harnais :
+Sortie locale de `make loadtest` (Apple M3, 8 Go), limiteur monté à 256 dans le harnais :
 
-| Critère STR-87 | Seuil | Mesuré | Verdict |
-|---|---|---|---|
-| p95 playlist | < 300 ms | **23,52 ms** | ✅ |
-| p95 segment | < 300 ms | **41,02 ms** | ✅ |
-| Mémoire/connexion | < 2 Mo | **0,13 Mo** | ✅ |
-| Échecs HTTP | 0 | **0 / 1800 requêtes** | ✅ |
-| Goroutine leak | 0 | goroutines 13 → 10 après drain | ✅ |
+| Critère STR-87 | Seuil | 2026-07-19 | 2026-08-18 | Verdict |
+|---|---|---|---|---|
+| p95 playlist | < 300 ms | 23,52 ms | **22,56 ms** | ✅ |
+| p95 segment | < 300 ms | 41,02 ms | **28,52 ms** | ✅ |
+| Mémoire/connexion | < 2 Mo | 0,13 Mo | **0,14 Mo** | ✅ |
+| Échecs HTTP | 0 | 0 / 1800 | **0 / 1800** | ✅ |
+| Goroutine leak | 0 | 13 → 10 | **13 → 10** | ✅ |
 
 1500 requêtes playlist + 300 segments (~50 Mo servis), `-race` sans warning, aucun 503 émis
 (50 auditeurs < 256). Limites connues : in-process (latences hors RTT réseau/TLS), source sine
-à débit constant, matériel local ≠ VPS — refaire le run via le workflow « Load Test » pour des
-chiffres CI reproductibles.
+à débit constant, matériel local ≠ VPS.
+
+⚠️ **Le harnais est resté non compilable du 2026-07-25 au 2026-08-18** : l'élargissement de
+`StreamService` (ajout des favoris) a laissé `stubService` incomplet, et le build tag `loadtest`
+exclut ce fichier de `go build ./...` comme de `go test ./...`. Aucun signal pendant trois
+semaines et demie, la preuve ci-dessus n'étant plus reproductible. Deux garde-fous posés
+depuis (STR-241) : `go vet -tags loadtest,integration ./...` dans le job Test de la CI, qui
+échoue à la compilation, et un `schedule` hebdomadaire sur le workflow « Load Test », qui
+vérifie que le run passe encore. Une assertion `var _ streaming.StreamService = stubService{}`
+a également été ajoutée au harnais.
+
+Les chiffres ci-dessus mesurent **N auditeurs sur un flux**, et jamais le processeur. Le coût
+CPU de **N flux simultanés** — la question posée par le sujet — est mesuré depuis par
+l'[ADR 044](044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md) (STR-243), qui ajoute au
+harnais une comptabilité `getrusage` et un balayage sur le nombre de **flux** : 100 flux AAC
+≈ 0,6 cœur, 100 flux transcodés ≈ 2,4 cœurs, un auditeur ≈ 0,37 mcœur.
+
+⚠️ Les deux mesures ne se lancent pas de la même façon. `make loadtest` compile avec `-race`,
+ce qui est juste pour la latence et les fuites mais **fausse tout modèle de coût CPU** : le
+détecteur multiplie le temps CPU du code Go sans toucher à celui des process ffmpeg, donc
+déforme la répartition entre les deux. `make loadtest-cpu` mesure sans lui, et refuse de tourner
+autrement.
 
 ## Conséquences
 

@@ -62,6 +62,54 @@ func main() {
 	}
 }
 
+const (
+	// Limiteur des routes d'authentification. Dix tentatives immédiates couvrent
+	// largement un humain qui se trompe de mot de passe ; la reconstitution à
+	// une toutes les six secondes rend une attaque par force brute inopérante
+	// sans gêner un usage normal.
+	// Routes sensibles (connexion, inscription, mot de passe oublié / réinitialisé).
+	// Vingt tentatives immédiates puis une toutes les trois secondes : sans effet
+	// pour une attaque par force brute devant bcrypt, et assez large pour un
+	// groupe d'utilisateurs légitimes partageant une sortie Internet.
+	authRateLimitBurst  = 20
+	authRateLimitRefill = 3 * time.Second
+
+	// Renouvellement de jeton. Machine-driven — chaque client rafraîchit toutes
+	// les quinze minutes — et déjà protégé par un secret de 32 octets aléatoires
+	// qu'aucune force brute n'atteint. Le limiter sert de garde-fou de
+	// disponibilité, pas d'authentification : budget large et séparé, pour qu'il
+	// n'assèche pas celui des routes sensibles.
+	refreshRateLimitBurst  = 120
+	refreshRateLimitRefill = time.Second
+
+	rateLimitEviction = 10 * time.Minute
+
+	// Balayage des auditeurs expirés (STR-244). Calé sur la fenêtre d'audience
+	// elle-même : plus rapproché, on balaierait des maps que rien n'a fait
+	// vieillir ; plus lâche, une diffusion abandonnée garderait ses derniers
+	// auditeurs affichés plus longtemps que la fenêtre ne le promet.
+	listenerSweepInterval = 30 * time.Second
+)
+
+// httpCountersAdapter branche observability.HTTPStats (qui connaît Prometheus)
+// sur admin.HTTPCounters (que le domaine déclare sans le connaître). Sans cet
+// adaptateur, l'un des deux devrait importer l'autre : soit du Prometheus dans
+// un domaine métier, soit un domaine métier dans l'infrastructure.
+type httpCountersAdapter struct{ stats *observability.HTTPStats }
+
+func (a httpCountersAdapter) HTTPTotals() (admin.HTTPTotals, error) {
+	totals, err := a.stats.Totals()
+	if err != nil {
+		return admin.HTTPTotals{}, err
+	}
+	return admin.HTTPTotals{
+		Requests:      totals.Requests,
+		ClientErrors:  totals.ClientErrors,
+		ServerErrors:  totals.ServerErrors,
+		ResponseBytes: totals.ResponseBytes,
+	}, nil
+}
+
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -92,11 +140,11 @@ func run() error {
 	}()
 
 	// 1. Appliquer les migrations
-	migrator.Run()
+	migrator.Run(cfg.MigrationURL())
 
 	// 2. Seed uniquement en développement (connexion simple, one-shot)
 	if cfg.IsDev() {
-		conn := database.Connect(ctx)
+		conn := database.Connect(ctx, cfg.DatabaseURL())
 		if err := seeder.Run(ctx, conn); err != nil {
 			if cerr := conn.Close(ctx); cerr != nil {
 				log.Warn().Err(cerr).Msg("fermeture connexion db")
@@ -150,6 +198,10 @@ func run() error {
 	streamingHandler.SetMetrics(streamingMetrics)
 	streamingHandler.SetTrustProxyHeaders(cfg.TrustProxyHeaders)
 	observability.RegisterLiveStreamsGauge(prometheus.DefaultRegisterer, streamingSessions.ActiveCount)
+	// Purge périodique des auditeurs expirés (STR-244) : sans elle, la purge
+	// n'aurait lieu qu'à la lecture de /stats — le compteur de départs
+	// n'avancerait que pendant qu'un diffuseur regarde son tableau de bord.
+	streamingSessions.StartListenerSweep(ctx.Done(), listenerSweepInterval)
 
 	// Réconciliation : les sessions LiveSessions sont en mémoire et reparties
 	// vides ; on termine les flux restés 'live' en base (orphelins d'un précédent
@@ -196,6 +248,14 @@ func run() error {
 	// lui-même de streamingSvc via NewService juste au-dessus.
 	streamingSvc.SetAuditRecorder(adminRepo)
 
+	// Résumé de supervision admin (STR-244, ADR 041) : audience lue dans le
+	// registre de sessions, compteurs HTTP lus dans le registre Prometheus local
+	// — aucune dépendance réseau ajoutée à une route applicative.
+	adminSvc.SetOverviewSources(
+		streamingSessions,
+		httpCountersAdapter{stats: observability.NewHTTPStats(prometheus.DefaultGatherer)},
+	)
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -210,12 +270,28 @@ func run() error {
 	// les collectors Go (go_goroutines, go_memstats_*) + ceux du middleware.
 	mux.Handle("/metrics", promhttp.Handler())
 
-	mux.HandleFunc("/api/auth/register", authHandler.Register)
-	mux.HandleFunc("/api/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/auth/refresh", authHandler.Refresh)
+	// Limiteur de débit sur les routes d'authentification non authentifiées :
+	// sans lui, rien ne bornait la force brute sur les mots de passe, les
+	// inscriptions en masse, ni le bombardement d'emails via forgot-password
+	// vers une adresse tierce. Les routes déjà protégées par un JWT (logout,
+	// suppression de compte) n'en ont pas besoin — il faut déjà un jeton valide.
+	authLimiter := httpmw.NewRateLimit(
+		authRateLimitBurst, authRateLimitRefill, cfg.TrustProxyHeaders,
+	)
+	authLimiter.StartEviction(ctx.Done(), rateLimitEviction)
+	authLimit := authLimiter.Middleware
+
+	refreshLimiter := httpmw.NewRateLimit(
+		refreshRateLimitBurst, refreshRateLimitRefill, cfg.TrustProxyHeaders,
+	)
+	refreshLimiter.StartEviction(ctx.Done(), rateLimitEviction)
+
+	mux.Handle("POST /api/auth/register", authLimit(http.HandlerFunc(authHandler.Register)))
+	mux.Handle("POST /api/auth/login", authLimit(http.HandlerFunc(authHandler.Login)))
+	mux.Handle("POST /api/auth/refresh", refreshLimiter.Middleware(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
-	mux.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword)
-	mux.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword)
+	mux.Handle("POST /api/auth/forgot-password", authLimit(http.HandlerFunc(authHandler.ForgotPassword)))
+	mux.Handle("POST /api/auth/reset-password", authLimit(http.HandlerFunc(authHandler.ResetPassword)))
 	mux.Handle("/api/auth/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.DeleteAccount)))
 
 	mux.Handle("/api/users/me", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(profilesHandler.Me)))
@@ -242,6 +318,13 @@ func run() error {
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListStreams))))
 	mux.Handle("POST /api/admin/streams/{id}/stop", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.StopStream))))
+
+	// Métriques globales pour le rôle admin (STR-244). Distinct de /metrics :
+	// celui-ci est l'exposition Prometheus (texte brut, non authentifiée, bloquée
+	// par Caddy en production) ; celui-là rend en JSON les chiffres clés à
+	// l'administrateur *applicatif*, autorisé par son rôle.
+	mux.Handle("GET /api/admin/metrics", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Metrics))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).
@@ -354,15 +437,15 @@ func run() error {
 	// ni loggés, ni comptés.
 	handler := httpmw.CORS(cfg.CORSAllowedOrigins, cfg.IsDev(),
 		httpmw.Tracing(mux,
-			httpmw.AccessLog(logger,
+			httpmw.AccessLog(logger, cfg.TrustProxyHeaders,
 				httpmw.Metrics(prometheus.DefaultRegisterer, mux))))
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr(),
 		Handler:      handler,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  cfg.HTTPReadTimeout(),
+		WriteTimeout: cfg.HTTPWriteTimeout(),
+		IdleTimeout:  cfg.HTTPIdleTimeout(),
 	}
 
 	serveErr := make(chan error, 1)

@@ -1,5 +1,8 @@
 # Infrastructure Docker — StreamPulse
 
+> 🇬🇧 **English version: [en/operations.md](en/operations.md)** — condensed;
+> the troubleshooting runbook below stays French-only.
+
 Ce document décrit l'infrastructure de développement local du projet StreamPulse,
 basée sur Docker Compose. Il couvre les services, les variables d'environnement,
 les procédures opérationnelles et le troubleshooting.
@@ -11,7 +14,7 @@ les procédures opérationnelles et le troubleshooting.
 | Service | Image | Rôle | Port interne | Port hôte | Healthcheck |
 |---|---|---|---|---|---|
 | `postgres` | `postgres:16-alpine` | Base de données relationnelle | 5432 | — | `pg_isready` |
-| `api` | build local (Go 1.22) | API REST Go (stub de démarrage) | 8080 | **8080** | `GET /health` |
+| `api` | build local (Go 1.25) | API REST Go : auth, streaming HLS, playlists, pistes, admin | 8080 | **8080** | `GET /health` |
 | `prometheus` | `prom/prometheus:latest` | Collecte de métriques | 9090 | **9090** | `GET /-/healthy` |
 | `loki` | `grafana/loki:latest` | Agrégation de logs | 3100 | — | — (image distroless) |
 | `tempo` | `grafana/tempo:latest` | Traces distribuées (OTLP) | 3200, 4317, 4318 | — | — (image distroless) |
@@ -42,6 +45,7 @@ Aucune valeur secrète ne doit être committée dans le dépôt.
 | `POSTGRES_PASSWORD` | postgres | Mot de passe PostgreSQL (init du volume) | `changeme` | **Oui — à changer** |
 | `POSTGRES_DB` | postgres | Nom de la base de données (init du volume) | `streampulse_db` | Oui |
 | `GRAFANA_ADMIN_PASSWORD` | grafana | Mot de passe admin Grafana | `changeme` | **Oui — à changer** |
+| `ALERT_EMAIL_TO` | grafana | Destinataire des alertes Grafana. Défaut `.invalid` non délivrable en dev ; **obligatoire en prod** (cf. [ADR 041](./adr/041-metriques-metier-debit-departs-et-resume-admin.md)) | `alertes@streampulse.invalid` | **Oui (prod)** |
 | `API_PORT` | api / hôte | Port exposé de l'API Go sur l'hôte | `8080` | Non |
 
 ### Variables consommées par l'API Go
@@ -54,14 +58,44 @@ caractères → l'API refuse de démarrer.
 |---|---|---|---|
 | `GO_ENV` | Environnement (`development` / `production` / `test`) | `development` | Non |
 | `API_PORT` | Port d'écoute HTTP de l'API | `8080` | Non |
-| `JWT_SECRET` | Clé de signature des JWT — **min. 32 caractères** | — | **Oui** |
+| `JWT_SECRET` | Clé de signature des JWT, **min. 32 caractères** | aucun | **Oui** |
 | `DB_HOST` | Hôte PostgreSQL (`postgres` en compose, `localhost` en dev natif) | `localhost` | Non |
 | `DB_PORT` | Port PostgreSQL | `5432` | Non |
-| `DB_USER` | Utilisateur PostgreSQL | — | **Oui** |
-| `DB_PASSWORD` | Mot de passe PostgreSQL | — | **Oui** |
-| `DB_NAME` | Nom de la base PostgreSQL | — | **Oui** |
+| `DB_USER` | Utilisateur PostgreSQL | aucun | **Oui** |
+| `DB_PASSWORD` | Mot de passe PostgreSQL | aucun | **Oui** |
+| `DB_NAME` | Nom de la base PostgreSQL | aucun | **Oui** |
+| `DB_SSLMODE` | Mode TLS de la connexion PostgreSQL (`disable` en interne Docker, `require` / `verify-full` sur une base managée) | `disable` | Non |
+| `HTTP_READ_TIMEOUT_SECONDS` | Timeout de lecture du serveur HTTP (les chemins longs, ingest et SSE, gèrent leurs propres échéances) | `5` | Non |
+| `HTTP_WRITE_TIMEOUT_SECONDS` | Timeout d'écriture du serveur HTTP | `10` | Non |
+| `HTTP_IDLE_TIMEOUT_SECONDS` | Timeout d'inactivité des connexions keep-alive | `120` | Non |
 | `INGEST_RECONNECT_GRACE_SECONDS` | Délai sans audio avant l'arrêt automatique d'un live (doit dépasser 30 s, le backoff mobile max — refusé au démarrage sinon) | `45` | Non |
 | `INGEST_STOP_TIMEOUT_SECONDS` | Timeout d'une tentative d'arrêt automatique en base | `10` | Non |
+| `CORS_ALLOWED_ORIGINS` | Origines CORS autorisées, séparées par des virgules. En développement, `localhost` / `127.0.0.1` sont autorisés d'office quel que soit le port ; cette variable sert surtout en production | aucun | Non |
+| `STREAM_INGEST_BASE_URL` | Préfixe de l'URL d'ingest renvoyée au diffuseur : `{base}/api/streams/ingest/{stream_key}` (cf. [ADR 013](./adr/013-domaine-streaming.md)) | `http://localhost:8080` | Non |
+| `STORAGE_PATH` | Répertoire racine des fichiers audio uploadés, hors répertoire servi. Monté sur le volume `track_storage` en compose (cf. [ADR 032](./adr/032-domaine-track-upload-audio.md)) | `./data/tracks` | Non |
+| `HLS_MAX_CONCURRENT` | Nombre max de requêtes HLS (playlist + segments) servies simultanément aux auditeurs. `0` = illimité (cf. [ADR 016](./adr/016-scalabilite-test-de-charge-et-limiteur-hls.md)) | `256` | Non |
+| `TRUST_PROXY_HEADERS` | Autorise la lecture de `X-Forwarded-For` pour identifier les auditeurs. **`true` uniquement derrière un reverse proxy** qui réécrit l'en-tête ; sinon il est falsifiable, et sans proxy tous les auditeurs partagent l'adresse du proxy (compteur saturé à 1). Cf. [ADR 025](./adr/025-statistiques-daudience-en-temps-reel.md) | `false` | Non |
+| `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local. **Ne jamais activer en conteneur** : la collecte Loki attend du JSON | `false` | Non |
+
+#### Variables SMTP (emails transactionnels)
+
+Utilisées pour la réinitialisation de mot de passe. **`SMTP_HOST` vide = mode log stdout** :
+aucun email n'est envoyé, les tokens apparaissent dans les logs de l'API. En local, le service
+`mailpit` sert de relay de test (interface web sur `http://localhost:8025`).
+
+| Variable | Description | Valeur par défaut | Obligatoire |
+|---|---|---|---|
+| `SMTP_HOST` | Serveur SMTP. Vide = mode log stdout | aucun | Non |
+| `SMTP_PORT` | Port SMTP (STARTTLS). `1025` avec mailpit, `587` sur un relay externe | aucun (`587` dans `.env.example`) | Non |
+| `SMTP_USERNAME` | Utilisateur du relay SMTP (vide avec mailpit) | aucun | Non |
+| `SMTP_PASSWORD` | Mot de passe du relay SMTP (vide avec mailpit) | aucun | Non |
+| `SMTP_FROM` | Adresse expéditeur des emails | aucun (`noreply@streampulse.com` dans `.env.example`) | Non |
+| `APP_BASE_URL` | Schéma d'URL des liens contenus dans les emails, deep link vers l'app Flutter | aucun (`streampulse://app` dans `.env.example`) | Non |
+
+> ⚠️ Ces variables n'ont **pas de valeur par défaut dans le code** : elles sont déclarées sans
+> `def:` dans `envKeys` ([`backend/internal/config/config.go`](../backend/internal/config/config.go)).
+> Les valeurs indiquées entre parenthèses proviennent du `.env.example` et ne s'appliquent donc
+> que si ce fichier a été copié.
 
 > **Note :** en compose, le service `api` reçoit `DB_HOST=postgres` (nom du service Docker),
 > tandis qu'en dev natif (hors compose) `DB_HOST=localhost`. Les deux cas sont couverts par
@@ -311,9 +345,15 @@ le déploiement et les scans de sécurité.
 
 | Workflow | Fichier | Déclenchement | Rôle |
 |---|---|---|---|
-| **CI** | `.github/workflows/ci.yml` | `push` / `pull_request` sur `develop` et `main` | Lint Go (golangci-lint), tests avec couverture, vérification de compilation |
-| **CD** | `.github/workflows/cd.yml` | `push` sur `main` uniquement + `workflow_dispatch` | Build image Docker multi-stage, push sur GHCR, déploiement SSH sur le VPS |
+| **CI** | `.github/workflows/ci.yml` | `push` / `pull_request` sur `develop` et `main` | Lint Go (golangci-lint), tests avec couverture, vérification de compilation, analyse Flutter |
+| **CD** | `.github/workflows/cd.yml` | **Fin de la CI sur `main`** (`workflow_run`, uniquement si verte) + `workflow_dispatch` | Build image Docker multi-stage, push sur GHCR, déploiement SSH sur le VPS |
 | **Security** | `.github/workflows/security.yml` | `push` sur `develop` et `main` + cron lundi 06h00 UTC | Scan de vulnérabilités Trivy (SARIF → Code Scanning), analyse statique gosec |
+| **Check hardcoded** | `.github/workflows/check-hardcoded.yml` | `push` / `pull_request` sur `develop` et `main` | Bloque tout secret ou valeur codée en dur (gitleaks + grep) |
+| **Lint PR title** | `.github/workflows/lint-pr-title.yml` | Ouverture / édition d'une PR | Valide le titre contre les Conventional Commits |
+| **Load Test** | `.github/workflows/loadtest.yml` | Cron lundi 05h00 UTC + `workflow_dispatch` | Test de charge HLS 50 auditeurs (STR-90), rapport en artefact |
+
+> **Le CD n'est plus déclenché par le `push`** mais par la conclusion de la CI (STR-241) :
+> les deux workflows démarraient sinon en parallèle, et des tests rouges déployaient quand même.
 
 ### Secrets GitHub à configurer
 

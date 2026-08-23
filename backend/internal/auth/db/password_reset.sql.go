@@ -29,8 +29,13 @@ FROM password_reset_tokens
 WHERE token_hash = $1
   AND expires_at > NOW()
   AND used_at IS NULL
+FOR UPDATE
 `
 
+// FOR UPDATE : la ligne est verrouillée jusqu'au COMMIT. Sans lui, deux
+// transactions concurrentes lisent toutes deux used_at IS NULL en READ
+// COMMITTED et consomment le même jeton — un usage unique qui ne l'est pas
+// atomiquement.
 func (q *Queries) GetValidPasswordResetToken(ctx context.Context, tokenHash string) (string, error) {
 	row := q.db.QueryRow(ctx, getValidPasswordResetToken, tokenHash)
 	var user_id string

@@ -171,7 +171,7 @@ func TestRequireAuth_RecordsUserIDInAccessLog(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users/me", nil)
 	req.Header.Set("Authorization", "Bearer "+makeToken(t, "user-7", "user", time.Minute))
-	httpmw.AccessLog(logger, RequireAuth(testSecret, okHandler)).
+	httpmw.AccessLog(logger, false, RequireAuth(testSecret, okHandler)).
 		ServeHTTP(httptest.NewRecorder(), req)
 
 	if !strings.Contains(buf.String(), `"user_id":"user-7"`) {
@@ -185,7 +185,7 @@ func TestOptionalAuth_RecordsUserIDInAccessLog(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/streams/1/playlist.m3u8", nil)
 	req.Header.Set("Authorization", "Bearer "+makeToken(t, "owner-9", "broadcaster", time.Minute))
-	httpmw.AccessLog(logger, OptionalAuth(testSecret, okHandler)).
+	httpmw.AccessLog(logger, false, OptionalAuth(testSecret, okHandler)).
 		ServeHTTP(httptest.NewRecorder(), req)
 
 	// Chemin HLS → debug ; logger de test sans niveau minimum, la ligne sort.

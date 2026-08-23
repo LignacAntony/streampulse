@@ -51,8 +51,8 @@ services:
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
       JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: ${DATABASE_URL}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -120,6 +120,11 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      # Fixée explicitement plutôt qu'héritée du défaut de l'image.
+      # 90 jours : les séries sont agrégées et ne portent aucun
+      # identifiant d'utilisateur (ADR 019, cardinalité bornée), la
+      # durée relève donc du volume disque, pas du RGPD.
+      - "--storage.tsdb.retention.time=90d"
       - "--web.console.libraries=/usr/share/prometheus/console_libraries"
       - "--web.console.templates=/usr/share/prometheus/consoles"
     healthcheck:
@@ -214,6 +219,12 @@ services:
       GF_SMTP_HOST: mailpit:1025
       GF_SMTP_FROM_ADDRESS: alertes@streampulse.dev
       GF_SMTP_SKIP_VERIFY: "true"
+      # Destinataire des alertes (STR-244). Lu par contactpoints.yml via
+      # l'interpolation d'environnement du provisioning Grafana. La valeur par
+      # défaut vise .invalid — TLD réservé par la RFC 2606, jamais délivrable :
+      # une alerte mal configurée ne peut donc pas atterrir chez un tiers, et
+      # elle reste visible dans Mailpit en développement.
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-alertes@streampulse.invalid}
     depends_on:
       prometheus:
         condition: service_healthy
