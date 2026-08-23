@@ -29,16 +29,12 @@ type ChatService interface {
 	IsBanned(ctx context.Context, userID, streamID string) (bool, error)
 	ListBans(ctx context.Context, broadcasterID string) ([]BannedUser, error)
 	RecentMessages(ctx context.Context, streamID string) ([]Message, error)
+	GetUsername(ctx context.Context, userID string) (string, error)
 }
 
 // ChatLiveness vérifie si un flux est en direct.
 type ChatLiveness interface {
 	IsLive(streamID string) bool
-}
-
-// UsernameResolver résout le username d'un utilisateur.
-type UsernameResolver interface {
-	GetUsername(ctx context.Context, userID string) (string, error)
 }
 
 // BroadcasterResolver identifie le diffuseur d'un flux.
@@ -51,13 +47,12 @@ type Handler struct {
 	svc          ChatService
 	hub          *ChatHub
 	liveness     ChatLiveness
-	users        UsernameResolver
 	broadcasters BroadcasterResolver
 }
 
 // NewHandler construit le handler chat.
-func NewHandler(svc ChatService, hub *ChatHub, liveness ChatLiveness, users UsernameResolver, broadcasters BroadcasterResolver) *Handler {
-	return &Handler{svc: svc, hub: hub, liveness: liveness, users: users, broadcasters: broadcasters}
+func NewHandler(svc ChatService, hub *ChatHub, liveness ChatLiveness, broadcasters BroadcasterResolver) *Handler {
+	return &Handler{svc: svc, hub: hub, liveness: liveness, broadcasters: broadcasters}
 }
 
 // --- Protocole JSON ---
@@ -116,7 +111,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username, err := h.users.GetUsername(r.Context(), userID)
+	username, err := h.svc.GetUsername(r.Context(), userID)
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
@@ -156,7 +151,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	go h.writePump(ctx, conn, c)
+	go h.writePump(ctx, cancel, conn, c)
 	h.readPump(ctx, conn, c, rm, streamID, isBroadcaster)
 }
 
@@ -235,9 +230,10 @@ func (h *Handler) readPump(ctx context.Context, conn *websocket.Conn, c *client,
 	}
 }
 
-func (h *Handler) writePump(ctx context.Context, conn *websocket.Conn, c *client) {
+func (h *Handler) writePump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, c *client) {
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
+	defer cancel()
 
 	for {
 		select {
@@ -250,16 +246,16 @@ func (h *Handler) writePump(ctx context.Context, conn *websocket.Conn, c *client
 			if !ok {
 				return
 			}
-			writeCtx, cancel := context.WithTimeout(ctx, writeTimeout)
+			writeCtx, wc := context.WithTimeout(ctx, writeTimeout)
 			err := conn.Write(writeCtx, websocket.MessageText, msg)
-			cancel()
+			wc()
 			if err != nil {
 				return
 			}
 		case <-ticker.C:
-			pingCtx, cancel := context.WithTimeout(ctx, writeTimeout)
+			pingCtx, pc := context.WithTimeout(ctx, writeTimeout)
 			err := conn.Ping(pingCtx)
-			cancel()
+			pc()
 			if err != nil {
 				return
 			}

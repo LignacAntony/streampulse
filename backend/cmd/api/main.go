@@ -270,7 +270,7 @@ func run() error {
 	chatRepo := chat.NewRepository(pool)
 	chatHub := chat.NewChatHub()
 	chatSvc := chat.NewService(chatRepo, streamingSvc)
-	chatHandler := chat.NewHandler(chatSvc, chatHub, streamingSessions, chatRepo, streamingSvc)
+	chatHandler := chat.NewHandler(chatSvc, chatHub, streamingSessions, streamingSvc)
 
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()

@@ -185,6 +185,20 @@ func TestBanUser_OK(t *testing.T) {
 	}
 }
 
+func TestBanUser_SelfBan(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})
+
+	err := svc.BanUser(context.Background(), "s1", "broadcaster-1", "broadcaster-1", nil)
+	if err == nil {
+		t.Fatal("expected error when banning yourself")
+	}
+	var appErr *apperror.Error
+	if !isAppError(err, &appErr) || appErr.Code != apperror.CodeInvalidArgument {
+		t.Errorf("expected InvalidArgument, got %v", err)
+	}
+}
+
 func TestBanUser_NotBroadcaster(t *testing.T) {
 	repo := newStubRepo()
 	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})

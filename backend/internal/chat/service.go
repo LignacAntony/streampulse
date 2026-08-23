@@ -26,15 +26,6 @@ type Message struct {
 	DeletedAt *time.Time
 }
 
-// Ban est le type domaine d'un bannissement de chat.
-type Ban struct {
-	ID           string
-	BannedUserID string
-	BannedBy     string
-	Reason       *string
-	CreatedAt    time.Time
-}
-
 // BannedUser est le type domaine d'un utilisateur banni (vue liste).
 type BannedUser struct {
 	UserID    string
@@ -98,6 +89,9 @@ func (s *Service) DeleteMessage(ctx context.Context, messageID, requesterID stri
 
 // BanUser bannit un utilisateur des chats du diffuseur (idempotent).
 func (s *Service) BanUser(ctx context.Context, streamID, targetUserID, requesterID string, reason *string) error {
+	if targetUserID == requesterID {
+		return apperror.InvalidArgument("cannot ban yourself")
+	}
 	broadcasterID, err := s.streams.BroadcasterID(ctx, streamID)
 	if err != nil {
 		return err
@@ -126,6 +120,11 @@ func (s *Service) IsBanned(ctx context.Context, userID, streamID string) (bool, 
 		return false, err
 	}
 	return s.repo.IsBanned(ctx, userID, broadcasterID)
+}
+
+// GetUsername résout le username d'un utilisateur.
+func (s *Service) GetUsername(ctx context.Context, userID string) (string, error) {
+	return s.repo.GetUsername(ctx, userID)
 }
 
 // RecentMessages retourne les derniers messages d'un flux (du plus ancien au

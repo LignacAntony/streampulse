@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:web_socket_channel/io.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/storage/secure_storage.dart';
@@ -18,38 +17,40 @@ class ChatWebSocketSourceImpl implements ChatWebSocketSource {
   ChatWebSocketSourceImpl(this._storage);
 
   final SecureStorage _storage;
-  WebSocketChannel? _channel;
+  IOWebSocketChannel? _channel;
 
   @override
   Stream<Map<String, dynamic>> connect(String streamId) async* {
     final token = await _storage.getAccessToken();
     final url = ApiConstants.chatWebSocket(streamId);
+    final uri = Uri.parse(url);
 
-    // Pre-check : requête HTTP pour détecter 403 (banni) ou 409 (pas live)
-    // avant de tenter l'upgrade WebSocket (qui ne remonte pas le code HTTP).
-    final preCheckError = await _preCheck(streamId, token);
-    if (preCheckError != null) {
-      yield {'type': 'error', 'message': preCheckError};
-      return;
-    }
-
-    _channel = IOWebSocketChannel.connect(
-      Uri.parse(url),
-      headers: {
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
-    );
-
+    // Connexion WebSocket via dart:io pour capturer le code HTTP en cas
+    // de rejet (403 = banni, 409 = pas live) avant l'upgrade.
+    WebSocket ws;
     try {
-      await _channel!.ready;
-    } on WebSocketChannelException catch (_) {
-      _channel = null;
+      ws = await WebSocket.connect(
+        url,
+        headers: {
+          if (token != null) 'Authorization': 'Bearer $token',
+          'Host': uri.host,
+        },
+      );
+    } on WebSocketException catch (_) {
+      // dart:io ne remonte pas le code HTTP dans l'exception ; on fait
+      // un GET classique pour le distinguer.
+      final errorMsg = await _resolveError(uri, token);
+      yield {'type': 'error', 'message': errorMsg};
+      return;
+    } on SocketException catch (_) {
       yield {
         'type': 'error',
-        'message': 'Le chat est indisponible (flux non en direct)',
+        'message': 'Impossible de se connecter au serveur',
       };
       return;
     }
+
+    _channel = IOWebSocketChannel(ws);
 
     yield* _channel!.stream.map((raw) {
       if (raw is String) {
@@ -57,31 +58,6 @@ class ChatWebSocketSourceImpl implements ChatWebSocketSource {
       }
       return <String, dynamic>{};
     });
-  }
-
-  Future<String?> _preCheck(String streamId, String? token) async {
-    final httpUrl = '${ApiConstants.baseUrl}/ws/streams/$streamId/chat';
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(httpUrl));
-      if (token != null) {
-        request.headers.set('Authorization', 'Bearer $token');
-      }
-      final response = await request.close();
-      await response.drain<void>();
-      if (response.statusCode == 403) {
-        return 'Vous êtes banni de ce chat';
-      }
-      if (response.statusCode == 409) {
-        return 'Le chat est indisponible (flux non en direct)';
-      }
-      // 101 ou autre : on laisse le WebSocket tenter normalement
-      return null;
-    } on Object {
-      return null;
-    } finally {
-      client.close();
-    }
   }
 
   @override
@@ -93,5 +69,27 @@ class ChatWebSocketSourceImpl implements ChatWebSocketSource {
   void disconnect() {
     _channel?.sink.close();
     _channel = null;
+  }
+
+  Future<String> _resolveError(Uri wsUri, String? token) async {
+    // Convertir ws:// → http:// pour la sonde.
+    final httpScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
+    final httpUri = wsUri.replace(scheme: httpScheme);
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(httpUri);
+      if (token != null) req.headers.set('Authorization', 'Bearer $token');
+      final res = await req.close();
+      await res.drain<void>();
+      if (res.statusCode == 403) return 'Vous êtes banni de ce chat';
+      if (res.statusCode == 409) {
+        return 'Le chat est indisponible (flux non en direct)';
+      }
+    } on Object {
+      // Fallback si la sonde échoue aussi.
+    } finally {
+      client.close();
+    }
+    return 'Le chat est indisponible';
   }
 }

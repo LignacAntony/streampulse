@@ -22,6 +22,12 @@ class ChatController extends ChangeNotifier {
   bool _disposed = false;
   final Set<String> _bannedUserIds = {};
 
+  static const _maxRetries = 3;
+  static const _backoffBase = Duration(seconds: 1);
+  int _retryCount = 0;
+  Timer? _retryTimer;
+  bool _explicitDisconnect = false;
+
   List<ChatMessage> get messages => _messages;
   bool get isConnected => _isConnected;
   bool get isBroadcaster => _isBroadcaster;
@@ -33,19 +39,30 @@ class ChatController extends ChangeNotifier {
     if (_isConnected && _streamId == streamId) return;
     disconnect();
 
+    _explicitDisconnect = false;
     _streamId = streamId;
     _currentUserId = currentUserId;
     _error = null;
     _messages = [];
+    _retryCount = 0;
+
+    await _doConnect();
+  }
+
+  Future<void> _doConnect() async {
+    if (_disposed || _explicitDisconnect) return;
+    final streamId = _streamId;
+    if (streamId == null) return;
 
     try {
       final stream = _source.connect(streamId);
       _isConnected = true;
+      _error = null;
       _notify();
 
       _sub = stream.listen(
         _onEvent,
-        onError: _onError,
+        onError: _onStreamError,
         onDone: _onDone,
       );
     } on Object catch (e) {
@@ -79,6 +96,9 @@ class ChatController extends ChangeNotifier {
   }
 
   void disconnect() {
+    _explicitDisconnect = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _sub?.cancel();
     _sub = null;
     _source.disconnect();
@@ -94,6 +114,7 @@ class ChatController extends ChangeNotifier {
     switch (type) {
       case 'connected':
         _isBroadcaster = event['is_broadcaster'] == true;
+        _retryCount = 0;
         _notify();
 
       case 'history':
@@ -119,7 +140,14 @@ class ChatController extends ChangeNotifier {
         final bannedId = event['user_id'] as String?;
         if (bannedId == _currentUserId) {
           _error = 'Vous avez été banni de ce chat';
-          disconnect();
+          _explicitDisconnect = true;
+          _sub?.cancel();
+          _sub = null;
+          _source.disconnect();
+          _isConnected = false;
+          _isBroadcaster = false;
+          _bannedUserIds.clear();
+          _notify();
         } else if (bannedId != null) {
           _bannedUserIds.add(bannedId);
           _messages = _messages.map((m) {
@@ -130,20 +158,50 @@ class ChatController extends ChangeNotifier {
         }
 
       case 'error':
-        _error = event['message'] as String? ?? 'Erreur';
-        _notify();
+        final msg = event['message'] as String? ?? 'Erreur';
+        if (msg.contains('banni')) {
+          _error = msg;
+          _explicitDisconnect = true;
+          _isConnected = false;
+          _notify();
+        } else {
+          _error = msg;
+          _isConnected = false;
+          _notify();
+        }
     }
   }
 
-  void _onError(Object error) {
+  void _onStreamError(Object error) {
     _isConnected = false;
-    _error = 'Connexion au chat perdue';
-    _notify();
+    _source.disconnect();
+    _sub?.cancel();
+    _sub = null;
+    _scheduleReconnect();
   }
 
   void _onDone() {
     _isConnected = false;
+    _source.disconnect();
+    _sub = null;
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || _explicitDisconnect) {
+      _notify();
+      return;
+    }
+    if (_retryCount >= _maxRetries) {
+      _error = 'Connexion au chat perdue';
+      _notify();
+      return;
+    }
+    final delay = _backoffBase * (1 << _retryCount);
+    _retryCount++;
+    _error = null;
     _notify();
+    _retryTimer = Timer(delay, _doConnect);
   }
 
   ChatMessage _parseMessage(dynamic data) {
@@ -165,6 +223,7 @@ class ChatController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _retryTimer?.cancel();
     disconnect();
     super.dispose();
   }
