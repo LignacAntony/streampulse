@@ -13,10 +13,21 @@ cause de code que personne ne peut raisonnablement tester.
 
 | | Couverture |
 |---|---|
-| **Périmètre déclaré** | **81,05 %** — 2233 / 2755 statements |
-| Total brut, tout inclus | 63,6 % — 2233 / 3512 |
+| **Périmètre déclaré** | **81,60 %** — 2355 / 2886 statements |
+| Total brut, tout inclus | 65,76 % — 2355 / 3581 |
 
 La porte de CI échoue sous **80 %** sur le périmètre déclaré.
+
+> **Relevé du 2026-08-23**, sortie de la porte de couverture du job `Test`
+> ([run 32630923293](https://github.com/LignacAntony/streampulse/actions/runs/32630923293)).
+> Ces valeurs bougent à **chaque merge** : le README ne les recopie donc pas et
+> renvoie ici. Les rafraîchir se fait avec `make coverage-gate` (§ 4), et la
+> mesure de référence est celle de la CI, qui exécute aussi les tests
+> d'intégration.
+
+Le même numérateur — 2355 — apparaît dans les deux lignes. Ce n'est pas une
+coquille : les paquets exclus n'ont **aucune** instruction couverte, ce qui est
+attendu puisque rien ne les exerce (cf. § 2).
 
 ## 2. Le périmètre, et pourquoi
 
@@ -25,13 +36,38 @@ l'exclusion est appliquée par le script, pas par une convention orale.
 
 | Exclu | Statements | Pourquoi |
 |---|---|---|
-| `internal/*/db/` | 336 | Code **généré par sqlc**. Le tester reviendrait à tester sqlc ; il est réécrit à chaque `sqlc generate` et n'a pas d'auteur. |
-| `cmd/api/` | 155 | **Racine de composition** : construit la configuration, ouvre le pool, monte les routes, écoute. L'exercer demande de démarrer le serveur — un test de bout en bout, pas un test unitaire. Voir § 5. |
-| `internal/infrastructure/` | 135 | **Enveloppes minces** sur des pilotes tiers (golang-migrate, pgx). Les tester serait tester les pilotes ; leur comportement réel est vérifié par les tests d'intégration, qui passent par eux. |
+| `internal/*/db/` | 340 | Code **généré par sqlc**. Le tester reviendrait à tester sqlc ; il est réécrit à chaque `sqlc generate` et n'a pas d'auteur. |
+| `cmd/api/` | 162 | **Racine de composition** : construit la configuration, ouvre le pool, monte les routes, écoute. L'exercer demande de démarrer le serveur — un test de bout en bout, pas un test unitaire. Voir § 5. |
+| `internal/infrastructure/` | 134 | **Enveloppes minces** sur des pilotes tiers (golang-migrate, pgx). Les tester serait tester les pilotes. ⚠️ Ces paquets ne sont **exercés par aucun test** à ce jour — voir la note ci-dessous. |
 | `internal/testsupport/` | 59 | Le **socle de test** lui-même. Sa couverture est un artefact : il n'est exécuté que par d'autres tests. |
 
 Tout le reste est compté : handlers, services, repositories, middlewares,
 configuration, observabilité.
+
+> ⚠️ **`internal/infrastructure` n'est pas « couvert autrement ».** Ce document
+> a longtemps écrit que son comportement réel était « vérifié par les tests
+> d'intégration, qui passent par eux ». C'est faux, et c'était la source de la
+> même affirmation dans le README (revue PR #315).
+>
+> Les tests d'intégration ne traversent pas ces paquets : `internal/testsupport/pgtest`
+> **réimplémente** migrations et pool directement avec `golang-migrate` et
+> `pgxpool`, sans rien importer de `internal/infrastructure`. Il fait le même
+> travail avec les mêmes bibliothèques, dans son propre code.
+>
+> ```
+> $ grep -nE "streampulse/internal/(infrastructure|migrator|seeder)" \
+>     backend/internal/testsupport/pgtest/pgtest.go
+> (aucun résultat)
+> ```
+>
+> La preuve tient aussi dans le profil de couverture : les paquets exclus ont
+> zéro instruction couverte (§ 1). S'ils étaient exercés, le total brut aurait
+> un numérateur plus grand que celui du périmètre.
+>
+> L'exclusion reste justifiée — ce sont des enveloppes de pilotes tiers — mais
+> elle l'est parce qu'elles ne valent pas un test unitaire, **pas** parce
+> qu'elles seraient testées ailleurs. La nuance compte : la première formulation
+> décrit un choix, la seconde masquait un trou.
 
 ## 3. Deux familles de tests
 
