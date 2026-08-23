@@ -395,6 +395,90 @@ func TestListBans(t *testing.T) {
 	}
 }
 
+func TestGlobalBan(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	err := svc.GlobalBan(context.Background(), "user-1", "admin-1", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGlobalBan_WithReason(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	reason := "spam"
+	err := svc.GlobalBan(context.Background(), "user-1", "admin-1", &reason)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGlobalUnban(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	err := svc.GlobalUnban(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListGlobalBans(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	bans, err := svc.ListGlobalBans(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if bans != nil {
+		t.Errorf("expected nil, got %v", bans)
+	}
+}
+
+func TestListUserMessages(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	msgs, err := svc.ListUserMessages(context.Background(), "user-1", 20, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msgs != nil {
+		t.Errorf("expected nil, got %v", msgs)
+	}
+}
+
+func TestIsGloballyBanned_True(t *testing.T) {
+	repo := newStubRepo()
+	repo.globalBans["user-1"] = true
+	svc := NewService(repo, &stubOwner{})
+
+	banned, err := svc.IsGloballyBanned(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !banned {
+		t.Error("expected user to be globally banned")
+	}
+}
+
+func TestIsGloballyBanned_False(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	banned, err := svc.IsGloballyBanned(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if banned {
+		t.Error("expected user not to be globally banned")
+	}
+}
+
 func isAppError(err error, target **apperror.Error) bool {
 	var e *apperror.Error
 	if errors.As(err, &e) {

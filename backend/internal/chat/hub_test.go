@@ -143,3 +143,102 @@ func TestHub_CloseAll(t *testing.T) {
 		t.Errorf("hub has %d rooms after CloseAll, want 0", n)
 	}
 }
+
+func TestHub_DisconnectUserFromAll(t *testing.T) {
+	hub := NewChatHub()
+	rm1 := hub.Room("s1")
+	rm2 := hub.Room("s2")
+	c1 := newClient("u1", "alice", "user")
+	c2 := newClient("u1", "alice2", "user")
+	c3 := newClient("u2", "bob", "user")
+	rm1.Join(c1)
+	rm2.Join(c2)
+	rm2.Join(c3)
+
+	hub.DisconnectUserFromAll("u1")
+
+	select {
+	case <-c1.done:
+	default:
+		t.Error("c1 not disconnected from room s1")
+	}
+	select {
+	case <-c2.done:
+	default:
+		t.Error("c2 not disconnected from room s2")
+	}
+
+	rm2.mu.Lock()
+	n := len(rm2.clients)
+	rm2.mu.Unlock()
+	if n != 1 {
+		t.Errorf("room s2 has %d clients, want 1 (bob)", n)
+	}
+}
+
+func TestHub_CloseRoom_NonExistent(t *testing.T) {
+	hub := NewChatHub()
+	hub.CloseRoom("nonexistent")
+
+	hub.mu.Lock()
+	n := len(hub.rooms)
+	hub.mu.Unlock()
+	if n != 0 {
+		t.Errorf("hub has %d rooms, want 0", n)
+	}
+}
+
+func TestRoom_LeaveNonMember(t *testing.T) {
+	hub := NewChatHub()
+	rm := hub.Room("s1")
+	c := newClient("u1", "alice", "user")
+
+	rm.Leave(c)
+
+	rm.mu.Lock()
+	n := len(rm.clients)
+	rm.mu.Unlock()
+	if n != 0 {
+		t.Errorf("room has %d clients, want 0", n)
+	}
+}
+
+func TestRoom_BroadcastFullBuffer(t *testing.T) {
+	hub := NewChatHub()
+	rm := hub.Room("s1")
+	c := newClient("u1", "alice", "user")
+	rm.Join(c)
+
+	for i := 0; i < clientSendBuf+5; i++ {
+		rm.Broadcast([]byte(`{"type":"message"}`))
+	}
+
+	rm.mu.Lock()
+	n := len(rm.clients)
+	rm.mu.Unlock()
+	if n != 1 {
+		t.Error("client should not be evicted on full buffer")
+	}
+}
+
+func TestClient_CloseIdempotent(t *testing.T) {
+	c := newClient("u1", "alice", "user")
+	c.close()
+	c.close()
+
+	select {
+	case <-c.done:
+	default:
+		t.Error("done channel should be closed")
+	}
+}
+
+func TestHub_RoomReuse(t *testing.T) {
+	hub := NewChatHub()
+	rm1 := hub.Room("s1")
+	rm2 := hub.Room("s1")
+
+	if rm1 != rm2 {
+		t.Error("Room should return the same room for the same streamID")
+	}
+}
