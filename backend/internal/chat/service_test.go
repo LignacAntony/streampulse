@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -272,7 +273,8 @@ func TestRecentMessages_Reversed(t *testing.T) {
 }
 
 func isAppError(err error, target **apperror.Error) bool {
-	if e, ok := err.(*apperror.Error); ok {
+	var e *apperror.Error
+	if errors.As(err, &e) {
 		*target = e
 		return true
 	}

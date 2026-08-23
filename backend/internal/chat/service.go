@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	MinContentLen    = 1
-	MaxContentLen    = 500
-	DefaultHistoryN  = 50
+	MinContentLen   = 1
+	MaxContentLen   = 500
+	DefaultHistoryN = 50
 )
 
 // Message est le type domaine d'un message de chat.

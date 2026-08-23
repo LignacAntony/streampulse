@@ -156,7 +156,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) readPump(ctx context.Context, conn *websocket.Conn, c *client, rm *room, streamID string, isBroadcaster bool) {
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	var lastMsg time.Time
 
 	for {
@@ -240,7 +240,7 @@ func (h *Handler) writePump(ctx context.Context, cancel context.CancelFunc, conn
 		case <-ctx.Done():
 			return
 		case <-c.done:
-			conn.Close(websocket.StatusNormalClosure, "disconnected")
+			_ = conn.Close(websocket.StatusNormalClosure, "disconnected")
 			return
 		case msg, ok := <-c.send:
 			if !ok {
@@ -270,7 +270,7 @@ func (h *Handler) sendEvent(conn *websocket.Conn, ctx context.Context, msg outgo
 	}
 	writeCtx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
-	conn.Write(writeCtx, websocket.MessageText, b)
+	_ = conn.Write(writeCtx, websocket.MessageText, b)
 }
 
 func toMsgJSON(m Message) msgJSON {
@@ -315,7 +315,9 @@ func (h *Handler) ListBans(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: b.CreatedAt.Format(time.RFC3339Nano),
 		}
 	}
-	httpjson.Write(w, http.StatusOK, out)
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("chat: encode bans")
+	}
 }
 
 // Unban retire le bannissement d'un utilisateur.

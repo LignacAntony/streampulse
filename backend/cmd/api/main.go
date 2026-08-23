@@ -58,9 +58,9 @@ var (
 // var _ vérifie que les types du domaine streaming satisfont les interfaces ISP
 // consommées par le domaine chat (US-09-01).
 var (
-	_ chat.StreamOwnerResolver  = (*streaming.Service)(nil)
-	_ chat.BroadcasterResolver  = (*streaming.Service)(nil)
-	_ chat.ChatLiveness         = (*streaming.LiveSessions)(nil)
+	_ chat.StreamOwnerResolver = (*streaming.Service)(nil)
+	_ chat.BroadcasterResolver = (*streaming.Service)(nil)
+	_ chat.ChatLiveness        = (*streaming.LiveSessions)(nil)
 )
 
 func main() {

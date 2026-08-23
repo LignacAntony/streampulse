@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -137,7 +138,7 @@ func (r *pgRepository) ListRecentMessages(ctx context.Context, streamID string, 
 func (r *pgRepository) GetUsername(ctx context.Context, userID string) (string, error) {
 	username, err := r.q.GetUsername(ctx, uuidParam(userID))
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", apperror.NotFound("user not found")
 		}
 		return "", fmt.Errorf("chat: get username: %w", err)
