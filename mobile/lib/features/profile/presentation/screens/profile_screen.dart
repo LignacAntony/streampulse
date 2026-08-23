@@ -10,6 +10,7 @@ import '../../../admin/presentation/screens/admin_streams_screen.dart';
 import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../chat/data/repositories/chat_ban_repository.dart';
+import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/screens/banned_users_screen.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
@@ -68,6 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
     context.read<BroadcasterController>().reset();
     context.read<FavoritesController>().reset();
+    context.read<ChatController>().disconnect();
     await context.read<OfflinePlaylistController>().clearCache();
     if (!mounted) return;
     context.go('/login');
