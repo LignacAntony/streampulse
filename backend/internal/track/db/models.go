@@ -38,6 +38,14 @@ type ChatBan struct {
 	CreatedAt    time.Time
 }
 
+type ChatGlobalBan struct {
+	ID           pgtype.UUID
+	BannedUserID pgtype.UUID
+	BannedBy     pgtype.UUID
+	Reason       pgtype.Text
+	CreatedAt    time.Time
+}
+
 type ChatMessage struct {
 	ID        pgtype.UUID
 	StreamID  pgtype.UUID

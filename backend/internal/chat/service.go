@@ -34,6 +34,17 @@ type BannedUser struct {
 	CreatedAt time.Time
 }
 
+// UserMessage est un message de chat avec le titre du flux (vue admin).
+type UserMessage struct {
+	ID          string
+	StreamID    string
+	UserID      string
+	Username    string
+	Content     string
+	CreatedAt   time.Time
+	StreamTitle string
+}
+
 // Repository est l'interface de persistance du chat.
 type Repository interface {
 	InsertMessage(ctx context.Context, streamID, userID, content string) (Message, error)
@@ -44,6 +55,11 @@ type Repository interface {
 	ListBans(ctx context.Context, bannedBy string) ([]BannedUser, error)
 	ListRecentMessages(ctx context.Context, streamID string, limit int32) ([]Message, error)
 	GetUsername(ctx context.Context, userID string) (string, error)
+	IsGloballyBanned(ctx context.Context, userID string) (bool, error)
+	InsertGlobalBan(ctx context.Context, bannedUserID, bannedBy string, reason *string) error
+	DeleteGlobalBan(ctx context.Context, bannedUserID string) error
+	ListGlobalBans(ctx context.Context) ([]BannedUser, error)
+	ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]UserMessage, error)
 }
 
 // StreamOwnerResolver résout le diffuseur propriétaire d'un flux.
@@ -113,8 +129,16 @@ func (s *Service) ListBans(ctx context.Context, broadcasterID string) ([]BannedU
 	return s.repo.ListBans(ctx, broadcasterID)
 }
 
-// IsBanned vérifie si un utilisateur est banni par le diffuseur du flux.
+// IsBanned vérifie si un utilisateur est banni par le diffuseur du flux ou
+// banni globalement par un admin.
 func (s *Service) IsBanned(ctx context.Context, userID, streamID string) (bool, error) {
+	global, err := s.repo.IsGloballyBanned(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if global {
+		return true, nil
+	}
 	broadcasterID, err := s.streams.BroadcasterID(ctx, streamID)
 	if err != nil {
 		return false, err
@@ -138,4 +162,29 @@ func (s *Service) RecentMessages(ctx context.Context, streamID string) ([]Messag
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}
 	return msgs, nil
+}
+
+// GlobalBan bannit un utilisateur de tous les chats (admin uniquement).
+func (s *Service) GlobalBan(ctx context.Context, targetUserID, adminID string, reason *string) error {
+	return s.repo.InsertGlobalBan(ctx, targetUserID, adminID, reason)
+}
+
+// GlobalUnban retire le bannissement global d'un utilisateur (admin uniquement).
+func (s *Service) GlobalUnban(ctx context.Context, targetUserID string) error {
+	return s.repo.DeleteGlobalBan(ctx, targetUserID)
+}
+
+// ListGlobalBans retourne les utilisateurs bannis globalement.
+func (s *Service) ListGlobalBans(ctx context.Context) ([]BannedUser, error) {
+	return s.repo.ListGlobalBans(ctx)
+}
+
+// ListUserMessages retourne les messages de chat d'un utilisateur (admin).
+func (s *Service) ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]UserMessage, error) {
+	return s.repo.ListUserMessages(ctx, userID, limit, offset)
+}
+
+// IsGloballyBanned vérifie le ban global (exposé pour le handler admin).
+func (s *Service) IsGloballyBanned(ctx context.Context, userID string) (bool, error) {
+	return s.repo.IsGloballyBanned(ctx, userID)
 }

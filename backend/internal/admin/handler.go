@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"strconv"
 
@@ -38,14 +39,52 @@ type AdminService interface {
 	Overview(ctx context.Context) (Overview, error)
 }
 
+// ChatModerator expose au handler admin la modération du chat : ban/unban
+// global, liste des bans, messages d'un utilisateur. Interface étroite (ISP),
+// satisfaite par un adaptateur câblé dans main.go (les types domaine du chat
+// ne fuient pas dans le domaine admin).
+type ChatModerator interface {
+	GlobalBan(ctx context.Context, targetUserID, adminID string, reason *string) error
+	GlobalUnban(ctx context.Context, targetUserID string) error
+	ListGlobalBans(ctx context.Context) ([]ChatBannedUser, error)
+	ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]ChatUserMessage, error)
+	IsGloballyBanned(ctx context.Context, userID string) (bool, error)
+	DisconnectUserFromAll(userID string)
+}
+
+// ChatBannedUser est la vue d'un utilisateur banni globalement.
+type ChatBannedUser struct {
+	UserID    string
+	Username  string
+	Reason    *string
+	CreatedAt time.Time
+}
+
+// ChatUserMessage est un message de chat avec le titre du flux (vue admin).
+type ChatUserMessage struct {
+	ID          string
+	StreamID    string
+	UserID      string
+	Username    string
+	Content     string
+	CreatedAt   time.Time
+	StreamTitle string
+}
+
 // Handler expose le domaine admin en HTTP (US-08-01). Les routes sont montées
 // derrière auth.RequireAuth + auth.RequireRole("admin") côté câblage (main.go).
 type Handler struct {
-	svc AdminService
+	svc  AdminService
+	chat ChatModerator
 }
 
 func NewHandler(svc AdminService) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetChatModerator branche la modération chat (câblé dans main.go).
+func (h *Handler) SetChatModerator(chat ChatModerator) {
+	h.chat = chat
 }
 
 // listUsersResponse est l'enveloppe de pagination de GET /api/admin/users.
@@ -234,4 +273,135 @@ func parseIntDefault(raw string, def int) int {
 		return def
 	}
 	return n
+}
+
+// --- Modération chat admin ---
+
+const maxGlobalBanBodyBytes = 1 << 10
+
+type globalBanRequest struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
+type globalBannedUserJSON struct {
+	UserID    string  `json:"user_id"`
+	Username  string  `json:"username"`
+	Reason    *string `json:"reason,omitempty"`
+	CreatedAt string  `json:"created_at"`
+}
+
+type userMessageJSON struct {
+	ID          string `json:"id"`
+	StreamID    string `json:"stream_id"`
+	Username    string `json:"username"`
+	Content     string `json:"content"`
+	CreatedAt   string `json:"created_at"`
+	StreamTitle string `json:"stream_title"`
+}
+
+// ListUserMessages gère GET /api/admin/users/{id}/chat-messages : messages de
+// chat d'un utilisateur, paginés.
+func (h *Handler) ListUserMessages(w http.ResponseWriter, r *http.Request) {
+	if h.chat == nil {
+		httpjson.WriteError(w, r, apperror.Internal("chat moderation not configured", nil))
+		return
+	}
+
+	userID := r.PathValue("id")
+	limit, offset := clampPagination(r)
+
+	msgs, err := h.chat.ListUserMessages(r.Context(), userID, limit, offset)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]userMessageJSON, len(msgs))
+	for i, m := range msgs {
+		out[i] = userMessageJSON{
+			ID:          m.ID,
+			StreamID:    m.StreamID,
+			Username:    m.Username,
+			Content:     m.Content,
+			CreatedAt:   m.CreatedAt.Format(time.RFC3339Nano),
+			StreamTitle: m.StreamTitle,
+		}
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode user messages")
+	}
+}
+
+// GlobalBan gère POST /api/admin/users/{id}/chat-ban : bannissement global.
+func (h *Handler) GlobalBan(w http.ResponseWriter, r *http.Request) {
+	if h.chat == nil {
+		httpjson.WriteError(w, r, apperror.Internal("chat moderation not configured", nil))
+		return
+	}
+
+	adminID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	var req globalBanRequest
+	if err := httpjson.Decode(w, r, &req, maxGlobalBanBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	targetID := r.PathValue("id")
+	if err := h.chat.GlobalBan(r.Context(), targetID, adminID, req.Reason); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	h.chat.DisconnectUserFromAll(targetID)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GlobalUnban gère DELETE /api/admin/users/{id}/chat-ban : levée du ban global.
+func (h *Handler) GlobalUnban(w http.ResponseWriter, r *http.Request) {
+	if h.chat == nil {
+		httpjson.WriteError(w, r, apperror.Internal("chat moderation not configured", nil))
+		return
+	}
+
+	targetID := r.PathValue("id")
+	if err := h.chat.GlobalUnban(r.Context(), targetID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListGlobalBans gère GET /api/admin/chat-bans : liste des bans globaux.
+func (h *Handler) ListGlobalBans(w http.ResponseWriter, r *http.Request) {
+	if h.chat == nil {
+		httpjson.WriteError(w, r, apperror.Internal("chat moderation not configured", nil))
+		return
+	}
+
+	bans, err := h.chat.ListGlobalBans(r.Context())
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]globalBannedUserJSON, len(bans))
+	for i, b := range bans {
+		out[i] = globalBannedUserJSON{
+			UserID:    b.UserID,
+			Username:  b.Username,
+			Reason:    b.Reason,
+			CreatedAt: b.CreatedAt.Format(time.RFC3339Nano),
+		}
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("admin: encode global bans")
+	}
 }

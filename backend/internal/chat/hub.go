@@ -43,6 +43,20 @@ func (h *ChatHub) CloseRoom(streamID string) {
 	}
 }
 
+// DisconnectUserFromAll déconnecte un utilisateur de tous les salons actifs.
+func (h *ChatHub) DisconnectUserFromAll(userID string) {
+	h.mu.Lock()
+	rooms := make([]*room, 0, len(h.rooms))
+	for _, r := range h.rooms {
+		rooms = append(rooms, r)
+	}
+	h.mu.Unlock()
+
+	for _, r := range rooms {
+		r.DisconnectUser(userID)
+	}
+}
+
 // CloseAll ferme tous les salons (shutdown propre).
 func (h *ChatHub) CloseAll() {
 	h.mu.Lock()

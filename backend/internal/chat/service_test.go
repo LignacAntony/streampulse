@@ -13,6 +13,7 @@ import (
 type stubRepo struct {
 	messages     []Message
 	bans         map[string]bool // "userID:broadcasterID" → banned
+	globalBans   map[string]bool // userID → globally banned
 	insertedMsgs []Message
 	deletedIDs   []string
 	bannedPairs  [][2]string
@@ -21,8 +22,9 @@ type stubRepo struct {
 
 func newStubRepo() *stubRepo {
 	return &stubRepo{
-		bans:      make(map[string]bool),
-		usernames: map[string]string{"user-1": "alice", "user-2": "bob"},
+		bans:       make(map[string]bool),
+		globalBans: make(map[string]bool),
+		usernames:  map[string]string{"user-1": "alice", "user-2": "bob"},
 	}
 }
 
@@ -100,6 +102,26 @@ func (r *stubRepo) GetUsername(_ context.Context, userID string) (string, error)
 	return "", apperror.NotFound("user not found")
 }
 
+func (r *stubRepo) IsGloballyBanned(_ context.Context, userID string) (bool, error) {
+	return r.globalBans[userID], nil
+}
+
+func (r *stubRepo) InsertGlobalBan(_ context.Context, _, _ string, _ *string) error {
+	return nil
+}
+
+func (r *stubRepo) DeleteGlobalBan(_ context.Context, _ string) error {
+	return nil
+}
+
+func (r *stubRepo) ListGlobalBans(_ context.Context) ([]BannedUser, error) {
+	return nil, nil
+}
+
+func (r *stubRepo) ListUserMessages(_ context.Context, _ string, _, _ int32) ([]UserMessage, error) {
+	return nil, nil
+}
+
 type stubOwner struct {
 	owners map[string]string // streamID → userID
 }
@@ -165,6 +187,21 @@ func TestSendMessage_Banned(t *testing.T) {
 	_, err := svc.SendMessage(context.Background(), "s1", "user-1", "hello")
 	if err == nil {
 		t.Fatal("expected error for banned user")
+	}
+	var appErr *apperror.Error
+	if !isAppError(err, &appErr) || appErr.Code != apperror.CodeForbidden {
+		t.Errorf("expected Forbidden, got %v", err)
+	}
+}
+
+func TestSendMessage_GloballyBanned(t *testing.T) {
+	repo := newStubRepo()
+	repo.globalBans["user-1"] = true
+	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})
+
+	_, err := svc.SendMessage(context.Background(), "s1", "user-1", "hello")
+	if err == nil {
+		t.Fatal("expected error for globally banned user")
 	}
 	var appErr *apperror.Error
 	if !isAppError(err, &appErr) || appErr.Code != apperror.CodeForbidden {

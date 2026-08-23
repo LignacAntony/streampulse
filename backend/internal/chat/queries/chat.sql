@@ -43,3 +43,37 @@ ORDER BY b.created_at DESC;
 
 -- name: GetUsername :one
 SELECT username FROM users WHERE id = @user_id::uuid;
+
+-- name: IsGloballyBanned :one
+SELECT EXISTS(
+    SELECT 1 FROM chat_global_bans
+    WHERE banned_user_id = @user_id::uuid
+) AS banned;
+
+-- name: InsertGlobalBan :exec
+INSERT INTO chat_global_bans (banned_user_id, banned_by, reason)
+VALUES (@banned_user_id::uuid, @banned_by::uuid, sqlc.narg(reason)::text)
+ON CONFLICT (banned_user_id) DO NOTHING;
+
+-- name: DeleteGlobalBan :execresult
+DELETE FROM chat_global_bans
+WHERE banned_user_id = @banned_user_id::uuid;
+
+-- name: ListGlobalBans :many
+SELECT b.banned_user_id::text AS banned_user_id, u.username AS username,
+       b.reason AS reason, b.created_at AS created_at
+FROM chat_global_bans b
+JOIN users u ON u.id = b.banned_user_id
+ORDER BY b.created_at DESC;
+
+-- name: ListUserChatMessages :many
+SELECT m.id::text AS id, m.stream_id::text AS stream_id,
+       m.user_id::text AS user_id, u.username AS username,
+       m.content AS content, m.created_at AS created_at,
+       s.title AS stream_title
+FROM chat_messages m
+JOIN users u ON u.id = m.user_id
+JOIN streams s ON s.id = m.stream_id
+WHERE m.user_id = @user_id::uuid AND m.deleted_at IS NULL
+ORDER BY m.created_at DESC
+LIMIT @lim OFFSET @off;

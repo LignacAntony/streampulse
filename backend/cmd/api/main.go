@@ -119,6 +119,68 @@ func (a httpCountersAdapter) HTTPTotals() (admin.HTTPTotals, error) {
 	}, nil
 }
 
+// chatModeratorAdapter branche *chat.Service + *chat.ChatHub sur
+// admin.ChatModerator. Les types domaine du chat ne fuient pas dans le
+// domaine admin : l'adaptateur traduit chat.BannedUser → admin.ChatBannedUser
+// et chat.UserMessage → admin.ChatUserMessage.
+type chatModeratorAdapter struct {
+	svc *chat.Service
+	hub *chat.ChatHub
+}
+
+func (a chatModeratorAdapter) GlobalBan(ctx context.Context, targetUserID, adminID string, reason *string) error {
+	return a.svc.GlobalBan(ctx, targetUserID, adminID, reason)
+}
+
+func (a chatModeratorAdapter) GlobalUnban(ctx context.Context, targetUserID string) error {
+	return a.svc.GlobalUnban(ctx, targetUserID)
+}
+
+func (a chatModeratorAdapter) ListGlobalBans(ctx context.Context) ([]admin.ChatBannedUser, error) {
+	bans, err := a.svc.ListGlobalBans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]admin.ChatBannedUser, len(bans))
+	for i, b := range bans {
+		out[i] = admin.ChatBannedUser{
+			UserID:    b.UserID,
+			Username:  b.Username,
+			Reason:    b.Reason,
+			CreatedAt: b.CreatedAt,
+		}
+	}
+	return out, nil
+}
+
+func (a chatModeratorAdapter) ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]admin.ChatUserMessage, error) {
+	msgs, err := a.svc.ListUserMessages(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]admin.ChatUserMessage, len(msgs))
+	for i, m := range msgs {
+		out[i] = admin.ChatUserMessage{
+			ID:          m.ID,
+			StreamID:    m.StreamID,
+			UserID:      m.UserID,
+			Username:    m.Username,
+			Content:     m.Content,
+			CreatedAt:   m.CreatedAt,
+			StreamTitle: m.StreamTitle,
+		}
+	}
+	return out, nil
+}
+
+func (a chatModeratorAdapter) IsGloballyBanned(ctx context.Context, userID string) (bool, error) {
+	return a.svc.IsGloballyBanned(ctx, userID)
+}
+
+func (a chatModeratorAdapter) DisconnectUserFromAll(userID string) {
+	a.hub.DisconnectUserFromAll(userID)
+}
+
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -272,6 +334,9 @@ func run() error {
 	chatSvc := chat.NewService(chatRepo, streamingSvc)
 	chatHandler := chat.NewHandler(chatSvc, chatHub, streamingSessions, streamingSvc)
 
+	// Modération chat admin : l'adaptateur traduit les types chat → admin (ISP).
+	adminHandler.SetChatModerator(chatModeratorAdapter{svc: chatSvc, hub: chatHub})
+
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
 
@@ -341,6 +406,16 @@ func run() error {
 	// l'administrateur *applicatif*, autorisé par son rôle.
 	mux.Handle("GET /api/admin/metrics", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Metrics))))
+
+	// Modération chat admin (US-09-01) : messages d'un user, ban/unban global.
+	mux.Handle("GET /api/admin/users/{id}/chat-messages", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListUserMessages))))
+	mux.Handle("POST /api/admin/users/{id}/chat-ban", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.GlobalBan))))
+	mux.Handle("DELETE /api/admin/users/{id}/chat-ban", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.GlobalUnban))))
+	mux.Handle("GET /api/admin/chat-bans", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListGlobalBans))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../admin/presentation/screens/admin_global_bans_screen.dart';
 import '../../../admin/presentation/screens/admin_streams_screen.dart';
 import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
@@ -394,6 +395,12 @@ class _AdminCard extends StatelessWidget {
     );
   }
 
+  void _openGlobalBans(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminGlobalBansScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -415,6 +422,14 @@ class _AdminCard extends StatelessWidget {
             title: const Text('Supervision des flux'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openStreams(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('profile_admin_chat_bans_tile'),
+            leading: Icon(Icons.block, color: colors.primary),
+            title: const Text('Bans globaux du chat'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openGlobalBans(context),
           ),
         ],
       ),

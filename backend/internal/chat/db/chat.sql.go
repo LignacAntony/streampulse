@@ -27,6 +27,15 @@ func (q *Queries) DeleteChatBan(ctx context.Context, arg DeleteChatBanParams) (p
 	return q.db.Exec(ctx, deleteChatBan, arg.BannedUserID, arg.BannedBy)
 }
 
+const deleteGlobalBan = `-- name: DeleteGlobalBan :execresult
+DELETE FROM chat_global_bans
+WHERE banned_user_id = $1::uuid
+`
+
+func (q *Queries) DeleteGlobalBan(ctx context.Context, bannedUserID pgtype.UUID) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, deleteGlobalBan, bannedUserID)
+}
+
 const getUsername = `-- name: GetUsername :one
 SELECT username FROM users WHERE id = $1::uuid
 `
@@ -88,6 +97,23 @@ func (q *Queries) InsertChatMessage(ctx context.Context, arg InsertChatMessagePa
 	return i, err
 }
 
+const insertGlobalBan = `-- name: InsertGlobalBan :exec
+INSERT INTO chat_global_bans (banned_user_id, banned_by, reason)
+VALUES ($1::uuid, $2::uuid, $3::text)
+ON CONFLICT (banned_user_id) DO NOTHING
+`
+
+type InsertGlobalBanParams struct {
+	BannedUserID pgtype.UUID
+	BannedBy     pgtype.UUID
+	Reason       pgtype.Text
+}
+
+func (q *Queries) InsertGlobalBan(ctx context.Context, arg InsertGlobalBanParams) error {
+	_, err := q.db.Exec(ctx, insertGlobalBan, arg.BannedUserID, arg.BannedBy, arg.Reason)
+	return err
+}
+
 const isChatBanned = `-- name: IsChatBanned :one
 SELECT EXISTS(
     SELECT 1 FROM chat_bans
@@ -102,6 +128,20 @@ type IsChatBannedParams struct {
 
 func (q *Queries) IsChatBanned(ctx context.Context, arg IsChatBannedParams) (bool, error) {
 	row := q.db.QueryRow(ctx, isChatBanned, arg.UserID, arg.BroadcasterID)
+	var banned bool
+	err := row.Scan(&banned)
+	return banned, err
+}
+
+const isGloballyBanned = `-- name: IsGloballyBanned :one
+SELECT EXISTS(
+    SELECT 1 FROM chat_global_bans
+    WHERE banned_user_id = $1::uuid
+) AS banned
+`
+
+func (q *Queries) IsGloballyBanned(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isGloballyBanned, userID)
 	var banned bool
 	err := row.Scan(&banned)
 	return banned, err
@@ -132,6 +172,46 @@ func (q *Queries) ListChatBans(ctx context.Context, bannedBy pgtype.UUID) ([]Lis
 	var items []ListChatBansRow
 	for rows.Next() {
 		var i ListChatBansRow
+		if err := rows.Scan(
+			&i.BannedUserID,
+			&i.Username,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGlobalBans = `-- name: ListGlobalBans :many
+SELECT b.banned_user_id::text AS banned_user_id, u.username AS username,
+       b.reason AS reason, b.created_at AS created_at
+FROM chat_global_bans b
+JOIN users u ON u.id = b.banned_user_id
+ORDER BY b.created_at DESC
+`
+
+type ListGlobalBansRow struct {
+	BannedUserID string
+	Username     string
+	Reason       pgtype.Text
+	CreatedAt    time.Time
+}
+
+func (q *Queries) ListGlobalBans(ctx context.Context) ([]ListGlobalBansRow, error) {
+	rows, err := q.db.Query(ctx, listGlobalBans)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGlobalBansRow
+	for rows.Next() {
+		var i ListGlobalBansRow
 		if err := rows.Scan(
 			&i.BannedUserID,
 			&i.Username,
@@ -189,6 +269,63 @@ func (q *Queries) ListRecentChatMessages(ctx context.Context, arg ListRecentChat
 			&i.Username,
 			&i.Content,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserChatMessages = `-- name: ListUserChatMessages :many
+SELECT m.id::text AS id, m.stream_id::text AS stream_id,
+       m.user_id::text AS user_id, u.username AS username,
+       m.content AS content, m.created_at AS created_at,
+       s.title AS stream_title
+FROM chat_messages m
+JOIN users u ON u.id = m.user_id
+JOIN streams s ON s.id = m.stream_id
+WHERE m.user_id = $1::uuid AND m.deleted_at IS NULL
+ORDER BY m.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListUserChatMessagesParams struct {
+	UserID pgtype.UUID
+	Off    int32
+	Lim    int32
+}
+
+type ListUserChatMessagesRow struct {
+	ID          string
+	StreamID    string
+	UserID      string
+	Username    string
+	Content     string
+	CreatedAt   time.Time
+	StreamTitle string
+}
+
+func (q *Queries) ListUserChatMessages(ctx context.Context, arg ListUserChatMessagesParams) ([]ListUserChatMessagesRow, error) {
+	rows, err := q.db.Query(ctx, listUserChatMessages, arg.UserID, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserChatMessagesRow
+	for rows.Next() {
+		var i ListUserChatMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StreamID,
+			&i.UserID,
+			&i.Username,
+			&i.Content,
+			&i.CreatedAt,
+			&i.StreamTitle,
 		); err != nil {
 			return nil, err
 		}

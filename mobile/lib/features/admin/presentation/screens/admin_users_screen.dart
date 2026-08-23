@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../data/repositories/admin_chat_repository_impl.dart';
 import '../../data/repositories/admin_repository_impl.dart';
 import '../../domain/entities/admin_user.dart';
 import '../../domain/repositories/admin_repository.dart';
 import '../providers/admin_users_provider.dart';
+import 'admin_user_messages_screen.dart';
 
 /// Écran d'administration (US-08-01) : liste/recherche/filtre des comptes,
 /// activation/désactivation et suppression définitive. Accessible uniquement
@@ -370,9 +372,31 @@ class _UserTile extends StatelessWidget {
             PopupMenuButton<String>(
               key: Key('admin_user_menu_${user.id}'),
               onSelected: (value) {
-                if (value == 'delete') onDelete(user);
+                switch (value) {
+                  case 'messages':
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AdminUserMessagesScreen(
+                          userId: user.id,
+                          username: user.username,
+                        ),
+                      ),
+                    );
+                  case 'chat_ban':
+                    _confirmGlobalBan(context, user);
+                  case 'delete':
+                    onDelete(user);
+                }
               },
               itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'messages',
+                  child: Text('Messages du chat'),
+                ),
+                PopupMenuItem(
+                  value: 'chat_ban',
+                  child: Text('Bannir de tous les chats'),
+                ),
                 PopupMenuItem(value: 'delete', child: Text('Supprimer')),
               ],
             ),
@@ -380,6 +404,30 @@ class _UserTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmGlobalBan(BuildContext context, AdminUser user) async {
+    final confirmed = await _confirmDialog(
+      context,
+      title: 'Bannir ${user.username} de tous les chats ?',
+      message: 'Cet utilisateur ne pourra plus écrire dans aucun chat.',
+      confirmLabel: 'Bannir',
+      confirmKey: const Key('admin_confirm_global_ban_button'),
+      destructive: true,
+    );
+    if (!context.mounted || !confirmed) return;
+
+    try {
+      final repo = AdminChatRepositoryImpl(
+        context.read<DioClient>().adminApi,
+      );
+      await repo.globalBan(user.id);
+      if (!context.mounted) return;
+      showAuthSuccessToast(context, '${user.username} banni de tous les chats');
+    } catch (_) {
+      if (!context.mounted) return;
+      showAuthErrorToast(context, 'Échec du bannissement');
+    }
   }
 }
 

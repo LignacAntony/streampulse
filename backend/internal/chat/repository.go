@@ -145,6 +145,82 @@ func (r *pgRepository) GetUsername(ctx context.Context, userID string) (string, 
 	return username, nil
 }
 
+func (r *pgRepository) IsGloballyBanned(ctx context.Context, userID string) (bool, error) {
+	banned, err := r.q.IsGloballyBanned(ctx, uuidParam(userID))
+	if err != nil {
+		return false, fmt.Errorf("chat: is globally banned: %w", err)
+	}
+	return banned, nil
+}
+
+func (r *pgRepository) InsertGlobalBan(ctx context.Context, bannedUserID, bannedBy string, reason *string) error {
+	params := chatdb.InsertGlobalBanParams{
+		BannedUserID: uuidParam(bannedUserID),
+		BannedBy:     uuidParam(bannedBy),
+	}
+	if reason != nil {
+		params.Reason = pgtype.Text{String: *reason, Valid: true}
+	}
+	if err := r.q.InsertGlobalBan(ctx, params); err != nil {
+		return fmt.Errorf("chat: insert global ban: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepository) DeleteGlobalBan(ctx context.Context, bannedUserID string) error {
+	res, err := r.q.DeleteGlobalBan(ctx, uuidParam(bannedUserID))
+	if err != nil {
+		return fmt.Errorf("chat: delete global ban: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return apperror.NotFound("global ban not found")
+	}
+	return nil
+}
+
+func (r *pgRepository) ListGlobalBans(ctx context.Context) ([]BannedUser, error) {
+	rows, err := r.q.ListGlobalBans(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("chat: list global bans: %w", err)
+	}
+	bans := make([]BannedUser, len(rows))
+	for i, row := range rows {
+		bans[i] = BannedUser{
+			UserID:    row.BannedUserID,
+			Username:  row.Username,
+			CreatedAt: row.CreatedAt,
+		}
+		if row.Reason.Valid {
+			bans[i].Reason = &row.Reason.String
+		}
+	}
+	return bans, nil
+}
+
+func (r *pgRepository) ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]UserMessage, error) {
+	rows, err := r.q.ListUserChatMessages(ctx, chatdb.ListUserChatMessagesParams{
+		UserID: uuidParam(userID),
+		Lim:    limit,
+		Off:    offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chat: list user messages: %w", err)
+	}
+	msgs := make([]UserMessage, len(rows))
+	for i, row := range rows {
+		msgs[i] = UserMessage{
+			ID:          row.ID,
+			StreamID:    row.StreamID,
+			UserID:      row.UserID,
+			Username:    row.Username,
+			Content:     row.Content,
+			CreatedAt:   row.CreatedAt,
+			StreamTitle: row.StreamTitle,
+		}
+	}
+	return msgs, nil
+}
+
 func uuidParam(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
