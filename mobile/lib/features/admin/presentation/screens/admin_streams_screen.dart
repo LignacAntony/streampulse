@@ -176,7 +176,7 @@ class _AdminStreamsBodyState extends State<_AdminStreamsBody> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       itemCount: provider.streams.length + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         if (index < provider.streams.length) {
           final stream = provider.streams[index];

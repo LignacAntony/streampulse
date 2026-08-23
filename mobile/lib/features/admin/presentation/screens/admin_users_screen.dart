@@ -241,7 +241,7 @@ class _AdminUsersBodyState extends State<_AdminUsersBody> {
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       itemCount: provider.users.length + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         if (index < provider.users.length) {
           final user = provider.users[index];

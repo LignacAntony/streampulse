@@ -67,7 +67,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: notifier.streams.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) => StreamTile(stream: notifier.streams[index]),
     );
   }

@@ -480,7 +480,7 @@ class _DashboardBodyState extends State<_DashboardBody>
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: notifier.streams.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final stream = notifier.streams[index];
         return _StreamCard(
