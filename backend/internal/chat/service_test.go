@@ -272,6 +272,129 @@ func TestRecentMessages_Reversed(t *testing.T) {
 	}
 }
 
+func TestUnbanUser_OK(t *testing.T) {
+	repo := newStubRepo()
+	repo.bans["user-1:broadcaster-1"] = true
+	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})
+
+	err := svc.UnbanUser(context.Background(), "user-1", "broadcaster-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.bans["user-1:broadcaster-1"] {
+		t.Error("ban should have been removed")
+	}
+}
+
+func TestUnbanUser_NotFound(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})
+
+	err := svc.UnbanUser(context.Background(), "user-1", "broadcaster-1")
+	if err == nil {
+		t.Fatal("expected error for unban not found")
+	}
+	var appErr *apperror.Error
+	if !isAppError(err, &appErr) || appErr.Code != apperror.CodeNotFound {
+		t.Errorf("expected NotFound, got %v", err)
+	}
+}
+
+func TestGetUsername_OK(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	name, err := svc.GetUsername(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "alice" {
+		t.Errorf("username = %q, want %q", name, "alice")
+	}
+}
+
+func TestGetUsername_NotFound(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	_, err := svc.GetUsername(context.Background(), "unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown user")
+	}
+	var appErr *apperror.Error
+	if !isAppError(err, &appErr) || appErr.Code != apperror.CodeNotFound {
+		t.Errorf("expected NotFound, got %v", err)
+	}
+}
+
+func TestIsBanned_GlobalTakesPrecedence(t *testing.T) {
+	repo := newStubRepo()
+	repo.globalBans["user-1"] = true
+	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})
+
+	banned, err := svc.IsBanned(context.Background(), "user-1", "s1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !banned {
+		t.Error("user should be globally banned")
+	}
+}
+
+func TestIsBanned_NeitherBanned(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{owners: map[string]string{"s1": "broadcaster-1"}})
+
+	banned, err := svc.IsBanned(context.Background(), "user-1", "s1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if banned {
+		t.Error("user should not be banned")
+	}
+}
+
+func TestDeleteMessage(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	err := svc.DeleteMessage(context.Background(), "msg-1", "broadcaster-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.deletedIDs) != 1 || repo.deletedIDs[0] != "msg-1" {
+		t.Errorf("deletedIDs = %v, want [msg-1]", repo.deletedIDs)
+	}
+}
+
+func TestRecentMessages_Empty(t *testing.T) {
+	repo := newStubRepo()
+	svc := NewService(repo, &stubOwner{})
+
+	msgs, err := svc.RecentMessages(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("got %d messages, want 0", len(msgs))
+	}
+}
+
+func TestListBans(t *testing.T) {
+	repo := newStubRepo()
+	repo.bans["user-1:broadcaster-1"] = true
+	repo.bans["user-2:broadcaster-1"] = true
+	svc := NewService(repo, &stubOwner{})
+
+	bans, err := svc.ListBans(context.Background(), "broadcaster-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bans) != 2 {
+		t.Errorf("got %d bans, want 2", len(bans))
+	}
+}
+
 func isAppError(err error, target **apperror.Error) bool {
 	var e *apperror.Error
 	if errors.As(err, &e) {
