@@ -190,7 +190,8 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: mobile/pubspec.yaml
+          flutter-version: "3.41.9"
+          channel: stable
           cache: true
 
       - uses: actions/setup-java@v5
