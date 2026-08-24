@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/LignacAntony/streampulse/compare/v1.3.0...v1.3.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** définir la branche cible develop pour Dependabot ([9dcbf4e](https://github.com/LignacAntony/streampulse/commit/9dcbf4ed80e5589b53a80d34224c451fc65d906a))
+* **ci:** définir la branche cible develop pour Dependabot ([5ce8137](https://github.com/LignacAntony/streampulse/commit/5ce8137b858c016900680348b80067d53ed01c27))
+
 ## [1.3.0](https://github.com/LignacAntony/streampulse/compare/v1.2.0...v1.3.0) (2026-08-23)
 
 
