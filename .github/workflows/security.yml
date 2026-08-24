@@ -45,7 +45,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Étape de constat : produit le SARIF consommé par l'onglet Security
       # (historique, dédoublonnage, annotations de PR). Non bloquante — c'est
@@ -131,7 +131,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Même contexte de build que la CD (docker/build-push-action → ./backend),
       # sans push : on scanne ce que la CD publierait, pas une approximation.
@@ -195,10 +195,10 @@ jobs:
       # l'autre, rien à montrer d'une revue de sécurité.
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Aligné sur backend/go.mod (go 1.25.0) et sur ci.yml. Compiler
           # l'analyse avec un toolchain plus ancien que le code analysé, c'est

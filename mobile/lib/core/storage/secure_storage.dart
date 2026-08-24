@@ -3,11 +3,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 // Principe S : SecureStorage a une seule responsabilité — persister les tokens JWT.
 // Principe I : interface fine (5 méthodes ciblées, pas de méthode générique exposée).
 class SecureStorage {
-  SecureStorage()
-      : _storage = const FlutterSecureStorage(
-          // Utilise EncryptedSharedPreferences sur Android (API 23+)
-          aOptions: AndroidOptions(encryptedSharedPreferences: true),
-        );
+  // Android : depuis flutter_secure_storage v10, le chiffrement repose sur des
+  // ciphers custom (la lib EncryptedSharedPreferences de Jetpack Security étant
+  // dépréciée par Google) ; les données existantes sont migrées au premier accès.
+  // Plus de `aOptions` à passer : l'ancien `encryptedSharedPreferences` est ignoré.
+  SecureStorage() : _storage = const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
