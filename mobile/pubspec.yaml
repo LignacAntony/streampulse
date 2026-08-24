@@ -19,7 +19,7 @@ dependencies:
   toastification: ^3.2.0
 
   # Client HTTP
-  dio: ^5.4.3+1
+  dio: ^5.11.0
   streampulse_api:
     path: packages/streampulse_api
 
@@ -38,11 +38,11 @@ dependencies:
   shared_preferences: ^2.3.0
 
   # Lecture audio (live HLS + on-demand)
-  just_audio: ^0.9.40
-  audio_service: ^0.18.12
+  just_audio: ^0.10.6
+  audio_service: ^0.18.19
 
   # Session audio : focus / interruptions (appels, notifications, casque) — STR-110
-  audio_session: ^0.1.25
+  audio_session: ^0.2.4
 
   # Permission notifications (Android 13+) pour la notification média (STR-109)
   permission_handler: ^11.3.1
@@ -51,17 +51,17 @@ dependencies:
   google_fonts: ^8.2.1
 
   # Cache hors ligne (US-09-02)
-  path_provider: ^2.1.0
-  sqflite: ^2.3.0
+  path_provider: ^2.1.6
+  sqflite: ^2.4.3
   connectivity_plus: ^6.0.0
 
   # Chemins de fichiers
   path: ^1.9.0
 
   # Utilitaires
-  equatable: ^2.0.5
-  freezed_annotation: ^2.4.1
-  json_annotation: ^4.9.0
+  equatable: ^2.1.0
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.12.0
   logger: ^2.4.0
 
 dev_dependencies:
@@ -77,9 +77,9 @@ dev_dependencies:
     sdk: flutter
 
   # Génération de code
-  build_runner: ^2.4.9
-  freezed: ^2.5.2
-  json_serializable: ^6.8.0
+  build_runner: ^2.16.0
+  freezed: ^4.0.0
+  json_serializable: ^6.14.1
 
   # Linting
   flutter_lints: ^6.0.0
