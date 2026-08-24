@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/LignacAntony/streampulse/compare/v1.3.1...v1.3.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** corriger la configuration Flutter du job CD Android ([#354](https://github.com/LignacAntony/streampulse/issues/354)) ([191f8c7](https://github.com/LignacAntony/streampulse/commit/191f8c733f6f7e235bd2d95a6f8e6c348db9807b))
+
 ## [1.3.1](https://github.com/LignacAntony/streampulse/compare/v1.3.0...v1.3.1) (2026-08-24)
 
 
