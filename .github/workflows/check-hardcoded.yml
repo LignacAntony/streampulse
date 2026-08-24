@@ -18,7 +18,7 @@ jobs:
     name: Scan for hardcoded ports / DSN / secrets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Hardcoded port literals (e.g. ":8080" outside tests)
         # Bloque les littéraux ":<port>" dans le code Go non-test, sauf dans le package config.
@@ -61,10 +61,10 @@ jobs:
     name: Gitleaks secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

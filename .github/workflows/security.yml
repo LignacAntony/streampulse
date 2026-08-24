@@ -45,7 +45,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Étape de constat : produit le SARIF consommé par l'onglet Security
       # (historique, dédoublonnage, annotations de PR). Non bloquante — c'est
@@ -88,7 +88,7 @@ jobs:
           always() &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs.sarif
           # `category` distingue les trois SARIF de ce workflow. Sans elle, le
@@ -131,7 +131,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Même contexte de build que la CD (docker/build-push-action → ./backend),
       # sans push : on scanne ce que la CD publierait, pas une approximation.
@@ -167,7 +167,7 @@ jobs:
           always() &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
@@ -195,10 +195,10 @@ jobs:
       # l'autre, rien à montrer d'une revue de sécurité.
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Aligné sur backend/go.mod (go 1.25.0) et sur ci.yml. Compiler
           # l'analyse avec un toolchain plus ancien que le code analysé, c'est
@@ -239,7 +239,7 @@ jobs:
           always() &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.fork == false)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gosec.sarif
           category: gosec
