@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import 'package:provider/provider.dart';
 
+import 'package:streampulse/features/streams/domain/entities/manifest_status.dart';
 import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 import 'package:streampulse/features/streams/presentation/widgets/mini_player.dart';
 
@@ -73,7 +74,7 @@ void main() {
     final service = FakeAudioPlaybackService();
     final controller = AudioPlayerController(
       service: service,
-      isManifestUnavailable: (_) async => true,
+      manifestStatus: (_) async => ManifestStatus.ended,
     );
     addTearDown(controller.dispose);
     addTearDown(service.dispose);

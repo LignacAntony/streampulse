@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import '../../../../core/audio/audio_playback_service.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/audio/listening_clock.dart';
+import '../../domain/entities/manifest_status.dart';
 
 export '../../../../core/audio/audio_playback_service.dart'
     show NowPlaying, PlaybackStatus;
@@ -46,11 +47,11 @@ abstract class PlaybackController extends ChangeNotifier {
   Future<void> stop();
 }
 
-/// Sonde le manifeste HLS **public** : `true` s'il n'est plus servi (404/409),
-/// `false` sinon (200 en direct, ou réseau indéterminé). Le 409 étant ambigu
-/// (fin de direct **ou** démarrage pas encore prêt), le contrôleur ne conclut
-/// « terminé » qu'en le combinant à [_hasPlayed] (STR-118/109).
-typedef ManifestUnavailableProbe = Future<bool> Function(String streamId);
+/// Sonde le manifeste HLS **public** et rend le verdict du serveur (STR-229).
+///
+/// C'est le serveur qui distingue une fin de direct d'un démarrage en cours : le
+/// contrôleur applique la décision au lieu de la deviner.
+typedef ManifestStatusProbe = Future<ManifestStatus> Function(String streamId);
 
 /// Contrôleur du lecteur audio HLS, **hissé au niveau application** (STR-109,
 /// cf. [ADR 031]). Pilote un [AudioPlaybackService] partagé (service de premier
@@ -66,22 +67,25 @@ typedef ManifestUnavailableProbe = Future<bool> Function(String streamId);
 class AudioPlayerController extends PlaybackController {
   AudioPlayerController({
     required AudioPlaybackService service,
-    ManifestUnavailableProbe? isManifestUnavailable,
+    ManifestStatusProbe? manifestStatus,
   })  : _service = service,
-        _isManifestUnavailable = isManifestUnavailable {
+        _manifestStatus = manifestStatus {
     _stateSub = _service.playerStateStream.listen(_onPlayerState);
     // Les erreurs de lecture (perte réseau, flux terminé → manifeste 404/409)
     // arrivent via un flux dédié, pas via playerStateStream.
     _errorSub = _service.playbackErrors.listen(_fail);
   }
 
-  /// Nombre de reconnexions automatiques avant d'abandonner (STR-118). Couvre
-  /// aussi la fenêtre de démarrage du manifeste (~10 s, segments HLS de 10 s) :
-  /// backoff 1+2+4+8 = 15 s avant de conclure sur un flux qui n'a jamais démarré.
+  /// Nombre de reconnexions automatiques avant d'abandonner (STR-118). Couvre la
+  /// fenêtre de démarrage du manifeste (~10 s, segments HLS de 10 s) : backoff
+  /// 1+2+4+8 = 15 s.
+  ///
+  /// Ce budget ne s'applique **plus** à un direct terminé (STR-229) : le serveur
+  /// le dit désormais dès la première sonde, et le verdict tombe sans attendre.
   static const int _maxAutoRetries = 4;
 
   final AudioPlaybackService _service;
-  final ManifestUnavailableProbe? _isManifestUnavailable;
+  final ManifestStatusProbe? _manifestStatus;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Object>? _errorSub;
   Timer? _retryTimer;
@@ -90,10 +94,6 @@ class AudioPlayerController extends PlaybackController {
   int _retryCount = 0;
   bool _recovering = false;
   bool _disposed = false;
-  // La lecture a-t-elle déjà atteint `ready` sur ce flux ? Sert à lever
-  // l'ambiguïté du 409 : si oui, un manifeste qui disparaît = fin de direct ; si
-  // non, c'est probablement la fenêtre de démarrage (manifeste pas encore prêt).
-  bool _hasPlayed = false;
   PlaybackStatus _status = PlaybackStatus.idle;
 
   /// Horloge du temps d'écoute (STR-244). Pilotée par les transitions d'état
@@ -138,7 +138,6 @@ class AudioPlayerController extends PlaybackController {
     }
     _nowPlaying = now;
     _retryCount = 0;
-    _hasPlayed = false;
     await _start();
   }
 
@@ -180,7 +179,6 @@ class AudioPlayerController extends PlaybackController {
   Future<void> stop() async {
     _retryTimer?.cancel();
     _retryCount = 0;
-    _hasPlayed = false;
     _nowPlaying = null;
     _error = null;
     await _service.stop();
@@ -220,7 +218,6 @@ class AudioPlayerController extends PlaybackController {
         _setStatus(PlaybackStatus.buffering);
       case ProcessingState.ready:
         _retryCount = 0; // lecture rétablie : on réarme les reconnexions futures
-        _hasPlayed = true; // le manifeste a été servi au moins une fois
         _setStatus(
           state.playing ? PlaybackStatus.playing : PlaybackStatus.paused,
         );
@@ -241,13 +238,13 @@ class AudioPlayerController extends PlaybackController {
     _recover();
   }
 
-  /// Décide de la suite après un échec (STR-118/109).
+  /// Décide de la suite après un échec (STR-118/109/229).
   ///
-  /// On ne sonde le manifeste que lorsque c'est **décisif** : soit la lecture
-  /// avait démarré (sa disparition = fin de direct → `ended` immédiat), soit les
-  /// reconnexions sont épuisées (verdict final). Pendant la fenêtre de démarrage
-  /// (jamais joué, manifeste pas encore prêt → 409, comme une fin de direct) on
-  /// **reconnecte d'abord** plutôt que de conclure à tort « terminé ».
+  /// La sonde est **systématique** et son verdict fait autorité : c'est le
+  /// serveur qui sait si une session existe encore. Auparavant il ne rendait
+  /// qu'un 409 indistinct, et ce contrôleur devait deviner à partir de
+  /// « la lecture avait-elle démarré ? » — au prix de 15 s de reconnexions
+  /// inutiles sur un direct qu'on savait déjà terminé (STR-229).
   Future<void> _recover() async {
     if (_recovering) return; // une seule reprise à la fois (échecs en rafale)
     _recovering = true;
@@ -257,24 +254,24 @@ class AudioPlayerController extends PlaybackController {
         _setStatus(PlaybackStatus.error);
         return;
       }
-      final retriesExhausted = _retryCount >= _maxAutoRetries;
-      final probe = _isManifestUnavailable;
-      final manifestGone = probe != null &&
-          (_hasPlayed || retriesExhausted) &&
-          await probe(id);
+      final probe = _manifestStatus;
+      final status =
+          probe == null ? ManifestStatus.unknown : await probe(id);
       // La sonde est asynchrone : si entre-temps l'utilisateur a fermé le
       // lecteur (`stop()`) ou lancé un autre flux, cette reprise est caduque.
       if (_disposed || _nowPlaying?.streamId != id) return;
 
-      // La lecture avait démarré et le manifeste a disparu → fin de direct.
-      if (manifestGone && _hasPlayed) {
+      // Le serveur affirme qu'il n'y a plus de session : verdict immédiat, sans
+      // reconnexion d'attente. C'est tout l'objet de STR-229.
+      if (status == ManifestStatus.ended) {
         _setStatus(PlaybackStatus.ended);
         await _service.stop(); // retire la notification (le direct est fini)
         return;
       }
+
       // Reconnexion automatique bornée (coupure réseau, ou manifeste pas encore
       // prêt au démarrage) avec backoff 1, 2, 4, 8 s.
-      if (!retriesExhausted) {
+      if (_retryCount < _maxAutoRetries) {
         _retryCount++;
         _setStatus(PlaybackStatus.reconnecting);
         final delay = Duration(seconds: 1 << (_retryCount - 1));
@@ -284,9 +281,18 @@ class AudioPlayerController extends PlaybackController {
         });
         return;
       }
-      // Tentatives épuisées : manifeste jamais servi = flux terminé / pas live ;
-      // sinon indisponibilité réseau.
-      _setStatus(manifestGone ? PlaybackStatus.ended : PlaybackStatus.error);
+
+      // Tentatives épuisées. Un manifeste toujours pas servi après tout ce
+      // temps — diffuseur qui a démarré sans jamais pousser d'audio, ou session
+      // éteinte entre deux sondes — vaut fin de direct : c'est le message le
+      // plus juste pour l'auditeur, et c'est déjà ce que faisait la version
+      // précédente. Un manifeste servi alors que la lecture échoue est en
+      // revanche une indisponibilité réseau ou lecteur.
+      _setStatus(
+        status == ManifestStatus.notReady
+            ? PlaybackStatus.ended
+            : PlaybackStatus.error,
+      );
       await _service.stop(); // notification retirée
     } finally {
       _recovering = false;

@@ -40,13 +40,14 @@ fake léger la remplace dans les tests. Le contrôleur reste donc testable sans 
 - Le **contrôleur** garde tout l'arbitrage STR-118 (reconnexion bornée avec backoff, garde
   `_disposed`, garde `ended` dans `_onPlayerState`). À l'état terminal (`ended`/`error`), il appelle
   `stop()` pour retirer la notification.
-- **Ambiguïté du 409** (important) : le manifeste renvoie **409 aussi bien pour un flux terminé que
-  pour un flux live dont le manifeste n'est pas encore prêt** (fenêtre de démarrage ~10 s, segments
-  HLS de 10 s). Le contrôleur lève l'ambiguïté avec un flag `_hasPlayed` : il ne conclut « terminé »
-  immédiatement que si la lecture **avait démarré** (manifeste servi au moins une fois) ; sinon il
-  **reconnecte d'abord** (backoff 1+2+4+8 = 15 s) et ne conclut qu'après épuisement. La sonde
-  (`isManifestUnavailable`) accepte les <500 via `validateStatus` pour ne pas polluer les logs d'un
-  faux « erreur » sur un 404/409 attendu.
+- **Ambiguïté du 409** — ⚠️ **résolue depuis, cf. [ADR 045](045-codes-derreur-du-manifeste-hls.md)
+  (STR-229).** Le manifeste rendait 409 aussi bien pour un flux terminé que pour un flux live dont
+  le manifeste n'était pas encore prêt (fenêtre de démarrage ~10 s). Le contrôleur levait
+  l'ambiguïté avec un flag `_hasPlayed` : il ne concluait « terminé » immédiatement que si la
+  lecture avait démarré ; sinon il reconnectait d'abord (backoff 1+2+4+8 = 15 s). Le serveur
+  distingue désormais les deux cas par `error.code` (`stream_not_live` / `manifest_not_ready`), le
+  contrôleur applique ce verdict et `_hasPlayed` a disparu. La sonde continue d'accepter les <500
+  via `validateStatus` pour ne pas polluer les logs d'un faux « erreur » sur un 404/409 attendu.
 - Les **contrôles système** (play/pause/stop de la notif) appellent le handler, dont l'état de
   lecture se propage au contrôleur via `playerStateStream` → l'UI reste synchrone.
 

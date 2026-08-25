@@ -3,6 +3,7 @@ package streaming
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -14,7 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/LignacAntony/streampulse/internal/auth"
+	"github.com/LignacAntony/streampulse/internal/openapi"
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 )
 
@@ -922,6 +926,22 @@ func TestHandler_Ingest_SurvivesServerReadTimeoutWithoutGrace(t *testing.T) {
 
 // TestHandler_Playlist_NotReadyReturnsJSON409 : session vivante mais manifeste pas
 // encore écrit sur disque -> 409 JSON (contrat) et non un 404 text/plain brut.
+// errorCode lit le champ `error.code` d'une réponse d'erreur JSON. C'est ce que
+// le client mobile lit : l'assertion doit porter sur la charge utile réellement
+// émise, pas sur la valeur passée au constructeur d'erreur.
+func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("réponse illisible: %v (body=%s)", err, rec.Body.String())
+	}
+	return body.Error.Code
+}
+
 func TestHandler_Playlist_NotReadyReturnsJSON409(t *testing.T) {
 	seg := fakeSegmenter(t)
 	if err := os.Remove(filepath.Join(seg.dir, hlsPlaylistName)); err != nil {
@@ -951,6 +971,76 @@ func TestHandler_Playlist_NotReadyReturnsJSON409(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		t.Fatalf("l'erreur doit rester JSON, content-type=%q", ct)
+	}
+	if got := errorCode(t, rec); got != CodeManifestNotReady {
+		t.Errorf("code: got %q, want %q (session vivante, manifeste pas encore écrit)", got, CodeManifestNotReady)
+	}
+}
+
+// TestHandler_Playlist_NotLiveCodeDiffersFromNotReady est le cœur de STR-229 :
+// les deux 409 du manifeste doivent être distinguables par leur code.
+//
+// L'assertion qui compte est la *différence*. Vérifier chaque code isolément
+// laisserait passer une régression qui les ferait converger — exactement l'état
+// d'avant, où le lecteur devait deviner lequel des deux il tenait et payait
+// ~15 s de reconnexions inutiles sur un direct déjà terminé.
+func TestHandler_Playlist_NotLiveCodeDiffersFromNotReady(t *testing.T) {
+	// Aucune session : le lookup échoue, on est dans la branche « pas live ».
+	h := NewHandler(
+		&stubService{getRet: Stream{ID: "dead", UserID: testUserID, IsPublic: true}},
+		testIngestURL,
+		NewLiveSessions(context.Background()),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/dead/playlist.m3u8", nil)
+	req.SetPathValue("id", "dead")
+	rec := httptest.NewRecorder()
+
+	h.Playlist(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409 (flux pas en direct), got %d: %s", rec.Code, rec.Body)
+	}
+	got := errorCode(t, rec)
+	if got != CodeStreamNotLive {
+		t.Errorf("code: got %q, want %q (aucune session)", got, CodeStreamNotLive)
+	}
+	if got == CodeManifestNotReady {
+		t.Error("les deux 409 du manifeste doivent rester distinguables (STR-229)")
+	}
+}
+
+// TestHandler_Segment_NotLiveAndNotReadyStayIdentical fige l'asymétrie assumée :
+// le segment ne distingue pas ses deux causes d'indisponibilité. Le lecteur n'en
+// ferait rien — il redemande le manifeste, et c'est le manifeste qui tranche.
+// Sans ce test, quelqu'un « uniformiserait » un jour les deux handlers en
+// croyant corriger un oubli.
+func TestHandler_Segment_NotLiveAndNotReadyStayIdentical(t *testing.T) {
+	// Pas de session : branche « pas live ».
+	dead := NewHandler(
+		&stubService{getRet: Stream{ID: "dead", UserID: testUserID, IsPublic: true}},
+		testIngestURL,
+		NewLiveSessions(context.Background()),
+	)
+	reqDead := httptest.NewRequest(http.MethodGet, "/api/streams/dead/segments/seg_00000.ts", nil)
+	reqDead.SetPathValue("id", "dead")
+	reqDead.SetPathValue("segment", "seg_00000.ts")
+	recDead := httptest.NewRecorder()
+	dead.Segment(recDead, reqDead)
+
+	// Session vivante mais segment absent du disque : branche « pas prêt ».
+	live := newLiveHandler(t, "alive", &stubService{getRet: Stream{ID: "alive", UserID: testUserID, IsPublic: true}})
+	reqGone := httptest.NewRequest(http.MethodGet, "/api/streams/alive/segments/seg_09999.ts", nil)
+	reqGone.SetPathValue("id", "alive")
+	reqGone.SetPathValue("segment", "seg_09999.ts")
+	recGone := httptest.NewRecorder()
+	live.Segment(recGone, reqGone)
+
+	if recDead.Code != http.StatusNotFound || recGone.Code != http.StatusNotFound {
+		t.Fatalf("les deux cas doivent rendre 404: pas-live=%d, pas-prêt=%d", recDead.Code, recGone.Code)
+	}
+	if a, b := errorCode(t, recDead), errorCode(t, recGone); a != b {
+		t.Errorf("le segment ne doit pas distinguer ses deux causes: %q vs %q", a, b)
 	}
 }
 
@@ -1366,5 +1456,57 @@ func TestHandler_ListFavorites_Unauthenticated(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestOpenAPI_DocumenteLesDeuxCodesDu409 relie le handler au contrat publié.
+//
+// Ces deux codes ne sont pas décoratifs : le lecteur mobile *branche* dessus
+// pour décider entre « annoncer la fin » et « reconnecter ». Un code renommé en
+// Go sans mise à jour d'openapi.yaml livrerait donc un client qui ne reconnaît
+// plus rien — et qui, faute de mieux, reprendrait les reconnexions inutiles que
+// STR-229 supprime. Le reste du projet documente ses codes publics sans garde
+// (`storage_quota_exceeded` n'est qu'affiché) ; celui-ci en mérite une.
+func TestOpenAPI_DocumenteLesDeuxCodesDu409(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromData(openapi.SpecYAML())
+	if err != nil {
+		t.Fatalf("chargement de la spec: %v", err)
+	}
+
+	const path = "/api/streams/{id}/playlist.m3u8"
+	item := doc.Paths.Find(path)
+	if item == nil || item.Get == nil {
+		t.Fatalf("chemin %q absent de la spec", path)
+	}
+	resp := item.Get.Responses.Status(http.StatusConflict)
+	if resp == nil || resp.Value == nil {
+		t.Fatalf("réponse 409 absente de %q", path)
+	}
+	media := resp.Value.Content.Get("application/json")
+	if media == nil {
+		t.Fatalf("409 de %q sans corps application/json", path)
+	}
+
+	documentés := map[string]bool{}
+	for nom, ex := range media.Examples {
+		if ex == nil || ex.Value == nil {
+			t.Fatalf("exemple %q sans valeur", nom)
+		}
+		val, ok := ex.Value.Value.(map[string]any)
+		if !ok {
+			t.Fatalf("exemple %q: objet attendu, got %T", nom, ex.Value.Value)
+		}
+		errObj, ok := val["error"].(map[string]any)
+		if !ok {
+			t.Fatalf("exemple %q: champ `error` absent ou mal typé", nom)
+		}
+		code, _ := errObj["code"].(string)
+		documentés[code] = true
+	}
+
+	for _, want := range []string{CodeStreamNotLive, CodeManifestNotReady} {
+		if !documentés[want] {
+			t.Errorf("code %q rendu par le handler mais absent des exemples du 409 (documentés: %v)", want, documentés)
+		}
 	}
 }

@@ -454,10 +454,15 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
 - **Répartition** : le handler mappe l'état → notification et **transmet** les erreurs ; le
   contrôleur garde l'arbitrage STR-118 (reconnexion bornée 1/2/4/8 s, gardes `_disposed`/`ended`).
   État terminal → `stop()` retire la notification.
-- **Ambiguïté du 409** : le manifeste renvoie 409 pour un flux **terminé** *comme* pour un flux live
-  **pas encore prêt** (démarrage ~10 s). Le contrôleur ne conclut « terminé » via
-  `isManifestUnavailable` que si la lecture avait démarré (`_hasPlayed`) ; sinon il reconnecte
-  d'abord. La sonde utilise `validateStatus` (<500) pour ne pas logger de faux « erreur ».
+- **Les deux 409 du manifeste (STR-229, ADR 045)** : `stream_not_live` (plus de session — définitif)
+  et `manifest_not_ready` (session vivante, premier segment pas encore écrit — transitoire) portent
+  le même statut mais des conduites opposées. `manifestStatus` rend un `ManifestStatus`, le
+  contrôleur applique ce verdict → un direct terminé s'annonce **immédiatement** au lieu des ~15 s
+  de reconnexions qu'imposait l'ancien flag `_hasPlayed`. ⚠️ Un 409 au code inconnu retombe sur
+  `notReady` : se tromper vers l'attente coûte un backoff borné, se tromper vers la fin couperait un
+  direct qui démarre. ⚠️ La sonde n'utilise **pas** le client généré — `streamPlaylist` est typé
+  `Response<String>` et stringifie le corps d'erreur JSON à la Dart (illisible par `jsonDecode`) ;
+  elle passe par le `Dio` sous-jacent, **même instance**, donc mêmes intercepteurs.
 - **Mini-player** : `MiniPlayer` (titre/diffuseur, play/pause, croix = `stop`) est masqué à l'état
   `idle`. Le plein écran (`StreamPlayerScreen`) lit aussi ce contrôleur partagé et **ne le détruit
   pas**. Dans `MainShell`, c'est `PlayerBar` (`app/shell/`) qui choisit entre ce mini-player et
@@ -800,7 +805,7 @@ xcrun simctl openurl booted \
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
 | `docs/performance-mobile.md` | Preuves de fluidité 60 FPS : garde de reconstruction (CI) + relevé de trames sur appareil (STR-243) |
-| `docs/README.md` (§ Index complet des ADR) | **Les 40 ADR**, avec leur numéro et leur décision |
+| `docs/README.md` (§ Index complet des ADR) | **Les 45 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
@@ -811,7 +816,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `045-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `046-...`). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.
