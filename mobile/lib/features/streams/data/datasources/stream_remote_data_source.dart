@@ -92,10 +92,17 @@ class StreamRemoteDataSource {
               ? ManifestStatus.ended
               : ManifestStatus.notReady;
         default:
-          return ManifestStatus.unknown; // 503 (capacité), 4xx inattendu…
+          // 4xx inattendu. Les 5xx n'arrivent pas ici : `validateStatus` les
+          // rejette, ils partent en `DioException` et sont traités ci-dessous.
+          return ManifestStatus.unknown;
       }
     } on DioException {
-      return ManifestStatus.unknown; // réseau indéterminé → on ne conclut pas
+      // Réseau indisponible, mais **aussi** tout ≥500 — dont le 503 de capacité
+      // auditeurs atteinte (`HLS_MAX_CONCURRENT`). Le direct est alors bien
+      // vivant : le serveur refuse temporairement de le servir. `unknown` est
+      // donc le bon verdict, et surtout pas `ended`, qui annoncerait une fin de
+      // direct inexistante à tous les auditeurs refusés d'un flux populaire.
+      return ManifestStatus.unknown;
     }
   }
 

@@ -78,8 +78,8 @@ type StreamService interface {
 type StreamSessions interface {
 	Subscribe(streamID string) (<-chan SessionEvent, func())
 	AttachIngest(streamKey string) (io.Writer, func(), error)
-	Playlist(streamID string) (string, bool)
-	Segment(streamID, name string) (string, bool)
+	Playlist(streamID string) (string, hlsAvailability)
+	Segment(streamID, name string) (string, hlsAvailability)
 	TouchListener(streamID, clientKey string)
 	Stats(streamID string) (SessionStats, bool)
 }
@@ -879,7 +879,7 @@ const (
 // (`manifest_not_ready`) — cf. STR-229 pour la distinction.
 func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
 	h.serveHLSFile(w, r, HLSKindPlaylist, "application/vnd.apple.mpegurl",
-		func(id string) (string, bool) { return h.sessions.Playlist(id) },
+		func(id string) (string, hlsAvailability) { return h.sessions.Playlist(id) },
 		apperror.Conflict("stream is not live").Coded(CodeStreamNotLive),
 		apperror.Conflict("stream manifest is not ready yet").Coded(CodeManifestNotReady))
 }
@@ -895,7 +895,9 @@ func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 	// distinction (STR-229).
 	notFound := apperror.NotFound("segment not found")
 	h.serveHLSFile(w, r, HLSKindSegment, "video/mp2t",
-		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },
+		func(id string) (string, hlsAvailability) {
+			return h.sessions.Segment(id, r.PathValue("segment"))
+		},
 		notFound, notFound)
 }
 
@@ -903,16 +905,15 @@ func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
 // auditeur : contrôle de visibilité (GetStream, 404 si absent/privé), lookup de la
 // session, en-têtes puis ServeFile. lookup renvoie le chemin disque et sa validité.
 //
-// Deux erreurs distinctes, et non une seule (STR-229) : `notLive` quand aucune
-// session n'existe, `notReady` quand elle existe mais que le fichier n'est pas
-// encore sur le disque. L'appelant décide si la nuance l'intéresse — le manifeste
-// oui, le segment non.
+// Deux erreurs distinctes, et non une seule (STR-229) : `notLive` quand il n'y a
+// rien à attendre, `notReady` quand le flux démarre encore. L'appelant décide si
+// la nuance l'intéresse — le manifeste oui, le segment non.
 //
 // Lecture PUBLIQUE (STR-108) : pas d'authentification requise — le player natif
 // (just_audio → AVPlayer/ExoPlayer) ne peut pas porter le Bearer. Un auditeur
 // anonyme a requesterID = "" ; la visibilité de GetStream sert alors les flux
 // publics et renvoie 404 pour un flux privé (jamais propriétaire de "").
-func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, contentType string, lookup func(id string) (string, bool), notLive, notReady error) {
+func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, contentType string, lookup func(id string) (string, hlsAvailability), notLive, notReady error) {
 	requesterID, _ := auth.UserIDFromContext(r.Context()) // "" si anonyme (pas de JWT)
 	id := r.PathValue("id")
 
@@ -921,9 +922,16 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, con
 		return
 	}
 
-	path, ok := lookup(id)
-	if !ok {
+	// Le registre distingue « plus rien à attendre » de « pas encore démarré » :
+	// `Start` inscrit la session avant de forker ffmpeg, et un flux déjà annoncé
+	// « en direct » est ouvrable pendant ce laps (revue PR #358).
+	path, avail := lookup(id)
+	switch avail {
+	case hlsUnavailable:
 		httpjson.WriteError(w, r, notLive)
+		return
+	case hlsPending:
+		httpjson.WriteError(w, r, notReady)
 		return
 	}
 

@@ -97,6 +97,10 @@ void main() {
       // Le direct est bien vivant : le serveur refuse temporairement de servir.
       // Conclure « terminé » ici afficherait une fin de direct inexistante à
       // tous les auditeurs refusés d'un flux populaire.
+      //
+      // Le verdict passe par le `catch` et non par le `switch` : `validateStatus`
+      // n'accepte que les <500, un 503 lève donc une `DioException`. Ce test
+      // vaut pour le comportement observable, indépendamment de ce chemin.
       adapter.onGet(
         path,
         (server) => server.reply(503, {

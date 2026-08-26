@@ -37,13 +37,43 @@ les clients pour un gain nul. C'est le champ `error.code` qui porte la distincti
 
 | Situation | Code | Nature |
 |---|---|---|
-| Aucune session live | `stream_not_live` | Définitive — réessayer ne sert à rien |
-| Session vivante, manifeste pas encore écrit | `manifest_not_ready` | Transitoire — réessayer a du sens |
+| Rien à attendre | `stream_not_live` | Définitive — réessayer ne sert à rien |
+| Le flux démarre encore | `manifest_not_ready` | Transitoire — réessayer a du sens |
 
 Le mécanisme existait déjà et n'a pas eu à être inventé : `apperror.Error.PublicCode`, posé par
 `.Coded(...)`, laisse un domaine publier un code métier stable sans connaître le transport —
 `Code` continue seul de décider du statut HTTP. Le précédent est `storage_quota_exceeded`
 (ADR 032).
+
+### 1 bis. Le registre de sessions devait d'abord savoir répondre
+
+La première version de cette décision plaçait la frontière au mauvais endroit. Elle lisait
+« session absente » (`lookup` rend `false`) comme « direct terminé » — or `LiveSessions.Playlist`
+rendait ce même `false` dans **trois** situations :
+
+1. aucune entrée dans le registre — direct terminé, ou jamais démarré ;
+2. entrée présente, `s.dead` — ffmpeg s'est arrêté seul, la session part au `reap` ;
+3. entrée présente, `s.hls == nil` — **le segmenteur n'est pas encore publié**.
+
+Le troisième cas est la fenêtre de `LiveSessions.Start` : la phase 1 inscrit la session sous verrou,
+la phase 2 (`MkdirTemp` + fork ffmpeg, « potentiellement lents ») se déroule **hors** verrou, et la
+phase 3 seulement publie le segmenteur. Entre-temps le flux est déjà `live` en base, donc visible
+et ouvrable depuis Découvrir. Un auditeur arrivé une seconde trop tôt recevait `stream_not_live` et
+se voyait couper immédiatement — le défaut même que cette ADR corrige, déplacé une couche plus bas.
+Relevé en revue de la PR #358.
+
+`Playlist`/`Segment` rendent donc un `hlsAvailability` à trois états (`hlsUnavailable` /
+`hlsPending` / `hlsServable`) plutôt qu'un booléen, et `session.hlsState()` distingue `dead` de
+`hls == nil` **sous un unique verrou**. Deux appels successifs — « est-ce servable ? » puis
+« est-ce en démarrage ? » — auraient laissé la session changer d'état entre les deux, et un flux
+devenu prêt dans cet intervalle aurait été annoncé « terminé ».
+
+Un nom de segment refusé (traversal, hors fenêtre glissante) rend `hlsUnavailable` : il n'y a rien
+à servir, et attendre n'y changera rien.
+
+Un spawn ffmpeg **échoué** publie un `nil` permanent, indistinguable d'un spawn en cours — et cela
+reste ainsi. Le flux est bien `live` en base, il ne produira simplement jamais d'audio ; le serveur
+n'a pas de quoi trancher, c'est le plafond de reprises du client qui conclut.
 
 ### 2. Le segment ne suit pas
 

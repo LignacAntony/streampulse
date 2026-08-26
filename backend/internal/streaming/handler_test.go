@@ -1010,6 +1010,44 @@ func TestHandler_Playlist_NotLiveCodeDiffersFromNotReady(t *testing.T) {
 	}
 }
 
+// TestHandler_Playlist_SpawnWindowReturnsNotReady vérifie le contrat HTTP de la
+// fenêtre de spawn (revue PR #358), là où le test de session vérifie le registre.
+//
+// Les deux comptent : c'est le *code* que le lecteur mobile lit, et c'est lui
+// qui décide entre patienter et couper. Un `stream_not_live` ici couperait la
+// lecture d'un flux qui démarre — le défaut de STR-229, réintroduit une couche
+// plus bas.
+func TestHandler_Playlist_SpawnWindowReturnsNotReady(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) {
+		close(entered)
+		<-release
+		return fakeSegmenter(t), nil
+	}
+	t.Cleanup(ls.StopAll)
+	t.Cleanup(func() { close(release) })
+
+	go ls.Start("spawning", "KEYSPAWN")
+	<-entered
+
+	h := NewHandler(&stubService{getRet: Stream{ID: "spawning", UserID: testUserID, IsPublic: true}}, testIngestURL, ls)
+	req := httptest.NewRequest(http.MethodGet, "/api/streams/spawning/playlist.m3u8", nil)
+	req.SetPathValue("id", "spawning")
+	rec := httptest.NewRecorder()
+
+	h.Playlist(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body)
+	}
+	if got := errorCode(t, rec); got != CodeManifestNotReady {
+		t.Errorf("code: got %q, want %q (le flux démarre, il n'est pas terminé)", got, CodeManifestNotReady)
+	}
+}
+
 // TestHandler_Segment_NotLiveAndNotReadyStayIdentical fige l'asymétrie assumée :
 // le segment ne distingue pas ses deux causes d'indisponibilité. Le lecteur n'en
 // ferait rien — il redemande le manifeste, et c'est le manifeste qui tranche.
