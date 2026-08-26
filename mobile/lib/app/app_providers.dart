@@ -131,8 +131,10 @@ class StreamPulseApp extends StatelessWidget {
               BroadcasterController(ctx.read<BroadcasterRepository>()),
         ),
         Provider<StreamRemoteDataSource>(
-          create: (ctx) =>
-              StreamRemoteDataSource(ctx.read<DioClient>().streamingApi),
+          create: (ctx) => StreamRemoteDataSource(
+            ctx.read<DioClient>().streamingApi,
+            ctx.read<DioClient>().dio,
+          ),
         ),
         Provider<StreamRepository>(
           create: (ctx) =>
@@ -152,8 +154,7 @@ class StreamPulseApp extends StatelessWidget {
         ChangeNotifierProvider<AudioPlayerController>(
           create: (ctx) => AudioPlayerController(
             service: ctx.read<AudioPlaybackService>(),
-            isManifestUnavailable:
-                ctx.read<StreamRepository>().isManifestUnavailable,
+            manifestStatus: ctx.read<StreamRepository>().manifestStatus,
           ),
         ),
         Provider<OfflineDatabase>(create: (_) => OfflineDatabase()),

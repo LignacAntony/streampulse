@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/features/streams/domain/entities/live_stream.dart';
+import 'package:streampulse/features/streams/domain/entities/manifest_status.dart';
 import 'package:streampulse/features/streams/domain/repositories/stream_repository.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 
@@ -38,7 +39,8 @@ class _FakeRepository implements StreamRepository {
       const [];
 
   @override
-  Future<bool> isManifestUnavailable(String streamId) async => false;
+  Future<ManifestStatus> manifestStatus(String streamId) async =>
+      ManifestStatus.available;
 }
 
 void main() {

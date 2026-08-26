@@ -1,4 +1,5 @@
 import '../entities/live_stream.dart';
+import '../entities/manifest_status.dart';
 
 abstract class StreamRepository {
   Future<List<LiveStream>> listLiveStreams({int limit, int offset});
@@ -12,9 +13,11 @@ abstract class StreamRepository {
   /// Retire le flux des favoris (idempotent côté serveur).
   Future<void> removeFavorite(String streamId);
 
-  /// `true` si le manifeste HLS public n'est plus servi (404/409), `false` sinon
-  /// (200 en direct, ou réseau indéterminé). Le 409 étant ambigu (fin de direct
-  /// **ou** démarrage pas encore prêt), c'est le lecteur qui lève l'ambiguïté
-  /// (STR-118/109).
-  Future<bool> isManifestUnavailable(String streamId);
+  /// Interroge le manifeste HLS **public** du flux et rend le verdict du
+  /// serveur : direct en cours, terminé, en cours de démarrage, ou indéterminé.
+  ///
+  /// C'est le serveur qui tranche entre « terminé » et « pas encore prêt »
+  /// (STR-229) — lui seul sait si une session existe. Le lecteur se contentait
+  /// autrefois d'un booléen et devait deviner.
+  Future<ManifestStatus> manifestStatus(String streamId);
 }
