@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
+	"github.com/LignacAntony/streampulse/internal/shared/apperror"
 	"github.com/LignacAntony/streampulse/internal/shared/httpjson"
 )
 
@@ -48,11 +50,20 @@ type Handler struct {
 	hub          *ChatHub
 	liveness     ChatLiveness
 	broadcasters BroadcasterResolver
+
+	rateMu   sync.Mutex
+	rateByID map[string]time.Time
 }
 
 // NewHandler construit le handler chat.
 func NewHandler(svc ChatService, hub *ChatHub, liveness ChatLiveness, broadcasters BroadcasterResolver) *Handler {
-	return &Handler{svc: svc, hub: hub, liveness: liveness, broadcasters: broadcasters}
+	return &Handler{
+		svc:          svc,
+		hub:          hub,
+		liveness:     liveness,
+		broadcasters: broadcasters,
+		rateByID:     make(map[string]time.Time),
+	}
 }
 
 // --- Protocole JSON ---
@@ -93,11 +104,10 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 		httpjson.WriteError(w, r, nil)
 		return
 	}
-	role, _ := auth.RoleFromContext(r.Context())
 	streamID := r.PathValue("id")
 
 	if !h.liveness.IsLive(streamID) {
-		http.Error(w, `{"error":{"code":"conflict","message":"stream is not live"}}`, http.StatusConflict)
+		httpjson.WriteError(w, r, apperror.Conflict("stream is not live"))
 		return
 	}
 
@@ -107,7 +117,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if banned {
-		http.Error(w, `{"error":{"code":"forbidden","message":"you are banned from this chat"}}`, http.StatusForbidden)
+		httpjson.WriteError(w, r, apperror.Forbidden("you are banned from this chat"))
 		return
 	}
 
@@ -124,7 +134,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.SetReadLimit(readLimit)
 
-	c := newClient(userID, username, role)
+	c := newClient(userID, username)
 	rm := h.hub.Room(streamID)
 	rm.Join(c)
 	defer rm.Leave(c)
@@ -156,8 +166,12 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) readPump(ctx context.Context, conn *websocket.Conn, c *client, rm *room, streamID string, isBroadcaster bool) {
-	defer func() { _ = conn.CloseNow() }()
-	var lastMsg time.Time
+	defer func() {
+		_ = conn.CloseNow()
+		h.rateMu.Lock()
+		delete(h.rateByID, c.userID)
+		h.rateMu.Unlock()
+	}()
 
 	for {
 		_, data, err := conn.Read(ctx)
@@ -173,11 +187,15 @@ func (h *Handler) readPump(ctx context.Context, conn *websocket.Conn, c *client,
 
 		switch msg.Type {
 		case "message":
-			if time.Since(lastMsg) < rateInterval {
+			h.rateMu.Lock()
+			last := h.rateByID[c.userID]
+			if time.Since(last) < rateInterval {
+				h.rateMu.Unlock()
 				h.sendEvent(conn, ctx, outgoingMsg{Type: "error", Message: "rate limited"})
 				continue
 			}
-			lastMsg = time.Now()
+			h.rateByID[c.userID] = time.Now()
+			h.rateMu.Unlock()
 
 			m, err := h.svc.SendMessage(ctx, streamID, c.userID, msg.Content)
 			if err != nil {

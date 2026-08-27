@@ -13,6 +13,7 @@ import 'package:streampulse_api/src/model/broadcaster_request_admin.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_input.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_list_response.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_response.dart';
+import 'package:streampulse_api/src/model/chat_banned_user.dart';
 import 'package:streampulse_api/src/model/create_playlist_request.dart';
 import 'package:streampulse_api/src/model/create_stream_request.dart';
 import 'package:streampulse_api/src/model/delete_account_request.dart';
@@ -110,6 +111,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'BroadcasterRequestResponse':
       return BroadcasterRequestResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'ChatBannedUser':
+      return ChatBannedUser.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'CreatePlaylistRequest':
       return CreatePlaylistRequest.fromJson(value as Map<String, dynamic>)

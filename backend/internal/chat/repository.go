@@ -14,6 +14,8 @@ import (
 	chatdb "github.com/LignacAntony/streampulse/internal/chat/db"
 )
 
+var errInvalidUUID = apperror.InvalidArgument("invalid UUID")
+
 type pgRepository struct {
 	pool *pgxpool.Pool
 	q    *chatdb.Queries
@@ -25,9 +27,17 @@ func NewRepository(pool *pgxpool.Pool) Repository {
 }
 
 func (r *pgRepository) InsertMessage(ctx context.Context, streamID, userID, content string) (Message, error) {
+	sid, ok := parseUUID(streamID)
+	if !ok {
+		return Message{}, errInvalidUUID
+	}
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return Message{}, errInvalidUUID
+	}
 	row, err := r.q.InsertChatMessage(ctx, chatdb.InsertChatMessageParams{
-		StreamID: uuidParam(streamID),
-		UserID:   uuidParam(userID),
+		StreamID: sid,
+		UserID:   uid,
 		Content:  content,
 	})
 	if err != nil {
@@ -43,9 +53,17 @@ func (r *pgRepository) InsertMessage(ctx context.Context, streamID, userID, cont
 }
 
 func (r *pgRepository) SoftDeleteMessage(ctx context.Context, messageID, broadcasterID string) error {
+	mid, ok := parseUUID(messageID)
+	if !ok {
+		return errInvalidUUID
+	}
+	bid, ok := parseUUID(broadcasterID)
+	if !ok {
+		return errInvalidUUID
+	}
 	res, err := r.q.SoftDeleteChatMessage(ctx, chatdb.SoftDeleteChatMessageParams{
-		ID:            uuidParam(messageID),
-		BroadcasterID: uuidParam(broadcasterID),
+		ID:            mid,
+		BroadcasterID: bid,
 	})
 	if err != nil {
 		return fmt.Errorf("chat: soft delete message: %w", err)
@@ -57,9 +75,17 @@ func (r *pgRepository) SoftDeleteMessage(ctx context.Context, messageID, broadca
 }
 
 func (r *pgRepository) InsertBan(ctx context.Context, bannedUserID, bannedBy string, reason *string) error {
+	buid, ok := parseUUID(bannedUserID)
+	if !ok {
+		return errInvalidUUID
+	}
+	bby, ok := parseUUID(bannedBy)
+	if !ok {
+		return errInvalidUUID
+	}
 	params := chatdb.InsertChatBanParams{
-		BannedUserID: uuidParam(bannedUserID),
-		BannedBy:     uuidParam(bannedBy),
+		BannedUserID: buid,
+		BannedBy:     bby,
 	}
 	if reason != nil {
 		params.Reason = pgtype.Text{String: *reason, Valid: true}
@@ -71,9 +97,17 @@ func (r *pgRepository) InsertBan(ctx context.Context, bannedUserID, bannedBy str
 }
 
 func (r *pgRepository) DeleteBan(ctx context.Context, bannedUserID, bannedBy string) error {
+	buid, ok := parseUUID(bannedUserID)
+	if !ok {
+		return errInvalidUUID
+	}
+	bby, ok := parseUUID(bannedBy)
+	if !ok {
+		return errInvalidUUID
+	}
 	res, err := r.q.DeleteChatBan(ctx, chatdb.DeleteChatBanParams{
-		BannedUserID: uuidParam(bannedUserID),
-		BannedBy:     uuidParam(bannedBy),
+		BannedUserID: buid,
+		BannedBy:     bby,
 	})
 	if err != nil {
 		return fmt.Errorf("chat: delete ban: %w", err)
@@ -85,7 +119,11 @@ func (r *pgRepository) DeleteBan(ctx context.Context, bannedUserID, bannedBy str
 }
 
 func (r *pgRepository) ListBans(ctx context.Context, bannedBy string) ([]BannedUser, error) {
-	rows, err := r.q.ListChatBans(ctx, uuidParam(bannedBy))
+	bby, ok := parseUUID(bannedBy)
+	if !ok {
+		return nil, errInvalidUUID
+	}
+	rows, err := r.q.ListChatBans(ctx, bby)
 	if err != nil {
 		return nil, fmt.Errorf("chat: list bans: %w", err)
 	}
@@ -104,9 +142,17 @@ func (r *pgRepository) ListBans(ctx context.Context, bannedBy string) ([]BannedU
 }
 
 func (r *pgRepository) IsBanned(ctx context.Context, userID, broadcasterID string) (bool, error) {
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return false, errInvalidUUID
+	}
+	bid, ok := parseUUID(broadcasterID)
+	if !ok {
+		return false, errInvalidUUID
+	}
 	banned, err := r.q.IsChatBanned(ctx, chatdb.IsChatBannedParams{
-		UserID:        uuidParam(userID),
-		BroadcasterID: uuidParam(broadcasterID),
+		UserID:        uid,
+		BroadcasterID: bid,
 	})
 	if err != nil {
 		return false, fmt.Errorf("chat: is banned: %w", err)
@@ -115,8 +161,12 @@ func (r *pgRepository) IsBanned(ctx context.Context, userID, broadcasterID strin
 }
 
 func (r *pgRepository) ListRecentMessages(ctx context.Context, streamID string, limit int32) ([]Message, error) {
+	sid, ok := parseUUID(streamID)
+	if !ok {
+		return nil, errInvalidUUID
+	}
 	rows, err := r.q.ListRecentChatMessages(ctx, chatdb.ListRecentChatMessagesParams{
-		StreamID: uuidParam(streamID),
+		StreamID: sid,
 		Lim:      limit,
 	})
 	if err != nil {
@@ -137,7 +187,11 @@ func (r *pgRepository) ListRecentMessages(ctx context.Context, streamID string, 
 }
 
 func (r *pgRepository) GetUsername(ctx context.Context, userID string) (string, error) {
-	username, err := r.q.GetUsername(ctx, uuidParam(userID))
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return "", errInvalidUUID
+	}
+	username, err := r.q.GetUsername(ctx, uid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", apperror.NotFound("user not found")
@@ -148,7 +202,11 @@ func (r *pgRepository) GetUsername(ctx context.Context, userID string) (string, 
 }
 
 func (r *pgRepository) IsGloballyBanned(ctx context.Context, userID string) (bool, error) {
-	banned, err := r.q.IsGloballyBanned(ctx, uuidParam(userID))
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return false, errInvalidUUID
+	}
+	banned, err := r.q.IsGloballyBanned(ctx, uid)
 	if err != nil {
 		return false, fmt.Errorf("chat: is globally banned: %w", err)
 	}
@@ -156,9 +214,17 @@ func (r *pgRepository) IsGloballyBanned(ctx context.Context, userID string) (boo
 }
 
 func (r *pgRepository) InsertGlobalBan(ctx context.Context, bannedUserID, bannedBy string, reason *string) error {
+	buid, ok := parseUUID(bannedUserID)
+	if !ok {
+		return errInvalidUUID
+	}
+	bby, ok := parseUUID(bannedBy)
+	if !ok {
+		return errInvalidUUID
+	}
 	params := chatdb.InsertGlobalBanParams{
-		BannedUserID: uuidParam(bannedUserID),
-		BannedBy:     uuidParam(bannedBy),
+		BannedUserID: buid,
+		BannedBy:     bby,
 	}
 	if reason != nil {
 		params.Reason = pgtype.Text{String: *reason, Valid: true}
@@ -170,7 +236,11 @@ func (r *pgRepository) InsertGlobalBan(ctx context.Context, bannedUserID, banned
 }
 
 func (r *pgRepository) DeleteGlobalBan(ctx context.Context, bannedUserID string) error {
-	res, err := r.q.DeleteGlobalBan(ctx, uuidParam(bannedUserID))
+	buid, ok := parseUUID(bannedUserID)
+	if !ok {
+		return errInvalidUUID
+	}
+	res, err := r.q.DeleteGlobalBan(ctx, buid)
 	if err != nil {
 		return fmt.Errorf("chat: delete global ban: %w", err)
 	}
@@ -200,8 +270,12 @@ func (r *pgRepository) ListGlobalBans(ctx context.Context) ([]BannedUser, error)
 }
 
 func (r *pgRepository) ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]UserMessage, error) {
+	uid, ok := parseUUID(userID)
+	if !ok {
+		return nil, errInvalidUUID
+	}
 	rows, err := r.q.ListUserChatMessages(ctx, chatdb.ListUserChatMessagesParams{
-		UserID: uuidParam(userID),
+		UserID: uid,
 		Lim:    limit,
 		Off:    offset,
 	})
@@ -223,10 +297,10 @@ func (r *pgRepository) ListUserMessages(ctx context.Context, userID string, limi
 	return msgs, nil
 }
 
-func uuidParam(s string) pgtype.UUID {
+func parseUUID(s string) (pgtype.UUID, bool) {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
-		panic("chat: invalid UUID from internal source: " + s)
+		return u, false
 	}
-	return u
+	return u, true
 }

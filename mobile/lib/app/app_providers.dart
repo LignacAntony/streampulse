@@ -152,8 +152,10 @@ class StreamPulseApp extends StatelessWidget {
         ),
         // Chat en direct (US-09-01) : WebSocket source + contrôleur + bans REST.
         Provider<ChatWebSocketSource>(
-          create: (ctx) =>
-              ChatWebSocketSourceImpl(ctx.read<SecureStorage>()),
+          create: (ctx) => ChatWebSocketSourceImpl(
+            ctx.read<SecureStorage>(),
+            ctx.read<DioClient>(),
+          ),
         ),
         Provider<ChatBanRepository>(
           create: (ctx) => ChatBanRepositoryImpl(ctx.read<DioClient>().dio),

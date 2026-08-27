@@ -82,6 +82,17 @@ class _ChatPanelState extends State<ChatPanel> {
 
     return Column(
       children: [
+        if (chat.transientError != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            color: colors.errorContainer,
+            child: Text(
+              chat.transientError!,
+              style: TextStyle(color: colors.onErrorContainer, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ),
         Expanded(
           child: chat.messages.isEmpty
               ? Center(

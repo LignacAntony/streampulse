@@ -62,6 +62,7 @@ type LiveSessions struct {
 
 	ingestGrace     time.Duration
 	onIngestExpired func(streamID string) error
+	onStreamStopped func(streamID string)
 }
 
 // SetIngestDisconnectHandler arme le bail audio des directs. Un flux qui ne
@@ -75,6 +76,14 @@ func (ls *LiveSessions) SetIngestDisconnectHandler(
 	defer ls.mu.Unlock()
 	ls.ingestGrace = grace
 	ls.onIngestExpired = handler
+}
+
+// SetOnStreamStopped enregistre un callback appelé (hors verrou, best-effort)
+// chaque fois qu'une session est retirée du registre (Stop, reap, StopAll).
+func (ls *LiveSessions) SetOnStreamStopped(fn func(streamID string)) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.onStreamStopped = fn
 }
 
 // NewLiveSessions construit le registre. base est le context de cycle de vie du
@@ -207,6 +216,7 @@ func (s *session) run(ctx context.Context) bool {
 func (ls *LiveSessions) reap(streamID string, s *session) {
 	ls.mu.Lock()
 	handler := ls.onIngestExpired
+	fn := ls.onStreamStopped
 	if ls.byID[streamID] == s {
 		delete(ls.byID, streamID)
 		if s.streamKey != "" {
@@ -219,6 +229,9 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 	rec.ForgetStream(streamID)
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
+	if fn != nil {
+		fn(streamID)
+	}
 
 	// Hors verrou : le handler repasse par Service, qui peut rappeler Stop.
 	// Best-effort — la session mémoire est déjà retirée, donc plus rien n'est
@@ -238,6 +251,7 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 func (ls *LiveSessions) Stop(streamID string) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
+	fn := ls.onStreamStopped
 	if ok {
 		delete(ls.byID, streamID)
 		if s.streamKey != "" {
@@ -252,6 +266,9 @@ func (ls *LiveSessions) Stop(streamID string) {
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
 	s.cancel()
+	if fn != nil {
+		fn(streamID)
+	}
 }
 
 // armIngestExpiry (ré)arme le délai de grâce d'une session sans ingest. Le
@@ -540,6 +557,7 @@ func (ls *LiveSessions) StartListenerSweep(done <-chan struct{}, interval time.D
 func (ls *LiveSessions) StopAll() {
 	ls.mu.Lock()
 	sessions := ls.byID
+	fn := ls.onStreamStopped
 	ls.byID = make(map[string]*session)
 	ls.byKey = make(map[string]*session)
 	ls.mu.Unlock()
@@ -549,6 +567,9 @@ func (ls *LiveSessions) StopAll() {
 		rec.ForgetStream(id)
 		s.closeSubscribers()
 		s.cancel()
+		if fn != nil {
+			fn(id)
+		}
 	}
 }
 

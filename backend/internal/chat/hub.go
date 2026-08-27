@@ -82,7 +82,6 @@ type room struct {
 type client struct {
 	userID   string
 	username string
-	role     string
 	send     chan []byte
 	done     chan struct{}
 	once     sync.Once
@@ -143,11 +142,10 @@ func (c *client) close() {
 	c.once.Do(func() { close(c.done) })
 }
 
-func newClient(userID, username, role string) *client {
+func newClient(userID, username string) *client {
 	return &client{
 		userID:   userID,
 		username: username,
-		role:     role,
 		send:     make(chan []byte, clientSendBuf),
 		done:     make(chan struct{}),
 	}

@@ -10,6 +10,7 @@ import 'package:streampulse_api/src/auth/oauth.dart';
 import 'package:streampulse_api/src/api/admin_api.dart';
 import 'package:streampulse_api/src/api/auth_api.dart';
 import 'package:streampulse_api/src/api/broadcaster_api.dart';
+import 'package:streampulse_api/src/api/chat_api.dart';
 import 'package:streampulse_api/src/api/health_api.dart';
 import 'package:streampulse_api/src/api/metrics_api.dart';
 import 'package:streampulse_api/src/api/playlist_api.dart';
@@ -156,6 +157,12 @@ class StreampulseApi {
   /// by doing that all interceptors will not be executed
   BroadcasterApi getBroadcasterApi() {
     return BroadcasterApi(dio);
+  }
+
+  /// Get ChatApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  ChatApi getChatApi() {
+    return ChatApi(dio);
   }
 
   /// Get HealthApi instance, base route and serializer can be overridden by a given but be careful,

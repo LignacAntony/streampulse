@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/permissions/notification_permission.dart';
 import '../../../../core/widgets/accessible_icon_button.dart';
+import '../../../../core/widgets/volume_slider.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../widgets/listening_time.dart';
 import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/widgets/chat_panel.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
@@ -137,6 +139,16 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
           children: [
             _header(colors),
             _compactStreamInfo(colors, text, title, subtitle, listeners, isFavorited),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  const Expanded(child: VolumeSlider(showLabel: false)),
+                  const SizedBox(width: 12),
+                  ListeningTime(controller: _audio),
+                ],
+              ),
+            ),
             Expanded(
               child: _chat != null && profile != null
                   ? ListenableBuilder(

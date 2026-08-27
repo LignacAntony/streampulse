@@ -42,8 +42,12 @@ void main() {
     controller.dispose();
   });
 
-  test('connect sets isConnected', () async {
+  test('connect sets isConnected after connected event', () async {
     await controller.connect('stream-1', 'user-1');
+    expect(controller.isConnected, isFalse);
+
+    source.emit({'type': 'connected', 'is_broadcaster': false});
+    await Future<void>.delayed(Duration.zero);
     expect(controller.isConnected, isTrue);
   });
 
@@ -128,6 +132,9 @@ void main() {
 
   test('sendMessage sends correct JSON', () async {
     await controller.connect('stream-1', 'user-1');
+    source.emit({'type': 'connected', 'is_broadcaster': false});
+    await Future<void>.delayed(Duration.zero);
+
     controller.sendMessage('hello world');
 
     expect(source.sent.length, 1);
@@ -137,6 +144,9 @@ void main() {
 
   test('sendMessage trims whitespace', () async {
     await controller.connect('stream-1', 'user-1');
+    source.emit({'type': 'connected', 'is_broadcaster': false});
+    await Future<void>.delayed(Duration.zero);
+
     controller.sendMessage('  hello  ');
 
     expect(source.sent[0]['content'], 'hello');
@@ -144,6 +154,9 @@ void main() {
 
   test('sendMessage ignores empty content', () async {
     await controller.connect('stream-1', 'user-1');
+    source.emit({'type': 'connected', 'is_broadcaster': false});
+    await Future<void>.delayed(Duration.zero);
+
     controller.sendMessage('   ');
 
     expect(source.sent, isEmpty);

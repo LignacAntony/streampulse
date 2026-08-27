@@ -1894,6 +1894,85 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/chat/bans:
+    get:
+      tags:
+        - Chat
+      operationId: listChatBans
+      summary: List users banned by the authenticated broadcaster.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of banned users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatBannedUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/chat/bans/{userId}:
+    delete:
+      tags:
+        - Chat
+      operationId: unbanChatUser
+      summary: Remove a chat ban for a user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User identifier to unban.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Ban removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /ws/streams/{id}/chat:
+    get:
+      tags:
+        - Chat
+      operationId: connectChat
+      summary: Open a WebSocket connection to the live chat of a stream.
+      description: |
+        Upgrades the HTTP connection to WebSocket. Requires a valid JWT
+        in the `Authorization` header. Returns `409 Conflict` if the
+        stream is not live, `403 Forbidden` if the user is banned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Stream identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "101":
+          description: WebSocket connection established.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2744,6 +2823,24 @@ components:
           format: date-time
         stream_title:
           type: string
+    ChatBannedUser:
+      type: object
+      required:
+        - user_id
+        - username
+        - created_at
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
     AdminGlobalBannedUser:
       type: object
       required:

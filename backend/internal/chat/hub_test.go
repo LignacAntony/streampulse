@@ -9,8 +9,8 @@ func TestRoom_JoinLeave(t *testing.T) {
 	hub := NewChatHub()
 	rm := hub.Room("stream-1")
 
-	c1 := newClient("u1", "alice", "user")
-	c2 := newClient("u2", "bob", "user")
+	c1 := newClient("u1", "alice")
+	c2 := newClient("u2", "bob")
 	rm.Join(c1)
 	rm.Join(c2)
 
@@ -34,8 +34,8 @@ func TestRoom_Broadcast(t *testing.T) {
 	hub := NewChatHub()
 	rm := hub.Room("stream-1")
 
-	c1 := newClient("u1", "alice", "user")
-	c2 := newClient("u2", "bob", "user")
+	c1 := newClient("u1", "alice")
+	c2 := newClient("u2", "bob")
 	rm.Join(c1)
 	rm.Join(c2)
 
@@ -64,9 +64,9 @@ func TestRoom_DisconnectUser(t *testing.T) {
 	hub := NewChatHub()
 	rm := hub.Room("stream-1")
 
-	c1 := newClient("u1", "alice", "user")
-	c2 := newClient("u1", "alice-phone", "user")
-	c3 := newClient("u2", "bob", "user")
+	c1 := newClient("u1", "alice")
+	c2 := newClient("u1", "alice-phone")
+	c3 := newClient("u2", "bob")
 	rm.Join(c1)
 	rm.Join(c2)
 	rm.Join(c3)
@@ -95,7 +95,7 @@ func TestRoom_DisconnectUser(t *testing.T) {
 func TestHub_CloseRoom(t *testing.T) {
 	hub := NewChatHub()
 	rm := hub.Room("stream-1")
-	c := newClient("u1", "alice", "user")
+	c := newClient("u1", "alice")
 	rm.Join(c)
 
 	hub.CloseRoom("stream-1")
@@ -118,8 +118,8 @@ func TestHub_CloseAll(t *testing.T) {
 	hub := NewChatHub()
 	rm1 := hub.Room("s1")
 	rm2 := hub.Room("s2")
-	c1 := newClient("u1", "a", "user")
-	c2 := newClient("u2", "b", "user")
+	c1 := newClient("u1", "a")
+	c2 := newClient("u2", "b")
 	rm1.Join(c1)
 	rm2.Join(c2)
 
@@ -148,9 +148,9 @@ func TestHub_DisconnectUserFromAll(t *testing.T) {
 	hub := NewChatHub()
 	rm1 := hub.Room("s1")
 	rm2 := hub.Room("s2")
-	c1 := newClient("u1", "alice", "user")
-	c2 := newClient("u1", "alice2", "user")
-	c3 := newClient("u2", "bob", "user")
+	c1 := newClient("u1", "alice")
+	c2 := newClient("u1", "alice2")
+	c3 := newClient("u2", "bob")
 	rm1.Join(c1)
 	rm2.Join(c2)
 	rm2.Join(c3)
@@ -191,7 +191,7 @@ func TestHub_CloseRoom_NonExistent(t *testing.T) {
 func TestRoom_LeaveNonMember(t *testing.T) {
 	hub := NewChatHub()
 	rm := hub.Room("s1")
-	c := newClient("u1", "alice", "user")
+	c := newClient("u1", "alice")
 
 	rm.Leave(c)
 
@@ -206,7 +206,7 @@ func TestRoom_LeaveNonMember(t *testing.T) {
 func TestRoom_BroadcastFullBuffer(t *testing.T) {
 	hub := NewChatHub()
 	rm := hub.Room("s1")
-	c := newClient("u1", "alice", "user")
+	c := newClient("u1", "alice")
 	rm.Join(c)
 
 	for i := 0; i < clientSendBuf+5; i++ {
@@ -222,7 +222,7 @@ func TestRoom_BroadcastFullBuffer(t *testing.T) {
 }
 
 func TestClient_CloseIdempotent(t *testing.T) {
-	c := newClient("u1", "alice", "user")
+	c := newClient("u1", "alice")
 	c.close()
 	c.close()
 

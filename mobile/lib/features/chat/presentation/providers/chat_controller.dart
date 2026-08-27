@@ -21,6 +21,8 @@ class ChatController extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _sub;
   bool _disposed = false;
   final Set<String> _bannedUserIds = {};
+  String? _transientError;
+  Timer? _transientErrorTimer;
 
   static const _maxRetries = 3;
   static const _backoffBase = Duration(seconds: 1);
@@ -32,6 +34,7 @@ class ChatController extends ChangeNotifier {
   bool get isConnected => _isConnected;
   bool get isBroadcaster => _isBroadcaster;
   String? get error => _error;
+  String? get transientError => _transientError;
 
   bool isUserBanned(String userId) => _bannedUserIds.contains(userId);
 
@@ -44,6 +47,7 @@ class ChatController extends ChangeNotifier {
     _currentUserId = currentUserId;
     _error = null;
     _messages = [];
+    _bannedUserIds.clear();
     _retryCount = 0;
 
     await _doConnect();
@@ -56,7 +60,6 @@ class ChatController extends ChangeNotifier {
 
     try {
       final stream = _source.connect(streamId);
-      _isConnected = true;
       _error = null;
       _notify();
 
@@ -99,13 +102,15 @@ class ChatController extends ChangeNotifier {
     _explicitDisconnect = true;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _transientErrorTimer?.cancel();
+    _transientErrorTimer = null;
+    _transientError = null;
     _sub?.cancel();
     _sub = null;
     _source.disconnect();
     _isConnected = false;
     _isBroadcaster = false;
     _streamId = null;
-    _bannedUserIds.clear();
     _notify();
   }
 
@@ -113,6 +118,7 @@ class ChatController extends ChangeNotifier {
     final type = event['type'] as String?;
     switch (type) {
       case 'connected':
+        _isConnected = true;
         _isBroadcaster = event['is_broadcaster'] == true;
         _retryCount = 0;
         _notify();
@@ -159,15 +165,16 @@ class ChatController extends ChangeNotifier {
 
       case 'error':
         final msg = event['message'] as String? ?? 'Erreur';
-        if (msg.contains('banni')) {
-          _error = msg;
+        final localMsg = _localizeError(msg);
+        if (_isFatalError(msg)) {
+          _error = localMsg;
           _explicitDisconnect = true;
           _isConnected = false;
           _notify();
         } else {
-          _error = msg;
-          _isConnected = false;
+          _transientError = localMsg;
           _notify();
+          _clearTransientErrorAfter(const Duration(seconds: 4));
         }
     }
   }
@@ -216,6 +223,29 @@ class ChatController extends ChangeNotifier {
     );
   }
 
+  static const _errorMessages = <String, String>{
+    'rate limited': 'Veuillez patienter avant de renvoyer un message',
+    'invalid JSON': 'Message invalide',
+    'unauthorized': 'Action non autorisée',
+    'failed to send message': "Échec de l'envoi du message",
+    'failed to delete message': 'Échec de la suppression',
+    'failed to ban user': 'Échec du bannissement',
+  };
+
+  static bool _isFatalError(String msg) =>
+      msg.contains('banned') || msg.contains('banni');
+
+  static String _localizeError(String msg) =>
+      _errorMessages[msg] ?? 'Une erreur est survenue';
+
+  void _clearTransientErrorAfter(Duration delay) {
+    _transientErrorTimer?.cancel();
+    _transientErrorTimer = Timer(delay, () {
+      _transientError = null;
+      _notify();
+    });
+  }
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -224,6 +254,7 @@ class ChatController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _retryTimer?.cancel();
+    _transientErrorTimer?.cancel();
     disconnect();
     super.dispose();
   }

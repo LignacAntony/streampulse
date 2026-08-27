@@ -27,51 +27,64 @@ class ChatMessageBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Align(
-      alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: isBroadcaster && !isOwn ? () => _showActions(context) : null,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.75,
-          ),
-          margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isOwn
-                ? colors.primaryContainer
-                : colors.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment:
-                isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              if (!isOwn)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    message.username,
-                    style: text.labelSmall?.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w600,
+    final semanticLabel = message.isDeleted
+        ? 'Message supprimé de ${message.username}'
+        : isOwn
+            ? 'Vous : ${message.content}'
+            : '${message.username} : ${message.content}';
+
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      onLongPress: isBroadcaster && !isOwn ? () => _showActions(context) : null,
+      child: ExcludeSemantics(
+        child: Align(
+          alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
+          child: GestureDetector(
+            onLongPress: isBroadcaster && !isOwn ? () => _showActions(context) : null,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isOwn
+                    ? colors.primaryContainer
+                    : colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment:
+                    isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  if (!isOwn)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        message.username,
+                        style: text.labelSmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  Text(
+                    message.isDeleted
+                        ? 'Message supprimé'
+                        : message.content,
+                    style: text.bodyMedium?.copyWith(
+                      color: isOwn
+                          ? colors.onPrimaryContainer
+                          : colors.onSurface,
+                      fontStyle: message.isDeleted
+                          ? FontStyle.italic
+                          : FontStyle.normal,
                     ),
                   ),
-                ),
-              Text(
-                message.isDeleted
-                    ? 'Message supprimé'
-                    : message.content,
-                style: text.bodyMedium?.copyWith(
-                  color: isOwn
-                      ? colors.onPrimaryContainer
-                      : colors.onSurface,
-                  fontStyle: message.isDeleted
-                      ? FontStyle.italic
-                      : FontStyle.normal,
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

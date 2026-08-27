@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/accessible_icon_button.dart';
+
 class ChatInputBar extends StatefulWidget {
   const ChatInputBar({
     super.key,
@@ -66,10 +68,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
             ),
           ),
           const SizedBox(width: 6),
-          IconButton(
+          AccessibleIconButton(
+            icon: Icons.send,
+            label: 'Envoyer le message',
             onPressed: widget.enabled ? _submit : null,
-            icon: Icon(Icons.send, color: widget.enabled ? colors.primary : colors.outline),
-            tooltip: 'Envoyer',
+            color: widget.enabled ? colors.primary : colors.outline,
           ),
         ],
       ),

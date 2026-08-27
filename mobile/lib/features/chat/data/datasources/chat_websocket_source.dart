@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:web_socket_channel/io.dart';
 
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
 
 abstract class ChatWebSocketSource {
@@ -14,9 +15,10 @@ abstract class ChatWebSocketSource {
 }
 
 class ChatWebSocketSourceImpl implements ChatWebSocketSource {
-  ChatWebSocketSourceImpl(this._storage);
+  ChatWebSocketSourceImpl(this._storage, this._client);
 
   final SecureStorage _storage;
+  final DioClient _client;
   IOWebSocketChannel? _channel;
 
   @override
@@ -25,23 +27,34 @@ class ChatWebSocketSourceImpl implements ChatWebSocketSource {
     final url = ApiConstants.chatWebSocket(streamId);
     final uri = Uri.parse(url);
 
-    // Connexion WebSocket via dart:io pour capturer le code HTTP en cas
-    // de rejet (403 = banni, 409 = pas live) avant l'upgrade.
     WebSocket ws;
     try {
       ws = await WebSocket.connect(
         url,
         headers: {
           if (token != null) 'Authorization': 'Bearer $token',
-          'Host': uri.host,
         },
       );
     } on WebSocketException catch (_) {
-      // dart:io ne remonte pas le code HTTP dans l'exception ; on fait
-      // un GET classique pour le distinguer.
-      final errorMsg = await _resolveError(uri, token);
-      yield {'type': 'error', 'message': errorMsg};
-      return;
+      final result = await _resolveError(uri, token);
+      if (result == _ErrorResult.unauthorized) {
+        await _client.refreshTokens();
+        final freshToken = await _storage.getAccessToken();
+        try {
+          ws = await WebSocket.connect(
+            url,
+            headers: {
+              if (freshToken != null) 'Authorization': 'Bearer $freshToken',
+            },
+          );
+        } on Object catch (_) {
+          yield {'type': 'error', 'message': 'Session expirée'};
+          return;
+        }
+      } else {
+        yield {'type': 'error', 'message': result.message};
+        return;
+      }
     } on SocketException catch (_) {
       yield {
         'type': 'error',
@@ -71,8 +84,7 @@ class ChatWebSocketSourceImpl implements ChatWebSocketSource {
     _channel = null;
   }
 
-  Future<String> _resolveError(Uri wsUri, String? token) async {
-    // Convertir ws:// → http:// pour la sonde.
+  Future<_ErrorResult> _resolveError(Uri wsUri, String? token) async {
     final httpScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
     final httpUri = wsUri.replace(scheme: httpScheme);
     final client = HttpClient();
@@ -81,15 +93,24 @@ class ChatWebSocketSourceImpl implements ChatWebSocketSource {
       if (token != null) req.headers.set('Authorization', 'Bearer $token');
       final res = await req.close();
       await res.drain<void>();
-      if (res.statusCode == 403) return 'Vous êtes banni de ce chat';
-      if (res.statusCode == 409) {
-        return 'Le chat est indisponible (flux non en direct)';
-      }
+      if (res.statusCode == 401) return _ErrorResult.unauthorized;
+      if (res.statusCode == 403) return _ErrorResult.banned;
+      if (res.statusCode == 409) return _ErrorResult.notLive;
     } on Object {
       // Fallback si la sonde échoue aussi.
     } finally {
       client.close();
     }
-    return 'Le chat est indisponible';
+    return _ErrorResult.unknown;
   }
+}
+
+enum _ErrorResult {
+  unauthorized('Session expirée'),
+  banned('Vous êtes banni de ce chat'),
+  notLive('Le chat est indisponible (flux non en direct)'),
+  unknown('Le chat est indisponible');
+
+  const _ErrorResult(this.message);
+  final String message;
 }

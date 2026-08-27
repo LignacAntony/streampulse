@@ -333,6 +333,7 @@ func run() error {
 	chatHub := chat.NewChatHub()
 	chatSvc := chat.NewService(chatRepo, streamingSvc)
 	chatHandler := chat.NewHandler(chatSvc, chatHub, streamingSessions, streamingSvc)
+	streamingSessions.SetOnStreamStopped(chatHub.CloseRoom)
 
 	// Modération chat admin : l'adaptateur traduit les types chat → admin (ISP).
 	adminHandler.SetChatModerator(chatModeratorAdapter{svc: chatSvc, hub: chatHub})

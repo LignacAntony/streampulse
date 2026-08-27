@@ -87,6 +87,9 @@ Class | Method | HTTP request | Description
 [*BroadcasterApi*](doc/BroadcasterApi.md) | [**getMyBroadcasterRequest**](doc/BroadcasterApi.md#getmybroadcasterrequest) | **GET** /api/broadcaster-requests/me | Retrieve the authenticated user&#39;s latest broadcaster request.
 [*BroadcasterApi*](doc/BroadcasterApi.md) | [**listBroadcasterRequests**](doc/BroadcasterApi.md#listbroadcasterrequests) | **GET** /api/admin/broadcaster-requests | List broadcaster requests (admin only).
 [*BroadcasterApi*](doc/BroadcasterApi.md) | [**rejectBroadcasterRequest**](doc/BroadcasterApi.md#rejectbroadcasterrequest) | **POST** /api/admin/broadcaster-requests/{id}/reject | Reject a broadcaster request (admin only).
+[*ChatApi*](doc/ChatApi.md) | [**connectChat**](doc/ChatApi.md#connectchat) | **GET** /ws/streams/{id}/chat | Open a WebSocket connection to the live chat of a stream.
+[*ChatApi*](doc/ChatApi.md) | [**listChatBans**](doc/ChatApi.md#listchatbans) | **GET** /api/chat/bans | List users banned by the authenticated broadcaster.
+[*ChatApi*](doc/ChatApi.md) | [**unbanChatUser**](doc/ChatApi.md#unbanchatuser) | **DELETE** /api/chat/bans/{userId} | Remove a chat ban for a user.
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**addPlaylistTrack**](doc/PlaylistApi.md#addplaylisttrack) | **POST** /api/playlists/{id}/tracks | Append a track to a playlist (owner only).
@@ -139,6 +142,7 @@ Class | Method | HTTP request | Description
  - [BroadcasterRequestInput](doc/BroadcasterRequestInput.md)
  - [BroadcasterRequestListResponse](doc/BroadcasterRequestListResponse.md)
  - [BroadcasterRequestResponse](doc/BroadcasterRequestResponse.md)
+ - [ChatBannedUser](doc/ChatBannedUser.md)
  - [CreatePlaylistRequest](doc/CreatePlaylistRequest.md)
  - [CreateStreamRequest](doc/CreateStreamRequest.md)
  - [DeleteAccountRequest](doc/DeleteAccountRequest.md)
