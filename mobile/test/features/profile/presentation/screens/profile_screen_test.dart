@@ -15,6 +15,7 @@ import 'package:streampulse/features/profile/domain/repositories/profile_reposit
 import 'package:streampulse/features/profile/presentation/providers/profile_controller.dart';
 import 'package:streampulse/features/profile/presentation/screens/profile_screen.dart';
 import 'package:streampulse/features/streams/domain/entities/live_stream.dart';
+import 'package:streampulse/features/streams/domain/entities/manifest_status.dart';
 import 'package:streampulse/features/streams/domain/repositories/stream_repository.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 
@@ -83,7 +84,8 @@ class _FakeStreamRepository implements StreamRepository {
       const [];
 
   @override
-  Future<bool> isManifestUnavailable(String streamId) async => false;
+  Future<ManifestStatus> manifestStatus(String streamId) async =>
+      ManifestStatus.available;
 }
 
 class _FakeProfileRepository implements ProfileRepository {
@@ -124,14 +126,14 @@ Widget _buildHarness(UserProfile profile) {
   final router = GoRouter(
     initialLocation: '/profile',
     routes: [
-      GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
+      GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
       GoRoute(
         path: '/broadcaster-request',
-        builder: (_, __) => const _MarkerScreen('BROADCASTER_REQUEST'),
+        builder: (_, _) => const _MarkerScreen('BROADCASTER_REQUEST'),
       ),
       GoRoute(
         path: '/login',
-        builder: (_, __) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
+        builder: (_, _) => const _MarkerScreen('LOGIN_PLACEHOLDER'),
       ),
     ],
   );

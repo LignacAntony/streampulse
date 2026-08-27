@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.3.2](https://github.com/LignacAntony/streampulse/compare/v1.3.1...v1.3.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** corriger la configuration Flutter du job CD Android ([#354](https://github.com/LignacAntony/streampulse/issues/354)) ([191f8c7](https://github.com/LignacAntony/streampulse/commit/191f8c733f6f7e235bd2d95a6f8e6c348db9807b))
+
+## [1.3.1](https://github.com/LignacAntony/streampulse/compare/v1.3.0...v1.3.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** définir la branche cible develop pour Dependabot ([9dcbf4e](https://github.com/LignacAntony/streampulse/commit/9dcbf4ed80e5589b53a80d34224c451fc65d906a))
+* **ci:** définir la branche cible develop pour Dependabot ([5ce8137](https://github.com/LignacAntony/streampulse/commit/5ce8137b858c016900680348b80067d53ed01c27))
+
+## [1.3.0](https://github.com/LignacAntony/streampulse/compare/v1.2.0...v1.3.0) (2026-08-23)
+
+
+### Features
+
+* **api:** mesurer le débit, les départs d'auditeurs et exposer un résumé admin ([#328](https://github.com/LignacAntony/streampulse/issues/328)) ([7d055ed](https://github.com/LignacAntony/streampulse/commit/7d055edf84b923c2164c9b9cc5ae0067cd219a5b))
+* **mobile:** cache hors ligne des playlists (US-09-02) ([#296](https://github.com/LignacAntony/streampulse/issues/296)) ([391d93f](https://github.com/LignacAntony/streampulse/commit/391d93fbc88e54bb76314014d5988c3c47cdaa66))
+* **mobile:** construire et livrer l'application Android à chaque release ([#326](https://github.com/LignacAntony/streampulse/issues/326)) ([fb418e7](https://github.com/LignacAntony/streampulse/commit/fb418e7524c945b7f60ba8f763fa1b3a7dfe84d7))
+* **mobile:** nommer les contrôles pour les lecteurs d'écran et adapter aux largeurs ([#332](https://github.com/LignacAntony/streampulse/issues/332)) ([2bba957](https://github.com/LignacAntony/streampulse/commit/2bba957f1c677a1faeaa3bf6aecadd02cb33076e))
+* **mobile:** régler le volume dans l'application et afficher le temps d'écoute ([#331](https://github.com/LignacAntony/streampulse/issues/331)) ([1f11343](https://github.com/LignacAntony/streampulse/commit/1f11343393d46f92bd295ae1a2a87cecf7775cf7))
+
+
+### Bug Fixes
+
+* **api:** fermer les défauts de configuration et de sécurité ([#316](https://github.com/LignacAntony/streampulse/issues/316)) ([d38dbef](https://github.com/LignacAntony/streampulse/commit/d38dbef6a55e273ed7cd772c96e821a9b572779e))
+* **api:** rétablir le démarrage en distinguant l'URL de migration ([#323](https://github.com/LignacAntony/streampulse/issues/323)) ([464b5c7](https://github.com/LignacAntony/streampulse/commit/464b5c71960f810d45cd4e85398fad8c702ba998))
+* dossier sécurité et RGPD, rétention des données personnelles bornée ([#321](https://github.com/LignacAntony/streampulse/issues/321)) ([126a3c0](https://github.com/LignacAntony/streampulse/commit/126a3c04c62ce7e4b0420e4d30898d2d6b080927))
+* **infra:** restreindre l'exposition des services en production ([#312](https://github.com/LignacAntony/streampulse/issues/312)) ([389f385](https://github.com/LignacAntony/streampulse/commit/389f385d9c2eb1031e7eae384fb56ea1498da38e))
+* **mobile:** restreindre le trafic en clair au développement ([#313](https://github.com/LignacAntony/streampulse/issues/313)) ([ceb79c3](https://github.com/LignacAntony/streampulse/commit/ceb79c3398af8c9cea5a946b8ca17fd917126e7e))
+
 ## [1.2.0](https://github.com/LignacAntony/streampulse/compare/v1.1.0...v1.2.0) (2026-08-14)
 
 

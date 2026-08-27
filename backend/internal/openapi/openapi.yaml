@@ -1381,12 +1381,38 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: >-
-            The stream is not live, or its manifest is not ready yet (window
-            between start and the first segment).
+            The manifest cannot be served. The `error.code` field tells the two
+            causes apart, and they call for opposite client behaviour:
+
+
+            - `stream_not_live` — no live session for this stream. The broadcast
+              is over, or never started. Final: retrying will not help.
+
+            - `manifest_not_ready` — the session is live but the first segment
+              has not been written yet (window between start and the first
+              segment, about one segment duration). Transient: retry.
+
+
+            A client that cannot tell them apart has to guess, and guessing
+            "over" during the start-up window wrongly ends playback. Treat any
+            unrecognised code as transient.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                streamNotLive:
+                  summary: Broadcast is over (final)
+                  value:
+                    error:
+                      code: stream_not_live
+                      message: stream is not live
+                manifestNotReady:
+                  summary: Starting up, retry (transient)
+                  value:
+                    error:
+                      code: manifest_not_ready
+                      message: stream manifest is not ready yet
         "503":
           description: >-
             Server at listener capacity (HLS_MAX_CONCURRENT concurrent requests

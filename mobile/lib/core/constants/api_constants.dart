@@ -22,10 +22,18 @@ class ApiConstants {
   // Streams
   static const String streams = '/api/streams';
 
+  /// Chemin du manifeste HLS d'un flux, **relatif** à [baseUrl] — la forme
+  /// qu'attend Dio, qui préfixe lui-même. Utilisé par la sonde de manifeste
+  /// (STR-229).
+  static String playlistPath(String streamId) =>
+      '/api/streams/$streamId/playlist.m3u8';
+
   /// URL du manifeste HLS d'un flux (lecture publique, ADR 023). Passée telle
-  /// quelle au player natif via `AudioSource.uri` — sans en-tête d'auth.
+  /// quelle au player natif via `AudioSource.uri` — sans en-tête d'auth. Dérivée
+  /// de [playlistPath] : le player natif et la sonde doivent viser le même
+  /// endpoint, les laisser diverger rendrait la sonde muette sur ce qui joue.
   static String hlsPlaylist(String streamId) =>
-      '$baseUrl/api/streams/$streamId/playlist.m3u8';
+      '$baseUrl${playlistPath(streamId)}';
 
   // Tracks
   static const String tracks = '/api/tracks';

@@ -284,5 +284,18 @@ Every figure is an upper bound: the simulated clients share the measured
 process, so their own HTTP work cannot be separated from the server's. And the
 first ceiling StreamPulse will hit as it grows is bandwidth, not CPU.
 
+**ADR 045 — HLS manifest error codes.** *Context:* the manifest returned one
+indistinguishable `409` for a finished broadcast and for a live one still
+writing its first segment — two situations calling for opposite behaviour, which
+the server could tell apart and the client could not. *Decision:* keep the
+status, split the meaning into two public `error.code` values
+(`stream_not_live`, `manifest_not_ready`), and have the player apply the
+server's verdict instead of guessing from whether playback had ever started.
+*Consequence:* opening an already-ended stream from a stale list now says so
+immediately, where it previously spent ~15 s reconnecting toward a conclusion the
+server had from the first request. An unrecognised code falls back to "not
+ready": erring toward waiting costs a bounded backoff, erring toward "over"
+would cut off a broadcast that is starting.
+
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

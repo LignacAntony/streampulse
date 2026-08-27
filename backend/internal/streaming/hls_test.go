@@ -116,7 +116,7 @@ func TestSegmenterDeath_ReapsSession(t *testing.T) {
 	ls.newSeg = func(string) (*hlsSegmenter, error) { return seg, nil }
 	ls.Start("s1", "KEY1")
 
-	if _, ok := ls.Playlist("s1"); !ok {
+	if _, avail := ls.Playlist("s1"); avail != hlsServable {
 		t.Fatal("le flux devrait être servi tant que le segmenteur est vivant")
 	}
 
@@ -140,8 +140,11 @@ func TestSegmenterDeath_ReapsSession(t *testing.T) {
 	if !waitFor(func() bool { return !ls.IsLive("s1") }, 2*time.Second) {
 		t.Fatal("session non récoltée (toujours live) après la mort du segmenteur")
 	}
-	if _, ok := ls.Playlist("s1"); ok {
-		t.Fatal("Playlist devrait échouer après reap")
+	// hlsUnavailable et non hlsPending : ffmpeg est mort, il n'y a rien à
+	// attendre. Rendre « en démarrage » ici ferait patienter l'auditeur 15 s
+	// avant de lui annoncer une fin déjà consommée (STR-229).
+	if _, avail := ls.Playlist("s1"); avail != hlsUnavailable {
+		t.Fatalf("Playlist après reap: want hlsUnavailable, got %v", avail)
 	}
 	if _, _, err := ls.AttachIngest("KEY1"); !errors.Is(err, errNotLive) {
 		t.Fatalf("AttachIngest après reap: want errNotLive, got %v", err)
@@ -174,21 +177,78 @@ func TestPlaylistAndSegmentLookup(t *testing.T) {
 	ls.Start("s1", "KEY1")
 	defer ls.StopAll()
 
-	if p, ok := ls.Playlist("s1"); !ok || filepath.Base(p) != hlsPlaylistName {
-		t.Fatalf("playlist: want (…/%s, true), got (%q, %v)", hlsPlaylistName, p, ok)
+	if p, avail := ls.Playlist("s1"); avail != hlsServable || filepath.Base(p) != hlsPlaylistName {
+		t.Fatalf("playlist: want (…/%s, hlsServable), got (%q, %v)", hlsPlaylistName, p, avail)
 	}
-	if _, ok := ls.Playlist("inconnu"); ok {
-		t.Fatal(`playlist d'un flux inconnu doit être ("", false)`)
+	if _, avail := ls.Playlist("inconnu"); avail != hlsUnavailable {
+		t.Fatalf("playlist d'un flux inconnu: want hlsUnavailable, got %v", avail)
 	}
 
-	if p, ok := ls.Segment("s1", "seg_00000.ts"); !ok || filepath.Base(p) != "seg_00000.ts" {
-		t.Fatalf("segment valide: got (%q, %v)", p, ok)
+	if p, avail := ls.Segment("s1", "seg_00000.ts"); avail != hlsServable || filepath.Base(p) != "seg_00000.ts" {
+		t.Fatalf("segment valide: got (%q, %v)", p, avail)
 	}
-	if _, ok := ls.Segment("s1", "../secret"); ok {
-		t.Fatal("segment traversal accepté")
+	// Un nom refusé n'est pas une attente : il ne deviendra jamais valide.
+	if _, avail := ls.Segment("s1", "../secret"); avail != hlsUnavailable {
+		t.Fatalf("segment traversal: want hlsUnavailable, got %v", avail)
 	}
-	if _, ok := ls.Segment("inconnu", "seg_00000.ts"); ok {
-		t.Fatal(`segment d'un flux inconnu doit être ("", false)`)
+	if _, avail := ls.Segment("inconnu", "seg_00000.ts"); avail != hlsUnavailable {
+		t.Fatalf("segment d'un flux inconnu: want hlsUnavailable, got %v", avail)
+	}
+}
+
+// TestPlaylist_SpawnWindowIsPending couvre la fenêtre relevée en revue de la
+// PR #358 : `Start` inscrit la session au registre (phase 1) *avant* de forker
+// ffmpeg (phase 2, hors verrou et « potentiellement lente »). Un auditeur qui
+// voit déjà le flux « en direct » dans Découvrir peut l'ouvrir pendant ce laps.
+//
+// Le segmenteur y est nil, comme après la mort de ffmpeg — mais les deux états
+// sont contraires. Les confondre annonçait « direct terminé » à un auditeur
+// arrivé une seconde trop tôt, soit exactement le défaut que STR-229 corrige,
+// déplacé une couche plus bas.
+func TestPlaylist_SpawnWindowIsPending(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) {
+		close(entered) // phase 1 terminée : la session est inscrite
+		<-release      // …et le segmenteur n'est pas encore publié
+		return fakeSegmenter(t), nil
+	}
+	t.Cleanup(ls.StopAll)
+
+	go ls.Start("s1", "KEY1")
+	<-entered
+
+	if _, avail := ls.Playlist("s1"); avail != hlsPending {
+		t.Fatalf("pendant le spawn: want hlsPending, got %v", avail)
+	}
+	if _, avail := ls.Segment("s1", "seg_00000.ts"); avail != hlsPending {
+		t.Fatalf("segment pendant le spawn: want hlsPending, got %v", avail)
+	}
+
+	close(release)
+	if !waitFor(func() bool {
+		_, avail := ls.Playlist("s1")
+		return avail == hlsServable
+	}, 2*time.Second) {
+		t.Fatal("le manifeste devrait devenir servable une fois le segmenteur publié")
+	}
+}
+
+// TestPlaylist_SpawnFailureStaysPending : un spawn ffmpeg qui échoue publie un
+// segmenteur nil de façon permanente. C'est indistinguable d'un spawn en cours,
+// et ce doit le rester — le flux est bien « live » en base, il ne produira
+// simplement jamais d'audio. Le client tranche par ses reprises bornées plutôt
+// que par un verdict serveur que rien ne permet de rendre ici.
+func TestPlaylist_SpawnFailureStaysPending(t *testing.T) {
+	ls := NewLiveSessions(context.Background())
+	ls.newSeg = func(string) (*hlsSegmenter, error) { return nil, errors.New("ffmpeg absent") }
+	ls.Start("s1", "KEY1")
+	t.Cleanup(ls.StopAll)
+
+	if _, avail := ls.Playlist("s1"); avail != hlsPending {
+		t.Fatalf("spawn échoué: want hlsPending, got %v", avail)
 	}
 }
 

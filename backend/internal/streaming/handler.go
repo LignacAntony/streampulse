@@ -78,8 +78,8 @@ type StreamService interface {
 type StreamSessions interface {
 	Subscribe(streamID string) (<-chan SessionEvent, func())
 	AttachIngest(streamKey string) (io.Writer, func(), error)
-	Playlist(streamID string) (string, bool)
-	Segment(streamID, name string) (string, bool)
+	Playlist(streamID string) (string, hlsAvailability)
+	Segment(streamID, name string) (string, hlsAvailability)
 	TouchListener(streamID, clientKey string)
 	Stats(streamID string) (SessionStats, bool)
 }
@@ -857,34 +857,63 @@ func ingestError(err error) error {
 	}
 }
 
+// Codes publics du 409 sur le manifeste HLS (STR-229). Le statut ne suffit pas :
+// « le direct est fini » et « le direct démarre, patiente » se ressemblent de
+// l'extérieur alors que le serveur, lui, les distingue — session absente d'un
+// côté, présente mais sans manifeste écrit de l'autre. Sans ces codes le lecteur
+// devait deviner, et une liste Découvrir périmée coûtait ~15 s de « Reconnexion… »
+// avant d'annoncer une fin de direct déjà connue du serveur.
+const (
+	// CodeStreamNotLive : aucune session live pour ce flux — direct terminé, ou
+	// jamais démarré. Verdict définitif, rien à attendre.
+	CodeStreamNotLive = "stream_not_live"
+	// CodeManifestNotReady : session vivante, manifeste pas encore écrit — la
+	// fenêtre entre le start et le premier segment (~10 s, taille de segment
+	// HLS). État transitoire : réessayer a du sens.
+	CodeManifestNotReady = "manifest_not_ready"
+)
+
 // Playlist gère GET /api/streams/{id}/playlist.m3u8 : sert le manifeste HLS d'un
 // flux public (lecture publique, cf. serveHLSFile). 409 si le flux n'est pas en
-// direct ou si le manifeste n'est pas encore prêt.
+// direct (`stream_not_live`) ou si son manifeste n'est pas encore prêt
+// (`manifest_not_ready`) — cf. STR-229 pour la distinction.
 func (h *Handler) Playlist(w http.ResponseWriter, r *http.Request) {
 	h.serveHLSFile(w, r, HLSKindPlaylist, "application/vnd.apple.mpegurl",
-		func(id string) (string, bool) { return h.sessions.Playlist(id) },
-		apperror.Conflict("stream is not live"))
+		func(id string) (string, hlsAvailability) { return h.sessions.Playlist(id) },
+		apperror.Conflict("stream is not live").Coded(CodeStreamNotLive),
+		apperror.Conflict("stream manifest is not ready yet").Coded(CodeManifestNotReady))
 }
 
 // Segment gère GET /api/streams/{id}/segments/{segment} : sert un segment .ts d'un
 // flux public (lecture publique, cf. serveHLSFile). Le nom du segment est validé
 // (anti path-traversal) dans la couche session ; nom invalide ou segment absent -> 404.
 func (h *Handler) Segment(w http.ResponseWriter, r *http.Request) {
+	// Les deux causes d'indisponibilité d'un segment (flux éteint, ou segment
+	// sorti de la fenêtre glissante) reçoivent volontairement la même réponse :
+	// le lecteur n'en fait rien de différent, il redemande le manifeste — et
+	// c'est *lui* qui portera le verdict. Seul le manifeste a besoin de la
+	// distinction (STR-229).
+	notFound := apperror.NotFound("segment not found")
 	h.serveHLSFile(w, r, HLSKindSegment, "video/mp2t",
-		func(id string) (string, bool) { return h.sessions.Segment(id, r.PathValue("segment")) },
-		apperror.NotFound("segment not found"))
+		func(id string) (string, hlsAvailability) {
+			return h.sessions.Segment(id, r.PathValue("segment"))
+		},
+		notFound, notFound)
 }
 
 // serveHLSFile factorise le service d'un fichier HLS (manifeste ou segment) à un
 // auditeur : contrôle de visibilité (GetStream, 404 si absent/privé), lookup de la
-// session (unavailable si le flux n'est pas en direct), en-têtes puis ServeFile.
-// lookup renvoie le chemin disque et sa validité.
+// session, en-têtes puis ServeFile. lookup renvoie le chemin disque et sa validité.
+//
+// Deux erreurs distinctes, et non une seule (STR-229) : `notLive` quand il n'y a
+// rien à attendre, `notReady` quand le flux démarre encore. L'appelant décide si
+// la nuance l'intéresse — le manifeste oui, le segment non.
 //
 // Lecture PUBLIQUE (STR-108) : pas d'authentification requise — le player natif
 // (just_audio → AVPlayer/ExoPlayer) ne peut pas porter le Bearer. Un auditeur
 // anonyme a requesterID = "" ; la visibilité de GetStream sert alors les flux
 // publics et renvoie 404 pour un flux privé (jamais propriétaire de "").
-func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, contentType string, lookup func(id string) (string, bool), unavailable error) {
+func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, contentType string, lookup func(id string) (string, hlsAvailability), notLive, notReady error) {
 	requesterID, _ := auth.UserIDFromContext(r.Context()) // "" si anonyme (pas de JWT)
 	id := r.PathValue("id")
 
@@ -893,9 +922,16 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, con
 		return
 	}
 
-	path, ok := lookup(id)
-	if !ok {
-		httpjson.WriteError(w, r, unavailable)
+	// Le registre distingue « plus rien à attendre » de « pas encore démarré » :
+	// `Start` inscrit la session avant de forker ffmpeg, et un flux déjà annoncé
+	// « en direct » est ouvrable pendant ce laps (revue PR #358).
+	path, avail := lookup(id)
+	switch avail {
+	case hlsUnavailable:
+		httpjson.WriteError(w, r, notLive)
+		return
+	case hlsPending:
+		httpjson.WriteError(w, r, notReady)
 		return
 	}
 
@@ -925,8 +961,14 @@ func (h *Handler) serveHLSFile(w http.ResponseWriter, r *http.Request, kind, con
 	// segment, ou push dont ffmpeg n'a encore rien produit) ou avoir été retiré
 	// (fenêtre glissante) : renvoyer l'erreur JSON documentée plutôt que le
 	// `404 page not found` text/plain brut de http.ServeFile (hors contrat).
+	//
+	// La session existait au lookup, donc `notReady` : c'est une attente, pas une
+	// fin. Le cas limite — session arrêtée entre le lookup et le Stat, son
+	// répertoire nettoyé — est annoncé « pas encore prêt » alors que le direct
+	// vient de finir. Le lecteur ne s'y perd pas : ses reconnexions sont bornées
+	// et la tentative suivante retombe sur `notLive`.
 	if _, err := os.Stat(path); err != nil {
-		httpjson.WriteError(w, r, unavailable)
+		httpjson.WriteError(w, r, notReady)
 		return
 	}
 

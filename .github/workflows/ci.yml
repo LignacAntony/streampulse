@@ -22,16 +22,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25"
           cache-dependency-path: backend/go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           # Aligné sur le gosec du job Security (v2.28.0). Le v2.4.0 précédent
           # embarquait un gosec dont l'analyse d'intervalle ne remontait pas
@@ -77,10 +77,10 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25"
           cache-dependency-path: backend/go.sum
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: ./backend/coverage.txt
@@ -223,10 +223,10 @@ jobs:
     timeout-minutes: 20
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.25"
           cache-dependency-path: backend/go.sum
@@ -240,7 +240,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Vérifie que le trafic en clair reste refusé en release (STR-240). Sans
       # ce job, la propriété ne tient qu'à la vigilance du relecteur : un commit
@@ -258,7 +258,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Les documents légaux existent en deux exemplaires : docs/ est le
       # livrable, mobile/assets/legal/ est ce que lit l'utilisateur — Flutter
@@ -287,7 +287,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Valider les dashboards provisionnés
         run: make check-dashboards
@@ -297,7 +297,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -318,7 +318,7 @@ jobs:
     timeout-minutes: 20
     needs: flutter-analyze
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -334,7 +334,7 @@ jobs:
         run: flutter test --coverage
 
       - name: Upload Flutter coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-coverage
           path: mobile/coverage/lcov.info

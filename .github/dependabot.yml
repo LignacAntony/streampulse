@@ -20,6 +20,7 @@ updates:
   # ---------------------------------------------------------------------------
   - package-ecosystem: gomod
     directory: /backend
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -54,6 +55,7 @@ updates:
   # ---------------------------------------------------------------------------
   - package-ecosystem: pub
     directory: /mobile
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -83,6 +85,7 @@ updates:
   # ---------------------------------------------------------------------------
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday

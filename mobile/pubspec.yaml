@@ -30,7 +30,7 @@ dependencies:
   file_picker: ^8.1.2
 
   # Stockage sécurisé (tokens JWT)
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^10.3.1
 
   # Préférences non sensibles — niveau sonore du lecteur (STR-244).
   # Séparé de flutter_secure_storage à dessein : celui-ci n'a qu'une
@@ -48,7 +48,7 @@ dependencies:
   permission_handler: ^11.3.1
 
   # Typographie
-  google_fonts: ^6.2.1
+  google_fonts: ^8.2.1
 
   # Cache hors ligne (US-09-02)
   path_provider: ^2.1.0
@@ -85,7 +85,7 @@ dev_dependencies:
   json_serializable: ^6.8.0
 
   # Linting
-  flutter_lints: ^4.0.0
+  flutter_lints: ^6.0.0
 
   # Tests HTTP — mock du DioAdapter pour verrouiller le mapping d'erreurs
   # entre le client généré et AuthRemoteDataSource.
