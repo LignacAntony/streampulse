@@ -1,14 +1,14 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'track_response.dart';
+part of 'public_track_response.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator
 // **************************************************************************
 
-TrackResponse _$TrackResponseFromJson(Map<String, dynamic> json) =>
+PublicTrackResponse _$PublicTrackResponseFromJson(Map<String, dynamic> json) =>
     $checkedCreate(
-      'TrackResponse',
+      'PublicTrackResponse',
       json,
       ($checkedConvert) {
         $checkKeys(
@@ -18,26 +18,27 @@ TrackResponse _$TrackResponseFromJson(Map<String, dynamic> json) =>
             'title',
             'artist',
             'duration_s',
-            'is_public',
+            'owner_name',
           ],
         );
-        final val = TrackResponse(
+        final val = PublicTrackResponse(
           id: $checkedConvert('id', (v) => v as String),
           title: $checkedConvert('title', (v) => v as String),
           artist: $checkedConvert('artist', (v) => v as String?),
           durationS: $checkedConvert('duration_s', (v) => (v as num?)?.toInt()),
-          isPublic: $checkedConvert('is_public', (v) => v as bool),
+          ownerName: $checkedConvert('owner_name', (v) => v as String),
         );
         return val;
       },
-      fieldKeyMap: const {'durationS': 'duration_s', 'isPublic': 'is_public'},
+      fieldKeyMap: const {'durationS': 'duration_s', 'ownerName': 'owner_name'},
     );
 
-Map<String, dynamic> _$TrackResponseToJson(TrackResponse instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'title': instance.title,
-      'artist': instance.artist,
-      'duration_s': instance.durationS,
-      'is_public': instance.isPublic,
-    };
+Map<String, dynamic> _$PublicTrackResponseToJson(
+  PublicTrackResponse instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'title': instance.title,
+  'artist': instance.artist,
+  'duration_s': instance.durationS,
+  'owner_name': instance.ownerName,
+};

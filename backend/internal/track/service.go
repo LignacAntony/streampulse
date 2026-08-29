@@ -112,6 +112,9 @@ type Repository interface {
 	ListTracksByUser(ctx context.Context, userID string) ([]Track, error)
 	ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error)
 	UpdateTrackVisibility(ctx context.Context, trackID, userID string, isPublic bool) (bool, error)
+	// DeleteTrack supprime une piste du propriétaire. Retourne le chemin du
+	// fichier pour nettoyage disque. Piste inexistante ou d'un tiers → "", false.
+	DeleteTrack(ctx context.Context, trackID, userID string) (filePath string, found bool, err error)
 	// GetTrackFileByUser localise le binaire d'une piste du demandeur. La piste
 	// d'un tiers est traitée comme inexistante (apperror.NotFound).
 	GetTrackFileByUser(ctx context.Context, trackID, userID string) (TrackFile, error)
@@ -289,6 +292,23 @@ func (s *Service) OpenTrackFile(ctx context.Context, trackID, requesterID string
 		return OpenedTrackFile{}, apperror.Internal("track: open file", err)
 	}
 	return OpenedTrackFile{TrackFile: file, Content: content}, nil
+}
+
+// Delete supprime une piste du propriétaire : ligne DB (cascade sur
+// playlist_tracks) puis fichier sur disque. Un tiers reçoit 404.
+func (s *Service) Delete(ctx context.Context, trackID, requesterID string) error {
+	filePath, found, err := s.repo.DeleteTrack(ctx, trackID, requesterID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return apperror.NotFound("track not found")
+	}
+	if err := s.storage.Remove(filePath); err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Str("path", filePath).
+			Msg("track: fichier orphelin non supprimé après DELETE")
+	}
+	return nil
 }
 
 const defaultPageSize = 20

@@ -71,6 +71,10 @@ func (f *fakeRepo) ListFilePathsByUser(_ context.Context, _ string) ([]string, e
 	return f.pathsRet, f.pathsErr
 }
 
+func (f *fakeRepo) DeleteTrack(_ context.Context, _, _ string) (string, bool, error) {
+	return "", true, nil
+}
+
 func (f *fakeRepo) ListPublicTracks(_ context.Context, _ *PublicTrackCursor, _ int) ([]PublicTrack, error) {
 	return nil, nil
 }

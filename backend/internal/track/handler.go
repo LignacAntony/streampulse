@@ -29,6 +29,7 @@ const maxMultipartMemory int64 = 1 << 20 // 1 Mio
 // TrackService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type TrackService interface {
 	Create(ctx context.Context, in CreateTrackInput) (Track, error)
+	Delete(ctx context.Context, trackID, requesterID string) error
 	ListUserTracks(ctx context.Context, requesterID string) ([]Track, error)
 	ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error)
 	UpdateVisibility(ctx context.Context, trackID, requesterID string, isPublic bool) error
@@ -187,6 +188,22 @@ func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
 	// a pas de revalidation conditionnelle à proposer (ServeContent omet alors
 	// Last-Modified et ignore If-Modified-Since).
 	http.ServeContent(w, r, "", time.Time{}, file.Content)
+}
+
+// Delete gère DELETE /api/tracks/{id} : suppression d'une piste par son
+// propriétaire (204). La cascade DB retire la piste de toutes les playlists,
+// puis le fichier est supprimé du stockage.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.Delete(r.Context(), r.PathValue("id"), userID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListPublicTracks gère GET /api/tracks/public : pistes publiques de tous les

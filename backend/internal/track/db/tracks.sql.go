@@ -71,6 +71,29 @@ func (q *Queries) CreateTrack(ctx context.Context, arg CreateTrackParams) (Creat
 	return i, err
 }
 
+const deleteTrack = `-- name: DeleteTrack :one
+DELETE FROM tracks
+WHERE id = $1::uuid
+  AND user_id = $2::uuid
+RETURNING file_path
+`
+
+type DeleteTrackParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+// Suppression d'une piste par son propriétaire. Retourne le chemin du fichier
+// pour le supprimer du stockage après le DELETE. La FK ON DELETE CASCADE sur
+// playlist_tracks retire automatiquement la piste de toutes les playlists.
+// 0 ligne = piste inexistante ou d'un tiers -> 404 au repo.
+func (q *Queries) DeleteTrack(ctx context.Context, arg DeleteTrackParams) (string, error) {
+	row := q.db.QueryRow(ctx, deleteTrack, arg.ID, arg.UserID)
+	var file_path string
+	err := row.Scan(&file_path)
+	return file_path, err
+}
+
 const getTrackFileByUser = `-- name: GetTrackFileByUser :one
 SELECT file_path, mime_type
 FROM tracks

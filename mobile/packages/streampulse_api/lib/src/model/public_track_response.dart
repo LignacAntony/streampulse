@@ -5,7 +5,7 @@
 // ignore_for_file: unused_element
 import 'package:json_annotation/json_annotation.dart';
 
-part 'track_response.g.dart';
+part 'public_track_response.g.dart';
 
 @JsonSerializable(
   checked: true,
@@ -13,9 +13,9 @@ part 'track_response.g.dart';
   disallowUnrecognizedKeys: false,
   explicitToJson: true,
 )
-class TrackResponse {
-  /// Returns a new [TrackResponse] instance.
-  TrackResponse({
+class PublicTrackResponse {
+  /// Returns a new [PublicTrackResponse] instance.
+  PublicTrackResponse({
     required this.id,
 
     required this.title,
@@ -24,7 +24,7 @@ class TrackResponse {
 
     required this.durationS,
 
-    required this.isPublic,
+    required this.ownerName,
   });
 
   @JsonKey(name: r'id', required: true, includeIfNull: false)
@@ -40,19 +40,19 @@ class TrackResponse {
   @JsonKey(name: r'duration_s', required: true, includeIfNull: true)
   final int? durationS;
 
-  /// Whether the track is discoverable by other users.
-  @JsonKey(name: r'is_public', required: true, includeIfNull: false)
-  final bool isPublic;
+  /// Username of the track owner.
+  @JsonKey(name: r'owner_name', required: true, includeIfNull: false)
+  final String ownerName;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is TrackResponse &&
+      other is PublicTrackResponse &&
           other.id == id &&
           other.title == title &&
           other.artist == artist &&
           other.durationS == durationS &&
-          other.isPublic == isPublic;
+          other.ownerName == ownerName;
 
   @override
   int get hashCode =>
@@ -60,12 +60,12 @@ class TrackResponse {
       title.hashCode +
       (artist == null ? 0 : artist.hashCode) +
       (durationS == null ? 0 : durationS.hashCode) +
-      isPublic.hashCode;
+      ownerName.hashCode;
 
-  factory TrackResponse.fromJson(Map<String, dynamic> json) =>
-      _$TrackResponseFromJson(json);
+  factory PublicTrackResponse.fromJson(Map<String, dynamic> json) =>
+      _$PublicTrackResponseFromJson(json);
 
-  Map<String, dynamic> toJson() => _$TrackResponseToJson(this);
+  Map<String, dynamic> toJson() => _$PublicTrackResponseToJson(this);
 
   @override
   String toString() {

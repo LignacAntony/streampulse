@@ -72,6 +72,16 @@ FROM tracks
 WHERE id = sqlc.arg(id)::uuid
   AND (user_id = sqlc.arg(user_id)::uuid OR is_public = true);
 
+-- name: DeleteTrack :one
+-- Suppression d'une piste par son propriétaire. Retourne le chemin du fichier
+-- pour le supprimer du stockage après le DELETE. La FK ON DELETE CASCADE sur
+-- playlist_tracks retire automatiquement la piste de toutes les playlists.
+-- 0 ligne = piste inexistante ou d'un tiers -> 404 au repo.
+DELETE FROM tracks
+WHERE id = sqlc.arg(id)::uuid
+  AND user_id = sqlc.arg(user_id)::uuid
+RETURNING file_path;
+
 -- name: SumTrackSizeByUser :one
 -- Taille cumulée des fichiers du demandeur, pour appliquer le quota de stockage
 -- par compte avant un nouvel upload (borne le remplissage du volume).

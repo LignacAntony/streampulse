@@ -7,6 +7,8 @@ import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
+import 'package:streampulse/features/tracks/domain/entities/public_track.dart';
+import 'package:streampulse/features/tracks/domain/repositories/track_repository.dart';
 
 import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
@@ -86,6 +88,29 @@ class _FakePlaylistRepository implements PlaylistRepository {
       const [];
 }
 
+class _FakeTrackRepository implements TrackRepository {
+  @override
+  Future<Track> upload({
+    required String filePath,
+    required String filename,
+    required String title,
+    String? artist,
+    int? durationS,
+    bool isPublic = false,
+    void Function(double progress)? onProgress,
+  }) async =>
+      Track(id: 't1', title: title, artist: artist, durationS: durationS);
+
+  @override
+  Future<List<PublicTrack>> listPublicTracks({int? limit}) async => const [];
+
+  @override
+  Future<void> deleteTrack(String id) async {}
+
+  @override
+  Future<void> updateVisibility(String id, {required bool isPublic}) async {}
+}
+
 Widget _harness(
   PlaylistRepository repository, {
   bool isAuthenticated = true,
@@ -106,6 +131,7 @@ Widget _harness(
       child: MaterialApp(
         home: PlaylistsScreen(
           repository: repository,
+          trackRepository: _FakeTrackRepository(),
           isAuthenticated: isAuthenticated,
         ),
       ),

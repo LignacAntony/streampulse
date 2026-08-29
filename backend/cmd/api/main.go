@@ -492,6 +492,8 @@ func run() error {
 		http.HandlerFunc(trackHandler.Upload)))
 	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.ListUserTracks)))
+	mux.Handle("DELETE /api/tracks/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.Delete)))
 	mux.Handle("GET /api/tracks/public", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.ListPublicTracks)))
 	mux.Handle("PATCH /api/tracks/{id}/visibility", auth.RequireAuth(cfg.JWTSecret,

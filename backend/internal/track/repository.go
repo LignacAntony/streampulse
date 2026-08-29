@@ -71,6 +71,24 @@ func (r *pgRepository) ListTracksByUser(ctx context.Context, userID string) ([]T
 	return tracks, nil
 }
 
+func (r *pgRepository) DeleteTrack(ctx context.Context, trackID, userID string) (string, bool, error) {
+	id, ok := parseUUID(trackID)
+	if !ok {
+		return "", false, nil
+	}
+	filePath, err := r.q.DeleteTrack(ctx, trackdb.DeleteTrackParams{
+		ID:     id,
+		UserID: uuidParam(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("repo: delete track: %w", err)
+	}
+	return filePath, true, nil
+}
+
 func (r *pgRepository) ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error) {
 	var rows []trackdb.ListPublicTracksFirstRow
 	var err error
