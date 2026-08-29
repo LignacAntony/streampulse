@@ -35,6 +35,9 @@ import '../features/streams/domain/repositories/stream_repository.dart';
 import '../features/streams/presentation/providers/audio_player_controller.dart';
 import '../features/streams/presentation/providers/discover_notifier.dart';
 import '../features/streams/presentation/providers/favorites_controller.dart';
+import '../features/chat/data/datasources/chat_websocket_source.dart';
+import '../features/chat/data/repositories/chat_ban_repository.dart';
+import '../features/chat/presentation/providers/chat_controller.dart';
 import '../features/streams/presentation/providers/stream_notifier.dart';
 import '../core/audio/volume_store.dart';
 
@@ -148,6 +151,22 @@ class StreamPulseApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<DiscoverNotifier>(
           create: (ctx) => DiscoverNotifier(ctx.read<StreamRepository>()),
+        ),
+        // Chat en direct (US-09-01) : WebSocket source + contrôleur + bans REST.
+        Provider<ChatWebSocketSource>(
+          create: (ctx) => ChatWebSocketSourceImpl(
+            ctx.read<SecureStorage>(),
+            ctx.read<DioClient>(),
+          ),
+        ),
+        Provider<ChatBanRepository>(
+          create: (ctx) => ChatBanRepositoryImpl(ctx.read<DioClient>().dio),
+        ),
+        ChangeNotifierProvider<ChatController>(
+          create: (ctx) => ChatController(
+            ctx.read<ChatWebSocketSource>(),
+            banRepository: ctx.read<ChatBanRepository>(),
+          ),
         ),
         // Lecteur audio partagé (STR-109) : un seul contrôleur app-level pilote
         // le service de premier plan ; le plein écran et le mini-player le lisent.

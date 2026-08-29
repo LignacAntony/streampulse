@@ -1,5 +1,7 @@
 import 'package:streampulse_api/streampulse_api.dart';
 
+import '../../domain/entities/admin_chat_message.dart' as domain;
+import '../../domain/entities/admin_global_ban.dart';
 import '../../domain/entities/admin_stream.dart';
 import '../../domain/entities/admin_user.dart';
 
@@ -30,5 +32,25 @@ extension AdminStreamResponseMapper on AdminStreamResponse {
     startedAt: startedAt,
     userId: userId,
     username: username,
+  );
+}
+
+extension AdminChatMessageMapper on AdminChatMessage {
+  domain.AdminChatMessage toEntity() => domain.AdminChatMessage(
+    id: id,
+    streamId: streamId,
+    username: username,
+    content: content,
+    createdAt: createdAt,
+    streamTitle: streamTitle,
+  );
+}
+
+extension AdminGlobalBannedUserMapper on AdminGlobalBannedUser {
+  AdminGlobalBan toEntity() => AdminGlobalBan(
+    userId: userId,
+    username: username,
+    reason: reason,
+    createdAt: createdAt,
   );
 }

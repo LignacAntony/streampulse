@@ -7,6 +7,7 @@ lib/src/api.dart
 lib/src/api/admin_api.dart
 lib/src/api/auth_api.dart
 lib/src/api/broadcaster_api.dart
+lib/src/api/chat_api.dart
 lib/src/api/health_api.dart
 lib/src/api/metrics_api.dart
 lib/src/api/playlist_api.dart
@@ -20,6 +21,12 @@ lib/src/auth/bearer_auth.dart
 lib/src/auth/oauth.dart
 lib/src/deserialize.dart
 lib/src/model/add_playlist_track_request.dart
+lib/src/model/admin_chat_message.dart
+lib/src/model/admin_global_banned_user.dart
+lib/src/model/admin_metrics_http.dart
+lib/src/model/admin_metrics_response.dart
+lib/src/model/admin_metrics_streams.dart
+lib/src/model/admin_metrics_users.dart
 lib/src/model/admin_stream_list_response.dart
 lib/src/model/admin_stream_response.dart
 lib/src/model/admin_user_list_response.dart
@@ -28,12 +35,14 @@ lib/src/model/broadcaster_request_admin.dart
 lib/src/model/broadcaster_request_input.dart
 lib/src/model/broadcaster_request_list_response.dart
 lib/src/model/broadcaster_request_response.dart
+lib/src/model/chat_banned_user.dart
 lib/src/model/create_playlist_request.dart
 lib/src/model/create_stream_request.dart
 lib/src/model/delete_account_request.dart
 lib/src/model/error_detail.dart
 lib/src/model/error_response.dart
 lib/src/model/forgot_password_request.dart
+lib/src/model/global_ban_user_request.dart
 lib/src/model/health_response.dart
 lib/src/model/login_request.dart
 lib/src/model/logout_request.dart

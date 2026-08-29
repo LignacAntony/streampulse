@@ -1,4 +1,10 @@
 import 'package:streampulse_api/src/model/add_playlist_track_request.dart';
+import 'package:streampulse_api/src/model/admin_chat_message.dart';
+import 'package:streampulse_api/src/model/admin_global_banned_user.dart';
+import 'package:streampulse_api/src/model/admin_metrics_http.dart';
+import 'package:streampulse_api/src/model/admin_metrics_response.dart';
+import 'package:streampulse_api/src/model/admin_metrics_streams.dart';
+import 'package:streampulse_api/src/model/admin_metrics_users.dart';
 import 'package:streampulse_api/src/model/admin_stream_list_response.dart';
 import 'package:streampulse_api/src/model/admin_stream_response.dart';
 import 'package:streampulse_api/src/model/admin_user_list_response.dart';
@@ -7,12 +13,14 @@ import 'package:streampulse_api/src/model/broadcaster_request_admin.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_input.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_list_response.dart';
 import 'package:streampulse_api/src/model/broadcaster_request_response.dart';
+import 'package:streampulse_api/src/model/chat_banned_user.dart';
 import 'package:streampulse_api/src/model/create_playlist_request.dart';
 import 'package:streampulse_api/src/model/create_stream_request.dart';
 import 'package:streampulse_api/src/model/delete_account_request.dart';
 import 'package:streampulse_api/src/model/error_detail.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/forgot_password_request.dart';
+import 'package:streampulse_api/src/model/global_ban_user_request.dart';
 import 'package:streampulse_api/src/model/health_response.dart';
 import 'package:streampulse_api/src/model/login_request.dart';
 import 'package:streampulse_api/src/model/logout_request.dart';
@@ -60,6 +68,24 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'AddPlaylistTrackRequest':
       return AddPlaylistTrackRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
+    case 'AdminChatMessage':
+      return AdminChatMessage.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminGlobalBannedUser':
+      return AdminGlobalBannedUser.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminMetricsHTTP':
+      return AdminMetricsHTTP.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminMetricsResponse':
+      return AdminMetricsResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminMetricsStreams':
+      return AdminMetricsStreams.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'AdminMetricsUsers':
+      return AdminMetricsUsers.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'AdminStreamListResponse':
       return AdminStreamListResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -86,6 +112,9 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'BroadcasterRequestResponse':
       return BroadcasterRequestResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
+    case 'ChatBannedUser':
+      return ChatBannedUser.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'CreatePlaylistRequest':
       return CreatePlaylistRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -102,6 +131,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'ForgotPasswordRequest':
       return ForgotPasswordRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'GlobalBanUserRequest':
+      return GlobalBanUserRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'HealthResponse':
       return HealthResponse.fromJson(value as Map<String, dynamic>)

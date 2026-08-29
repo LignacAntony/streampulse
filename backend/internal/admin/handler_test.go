@@ -540,3 +540,182 @@ func TestHandler_Metrics_PropagatesServiceError(t *testing.T) {
 		t.Fatalf("want 500, got %d: %s", rec.Code, rec.Body)
 	}
 }
+
+// --- Chat moderation handlers ---
+
+type stubChatModerator struct {
+	globalBanErr     error
+	globalUnbanErr   error
+	listGlobalBans   []ChatBannedUser
+	listGlobalErr    error
+	userMessages     []ChatUserMessage
+	userMessagesErr  error
+	isGloballyBanned bool
+	disconnectedUser string
+}
+
+func (s *stubChatModerator) GlobalBan(_ context.Context, _, _ string, _ *string) error {
+	return s.globalBanErr
+}
+func (s *stubChatModerator) GlobalUnban(_ context.Context, _ string) error {
+	return s.globalUnbanErr
+}
+func (s *stubChatModerator) ListGlobalBans(_ context.Context) ([]ChatBannedUser, error) {
+	return s.listGlobalBans, s.listGlobalErr
+}
+func (s *stubChatModerator) ListUserMessages(_ context.Context, _ string, _, _ int32) ([]ChatUserMessage, error) {
+	return s.userMessages, s.userMessagesErr
+}
+func (s *stubChatModerator) IsGloballyBanned(_ context.Context, _ string) (bool, error) {
+	return s.isGloballyBanned, nil
+}
+func (s *stubChatModerator) DisconnectUserFromAll(userID string) {
+	s.disconnectedUser = userID
+}
+
+func doChatAdmin(t *testing.T, h *Handler, method, path string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	var req *http.Request
+	if body != "" {
+		req = httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	req.SetPathValue("id", testHandlerUserID)
+	token, err := auth.GenerateAccessToken(testAdminID, "admin", testHandlerSecret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	auth.RequireAuth(testHandlerSecret, auth.RequireRole("admin", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case method == http.MethodPost && strings.HasSuffix(path, "/chat-ban"):
+			h.GlobalBan(w, r)
+		case method == http.MethodDelete && strings.HasSuffix(path, "/chat-ban"):
+			h.GlobalUnban(w, r)
+		case method == http.MethodGet && strings.HasSuffix(path, "/chat-messages"):
+			h.ListUserMessages(w, r)
+		case method == http.MethodGet && strings.HasSuffix(path, "/chat-bans"):
+			h.ListGlobalBans(w, r)
+		}
+	}))).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHandler_GlobalBan_OK(t *testing.T) {
+	chatStub := &stubChatModerator{}
+	h := NewHandler(&stubAdminService{})
+	h.SetChatModerator(chatStub)
+
+	rec := doChatAdmin(t, h, http.MethodPost, "/api/admin/users/"+testHandlerUserID+"/chat-ban", `{"reason":"spam"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if chatStub.disconnectedUser != testHandlerUserID {
+		t.Errorf("user not disconnected after ban")
+	}
+}
+
+func TestHandler_GlobalBan_NoChatModerator(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+
+	rec := doChatAdmin(t, h, http.MethodPost, "/api/admin/users/"+testHandlerUserID+"/chat-ban", `{}`)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_GlobalBan_Error(t *testing.T) {
+	chatStub := &stubChatModerator{globalBanErr: apperror.NotFound("user not found")}
+	h := NewHandler(&stubAdminService{})
+	h.SetChatModerator(chatStub)
+
+	rec := doChatAdmin(t, h, http.MethodPost, "/api/admin/users/"+testHandlerUserID+"/chat-ban", `{}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_GlobalUnban_OK(t *testing.T) {
+	chatStub := &stubChatModerator{}
+	h := NewHandler(&stubAdminService{})
+	h.SetChatModerator(chatStub)
+
+	rec := doChatAdmin(t, h, http.MethodDelete, "/api/admin/users/"+testHandlerUserID+"/chat-ban", "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_GlobalUnban_NoChatModerator(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+
+	rec := doChatAdmin(t, h, http.MethodDelete, "/api/admin/users/"+testHandlerUserID+"/chat-ban", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_GlobalUnban_Error(t *testing.T) {
+	chatStub := &stubChatModerator{globalUnbanErr: apperror.NotFound("ban not found")}
+	h := NewHandler(&stubAdminService{})
+	h.SetChatModerator(chatStub)
+
+	rec := doChatAdmin(t, h, http.MethodDelete, "/api/admin/users/"+testHandlerUserID+"/chat-ban", "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_ListGlobalBans_OK(t *testing.T) {
+	reason := "spam"
+	chatStub := &stubChatModerator{listGlobalBans: []ChatBannedUser{
+		{UserID: testHandlerUserID, Username: "user1", Reason: &reason, CreatedAt: time.Now()},
+	}}
+	h := NewHandler(&stubAdminService{})
+	h.SetChatModerator(chatStub)
+
+	rec := doChatAdmin(t, h, http.MethodGet, "/api/admin/chat-bans", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"username":"user1"`) {
+		t.Errorf("body incomplet: %s", rec.Body)
+	}
+}
+
+func TestHandler_ListGlobalBans_NoChatModerator(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+
+	rec := doChatAdmin(t, h, http.MethodGet, "/api/admin/chat-bans", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHandler_ListUserMessages_OK(t *testing.T) {
+	chatStub := &stubChatModerator{userMessages: []ChatUserMessage{
+		{ID: "m1", StreamID: "s1", UserID: testHandlerUserID, Username: "user1", Content: "hello", CreatedAt: time.Now(), StreamTitle: "Jazz"},
+	}}
+	h := NewHandler(&stubAdminService{})
+	h.SetChatModerator(chatStub)
+
+	rec := doChatAdmin(t, h, http.MethodGet, "/api/admin/users/"+testHandlerUserID+"/chat-messages", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"content":"hello"`) {
+		t.Errorf("body incomplet: %s", rec.Body)
+	}
+}
+
+func TestHandler_ListUserMessages_NoChatModerator(t *testing.T) {
+	h := NewHandler(&stubAdminService{})
+
+	rec := doChatAdmin(t, h, http.MethodGet, "/api/admin/users/"+testHandlerUserID+"/chat-messages", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d: %s", rec.Code, rec.Body)
+	}
+}
