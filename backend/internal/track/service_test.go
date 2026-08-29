@@ -71,6 +71,23 @@ func (f *fakeRepo) ListFilePathsByUser(_ context.Context, _ string) ([]string, e
 	return f.pathsRet, f.pathsErr
 }
 
+func (f *fakeRepo) ListPublicTracks(_ context.Context, _ *PublicTrackCursor, _ int) ([]PublicTrack, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) UpdateTrackVisibility(_ context.Context, _, _ string, _ bool) (bool, error) {
+	return true, nil
+}
+
+func (f *fakeRepo) GetTrackFileForStream(_ context.Context, trackID, userID string) (TrackFile, error) {
+	f.gotFileTrack = trackID
+	f.gotFileUser = userID
+	if f.fileErr != nil {
+		return TrackFile{}, f.fileErr
+	}
+	return f.fileRet, nil
+}
+
 type stubStorage struct {
 	saveCalled   bool
 	savedExt     string

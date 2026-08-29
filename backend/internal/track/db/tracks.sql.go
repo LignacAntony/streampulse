@@ -12,7 +12,7 @@ import (
 )
 
 const createTrack = `-- name: CreateTrack :one
-INSERT INTO tracks (user_id, title, artist, duration_s, file_path, mime_type, file_size)
+INSERT INTO tracks (user_id, title, artist, duration_s, file_path, mime_type, file_size, is_public)
 VALUES (
     $1::uuid,
     $2::text,
@@ -20,9 +20,10 @@ VALUES (
     $4::int,
     $5::text,
     $6::text,
-    $7::bigint
+    $7::bigint,
+    $8::boolean
 )
-RETURNING id::text AS id, title, artist, duration_s
+RETURNING id::text AS id, title, artist, duration_s, is_public
 `
 
 type CreateTrackParams struct {
@@ -33,6 +34,7 @@ type CreateTrackParams struct {
 	FilePath  string
 	MimeType  string
 	FileSize  int64
+	IsPublic  bool
 }
 
 type CreateTrackRow struct {
@@ -40,6 +42,7 @@ type CreateTrackRow struct {
 	Title     string
 	Artist    pgtype.Text
 	DurationS pgtype.Int4
+	IsPublic  bool
 }
 
 // Enregistre une piste uploadée dans la bibliothèque du demandeur. Le fichier est
@@ -55,6 +58,7 @@ func (q *Queries) CreateTrack(ctx context.Context, arg CreateTrackParams) (Creat
 		arg.FilePath,
 		arg.MimeType,
 		arg.FileSize,
+		arg.IsPublic,
 	)
 	var i CreateTrackRow
 	err := row.Scan(
@@ -62,6 +66,7 @@ func (q *Queries) CreateTrack(ctx context.Context, arg CreateTrackParams) (Creat
 		&i.Title,
 		&i.Artist,
 		&i.DurationS,
+		&i.IsPublic,
 	)
 	return i, err
 }
@@ -90,6 +95,32 @@ type GetTrackFileByUserRow struct {
 func (q *Queries) GetTrackFileByUser(ctx context.Context, arg GetTrackFileByUserParams) (GetTrackFileByUserRow, error) {
 	row := q.db.QueryRow(ctx, getTrackFileByUser, arg.ID, arg.UserID)
 	var i GetTrackFileByUserRow
+	err := row.Scan(&i.FilePath, &i.MimeType)
+	return i, err
+}
+
+const getTrackFileForStream = `-- name: GetTrackFileForStream :one
+SELECT file_path, mime_type
+FROM tracks
+WHERE id = $1::uuid
+  AND (user_id = $2::uuid OR is_public = true)
+`
+
+type GetTrackFileForStreamParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+type GetTrackFileForStreamRow struct {
+	FilePath string
+	MimeType string
+}
+
+// Localise le binaire d'une piste accessible au demandeur : soit sa propre piste,
+// soit une piste publique d'un tiers.
+func (q *Queries) GetTrackFileForStream(ctx context.Context, arg GetTrackFileForStreamParams) (GetTrackFileForStreamRow, error) {
+	row := q.db.QueryRow(ctx, getTrackFileForStream, arg.ID, arg.UserID)
+	var i GetTrackFileForStreamRow
 	err := row.Scan(&i.FilePath, &i.MimeType)
 	return i, err
 }
@@ -123,8 +154,106 @@ func (q *Queries) ListFilePathsByUser(ctx context.Context, userID pgtype.UUID) (
 	return items, nil
 }
 
+const listPublicTracks = `-- name: ListPublicTracks :many
+SELECT t.id::text AS id, t.title, t.artist, t.duration_s,
+       u.username AS owner_name
+FROM tracks t
+JOIN users u ON u.id = t.user_id
+WHERE t.is_public = true
+  AND (t.created_at, t.id) < ($1::timestamptz, $2::uuid)
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT $3::int
+`
+
+type ListPublicTracksParams struct {
+	CursorCreatedAt pgtype.Timestamptz
+	CursorID        pgtype.UUID
+	PageSize        int32
+}
+
+type ListPublicTracksRow struct {
+	ID        string
+	Title     string
+	Artist    pgtype.Text
+	DurationS pgtype.Int4
+	OwnerName string
+}
+
+// Pistes publiques de tous les utilisateurs, pour l'écran de découverte.
+// Paginé par curseur (created_at DESC, id DESC).
+func (q *Queries) ListPublicTracks(ctx context.Context, arg ListPublicTracksParams) ([]ListPublicTracksRow, error) {
+	rows, err := q.db.Query(ctx, listPublicTracks, arg.CursorCreatedAt, arg.CursorID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicTracksRow
+	for rows.Next() {
+		var i ListPublicTracksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Artist,
+			&i.DurationS,
+			&i.OwnerName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicTracksFirst = `-- name: ListPublicTracksFirst :many
+SELECT t.id::text AS id, t.title, t.artist, t.duration_s,
+       u.username AS owner_name
+FROM tracks t
+JOIN users u ON u.id = t.user_id
+WHERE t.is_public = true
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT $1::int
+`
+
+type ListPublicTracksFirstRow struct {
+	ID        string
+	Title     string
+	Artist    pgtype.Text
+	DurationS pgtype.Int4
+	OwnerName string
+}
+
+// Première page de pistes publiques (pas de curseur).
+func (q *Queries) ListPublicTracksFirst(ctx context.Context, pageSize int32) ([]ListPublicTracksFirstRow, error) {
+	rows, err := q.db.Query(ctx, listPublicTracksFirst, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPublicTracksFirstRow
+	for rows.Next() {
+		var i ListPublicTracksFirstRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Artist,
+			&i.DurationS,
+			&i.OwnerName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTracksByUser = `-- name: ListTracksByUser :many
-SELECT id::text AS id, title, artist, duration_s
+SELECT id::text AS id, title, artist, duration_s, is_public
 FROM tracks
 WHERE user_id = $1::uuid
 ORDER BY created_at DESC
@@ -135,6 +264,7 @@ type ListTracksByUserRow struct {
 	Title     string
 	Artist    pgtype.Text
 	DurationS pgtype.Int4
+	IsPublic  bool
 }
 
 // Bibliothèque de pistes du demandeur (source du sélecteur « ajouter une piste »
@@ -153,6 +283,7 @@ func (q *Queries) ListTracksByUser(ctx context.Context, userID pgtype.UUID) ([]L
 			&i.Title,
 			&i.Artist,
 			&i.DurationS,
+			&i.IsPublic,
 		); err != nil {
 			return nil, err
 		}
@@ -177,4 +308,27 @@ func (q *Queries) SumTrackSizeByUser(ctx context.Context, userID pgtype.UUID) (i
 	var total int64
 	err := row.Scan(&total)
 	return total, err
+}
+
+const updateTrackVisibility = `-- name: UpdateTrackVisibility :execrows
+UPDATE tracks
+SET is_public = $1::boolean, updated_at = NOW()
+WHERE id = $2::uuid
+  AND user_id = $3::uuid
+`
+
+type UpdateTrackVisibilityParams struct {
+	IsPublic bool
+	ID       pgtype.UUID
+	UserID   pgtype.UUID
+}
+
+// Modifie la visibilité d'une piste. Filtre sur (id, user_id) : seul le
+// propriétaire peut changer la visibilité de sa piste.
+func (q *Queries) UpdateTrackVisibility(ctx context.Context, arg UpdateTrackVisibilityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateTrackVisibility, arg.IsPublic, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
