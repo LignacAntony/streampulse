@@ -199,6 +199,22 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Cache des dépendances Gradle (plugins Kotlin/AGP, artefacts Maven). Sans
+      # lui, chaque release retélécharge tout depuis Maven Central / plugins.
+      # gradle.org et se fait throttler (HTTP 429) — la cause de l'échec du run
+      # #364. Un cache chaud évite l'essentiel de ces requêtes réseau. La clé
+      # dépend des fichiers de build : un changement de version de plugin ou du
+      # wrapper invalide le cache et force un retéléchargement propre.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       # La clé de signature n'existe pas tant que personne ne l'a générée. Le
       # job ne doit pas échouer pour autant : un artefact signé en debug reste
       # utile pour installer et tester l'application, il n'est simplement pas
@@ -266,10 +282,33 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          flutter build apk --release \
+
+          # Retry avec backoff exponentiel : le téléchargement des dépendances
+          # Gradle passe par Maven Central / plugins.gradle.org, qui renvoient
+          # des 429 (Too Many Requests) aux heures de pointe — c'est ce qui a
+          # fait échouer le run #364. Le retry interne de Flutter (une fois,
+          # 100 ms) est trop court pour un throttling. On relance jusqu'à 3 fois
+          # avec 30 s / 60 s d'attente, le temps que la fenêtre de rate-limit se
+          # rouvre. Une vraie erreur de compilation échoue aussi 3 fois : le
+          # retry ne masque donc pas un bug, il n'absorbe qu'un aléa réseau.
+          build_with_retry() {
+            local n=1 max=3 delay=30
+            until "$@"; do
+              if [ "$n" -ge "$max" ]; then
+                echo "::error::build échoué après $max tentatives : $*"
+                return 1
+              fi
+              echo "::warning::tentative $n/$max échouée, nouvelle tentative dans ${delay}s : $*"
+              sleep "$delay"
+              n=$((n + 1))
+              delay=$((delay * 2))
+            done
+          }
+
+          build_with_retry flutter build apk --release \
             --dart-define=API_BASE_URL=https://api.streampulse.win
           if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
-            flutter build appbundle --release \
+            build_with_retry flutter build appbundle --release \
               --dart-define=API_BASE_URL=https://api.streampulse.win
           fi
 
