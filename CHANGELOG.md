@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.0](https://github.com/LignacAntony/streampulse/compare/v1.3.2...v1.4.0) (2026-08-30)
+
+
+### Features
+
+* **api,mobile:** distinguer les deux 409 du manifeste HLS (STR-229) ([#358](https://github.com/LignacAntony/streampulse/issues/358)) ([1316034](https://github.com/LignacAntony/streampulse/commit/1316034fe5a518d21a78d6362491fb5439b5ce34))
+* **api,mobile:** implémenter le chat en direct entre auditeurs avec modération admin ([#337](https://github.com/LignacAntony/streampulse/issues/337)) ([e0e0ce8](https://github.com/LignacAntony/streampulse/commit/e0e0ce88e807249c77750b3c110305ee08809ca2))
+* **api,mobile:** recommandation de pistes basée sur l'historique d'écoute (STR-203) ([4a1a724](https://github.com/LignacAntony/streampulse/commit/4a1a7240da163018db047da188e487e0f5e26ec1))
+* **api,mobile:** visibilité publique/privée des pistes audio (STR-248) ([#360](https://github.com/LignacAntony/streampulse/issues/360)) ([f9cef26](https://github.com/LignacAntony/streampulse/commit/f9cef264d86e41752c5026a0d1fee6ea705b158e))
+* **playlists:** afficher les recommandations « Pour toi » en l'absence de playlists ou pistes ([572cf2a](https://github.com/LignacAntony/streampulse/commit/572cf2ad4e95d806c41092fd20ac523cd1588ace))
+* **recommendations:** améliorer la précision des messages de découverte et exécuter les chargements en parallèle ([c2b0a11](https://github.com/LignacAntony/streampulse/commit/c2b0a115cf1d0005b882798d3bb33d24488e186b))
+* **recommendations:** implémenter l'algorithme simple de recommandation basé sur l'historique d'écoute ([b15ce93](https://github.com/LignacAntony/streampulse/commit/b15ce93fbdd5048e7babf909ea32fecc69cde63c))
+
 ## [1.3.2](https://github.com/LignacAntony/streampulse/compare/v1.3.1...v1.3.2) (2026-08-24)
 
 
