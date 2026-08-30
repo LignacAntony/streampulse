@@ -52,6 +52,9 @@ class ApiConstants {
     return '$wsBase/ws/streams/$streamId/chat';
   }
 
+  // Recommandation (US-09-04)
+  static const String recommendedTracks = '/api/recommendations/tracks';
+
   // Utilisateur connecté
   static const String me = '/api/users/me';
 }

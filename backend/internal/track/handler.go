@@ -27,6 +27,10 @@ const maxFormOverhead int64 = 1 << 20 // 1 Mio
 // saturerait le heap (OOMKill du pod). Le disque temporaire absorbe le reste.
 const maxMultipartMemory int64 = 1 << 20 // 1 Mio
 
+// recordPlayTimeout borne la goroutine best-effort d'enregistrement d'écoute :
+// détachée de la requête, elle ne doit pas vivre indéfiniment si la base traîne.
+const recordPlayTimeout = 5 * time.Second
+
 // TrackService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type TrackService interface {
 	Create(ctx context.Context, in CreateTrackInput) (Track, error)
@@ -37,16 +41,25 @@ type TrackService interface {
 	OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error)
 }
 
+type PlayRecorder interface {
+	RecordPlay(ctx context.Context, userID, trackID string) error
+}
+
 // Handler expose le domaine track en HTTP.
 type Handler struct {
 	svc TrackService
 	// maxUpload borne la taille du fichier accepté. Champ (et non constante
 	// directe) pour être abaissé dans les tests sans forger un corps de 50 Mo.
-	maxUpload int64
+	maxUpload    int64
+	playRecorder PlayRecorder
 }
 
 func NewHandler(svc TrackService) *Handler {
 	return &Handler{svc: svc, maxUpload: MaxUploadBytes}
+}
+
+func (h *Handler) SetPlayRecorder(rec PlayRecorder) {
+	h.playRecorder = rec
 }
 
 // libraryTrackResponse est la vue JSON d'une piste de la bibliothèque. artist et
@@ -181,6 +194,8 @@ func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	h.recordPlay(r, r.PathValue("id"), userID)
+
 	w.Header().Set("Content-Type", file.MimeType)
 	// Contenu privé de l'utilisateur : jamais dans un cache partagé, et pas de
 	// recompression par un intermédiaire (elle casserait les octets audio).
@@ -275,6 +290,34 @@ func (h *Handler) UpdateVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) recordPlay(r *http.Request, trackID, userID string) {
+	if h.playRecorder == nil {
+		return
+	}
+	if !isFreshPlay(r.Header.Get("Range")) {
+		return
+	}
+	// Détaché de l'annulation de la requête : la lecture ne doit pas attendre
+	// l'INSERT (best-effort). context.WithoutCancel conserve le logger et la trace
+	// du contexte ; le timeout borne la goroutine si la base traîne.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), recordPlayTimeout)
+	go func() {
+		defer cancel()
+		if err := h.playRecorder.RecordPlay(ctx, userID, trackID); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("track_id", trackID).
+				Msg("track: écoute non enregistrée")
+		}
+	}()
+}
+
+// isFreshPlay dit si une requête de lecture correspond à un DÉMARRAGE (à compter
+// dans l'historique) plutôt qu'à une avance/reprise. Le lecteur émet plusieurs
+// requêtes Range par piste ; seule celle sans Range, ou à partir de bytes=0-,
+// est une écoute depuis le début. Fonction pure pour être testée sans requête.
+func isFreshPlay(rangeHeader string) bool {
+	return rangeHeader == "" || strings.HasPrefix(rangeHeader, "bytes=0-")
 }
 
 // tooLargeError construit la réponse 413 commune (dépassement de taille).
