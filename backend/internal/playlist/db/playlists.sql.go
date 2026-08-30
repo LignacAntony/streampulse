@@ -24,7 +24,7 @@ SELECT $1::uuid,
        )
 FROM tracks t
 WHERE t.id = $2::uuid
-  AND t.user_id = $3::uuid
+  AND (t.user_id = $3::uuid OR t.is_public = true)
 RETURNING track_id::text AS track_id, position
 `
 
@@ -39,9 +39,10 @@ type AddTrackToPlaylistRow struct {
 	Position int32
 }
 
-// Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur :
-// une piste inconnue ou appartenant à un tiers ne produit aucune ligne -> le
-// repo renvoie NotFound. Une piste déjà présente viole la PK -> 23505 -> 409.
+// Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur
+// OU aux pistes publiques d'un tiers : une piste inconnue, privée d'un tiers,
+// ne produit aucune ligne -> le repo renvoie NotFound. Une piste déjà présente
+// viole la PK -> 23505 -> 409.
 func (q *Queries) AddTrackToPlaylist(ctx context.Context, arg AddTrackToPlaylistParams) (AddTrackToPlaylistRow, error) {
 	row := q.db.QueryRow(ctx, addTrackToPlaylist, arg.PlaylistID, arg.TrackID, arg.UserID)
 	var i AddTrackToPlaylistRow

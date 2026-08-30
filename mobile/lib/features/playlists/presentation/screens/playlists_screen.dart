@@ -6,6 +6,9 @@ import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../tracks/data/datasources/track_remote_data_source.dart';
+import '../../../tracks/data/repositories/track_repository_impl.dart';
+import '../../../tracks/domain/repositories/track_repository.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
@@ -15,6 +18,7 @@ import '../providers/offline_playlist_controller.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../providers/playlists_controller.dart';
 import '../track_labels.dart';
+import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/playlist_form_sheet.dart';
 import '../../../../core/layout/breakpoints.dart';
 
@@ -31,9 +35,15 @@ import '../../../../core/layout/breakpoints.dart';
 /// injectable pour les tests ; en production il est construit depuis
 /// [DioClient].
 class PlaylistsScreen extends StatelessWidget {
-  const PlaylistsScreen({super.key, this.repository, this.isAuthenticated});
+  const PlaylistsScreen({
+    super.key,
+    this.repository,
+    this.trackRepository,
+    this.isAuthenticated,
+  });
 
   final PlaylistRepository? repository;
+  final TrackRepository? trackRepository;
 
   /// Force l'état d'authentification (tests). En production, résolu depuis
   /// [SecureStorage].
@@ -42,15 +52,22 @@ class PlaylistsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<PlaylistsController>(
-      create: (ctx) => PlaylistsController(
-        repository ??
-            PlaylistRepositoryImpl(
-              PlaylistRemoteDataSource(
-                ctx.read<DioClient>().playlistApi,
-                ctx.read<DioClient>().trackApi,
+      create: (ctx) {
+        final playlistRepo = repository;
+        final trackRepo = trackRepository;
+        if (playlistRepo != null && trackRepo != null) {
+          return PlaylistsController(playlistRepo, trackRepo);
+        }
+        final dio = ctx.read<DioClient>();
+        return PlaylistsController(
+          playlistRepo ??
+              PlaylistRepositoryImpl(
+                PlaylistRemoteDataSource(dio.playlistApi, dio.trackApi),
               ),
-            ),
-      ),
+          trackRepo ??
+              TrackRepositoryImpl(TrackRemoteDataSource(dio.trackApi)),
+        );
+      },
       child: _PlaylistsBody(forcedAuth: isAuthenticated),
     );
   }
@@ -331,8 +348,6 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    // Comparaison par id : la file est une photo, elle peut décrire une piste
-    // que la bibliothèque affichée a entre-temps réordonnée ou retirée.
     final isCurrent = context.select<PlaylistQueueController, bool>(
       (queue) => queue.hasQueue && queue.currentTrack?.id == track.id,
     );
@@ -355,12 +370,129 @@ class _TrackTile extends StatelessWidget {
         style: isCurrent ? TextStyle(color: colors.primary) : null,
       ),
       subtitle: Text(
-        trackSubtitle(artist: track.artist, durationS: track.durationS),
+        [
+          trackSubtitle(artist: track.artist, durationS: track.durationS),
+          if (track.isPublic) 'Public',
+        ].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
+      trailing: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        onSelected: (value) => _onMenuAction(context, value),
+        itemBuilder: (_) => [
+          const PopupMenuItem(
+            value: 'add_to_playlist',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.playlist_add),
+              title: Text('Ajouter à une playlist'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'visibility',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                track.isPublic ? Icons.lock_outline : Icons.public,
+              ),
+              title: Text(
+                track.isPublic ? 'Rendre privée' : 'Rendre publique',
+              ),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'delete',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.delete_outline, color: colors.error),
+              title: Text('Supprimer', style: TextStyle(color: colors.error)),
+            ),
+          ),
+        ],
+      ),
     );
   }
+
+  Future<void> _onMenuAction(BuildContext context, String action) async {
+    final controller = context.read<PlaylistsController>();
+    switch (action) {
+      case 'add_to_playlist':
+        final playlistId = await AddToPlaylistSheet.show(
+          context,
+          loadPlaylists: controller.listPlaylists,
+        );
+        if (playlistId == null || !context.mounted) return;
+        try {
+          await controller.addTrackToPlaylist(playlistId, track.id);
+          if (!context.mounted) return;
+          showAuthSuccessToast(context, 'Piste ajoutée à la playlist');
+        } on ConflictException {
+          if (!context.mounted) return;
+          showAuthInfoToast(context, 'Cette piste est déjà dans la playlist');
+        } catch (e) {
+          if (!context.mounted) return;
+          showAuthErrorToast(context, 'Impossible d\'ajouter la piste');
+        }
+      case 'visibility':
+        try {
+          await controller.toggleTrackVisibility(
+            track.id,
+            isPublic: !track.isPublic,
+          );
+          if (!context.mounted) return;
+          showAuthSuccessToast(
+            context,
+            track.isPublic ? 'Piste rendue privée' : 'Piste rendue publique',
+          );
+        } catch (e) {
+          if (!context.mounted) return;
+          showAuthErrorToast(context, 'Impossible de changer la visibilité');
+        }
+      case 'delete':
+        final confirmed = await _confirmDeleteTrackDialog(context, track.title);
+        if (!confirmed || !context.mounted) return;
+        try {
+          await controller.deleteTrack(track.id);
+          if (!context.mounted) return;
+          showAuthSuccessToast(context, 'Piste supprimée');
+        } catch (e) {
+          if (!context.mounted) return;
+          showAuthErrorToast(context, 'Impossible de supprimer la piste');
+        }
+    }
+  }
+}
+
+Future<bool> _confirmDeleteTrackDialog(BuildContext context, String title) async {
+  final colors = Theme.of(context).colorScheme;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text('Supprimer « $title » ?'),
+      content: const Text(
+        'La piste sera retirée de toutes les playlists. Cette action est définitive.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          ),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Supprimer'),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
 }
 
 Future<bool> _confirmDeleteDialog(BuildContext context, String name) async {

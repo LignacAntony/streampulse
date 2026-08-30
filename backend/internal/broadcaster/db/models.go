@@ -143,6 +143,7 @@ type Track struct {
 	FileSize  int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	IsPublic  bool
 }
 
 type User struct {

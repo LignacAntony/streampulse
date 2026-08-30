@@ -61,9 +61,10 @@ WHERE pt.playlist_id = sqlc.arg(playlist_id)::uuid
 ORDER BY pt.position;
 
 -- name: AddTrackToPlaylist :one
--- Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur :
--- une piste inconnue ou appartenant à un tiers ne produit aucune ligne -> le
--- repo renvoie NotFound. Une piste déjà présente viole la PK -> 23505 -> 409.
+-- Ajout en fin de playlist. Le SELECT source restreint aux pistes du demandeur
+-- OU aux pistes publiques d'un tiers : une piste inconnue, privée d'un tiers,
+-- ne produit aucune ligne -> le repo renvoie NotFound. Une piste déjà présente
+-- viole la PK -> 23505 -> 409.
 INSERT INTO playlist_tracks (playlist_id, track_id, position)
 SELECT sqlc.arg(playlist_id)::uuid,
        t.id,
@@ -75,7 +76,7 @@ SELECT sqlc.arg(playlist_id)::uuid,
        )
 FROM tracks t
 WHERE t.id = sqlc.arg(track_id)::uuid
-  AND t.user_id = sqlc.arg(user_id)::uuid
+  AND (t.user_id = sqlc.arg(user_id)::uuid OR t.is_public = true)
 RETURNING track_id::text AS track_id, position;
 
 -- name: RemoveTrackFromPlaylist :one

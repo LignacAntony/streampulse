@@ -1804,6 +1804,9 @@ paths:
                 duration_s:
                   type: integer
                   description: Optional track duration in seconds (positive).
+                is_public:
+                  type: boolean
+                  description: Whether the track is public (default false).
       responses:
         "201":
           description: The created track.
@@ -1855,19 +1858,128 @@ paths:
                       message: seuls les fichiers audio MP3, AAC ou OGG sont acceptés
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/tracks/public:
+    get:
+      tags:
+        - Track
+      operationId: listPublicTracks
+      summary: List public tracks from all users.
+      description: >-
+        Returns public tracks from all users, most recent first, paginated by
+        cursor. Used for the discovery screen.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: ID of the last track from the previous page.
+        - name: cursor_created_at
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: created_at of the last track from the previous page.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Number of tracks per page.
+      responses:
+        "200":
+          description: Public tracks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicTrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/tracks/{id}:
+    delete:
+      tags:
+        - Track
+      operationId: deleteTrack
+      summary: Delete a track from the personal library.
+      description: >-
+        Permanently deletes a track owned by the authenticated user. The file is
+        removed from storage and the track is automatically removed from all
+        playlists (ON DELETE CASCADE). A track belonging to someone else returns
+        404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Track deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/tracks/{id}/visibility:
+    patch:
+      tags:
+        - Track
+      operationId: updateTrackVisibility
+      summary: Change a track's public/private visibility.
+      description: >-
+        Updates the visibility of a track owned by the authenticated user. A
+        public track is discoverable by all users and can be added to their
+        playlists and streamed. Only the track owner can change visibility.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTrackVisibilityRequest"
+      responses:
+        "204":
+          description: Visibility updated.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/tracks/{id}/stream:
     get:
       tags:
         - Track
       operationId: streamTrack
-      summary: Stream the audio file of one of the user's tracks.
+      summary: Stream the audio file of a track.
       description: >-
-        Serves the raw audio bytes of a track owned by the authenticated user
-        (US-05-04), so the mobile player can play a playlist queue. Range
-        requests are honoured (`Accept-Ranges: bytes`), which lets the player
-        resume or seek within a track without downloading it again. A track that
-        belongs to somebody else is reported as 404, exactly like an unknown one:
-        the status code never reveals that it exists.
+        Serves the raw audio bytes of a track accessible to the authenticated
+        user: either their own track or a public track from another user.
+        Range requests are honoured (`Accept-Ranges: bytes`), which lets the
+        player resume or seek within a track without downloading it again. A
+        private track belonging to somebody else is reported as 404.
       security:
         - bearerAuth: []
       parameters:
@@ -2982,6 +3094,7 @@ components:
         - title
         - artist
         - duration_s
+        - is_public
       properties:
         id:
           type: string
@@ -2998,6 +3111,52 @@ components:
           nullable: true
           description: Track duration in seconds.
           example: 214
+        is_public:
+          type: boolean
+          description: Whether the track is discoverable by other users.
+          example: false
+    PublicTrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+        - created_at
+        - owner_name
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+        created_at:
+          type: string
+          format: date-time
+          description: Track creation timestamp (RFC 3339). Used as cursor for pagination.
+          example: "2026-06-15T10:00:00Z"
+        owner_name:
+          type: string
+          description: Username of the track owner.
+          example: user1
+    UpdateTrackVisibilityRequest:
+      type: object
+      required:
+        - is_public
+      properties:
+        is_public:
+          type: boolean
+          description: Whether the track should be public.
     AddPlaylistTrackRequest:
       type: object
       required:

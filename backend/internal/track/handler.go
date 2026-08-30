@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
@@ -29,7 +30,10 @@ const maxMultipartMemory int64 = 1 << 20 // 1 Mio
 // TrackService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type TrackService interface {
 	Create(ctx context.Context, in CreateTrackInput) (Track, error)
+	Delete(ctx context.Context, trackID, requesterID string) error
 	ListUserTracks(ctx context.Context, requesterID string) ([]Track, error)
+	ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error)
+	UpdateVisibility(ctx context.Context, trackID, requesterID string, isPublic bool) error
 	OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error)
 }
 
@@ -52,6 +56,16 @@ type libraryTrackResponse struct {
 	Title     string  `json:"title"`
 	Artist    *string `json:"artist"`
 	DurationS *int    `json:"duration_s"`
+	IsPublic  bool    `json:"is_public"`
+}
+
+type publicTrackResponse struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Artist    *string `json:"artist"`
+	DurationS *int    `json:"duration_s"`
+	CreatedAt string  `json:"created_at"`
+	OwnerName string  `json:"owner_name"`
 }
 
 // Upload gère POST /api/tracks : upload multipart d'un fichier audio dans la
@@ -104,6 +118,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		Title:     r.FormValue("title"),
 		Artist:    optionalString(r.FormValue("artist")),
 		DurationS: duration,
+		IsPublic:  r.FormValue("is_public") == "true",
 		Size:      header.Size,
 		Content:   file,
 	})
@@ -175,6 +190,91 @@ func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
 	// a pas de revalidation conditionnelle à proposer (ServeContent omet alors
 	// Last-Modified et ignore If-Modified-Since).
 	http.ServeContent(w, r, "", time.Time{}, file.Content)
+}
+
+// Delete gère DELETE /api/tracks/{id} : suppression d'une piste par son
+// propriétaire (204). La cascade DB retire la piste de toutes les playlists,
+// puis le fichier est supprimé du stockage.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.Delete(r.Context(), r.PathValue("id"), userID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListPublicTracks gère GET /api/tracks/public : pistes publiques de tous les
+// utilisateurs, paginées par curseur (200).
+func (h *Handler) ListPublicTracks(w http.ResponseWriter, r *http.Request) {
+	var cursor *PublicTrackCursor
+	if cursorID := r.URL.Query().Get("cursor_id"); cursorID != "" {
+		if _, err := uuid.Parse(cursorID); err != nil {
+			httpjson.WriteError(w, r, apperror.InvalidArgument("invalid cursor_id"))
+			return
+		}
+		cursorAt := r.URL.Query().Get("cursor_created_at")
+		t, err := time.Parse(time.RFC3339Nano, cursorAt)
+		if err != nil {
+			httpjson.WriteError(w, r, apperror.InvalidArgument("invalid cursor_created_at"))
+			return
+		}
+		cursor = &PublicTrackCursor{CreatedAt: t, ID: cursorID}
+	}
+
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	tracks, err := h.svc.ListPublicTracks(r.Context(), cursor, pageSize)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]publicTrackResponse, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, publicTrackResponse{
+			ID:        t.ID,
+			Title:     t.Title,
+			Artist:    t.Artist,
+			DurationS: t.DurationS,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339Nano),
+			OwnerName: t.OwnerName,
+		})
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("track: encode public tracks")
+	}
+}
+
+// UpdateVisibility gère PATCH /api/tracks/{id}/visibility : modifie la visibilité
+// d'une piste (propriétaire uniquement, 204).
+func (h *Handler) UpdateVisibility(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	var body struct {
+		IsPublic *bool `json:"is_public"`
+	}
+	if err := httpjson.Decode(w, r, &body, 1<<10); err != nil {
+		return
+	}
+	if body.IsPublic == nil {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("is_public is required"))
+		return
+	}
+
+	if err := h.svc.UpdateVisibility(r.Context(), r.PathValue("id"), userID, *body.IsPublic); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // tooLargeError construit la réponse 413 commune (dépassement de taille).

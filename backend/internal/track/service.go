@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -50,6 +51,17 @@ type Track struct {
 	Title     string
 	Artist    *string
 	DurationS *int
+	IsPublic  bool
+}
+
+// PublicTrack est une piste publique vue par un tiers (découverte).
+type PublicTrack struct {
+	ID        string
+	Title     string
+	Artist    *string
+	DurationS *int
+	CreatedAt time.Time
+	OwnerName string
 }
 
 // CreateTrackInput porte les données d'un upload. Content est repositionnable :
@@ -61,6 +73,7 @@ type CreateTrackInput struct {
 	Title     string
 	Artist    *string
 	DurationS *int
+	IsPublic  bool
 	Size      int64
 	Content   io.ReadSeeker
 }
@@ -88,6 +101,7 @@ type CreateTrackParams struct {
 	Title     string
 	Artist    *string
 	DurationS *int
+	IsPublic  bool
 	FilePath  string
 	MimeType  string
 	FileSize  int64
@@ -97,14 +111,28 @@ type CreateTrackParams struct {
 type Repository interface {
 	CreateTrack(ctx context.Context, p CreateTrackParams) (Track, error)
 	ListTracksByUser(ctx context.Context, userID string) ([]Track, error)
+	ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error)
+	UpdateTrackVisibility(ctx context.Context, trackID, userID string, isPublic bool) (bool, error)
+	// DeleteTrack supprime une piste du propriétaire. Retourne le chemin du
+	// fichier pour nettoyage disque. Piste inexistante ou d'un tiers → "", false.
+	DeleteTrack(ctx context.Context, trackID, userID string) (filePath string, found bool, err error)
 	// GetTrackFileByUser localise le binaire d'une piste du demandeur. La piste
 	// d'un tiers est traitée comme inexistante (apperror.NotFound).
 	GetTrackFileByUser(ctx context.Context, trackID, userID string) (TrackFile, error)
+	// GetTrackFileForStream localise le binaire d'une piste accessible au
+	// demandeur : sa propre piste ou une piste publique.
+	GetTrackFileForStream(ctx context.Context, trackID, userID string) (TrackFile, error)
 	// SumFileSizeByUser retourne la taille cumulée des fichiers du user (quota).
 	SumFileSizeByUser(ctx context.Context, userID string) (int64, error)
 	// ListFilePathsByUser retourne les chemins disque des fichiers du user, pour
 	// les supprimer du stockage à la suppression de son compte.
 	ListFilePathsByUser(ctx context.Context, userID string) ([]string, error)
+}
+
+// PublicTrackCursor porte le curseur de pagination pour les pistes publiques.
+type PublicTrackCursor struct {
+	CreatedAt time.Time
+	ID        string
 }
 
 // StoredFile est un binaire ouvert depuis le stockage. Seek est requis :
@@ -189,6 +217,7 @@ func (s *Service) Create(ctx context.Context, in CreateTrackInput) (Track, error
 		Title:     title,
 		Artist:    artist,
 		DurationS: duration,
+		IsPublic:  in.IsPublic,
 		FilePath:  path,
 		MimeType:  mimeType,
 		FileSize:  in.Size,
@@ -249,7 +278,7 @@ func (s *Service) ListUserTracks(ctx context.Context, requesterID string) ([]Tra
 // ligne est là, le contenu ne l'est pas, il n'y a rien à servir et rien qu'un
 // réessai résoudrait (c'est une incohérence à journaliser, pas une panne).
 func (s *Service) OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error) {
-	file, err := s.repo.GetTrackFileByUser(ctx, trackID, requesterID)
+	file, err := s.repo.GetTrackFileForStream(ctx, trackID, requesterID)
 	if err != nil {
 		return OpenedTrackFile{}, err
 	}
@@ -264,6 +293,49 @@ func (s *Service) OpenTrackFile(ctx context.Context, trackID, requesterID string
 		return OpenedTrackFile{}, apperror.Internal("track: open file", err)
 	}
 	return OpenedTrackFile{TrackFile: file, Content: content}, nil
+}
+
+// Delete supprime une piste du propriétaire : ligne DB (cascade sur
+// playlist_tracks) puis fichier sur disque. Un tiers reçoit 404.
+func (s *Service) Delete(ctx context.Context, trackID, requesterID string) error {
+	filePath, found, err := s.repo.DeleteTrack(ctx, trackID, requesterID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return apperror.NotFound("track not found")
+	}
+	if err := s.storage.Remove(filePath); err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Str("path", filePath).
+			Msg("track: fichier orphelin non supprimé après DELETE")
+	}
+	return nil
+}
+
+const defaultPageSize = 20
+
+// ListPublicTracks retourne les pistes publiques de tous les utilisateurs,
+// paginées par curseur.
+func (s *Service) ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error) {
+	if pageSize <= 0 {
+		pageSize = defaultPageSize
+	} else if pageSize > 50 {
+		pageSize = 50
+	}
+	return s.repo.ListPublicTracks(ctx, cursor, pageSize)
+}
+
+// UpdateVisibility change la visibilité d'une piste. Seul le propriétaire peut
+// le faire ; une piste d'un tiers ou inexistante → 404.
+func (s *Service) UpdateVisibility(ctx context.Context, trackID, requesterID string, isPublic bool) error {
+	updated, err := s.repo.UpdateTrackVisibility(ctx, trackID, requesterID, isPublic)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return apperror.NotFound("track not found")
+	}
+	return nil
 }
 
 // normalizeTitle trime le titre et valide sa longueur (1-200).

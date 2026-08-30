@@ -28,6 +28,7 @@ import 'package:streampulse_api/src/model/message_response.dart';
 import 'package:streampulse_api/src/model/playlist_response.dart';
 import 'package:streampulse_api/src/model/playlist_track_response.dart';
 import 'package:streampulse_api/src/model/profile_response.dart';
+import 'package:streampulse_api/src/model/public_track_response.dart';
 import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
 import 'package:streampulse_api/src/model/reorder_playlist_tracks_request.dart';
@@ -41,6 +42,7 @@ import 'package:streampulse_api/src/model/token_pair_response.dart';
 import 'package:streampulse_api/src/model/track_response.dart';
 import 'package:streampulse_api/src/model/update_playlist_request.dart';
 import 'package:streampulse_api/src/model/update_profile_request.dart';
+import 'package:streampulse_api/src/model/update_track_visibility_request.dart';
 import 'package:streampulse_api/src/model/user_response.dart';
 
 final _regList = RegExp(r'^List<(.*)>$');
@@ -155,6 +157,9 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'ProfileResponse':
       return ProfileResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
+    case 'PublicTrackResponse':
+      return PublicTrackResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'RefreshRequest':
       return RefreshRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -195,6 +200,11 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'UpdateProfileRequest':
       return UpdateProfileRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'UpdateTrackVisibilityRequest':
+      return UpdateTrackVisibilityRequest.fromJson(
+            value as Map<String, dynamic>,
+          )
           as ReturnType;
     case 'UserResponse':
       return UserResponse.fromJson(value as Map<String, dynamic>) as ReturnType;

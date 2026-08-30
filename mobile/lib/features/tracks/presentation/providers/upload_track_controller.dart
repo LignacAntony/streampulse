@@ -37,6 +37,7 @@ class UploadTrackController extends ChangeNotifier {
     required String title,
     String? artist,
     int? durationS,
+    bool isPublic = false,
   }) async {
     _status = UploadStatus.uploading;
     _progress = 0;
@@ -50,6 +51,7 @@ class UploadTrackController extends ChangeNotifier {
         title: title,
         artist: artist,
         durationS: durationS,
+        isPublic: isPublic,
         onProgress: (value) {
           _progress = value;
           _notify();

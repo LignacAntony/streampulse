@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -32,13 +33,12 @@ func (r *pgRepository) CreateTrack(ctx context.Context, p CreateTrackParams) (Tr
 		FilePath:  p.FilePath,
 		MimeType:  p.MimeType,
 		FileSize:  p.FileSize,
+		IsPublic:  p.IsPublic,
 	})
 	if err != nil {
-		// uq_tracks_user_title : le demandeur a déjà une piste de ce titre.
 		if isUniqueViolation(err) {
 			return Track{}, apperror.Conflict("Une piste porte déjà ce titre")
 		}
-		// FK user_id : porteur du JWT introuvable (compte supprimé entre-temps).
 		if isForeignKeyViolation(err) {
 			return Track{}, apperror.Unauthorized("invalid user")
 		}
@@ -49,6 +49,7 @@ func (r *pgRepository) CreateTrack(ctx context.Context, p CreateTrackParams) (Tr
 		Title:     row.Title,
 		Artist:    textValue(row.Artist),
 		DurationS: int4Value(row.DurationS),
+		IsPublic:  row.IsPublic,
 	}, nil
 }
 
@@ -64,9 +65,101 @@ func (r *pgRepository) ListTracksByUser(ctx context.Context, userID string) ([]T
 			Title:     row.Title,
 			Artist:    textValue(row.Artist),
 			DurationS: int4Value(row.DurationS),
+			IsPublic:  row.IsPublic,
 		})
 	}
 	return tracks, nil
+}
+
+func (r *pgRepository) DeleteTrack(ctx context.Context, trackID, userID string) (string, bool, error) {
+	id, ok := parseUUID(trackID)
+	if !ok {
+		return "", false, nil
+	}
+	filePath, err := r.q.DeleteTrack(ctx, trackdb.DeleteTrackParams{
+		ID:     id,
+		UserID: uuidParam(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("repo: delete track: %w", err)
+	}
+	return filePath, true, nil
+}
+
+func (r *pgRepository) ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error) {
+	var rows []trackdb.ListPublicTracksFirstRow
+	var err error
+
+	ps := int32(pageSize) // #nosec G115 -- borné à 50 par le service
+	if cursor == nil {
+		rows, err = r.q.ListPublicTracksFirst(ctx, ps)
+	} else {
+		var dbRows []trackdb.ListPublicTracksRow
+		dbRows, err = r.q.ListPublicTracks(ctx, trackdb.ListPublicTracksParams{
+			CursorCreatedAt: timestamptzParam(cursor.CreatedAt),
+			CursorID:        uuidParam(cursor.ID),
+			PageSize:        ps,
+		})
+		rows = make([]trackdb.ListPublicTracksFirstRow, len(dbRows))
+		for i, r := range dbRows {
+			rows[i] = trackdb.ListPublicTracksFirstRow(r)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("repo: list public tracks: %w", err)
+	}
+	tracks := make([]PublicTrack, 0, len(rows))
+	for _, row := range rows {
+		tracks = append(tracks, PublicTrack{
+			ID:        row.ID,
+			Title:     row.Title,
+			Artist:    textValue(row.Artist),
+			DurationS: int4Value(row.DurationS),
+			CreatedAt: row.CreatedAt,
+			OwnerName: row.OwnerName,
+		})
+	}
+	return tracks, nil
+}
+
+func (r *pgRepository) UpdateTrackVisibility(ctx context.Context, trackID, userID string, isPublic bool) (bool, error) {
+	id, ok := parseUUID(trackID)
+	if !ok {
+		return false, nil
+	}
+	n, err := r.q.UpdateTrackVisibility(ctx, trackdb.UpdateTrackVisibilityParams{
+		IsPublic: isPublic,
+		ID:       id,
+		UserID:   uuidParam(userID),
+	})
+	if err != nil {
+		return false, fmt.Errorf("repo: update track visibility: %w", err)
+	}
+	return n > 0, nil
+}
+
+func (r *pgRepository) GetTrackFileForStream(ctx context.Context, trackID, userID string) (TrackFile, error) {
+	id, ok := parseUUID(trackID)
+	if !ok {
+		return TrackFile{}, apperror.NotFound("track not found")
+	}
+	row, err := r.q.GetTrackFileForStream(ctx, trackdb.GetTrackFileForStreamParams{
+		ID:     id,
+		UserID: uuidParam(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TrackFile{}, apperror.NotFound("track not found")
+		}
+		return TrackFile{}, fmt.Errorf("repo: get track file for stream: %w", err)
+	}
+	return TrackFile{
+		Path:     row.FilePath,
+		MimeType: row.MimeType,
+	}, nil
 }
 
 func (r *pgRepository) GetTrackFileByUser(ctx context.Context, trackID, userID string) (TrackFile, error) {
@@ -127,6 +220,10 @@ func parseUUID(s string) (pgtype.UUID, bool) {
 		return u, false
 	}
 	return u, true
+}
+
+func timestamptzParam(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
 func textParam(s *string) pgtype.Text {

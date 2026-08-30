@@ -492,8 +492,15 @@ func run() error {
 		http.HandlerFunc(trackHandler.Upload)))
 	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.ListUserTracks)))
-	// Lecture du binaire d'une piste (US-05-04) : réservée à son propriétaire,
-	// requêtes Range honorées pour le lecteur audio de la file d'attente.
+	mux.Handle("DELETE /api/tracks/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.Delete)))
+	mux.Handle("GET /api/tracks/public", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.ListPublicTracks)))
+	mux.Handle("PATCH /api/tracks/{id}/visibility", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.UpdateVisibility)))
+	// Lecture du binaire d'une piste (US-05-04) : accessible au propriétaire et
+	// à tout utilisateur authentifié si la piste est publique. Requêtes Range
+	// honorées pour le lecteur audio de la file d'attente.
 	mux.Handle("GET /api/tracks/{id}/stream", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.StreamTrack)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.

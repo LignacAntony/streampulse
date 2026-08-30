@@ -120,8 +120,11 @@ Class | Method | HTTP request | Description
 [*StreamingApi*](doc/StreamingApi.md) | [**streamPlaylist**](doc/StreamingApi.md#streamplaylist) | **GET** /api/streams/{id}/playlist.m3u8 | Get the live HLS media playlist (manifest).
 [*StreamingApi*](doc/StreamingApi.md) | [**streamSegment**](doc/StreamingApi.md#streamsegment) | **GET** /api/streams/{id}/segments/{segment} | Get an HLS media segment (.ts).
 [*StreamingApi*](doc/StreamingApi.md) | [**updateStream**](doc/StreamingApi.md#updatestream) | **PUT** /api/streams/{id} | Update a stream (owner only).
+[*TrackApi*](doc/TrackApi.md) | [**deleteTrack**](doc/TrackApi.md#deletetrack) | **DELETE** /api/tracks/{id} | Delete a track from the personal library.
+[*TrackApi*](doc/TrackApi.md) | [**listPublicTracks**](doc/TrackApi.md#listpublictracks) | **GET** /api/tracks/public | List public tracks from all users.
 [*TrackApi*](doc/TrackApi.md) | [**listUserTracks**](doc/TrackApi.md#listusertracks) | **GET** /api/tracks | List the authenticated user&#39;s track library.
-[*TrackApi*](doc/TrackApi.md) | [**streamTrack**](doc/TrackApi.md#streamtrack) | **GET** /api/tracks/{id}/stream | Stream the audio file of one of the user&#39;s tracks.
+[*TrackApi*](doc/TrackApi.md) | [**streamTrack**](doc/TrackApi.md#streamtrack) | **GET** /api/tracks/{id}/stream | Stream the audio file of a track.
+[*TrackApi*](doc/TrackApi.md) | [**updateTrackVisibility**](doc/TrackApi.md#updatetrackvisibility) | **PATCH** /api/tracks/{id}/visibility | Change a track&#39;s public/private visibility.
 [*TrackApi*](doc/TrackApi.md) | [**uploadTrack**](doc/TrackApi.md#uploadtrack) | **POST** /api/tracks | Upload an audio file to the personal library.
 
 
@@ -157,6 +160,7 @@ Class | Method | HTTP request | Description
  - [PlaylistResponse](doc/PlaylistResponse.md)
  - [PlaylistTrackResponse](doc/PlaylistTrackResponse.md)
  - [ProfileResponse](doc/ProfileResponse.md)
+ - [PublicTrackResponse](doc/PublicTrackResponse.md)
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ReorderPlaylistTracksRequest](doc/ReorderPlaylistTracksRequest.md)
@@ -170,6 +174,7 @@ Class | Method | HTTP request | Description
  - [TrackResponse](doc/TrackResponse.md)
  - [UpdatePlaylistRequest](doc/UpdatePlaylistRequest.md)
  - [UpdateProfileRequest](doc/UpdateProfileRequest.md)
+ - [UpdateTrackVisibilityRequest](doc/UpdateTrackVisibilityRequest.md)
  - [UserResponse](doc/UserResponse.md)
 
 

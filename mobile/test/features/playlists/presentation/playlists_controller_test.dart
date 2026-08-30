@@ -6,6 +6,8 @@ import 'package:streampulse/features/playlists/domain/entities/playlist_track.da
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlists_controller.dart';
+import 'package:streampulse/features/tracks/domain/entities/public_track.dart';
+import 'package:streampulse/features/tracks/domain/repositories/track_repository.dart';
 
 Playlist _playlist(String id, String name, {int trackCount = 0}) => Playlist(
       id: id,
@@ -84,12 +86,35 @@ class _FakePlaylistRepository implements PlaylistRepository {
       const [];
 }
 
+class _FakeTrackRepository implements TrackRepository {
+  @override
+  Future<Track> upload({
+    required String filePath,
+    required String filename,
+    required String title,
+    String? artist,
+    int? durationS,
+    bool isPublic = false,
+    void Function(double progress)? onProgress,
+  }) async =>
+      Track(id: 't1', title: title, artist: artist, durationS: durationS);
+
+  @override
+  Future<List<PublicTrack>> listPublicTracks({int? limit}) async => const [];
+
+  @override
+  Future<void> deleteTrack(String id) async {}
+
+  @override
+  Future<void> updateVisibility(String id, {required bool isPublic}) async {}
+}
+
 void main() {
   group('PlaylistsController.load', () {
     test('succès : expose la liste, loading remis à faux', () async {
       final repo = _FakePlaylistRepository()
         ..playlists = [_playlist('p-1', 'Rock', trackCount: 3)];
-      final controller = PlaylistsController(repo);
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
 
       await controller.load();
 
@@ -101,7 +126,7 @@ void main() {
 
     test('erreur réseau : error renseigné + isNetworkError', () async {
       final repo = _FakePlaylistRepository()..listError = const NetworkException();
-      final controller = PlaylistsController(repo);
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
 
       await controller.load();
 
@@ -114,7 +139,7 @@ void main() {
   group('mutations rechargent la liste', () {
     test('create appelle create puis list', () async {
       final repo = _FakePlaylistRepository();
-      final controller = PlaylistsController(repo);
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
 
       await controller.create('Nouvelle', null);
 
@@ -126,7 +151,7 @@ void main() {
     test('rename appelle rename puis list', () async {
       final repo = _FakePlaylistRepository()
         ..playlists = [_playlist('p-1', 'Rock')];
-      final controller = PlaylistsController(repo);
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
 
       await controller.rename('p-1', 'Metal', null);
 
@@ -138,7 +163,7 @@ void main() {
     test('delete appelle delete puis list', () async {
       final repo = _FakePlaylistRepository()
         ..playlists = [_playlist('p-1', 'Rock')];
-      final controller = PlaylistsController(repo);
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
 
       await controller.delete('p-1');
 
@@ -150,7 +175,7 @@ void main() {
     test('create en doublon relaie ConflictException sans avaler', () async {
       final repo = _FakePlaylistRepository()
         ..createError = const ConflictException('Une playlist porte déjà ce nom');
-      final controller = PlaylistsController(repo);
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
 
       await expectLater(
         controller.create('My Favorites', null),

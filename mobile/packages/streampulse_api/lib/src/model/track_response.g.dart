@@ -7,19 +7,31 @@ part of 'track_response.dart';
 // **************************************************************************
 
 TrackResponse _$TrackResponseFromJson(Map<String, dynamic> json) =>
-    $checkedCreate('TrackResponse', json, ($checkedConvert) {
-      $checkKeys(
-        json,
-        requiredKeys: const ['id', 'title', 'artist', 'duration_s'],
-      );
-      final val = TrackResponse(
-        id: $checkedConvert('id', (v) => v as String),
-        title: $checkedConvert('title', (v) => v as String),
-        artist: $checkedConvert('artist', (v) => v as String?),
-        durationS: $checkedConvert('duration_s', (v) => (v as num?)?.toInt()),
-      );
-      return val;
-    }, fieldKeyMap: const {'durationS': 'duration_s'});
+    $checkedCreate(
+      'TrackResponse',
+      json,
+      ($checkedConvert) {
+        $checkKeys(
+          json,
+          requiredKeys: const [
+            'id',
+            'title',
+            'artist',
+            'duration_s',
+            'is_public',
+          ],
+        );
+        final val = TrackResponse(
+          id: $checkedConvert('id', (v) => v as String),
+          title: $checkedConvert('title', (v) => v as String),
+          artist: $checkedConvert('artist', (v) => v as String?),
+          durationS: $checkedConvert('duration_s', (v) => (v as num?)?.toInt()),
+          isPublic: $checkedConvert('is_public', (v) => v as bool),
+        );
+        return val;
+      },
+      fieldKeyMap: const {'durationS': 'duration_s', 'isPublic': 'is_public'},
+    );
 
 Map<String, dynamic> _$TrackResponseToJson(TrackResponse instance) =>
     <String, dynamic>{
@@ -27,4 +39,5 @@ Map<String, dynamic> _$TrackResponseToJson(TrackResponse instance) =>
       'title': instance.title,
       'artist': instance.artist,
       'duration_s': instance.durationS,
+      'is_public': instance.isPublic,
     };
