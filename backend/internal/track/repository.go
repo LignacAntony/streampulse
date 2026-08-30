@@ -93,7 +93,10 @@ func (r *pgRepository) ListPublicTracks(ctx context.Context, cursor *PublicTrack
 	var rows []trackdb.ListPublicTracksFirstRow
 	var err error
 
-	ps := int32(min(pageSize, 50))
+	if pageSize > 50 {
+		pageSize = 50
+	}
+	ps := int32(pageSize) // #nosec G115 -- borné à 50 ci-dessus
 	if cursor == nil {
 		rows, err = r.q.ListPublicTracksFirst(ctx, ps)
 	} else {
