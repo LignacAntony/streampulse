@@ -93,14 +93,15 @@ func (r *pgRepository) ListPublicTracks(ctx context.Context, cursor *PublicTrack
 	var rows []trackdb.ListPublicTracksFirstRow
 	var err error
 
+	ps := int32(min(pageSize, 50))
 	if cursor == nil {
-		rows, err = r.q.ListPublicTracksFirst(ctx, int32(pageSize))
+		rows, err = r.q.ListPublicTracksFirst(ctx, ps)
 	} else {
 		var dbRows []trackdb.ListPublicTracksRow
 		dbRows, err = r.q.ListPublicTracks(ctx, trackdb.ListPublicTracksParams{
 			CursorCreatedAt: timestamptzParam(cursor.CreatedAt),
 			CursorID:        uuidParam(cursor.ID),
-			PageSize:        int32(pageSize),
+			PageSize:        ps,
 		})
 		rows = make([]trackdb.ListPublicTracksFirstRow, len(dbRows))
 		for i, r := range dbRows {

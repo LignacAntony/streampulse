@@ -230,13 +230,7 @@ func (h *Handler) ListPublicTracks(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]publicTrackResponse, 0, len(tracks))
 	for _, t := range tracks {
-		out = append(out, publicTrackResponse{
-			ID:        t.ID,
-			Title:     t.Title,
-			Artist:    t.Artist,
-			DurationS: t.DurationS,
-			OwnerName: t.OwnerName,
-		})
+		out = append(out, publicTrackResponse(t))
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("track: encode public tracks")
