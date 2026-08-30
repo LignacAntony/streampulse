@@ -46,7 +46,7 @@ type Handler struct {
 	svc TrackService
 	// maxUpload borne la taille du fichier accepté. Champ (et non constante
 	// directe) pour être abaissé dans les tests sans forger un corps de 50 Mo.
-	maxUpload int64
+	maxUpload    int64
 	playRecorder PlayRecorder
 }
 

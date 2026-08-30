@@ -46,13 +46,9 @@ func (h *Handler) Recommend(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]recommendationResponse, 0, len(recs))
 	for _, t := range recs {
-		out = append(out, recommendationResponse{
-			ID:        t.ID,
-			Title:     t.Title,
-			Artist:    t.Artist,
-			DurationS: t.DurationS,
-			Reason:    t.Reason,
-		})
+		// RecommendedTrack et recommendationResponse ont les mêmes champs (seuls
+		// les tags JSON diffèrent) : une conversion de type suffit.
+		out = append(out, recommendationResponse(t))
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("recommendation: encode response")

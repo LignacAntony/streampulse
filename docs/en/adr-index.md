@@ -297,5 +297,22 @@ server had from the first request. An unrecognised code falls back to "not
 ready": erring toward waiting costs a bounded backoff, erring toward "over"
 would cut off a broadcast that is starting.
 
+**ADR 046 — Track recommendations from listening history.** *Context:* US-09-04
+asks for a simple recommendation based on listening history, but no listening
+history was persisted and live HLS offers no reliable per-user signal (public,
+connectionless). *Decision:* capture a play best-effort on the authenticated
+track-stream endpoint (`listening_history`, one row per play, counted only on a
+from-the-start request so `Range` seeks do not inflate it), and rank candidates in
+a single SQL query (two CTEs): never-played first, then artist affinity, then
+rediscovery, then recent additions, with cold-start handled by construction. The
+candidate pool is the requester's own tracks plus other users' public tracks
+(STR-248); a stranger's private track is never recommended, and `from_others`
+drives a "public discovery" reason. *Consequence:* the endpoint always returns
+something useful rather than an empty list, and the algorithm lives in the query
+(validated by an integration test against a real PostgreSQL). Known limit: the
+native player preloads the whole queue, so starting a queue records every track,
+not only the one actually heard — acceptable for a simple reco, documented, with a
+client-side fix left to a separate ticket.
+
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.
