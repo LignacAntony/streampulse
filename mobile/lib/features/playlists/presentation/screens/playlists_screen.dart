@@ -291,7 +291,10 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
       );
     }
 
-    if (controller.playlists.isEmpty && controller.tracks.isEmpty) {
+    final recommendations = context.watch<RecommendationsController>();
+    if (controller.playlists.isEmpty &&
+        controller.tracks.isEmpty &&
+        !recommendations.hasItems) {
       return const _MessageView(
         icon: Icons.library_music_outlined,
         message: 'Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste',

@@ -433,5 +433,27 @@ void main() {
       expect(queue.playlistId, isNull,
           reason: '« Pour toi » n\'est pas une playlist');
     });
+
+    testWidgets('« Pour toi » s\'affiche même sans piste ni playlist propre',
+        (tester) async {
+      final recos = _FakeRecommendationRepository(items: const [
+        RecommendedTrack(
+          track: Track(id: 'r-1', title: 'Public One', artist: 'A', durationS: 100),
+          reason: 'Découverte publique',
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        _harness(_FakePlaylistRepository(), recommendations: recos),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pour toi'), findsOneWidget);
+      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
+      expect(
+        find.text('Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste'),
+        findsNothing,
+      );
+    });
   });
 }
