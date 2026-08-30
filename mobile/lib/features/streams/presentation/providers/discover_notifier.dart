@@ -29,17 +29,21 @@ class DiscoverNotifier extends ChangeNotifier {
     _isLoading = true;
     _hasError = false;
     notifyListeners();
+
+    var streamsFailed = false;
     try {
-      final results = await Future.wait([
-        _repository.listLiveStreams(limit: pageSize),
-        _trackRepository.listPublicTracks(limit: pageSize),
-      ]);
-      _streams = results[0] as List<LiveStream>;
-      _publicTracks = results[1] as List<PublicTrack>;
-      _hasError = false;
+      _streams = await _repository.listLiveStreams(limit: pageSize);
     } catch (_) {
-      _hasError = true;
+      streamsFailed = true;
     }
+
+    try {
+      _publicTracks = await _trackRepository.listPublicTracks(limit: pageSize);
+    } catch (_) {
+      _publicTracks = const [];
+    }
+
+    _hasError = streamsFailed && _publicTracks.isEmpty;
     _isLoading = false;
     notifyListeners();
   }
