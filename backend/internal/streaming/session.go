@@ -47,6 +47,44 @@ func (s *session) segmenter() *hlsSegmenter {
 	return s.hls
 }
 
+// hlsAvailability distingue les raisons pour lesquelles un fichier HLS n'est pas
+// servable — distinction que le client doit connaître (STR-229, ADR 045).
+//
+// Un `nil` de [session.segmenter] recouvrait deux états contraires : « ffmpeg
+// est mort » (terminal) et « ffmpeg n'a pas encore démarré » (transitoire). Le
+// second est précisément la fenêtre que STR-229 protège : `Start` inscrit la
+// session au registre *avant* de forker ffmpeg (phase 2 hors verrou), et un flux
+// affiché « en direct » dans Découvrir est ouvrable pendant ce laps.
+type hlsAvailability int
+
+const (
+	// hlsUnavailable : rien à servir, et réessayer n'y changera rien — aucune
+	// session, ou ffmpeg arrêté, ou nom de segment non résoluble.
+	hlsUnavailable hlsAvailability = iota
+	// hlsPending : session enregistrée, segmenteur pas encore publié. Le spawn
+	// est en cours (ou a échoué) ; l'auditeur doit patienter, pas abandonner.
+	hlsPending
+	// hlsServable : le chemin retourné fait foi.
+	hlsServable
+)
+
+// hlsState rend le segmenteur *et* la raison de son absence, sous un unique
+// verrou. Deux appels séparés — « est-ce servable ? » puis « est-ce en
+// démarrage ? » — laisseraient la session changer d'état entre les deux, et un
+// flux devenu prêt entre-temps serait annoncé « terminé ».
+func (s *session) hlsState() (*hlsSegmenter, hlsAvailability) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.dead:
+		return nil, hlsUnavailable // ffmpeg mort : la session part au reap
+	case s.hls == nil:
+		return nil, hlsPending // spawn en cours, ou échoué
+	default:
+		return s.hls, hlsServable
+	}
+}
+
 // LiveSessions est le registre in-memory des flux en direct (une session par
 // flux live). Protégé par mutex. Chaque session porte l'annulation de sa
 // goroutine (STR-84), son segmenteur HLS (STR-70) et ses abonnés SSE (STR-85).
@@ -62,6 +100,7 @@ type LiveSessions struct {
 
 	ingestGrace     time.Duration
 	onIngestExpired func(streamID string) error
+	onStreamStopped func(streamID string)
 }
 
 // SetIngestDisconnectHandler arme le bail audio des directs. Un flux qui ne
@@ -75,6 +114,14 @@ func (ls *LiveSessions) SetIngestDisconnectHandler(
 	defer ls.mu.Unlock()
 	ls.ingestGrace = grace
 	ls.onIngestExpired = handler
+}
+
+// SetOnStreamStopped enregistre un callback appelé (hors verrou, best-effort)
+// chaque fois qu'une session est retirée du registre (Stop, reap, StopAll).
+func (ls *LiveSessions) SetOnStreamStopped(fn func(streamID string)) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	ls.onStreamStopped = fn
 }
 
 // NewLiveSessions construit le registre. base est le context de cycle de vie du
@@ -207,6 +254,7 @@ func (s *session) run(ctx context.Context) bool {
 func (ls *LiveSessions) reap(streamID string, s *session) {
 	ls.mu.Lock()
 	handler := ls.onIngestExpired
+	fn := ls.onStreamStopped
 	if ls.byID[streamID] == s {
 		delete(ls.byID, streamID)
 		if s.streamKey != "" {
@@ -219,6 +267,9 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 	rec.ForgetStream(streamID)
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
+	if fn != nil {
+		fn(streamID)
+	}
 
 	// Hors verrou : le handler repasse par Service, qui peut rappeler Stop.
 	// Best-effort — la session mémoire est déjà retirée, donc plus rien n'est
@@ -238,6 +289,7 @@ func (ls *LiveSessions) reap(streamID string, s *session) {
 func (ls *LiveSessions) Stop(streamID string) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
+	fn := ls.onStreamStopped
 	if ok {
 		delete(ls.byID, streamID)
 		if s.streamKey != "" {
@@ -252,6 +304,9 @@ func (ls *LiveSessions) Stop(streamID string) {
 	s.publish(SessionEvent{Type: "ended"})
 	s.closeSubscribers()
 	s.cancel()
+	if fn != nil {
+		fn(streamID)
+	}
 }
 
 // armIngestExpiry (ré)arme le délai de grâce d'une session sans ingest. Le
@@ -350,36 +405,42 @@ func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error
 }
 
 // Playlist retourne le chemin disque du manifeste .m3u8 du flux en direct
-// (identifié par son id public). ("", false) si le flux n'est pas en direct ou
-// n'a pas de segmenteur exploitable.
-func (ls *LiveSessions) Playlist(streamID string) (string, bool) {
+// (identifié par son id public), et la raison de son indisponibilité le cas
+// échéant (cf. [hlsAvailability]).
+func (ls *LiveSessions) Playlist(streamID string) (string, hlsAvailability) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
 	ls.mu.Unlock()
 	if !ok {
-		return "", false
+		return "", hlsUnavailable
 	}
-	seg := s.segmenter()
-	if seg == nil {
-		return "", false
+	seg, avail := s.hlsState()
+	if avail != hlsServable {
+		return "", avail
 	}
-	return seg.playlistPath(), true
+	return seg.playlistPath(), hlsServable
 }
 
 // Segment retourne le chemin disque d'un segment .ts du flux en direct, après
 // validation stricte du nom (anti path-traversal, cf. hlsSegmenter.segmentPath).
-func (ls *LiveSessions) Segment(streamID, name string) (string, bool) {
+func (ls *LiveSessions) Segment(streamID, name string) (string, hlsAvailability) {
 	ls.mu.Lock()
 	s, ok := ls.byID[streamID]
 	ls.mu.Unlock()
 	if !ok {
-		return "", false
+		return "", hlsUnavailable
 	}
-	seg := s.segmenter()
-	if seg == nil {
-		return "", false
+	seg, avail := s.hlsState()
+	if avail != hlsServable {
+		return "", avail
 	}
-	return seg.segmentPath(name)
+	path, ok := seg.segmentPath(name)
+	if !ok {
+		// Nom refusé (traversal) ou hors fenêtre glissante : rien à servir, et
+		// attendre n'y changera rien — même verdict que « pas de session ».
+		return "", hlsUnavailable
+	}
+	return path, hlsServable
 }
 
 // Subscribe abonne un client SSE aux événements du flux. Retourne le canal de
@@ -540,6 +601,7 @@ func (ls *LiveSessions) StartListenerSweep(done <-chan struct{}, interval time.D
 func (ls *LiveSessions) StopAll() {
 	ls.mu.Lock()
 	sessions := ls.byID
+	fn := ls.onStreamStopped
 	ls.byID = make(map[string]*session)
 	ls.byKey = make(map[string]*session)
 	ls.mu.Unlock()
@@ -549,6 +611,9 @@ func (ls *LiveSessions) StopAll() {
 		rec.ForgetStream(id)
 		s.closeSubscribers()
 		s.cancel()
+		if fn != nil {
+			fn(id)
+		}
 	}
 }
 

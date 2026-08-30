@@ -24,6 +24,14 @@ tags:
     description: Personal playlist management (US-05-02).
   - name: Track
     description: Personal audio track library — upload and listing (US-05-01).
+  - name: Recommendation
+    description: >-
+      Track recommendations derived from the user's listening history
+      (US-09-04).
+  - name: Chat
+    description: >-
+      Live chat between listeners of a stream, with broadcaster/admin
+      moderation (US-09-01).
 paths:
   /health:
     get:
@@ -689,6 +697,140 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/admin/users/{id}/chat-messages:
+    get:
+      tags:
+        - Admin
+      operationId: listAdminUserChatMessages
+      summary: List chat messages of a user (admin only).
+      description: >-
+        Returns paginated chat messages sent by a specific user across all
+        streams, with the stream title for context. Admin moderation tool.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: List of chat messages.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminChatMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/admin/users/{id}/chat-ban:
+    post:
+      tags:
+        - Admin
+      operationId: globalBanUser
+      summary: Globally ban a user from all chats (admin only).
+      description: >-
+        Bans a user from all chat rooms. The user is immediately disconnected
+        from any active chat session. Idempotent (ON CONFLICT DO NOTHING).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  nullable: true
+      responses:
+        "204":
+          description: User globally banned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Admin
+      operationId: globalUnbanUser
+      summary: Remove global chat ban for a user (admin only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Global ban removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/admin/chat-bans:
+    get:
+      tags:
+        - Admin
+      operationId: listGlobalChatBans
+      summary: List all globally banned users (admin only).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of globally banned users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminGlobalBannedUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/streams:
     post:
       tags:
@@ -1247,12 +1389,38 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: >-
-            The stream is not live, or its manifest is not ready yet (window
-            between start and the first segment).
+            The manifest cannot be served. The `error.code` field tells the two
+            causes apart, and they call for opposite client behaviour:
+
+
+            - `stream_not_live` — no live session for this stream. The broadcast
+              is over, or never started. Final: retrying will not help.
+
+            - `manifest_not_ready` — the session is live but the first segment
+              has not been written yet (window between start and the first
+              segment, about one segment duration). Transient: retry.
+
+
+            A client that cannot tell them apart has to guess, and guessing
+            "over" during the start-up window wrongly ends playback. Treat any
+            unrecognised code as transient.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                streamNotLive:
+                  summary: Broadcast is over (final)
+                  value:
+                    error:
+                      code: stream_not_live
+                      message: stream is not live
+                manifestNotReady:
+                  summary: Starting up, retry (transient)
+                  value:
+                    error:
+                      code: manifest_not_ready
+                      message: stream manifest is not ready yet
         "503":
           description: >-
             Server at listener capacity (HLS_MAX_CONCURRENT concurrent requests
@@ -1644,6 +1812,9 @@ paths:
                 duration_s:
                   type: integer
                   description: Optional track duration in seconds (positive).
+                is_public:
+                  type: boolean
+                  description: Whether the track is public (default false).
       responses:
         "201":
           description: The created track.
@@ -1695,19 +1866,128 @@ paths:
                       message: seuls les fichiers audio MP3, AAC ou OGG sont acceptés
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/tracks/public:
+    get:
+      tags:
+        - Track
+      operationId: listPublicTracks
+      summary: List public tracks from all users.
+      description: >-
+        Returns public tracks from all users, most recent first, paginated by
+        cursor. Used for the discovery screen.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: ID of the last track from the previous page.
+        - name: cursor_created_at
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: created_at of the last track from the previous page.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Number of tracks per page.
+      responses:
+        "200":
+          description: Public tracks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicTrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/tracks/{id}:
+    delete:
+      tags:
+        - Track
+      operationId: deleteTrack
+      summary: Delete a track from the personal library.
+      description: >-
+        Permanently deletes a track owned by the authenticated user. The file is
+        removed from storage and the track is automatically removed from all
+        playlists (ON DELETE CASCADE). A track belonging to someone else returns
+        404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Track deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/tracks/{id}/visibility:
+    patch:
+      tags:
+        - Track
+      operationId: updateTrackVisibility
+      summary: Change a track's public/private visibility.
+      description: >-
+        Updates the visibility of a track owned by the authenticated user. A
+        public track is discoverable by all users and can be added to their
+        playlists and streamed. Only the track owner can change visibility.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTrackVisibilityRequest"
+      responses:
+        "204":
+          description: Visibility updated.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/tracks/{id}/stream:
     get:
       tags:
         - Track
       operationId: streamTrack
-      summary: Stream the audio file of one of the user's tracks.
+      summary: Stream the audio file of a track.
       description: >-
-        Serves the raw audio bytes of a track owned by the authenticated user
-        (US-05-04), so the mobile player can play a playlist queue. Range
-        requests are honoured (`Accept-Ranges: bytes`), which lets the player
-        resume or seek within a track without downloading it again. A track that
-        belongs to somebody else is reported as 404, exactly like an unknown one:
-        the status code never reveals that it exists.
+        Serves the raw audio bytes of a track accessible to the authenticated
+        user: either their own track or a public track from another user.
+        Range requests are honoured (`Accept-Ranges: bytes`), which lets the
+        player resume or seek within a track without downloading it again. A
+        private track belonging to somebody else is reported as 404.
       security:
         - bearerAuth: []
       parameters:
@@ -1758,6 +2038,114 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/chat/bans:
+    get:
+      tags:
+        - Chat
+      operationId: listChatBans
+      summary: List users banned by the authenticated broadcaster.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of banned users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatBannedUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/chat/bans/{userId}:
+    delete:
+      tags:
+        - Chat
+      operationId: unbanChatUser
+      summary: Remove a chat ban for a user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User identifier to unban.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Ban removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /ws/streams/{id}/chat:
+    get:
+      tags:
+        - Chat
+      operationId: connectChat
+      summary: Open a WebSocket connection to the live chat of a stream.
+      description: |
+        Upgrades the HTTP connection to WebSocket. Requires a valid JWT
+        in the `Authorization` header. Returns `409 Conflict` if the
+        stream is not live, `403 Forbidden` if the user is banned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Stream identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "101":
+          description: WebSocket connection established.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/recommendations/tracks:
+    get:
+      tags:
+        - Recommendation
+      operationId: recommendTracks
+      summary: Recommend tracks based on the user's listening history.
+      description: >-
+        Returns tracks the authenticated user can play (their own tracks and
+        other users' public tracks), ranked by a simple content-based algorithm
+        (US-09-04): never-played tracks first, then by affinity with the artists
+        the user listens to most, then least-recently played. With no listening
+        history yet, it falls back to the most recently added tracks (cold
+        start) rather than an empty list. Each item carries a human-readable
+        reason. Listening events are recorded server-side on track playback
+        (GET /api/tracks/{id}/stream).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Recommended tracks (empty array if none are available).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecommendedTrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
 components:
@@ -2585,6 +2973,67 @@ components:
           format: int64
           description: Total number of live streams currently in the moderation list.
           example: 3
+    AdminChatMessage:
+      type: object
+      required:
+        - id
+        - stream_id
+        - username
+        - content
+        - created_at
+        - stream_title
+      properties:
+        id:
+          type: string
+          format: uuid
+        stream_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        stream_title:
+          type: string
+    ChatBannedUser:
+      type: object
+      required:
+        - user_id
+        - username
+        - created_at
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    AdminGlobalBannedUser:
+      type: object
+      required:
+        - user_id
+        - username
+        - created_at
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
     CreatePlaylistRequest:
       type: object
       required:
@@ -2682,6 +3131,7 @@ components:
         - title
         - artist
         - duration_s
+        - is_public
       properties:
         id:
           type: string
@@ -2698,6 +3148,80 @@ components:
           nullable: true
           description: Track duration in seconds.
           example: 214
+        is_public:
+          type: boolean
+          description: Whether the track is discoverable by other users.
+          example: false
+    PublicTrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+        - created_at
+        - owner_name
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+        created_at:
+          type: string
+          format: date-time
+          description: Track creation timestamp (RFC 3339). Used as cursor for pagination.
+          example: "2026-06-15T10:00:00Z"
+        owner_name:
+          type: string
+          description: Username of the track owner.
+          example: user1
+    UpdateTrackVisibilityRequest:
+      type: object
+      required:
+        - is_public
+      properties:
+        is_public:
+          type: boolean
+          description: Whether the track should be public.
+    RecommendedTrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+        - reason
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+        reason:
+          type: string
+          description: Human-readable justification for the recommendation.
+          example: Parce que vous écoutez souvent Neon Lights
     AddPlaylistTrackRequest:
       type: object
       required:

@@ -23,6 +23,9 @@ import '../features/broadcaster/data/datasources/broadcaster_remote_data_source.
 import '../features/broadcaster/data/repositories/broadcaster_repository_impl.dart';
 import '../features/broadcaster/domain/repositories/broadcaster_repository.dart';
 import '../features/broadcaster/presentation/providers/broadcaster_controller.dart';
+import '../features/playlists/data/datasources/playlist_remote_data_source.dart';
+import '../features/playlists/data/repositories/playlist_repository_impl.dart';
+import '../features/playlists/domain/repositories/playlist_repository.dart';
 import '../features/playlists/presentation/providers/offline_playlist_controller.dart';
 import '../features/playlists/presentation/providers/playlist_queue_controller.dart';
 import '../features/profile/data/datasources/profile_remote_data_source.dart';
@@ -35,7 +38,13 @@ import '../features/streams/domain/repositories/stream_repository.dart';
 import '../features/streams/presentation/providers/audio_player_controller.dart';
 import '../features/streams/presentation/providers/discover_notifier.dart';
 import '../features/streams/presentation/providers/favorites_controller.dart';
+import '../features/chat/data/datasources/chat_websocket_source.dart';
+import '../features/chat/data/repositories/chat_ban_repository.dart';
+import '../features/chat/presentation/providers/chat_controller.dart';
 import '../features/streams/presentation/providers/stream_notifier.dart';
+import '../features/tracks/data/datasources/track_remote_data_source.dart';
+import '../features/tracks/data/repositories/track_repository_impl.dart';
+import '../features/tracks/domain/repositories/track_repository.dart';
 import '../core/audio/volume_store.dart';
 
 /// Conteneur racine d'injection de dépendances (remplace `ProviderScope`).
@@ -131,12 +140,27 @@ class StreamPulseApp extends StatelessWidget {
               BroadcasterController(ctx.read<BroadcasterRepository>()),
         ),
         Provider<StreamRemoteDataSource>(
-          create: (ctx) =>
-              StreamRemoteDataSource(ctx.read<DioClient>().streamingApi),
+          create: (ctx) => StreamRemoteDataSource(
+            ctx.read<DioClient>().streamingApi,
+            ctx.read<DioClient>().dio,
+          ),
         ),
         Provider<StreamRepository>(
           create: (ctx) =>
               StreamRepositoryImpl(ctx.read<StreamRemoteDataSource>()),
+        ),
+        Provider<TrackRepository>(
+          create: (ctx) => TrackRepositoryImpl(
+            TrackRemoteDataSource(ctx.read<DioClient>().trackApi),
+          ),
+        ),
+        Provider<PlaylistRepository>(
+          create: (ctx) {
+            final dio = ctx.read<DioClient>();
+            return PlaylistRepositoryImpl(
+              PlaylistRemoteDataSource(dio.playlistApi, dio.trackApi),
+            );
+          },
         ),
         ChangeNotifierProvider<StreamNotifier>(
           create: (ctx) => StreamNotifier(ctx.read<StreamRepository>()),
@@ -145,15 +169,33 @@ class StreamPulseApp extends StatelessWidget {
           create: (ctx) => FavoritesController(ctx.read<StreamRepository>()),
         ),
         ChangeNotifierProvider<DiscoverNotifier>(
-          create: (ctx) => DiscoverNotifier(ctx.read<StreamRepository>()),
+          create: (ctx) => DiscoverNotifier(
+            ctx.read<StreamRepository>(),
+            ctx.read<TrackRepository>(),
+          ),
+        ),
+        // Chat en direct (US-09-01) : WebSocket source + contrôleur + bans REST.
+        Provider<ChatWebSocketSource>(
+          create: (ctx) => ChatWebSocketSourceImpl(
+            ctx.read<SecureStorage>(),
+            ctx.read<DioClient>(),
+          ),
+        ),
+        Provider<ChatBanRepository>(
+          create: (ctx) => ChatBanRepositoryImpl(ctx.read<DioClient>().dio),
+        ),
+        ChangeNotifierProvider<ChatController>(
+          create: (ctx) => ChatController(
+            ctx.read<ChatWebSocketSource>(),
+            banRepository: ctx.read<ChatBanRepository>(),
+          ),
         ),
         // Lecteur audio partagé (STR-109) : un seul contrôleur app-level pilote
         // le service de premier plan ; le plein écran et le mini-player le lisent.
         ChangeNotifierProvider<AudioPlayerController>(
           create: (ctx) => AudioPlayerController(
             service: ctx.read<AudioPlaybackService>(),
-            isManifestUnavailable:
-                ctx.read<StreamRepository>().isManifestUnavailable,
+            manifestStatus: ctx.read<StreamRepository>().manifestStatus,
           ),
         ),
         Provider<OfflineDatabase>(create: (_) => OfflineDatabase()),

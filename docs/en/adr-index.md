@@ -284,5 +284,35 @@ Every figure is an upper bound: the simulated clients share the measured
 process, so their own HTTP work cannot be separated from the server's. And the
 first ceiling StreamPulse will hit as it grows is bandwidth, not CPU.
 
+**ADR 045 — HLS manifest error codes.** *Context:* the manifest returned one
+indistinguishable `409` for a finished broadcast and for a live one still
+writing its first segment — two situations calling for opposite behaviour, which
+the server could tell apart and the client could not. *Decision:* keep the
+status, split the meaning into two public `error.code` values
+(`stream_not_live`, `manifest_not_ready`), and have the player apply the
+server's verdict instead of guessing from whether playback had ever started.
+*Consequence:* opening an already-ended stream from a stale list now says so
+immediately, where it previously spent ~15 s reconnecting toward a conclusion the
+server had from the first request. An unrecognised code falls back to "not
+ready": erring toward waiting costs a bounded backoff, erring toward "over"
+would cut off a broadcast that is starting.
+
+**ADR 046 — Track recommendations from listening history.** *Context:* US-09-04
+asks for a simple recommendation based on listening history, but no listening
+history was persisted and live HLS offers no reliable per-user signal (public,
+connectionless). *Decision:* capture a play best-effort on the authenticated
+track-stream endpoint (`listening_history`, one row per play, counted only on a
+from-the-start request so `Range` seeks do not inflate it), and rank candidates in
+a single SQL query (two CTEs): never-played first, then artist affinity, then
+rediscovery, then recent additions, with cold-start handled by construction. The
+candidate pool is the requester's own tracks plus other users' public tracks
+(STR-248); a stranger's private track is never recommended, and `from_others`
+drives a "public discovery" reason. *Consequence:* the endpoint always returns
+something useful rather than an empty list, and the algorithm lives in the query
+(validated by an integration test against a real PostgreSQL). Known limit: the
+native player preloads the whole queue, so starting a queue records every track,
+not only the one actually heard — acceptable for a simple reco, documented, with a
+client-side fix left to a separate ticket.
+
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

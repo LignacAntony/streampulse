@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
@@ -26,11 +27,22 @@ const maxFormOverhead int64 = 1 << 20 // 1 Mio
 // saturerait le heap (OOMKill du pod). Le disque temporaire absorbe le reste.
 const maxMultipartMemory int64 = 1 << 20 // 1 Mio
 
+// recordPlayTimeout borne la goroutine best-effort d'enregistrement d'écoute :
+// détachée de la requête, elle ne doit pas vivre indéfiniment si la base traîne.
+const recordPlayTimeout = 5 * time.Second
+
 // TrackService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type TrackService interface {
 	Create(ctx context.Context, in CreateTrackInput) (Track, error)
+	Delete(ctx context.Context, trackID, requesterID string) error
 	ListUserTracks(ctx context.Context, requesterID string) ([]Track, error)
+	ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error)
+	UpdateVisibility(ctx context.Context, trackID, requesterID string, isPublic bool) error
 	OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error)
+}
+
+type PlayRecorder interface {
+	RecordPlay(ctx context.Context, userID, trackID string) error
 }
 
 // Handler expose le domaine track en HTTP.
@@ -38,11 +50,16 @@ type Handler struct {
 	svc TrackService
 	// maxUpload borne la taille du fichier accepté. Champ (et non constante
 	// directe) pour être abaissé dans les tests sans forger un corps de 50 Mo.
-	maxUpload int64
+	maxUpload    int64
+	playRecorder PlayRecorder
 }
 
 func NewHandler(svc TrackService) *Handler {
 	return &Handler{svc: svc, maxUpload: MaxUploadBytes}
+}
+
+func (h *Handler) SetPlayRecorder(rec PlayRecorder) {
+	h.playRecorder = rec
 }
 
 // libraryTrackResponse est la vue JSON d'une piste de la bibliothèque. artist et
@@ -52,6 +69,16 @@ type libraryTrackResponse struct {
 	Title     string  `json:"title"`
 	Artist    *string `json:"artist"`
 	DurationS *int    `json:"duration_s"`
+	IsPublic  bool    `json:"is_public"`
+}
+
+type publicTrackResponse struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Artist    *string `json:"artist"`
+	DurationS *int    `json:"duration_s"`
+	CreatedAt string  `json:"created_at"`
+	OwnerName string  `json:"owner_name"`
 }
 
 // Upload gère POST /api/tracks : upload multipart d'un fichier audio dans la
@@ -104,6 +131,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		Title:     r.FormValue("title"),
 		Artist:    optionalString(r.FormValue("artist")),
 		DurationS: duration,
+		IsPublic:  r.FormValue("is_public") == "true",
 		Size:      header.Size,
 		Content:   file,
 	})
@@ -166,6 +194,8 @@ func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	h.recordPlay(r, r.PathValue("id"), userID)
+
 	w.Header().Set("Content-Type", file.MimeType)
 	// Contenu privé de l'utilisateur : jamais dans un cache partagé, et pas de
 	// recompression par un intermédiaire (elle casserait les octets audio).
@@ -175,6 +205,119 @@ func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
 	// a pas de revalidation conditionnelle à proposer (ServeContent omet alors
 	// Last-Modified et ignore If-Modified-Since).
 	http.ServeContent(w, r, "", time.Time{}, file.Content)
+}
+
+// Delete gère DELETE /api/tracks/{id} : suppression d'une piste par son
+// propriétaire (204). La cascade DB retire la piste de toutes les playlists,
+// puis le fichier est supprimé du stockage.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.Delete(r.Context(), r.PathValue("id"), userID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListPublicTracks gère GET /api/tracks/public : pistes publiques de tous les
+// utilisateurs, paginées par curseur (200).
+func (h *Handler) ListPublicTracks(w http.ResponseWriter, r *http.Request) {
+	var cursor *PublicTrackCursor
+	if cursorID := r.URL.Query().Get("cursor_id"); cursorID != "" {
+		if _, err := uuid.Parse(cursorID); err != nil {
+			httpjson.WriteError(w, r, apperror.InvalidArgument("invalid cursor_id"))
+			return
+		}
+		cursorAt := r.URL.Query().Get("cursor_created_at")
+		t, err := time.Parse(time.RFC3339Nano, cursorAt)
+		if err != nil {
+			httpjson.WriteError(w, r, apperror.InvalidArgument("invalid cursor_created_at"))
+			return
+		}
+		cursor = &PublicTrackCursor{CreatedAt: t, ID: cursorID}
+	}
+
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	tracks, err := h.svc.ListPublicTracks(r.Context(), cursor, pageSize)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]publicTrackResponse, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, publicTrackResponse{
+			ID:        t.ID,
+			Title:     t.Title,
+			Artist:    t.Artist,
+			DurationS: t.DurationS,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339Nano),
+			OwnerName: t.OwnerName,
+		})
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("track: encode public tracks")
+	}
+}
+
+// UpdateVisibility gère PATCH /api/tracks/{id}/visibility : modifie la visibilité
+// d'une piste (propriétaire uniquement, 204).
+func (h *Handler) UpdateVisibility(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	var body struct {
+		IsPublic *bool `json:"is_public"`
+	}
+	if err := httpjson.Decode(w, r, &body, 1<<10); err != nil {
+		return
+	}
+	if body.IsPublic == nil {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("is_public is required"))
+		return
+	}
+
+	if err := h.svc.UpdateVisibility(r.Context(), r.PathValue("id"), userID, *body.IsPublic); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) recordPlay(r *http.Request, trackID, userID string) {
+	if h.playRecorder == nil {
+		return
+	}
+	if !isFreshPlay(r.Header.Get("Range")) {
+		return
+	}
+	// Détaché de l'annulation de la requête : la lecture ne doit pas attendre
+	// l'INSERT (best-effort). context.WithoutCancel conserve le logger et la trace
+	// du contexte ; le timeout borne la goroutine si la base traîne.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), recordPlayTimeout)
+	go func() {
+		defer cancel()
+		if err := h.playRecorder.RecordPlay(ctx, userID, trackID); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Str("track_id", trackID).
+				Msg("track: écoute non enregistrée")
+		}
+	}()
+}
+
+// isFreshPlay dit si une requête de lecture correspond à un DÉMARRAGE (à compter
+// dans l'historique) plutôt qu'à une avance/reprise. Le lecteur émet plusieurs
+// requêtes Range par piste ; seule celle sans Range, ou à partir de bytes=0-,
+// est une écoute depuis le début. Fonction pure pour être testée sans requête.
+func isFreshPlay(rangeHeader string) bool {
+	return rangeHeader == "" || strings.HasPrefix(rangeHeader, "bytes=0-")
 }
 
 // tooLargeError construit la réponse 413 commune (dépassement de taille).

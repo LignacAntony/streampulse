@@ -23,6 +23,8 @@ class TrackResponse {
     required this.artist,
 
     required this.durationS,
+
+    required this.isPublic,
   });
 
   @JsonKey(name: r'id', required: true, includeIfNull: false)
@@ -38,6 +40,10 @@ class TrackResponse {
   @JsonKey(name: r'duration_s', required: true, includeIfNull: true)
   final int? durationS;
 
+  /// Whether the track is discoverable by other users.
+  @JsonKey(name: r'is_public', required: true, includeIfNull: false)
+  final bool isPublic;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -45,14 +51,16 @@ class TrackResponse {
           other.id == id &&
           other.title == title &&
           other.artist == artist &&
-          other.durationS == durationS;
+          other.durationS == durationS &&
+          other.isPublic == isPublic;
 
   @override
   int get hashCode =>
       id.hashCode +
       title.hashCode +
       (artist == null ? 0 : artist.hashCode) +
-      (durationS == null ? 0 : durationS.hashCode);
+      (durationS == null ? 0 : durationS.hashCode) +
+      isPublic.hashCode;
 
   factory TrackResponse.fromJson(Map<String, dynamic> json) =>
       _$TrackResponseFromJson(json);

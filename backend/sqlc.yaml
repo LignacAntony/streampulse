@@ -89,3 +89,31 @@ sql:
         overrides:
           - db_type: "timestamptz"
             go_type: "time.Time"
+  - engine: "postgresql"
+    queries: "internal/chat/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "chatdb"
+        out: "internal/chat/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+  - engine: "postgresql"
+    queries: "internal/recommendation/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "recommendationdb"
+        out: "internal/recommendation/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

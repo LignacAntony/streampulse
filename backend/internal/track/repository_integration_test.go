@@ -18,6 +18,7 @@ package track
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/LignacAntony/streampulse/internal/testsupport/pgtest"
 )
@@ -36,6 +37,12 @@ func params(userID, titre string, taille int64) CreateTrackParams {
 		MimeType: "audio/mpeg",
 		FileSize: taille,
 	}
+}
+
+func publicParams(userID, titre string) CreateTrackParams {
+	p := params(userID, titre, 1024)
+	p.IsPublic = true
+	return p
 }
 
 func TestRepository_CreateTrack_EtListe(t *testing.T) {
@@ -185,5 +192,89 @@ func TestRepository_ListFilePathsByUser(t *testing.T) {
 		if !attendus[c] {
 			t.Errorf("chemin inattendu: %s", c)
 		}
+	}
+}
+
+// TestRepository_ListPublicTracks_OrdreEtCurseur vérifie la pagination keyset
+// contre un vrai PostgreSQL : ordre (created_at DESC, id DESC) et tie-break.
+func TestRepository_ListPublicTracks_OrdreEtCurseur(t *testing.T) {
+	pool := pgtest.Pool(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	owner := pgtest.InsertUser(t, pool, pgtest.UniqueTag(t), "user")
+
+	ids := make([]string, 3)
+	for i := 0; i < 3; i++ {
+		p := publicParams(owner, "Public "+string(rune('A'+i)))
+		cree, err := repo.CreateTrack(ctx, p)
+		if err != nil {
+			t.Fatalf("CreateTrack %d: %v", i, err)
+		}
+		ids[i] = cree.ID
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	page1, err := repo.ListPublicTracks(ctx, nil, 2)
+	if err != nil {
+		t.Fatalf("ListPublicTracks page 1: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Fatalf("page 1: got %d pistes, want 2", len(page1))
+	}
+	if page1[0].ID != ids[2] || page1[1].ID != ids[1] {
+		t.Errorf("page 1 ordre DESC: got [%s, %s], want [%s, %s]",
+			page1[0].ID, page1[1].ID, ids[2], ids[1])
+	}
+	if page1[0].CreatedAt.IsZero() {
+		t.Error("created_at ne doit pas être vide")
+	}
+
+	cursor := &PublicTrackCursor{
+		CreatedAt: page1[1].CreatedAt,
+		ID:        page1[1].ID,
+	}
+	page2, err := repo.ListPublicTracks(ctx, cursor, 2)
+	if err != nil {
+		t.Fatalf("ListPublicTracks page 2: %v", err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page 2: got %d pistes, want 1", len(page2))
+	}
+	if page2[0].ID != ids[0] {
+		t.Errorf("page 2: got %s, want %s", page2[0].ID, ids[0])
+	}
+}
+
+// TestRepository_ListPublicTracks_ExclutPrivees vérifie que les pistes privées
+// n'apparaissent pas dans la liste publique.
+func TestRepository_ListPublicTracks_ExclutPrivees(t *testing.T) {
+	repo, userID := newTrackRepo(t)
+	ctx := context.Background()
+
+	if _, err := repo.CreateTrack(ctx, params(userID, "Privée", 1024)); err != nil {
+		t.Fatalf("CreateTrack privée: %v", err)
+	}
+	if _, err := repo.CreateTrack(ctx, publicParams(userID, "Publique")); err != nil {
+		t.Fatalf("CreateTrack publique: %v", err)
+	}
+
+	tracks, err := repo.ListPublicTracks(ctx, nil, 50)
+	if err != nil {
+		t.Fatalf("ListPublicTracks: %v", err)
+	}
+	for _, track := range tracks {
+		if track.Title == "Privée" {
+			t.Error("une piste privée ne doit pas apparaître dans la liste publique")
+		}
+	}
+	found := false
+	for _, track := range tracks {
+		if track.Title == "Publique" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("la piste publique doit apparaître dans la liste")
 	}
 }

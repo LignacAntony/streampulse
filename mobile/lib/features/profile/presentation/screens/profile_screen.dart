@@ -4,9 +4,14 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../../../core/network/dio_client.dart';
+import '../../../admin/presentation/screens/admin_global_bans_screen.dart';
 import '../../../admin/presentation/screens/admin_streams_screen.dart';
 import '../../../admin/presentation/screens/admin_users_screen.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../chat/data/repositories/chat_ban_repository.dart';
+import '../../../chat/presentation/providers/chat_controller.dart';
+import '../../../chat/presentation/screens/banned_users_screen.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../../../playlists/presentation/providers/offline_playlist_controller.dart';
@@ -64,6 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
     context.read<BroadcasterController>().reset();
     context.read<FavoritesController>().reset();
+    context.read<ChatController>().disconnect();
     await context.read<OfflinePlaylistController>().clearCache();
     if (!mounted) return;
     context.go('/login');
@@ -159,6 +165,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 12),
           _SettingsCard(profile: profile, runSave: _runSave),
+          if (profile.role == 'broadcaster' || profile.role == 'admin') ...[
+            const SizedBox(height: 28),
+            const _BroadcasterCard(),
+          ],
           if (profile.role == 'admin') ...[
             const SizedBox(height: 28),
             const _AdminCard(),
@@ -338,6 +348,35 @@ class _SettingsCard extends StatelessWidget {
   }
 }
 
+class _BroadcasterCard extends StatelessWidget {
+  const _BroadcasterCard();
+
+  void _openBannedUsers(BuildContext context) {
+    final dio = context.read<DioClient>().dio;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BannedUsersScreen(
+          repository: ChatBanRepositoryImpl(dio),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.block, color: colors.primary),
+        title: const Text('Utilisateurs bannis du chat'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _openBannedUsers(context),
+      ),
+    );
+  }
+}
+
 /// Tuiles visibles uniquement pour un profil `role == 'admin'` (cf.
 /// `_buildBody`). Deux entrées de navigation séparées par un `Divider`,
 /// chacune ouverte par `Navigator.push` (écrans hors go_router, pas de route
@@ -355,6 +394,12 @@ class _AdminCard extends StatelessWidget {
   void _openStreams(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const AdminStreamsScreen()),
+    );
+  }
+
+  void _openGlobalBans(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AdminGlobalBansScreen()),
     );
   }
 
@@ -379,6 +424,14 @@ class _AdminCard extends StatelessWidget {
             title: const Text('Supervision des flux'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openStreams(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('profile_admin_chat_bans_tile'),
+            leading: Icon(Icons.block, color: colors.primary),
+            title: const Text('Bans globaux du chat'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openGlobalBans(context),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import '../../domain/entities/live_stream.dart';
+import '../../domain/entities/manifest_status.dart';
 import '../../domain/repositories/stream_repository.dart';
 import '../datasources/stream_remote_data_source.dart';
 import '../mappers/stream_dto_mappers.dart';
@@ -31,6 +32,6 @@ class StreamRepositoryImpl implements StreamRepository {
       _remote.removeFavorite(streamId);
 
   @override
-  Future<bool> isManifestUnavailable(String streamId) =>
-      _remote.isManifestUnavailable(streamId);
+  Future<ManifestStatus> manifestStatus(String streamId) =>
+      _remote.manifestStatus(streamId);
 }

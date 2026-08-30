@@ -328,6 +328,20 @@ Actions de niveau `user` (`auth.RequireAuth` seul, pas de rôle : l'US vise « d
 - **Nettoyage des fichiers** : la suppression d'un compte (`admin.DeleteUser` **et** `auth.DeleteAccount`) passe par `track.Service.PurgeUserTracks(userID, deleteUser)` (injecté par `SetTrackPurger`, interface `UserTrackPurger`). Il **enrobe** le hard-delete : relève les chemins → exécute `deleteUser` (cascade DB sur `tracks`) → supprime les fichiers du volume **seulement si le delete a réussi** (pas de ligne fantôme). Best-effort. Pas encore de `DELETE /api/tracks/{id}` (hors périmètre US-05-01).
 - Contrat OpenAPI : ces routes portent le tag `Track` → côté client généré, `listUserTracks`/`uploadTrack` vivent dans `TrackApi` (le `DioClient` mobile expose `trackApi`).
 
+### Routes recommandation existantes
+
+Recommandation de pistes basée sur l'historique d'écoute : domaine
+`internal/recommendation/` (handler/service/repository), US-09-04 ([ADR 046](docs/adr/046-recommandation-basee-sur-l-historique-d-ecoute.md)).
+
+| Méthode | Route | Handler | Auth requise |
+|---|---|---|---|
+| GET | `/api/recommendations/tracks` | `recommendation.Handler.Recommend` | Oui (JWT) — pistes **lisibles par le demandeur** (les siennes + les **publiques** des autres, STR-248) classées par l'historique d'écoute : jamais-écoutées d'abord, puis affinité d'artiste, puis redécouverte, puis ajouts récents. Cold-start → ajouts récents (biblio + catalogue public), **jamais** de liste vide si une piste est lisible. Chaque item porte une `reason` (dont « Découverte publique » pour une piste publique d'un tiers) |
+
+- **Capture de l'historique** : table `listening_history` (migration `000023`). Le domaine `track` l'alimente **best-effort** dans `StreamTrack` (interface consommateur `track.PlayRecorder`, satisfaite par `recommendation.Service`, injectée via `SetPlayRecorder` dans `main.go` — même patron que `SetTrackPurger`). On ne compte qu'une lecture **depuis le début** (pas d'en-tête `Range`, ou `bytes=0-`) : les requêtes `Range` de seek/reprise (STR-118) ne gonflent pas l'historique. Un échec d'enregistrement est journalisé, jamais propagé (la lecture prime).
+- **Algorithme dans la requête SQL** (`RecommendTracks`, deux CTE) : affinité par artiste + exclusion/priorité des jamais-écoutées + repli sur les ajouts récents. Vivier = `WHERE c.user_id = $moi OR c.is_public = true` (les miennes + les publiques des tiers) ; `from_others` sert à la raison. Le service ne fait que dériver la `reason`. Testé en **intégration** (`repository_integration_test.go`, tag `integration`) : classement, `NULLS FIRST`, casts booléens, et exclusion d'une piste privée d'un tiers ne se valident qu'avec un vrai PostgreSQL.
+- **Portée** : les **pistes** (miennes + publiques, endpoint authentifié). Le direct HLS reste dehors (public, sans connexion → aucun signal par utilisateur), extension documentée dans l'ADR 046.
+- **Client mobile écrit à la main** (via `Dio` sous-jacent, pas le client généré), même choix que la sonde de manifeste (ADR 045) : éviter un large diff de code généré pour un endpoint bonus. La route figure quand même dans `openapi.yaml` (tag `Recommendation`).
+
 ### Routes admin existantes
 
 Réservées aux administrateurs (`auth.RequireAuth` + `auth.RequireRole("admin")`). Gestion des
@@ -454,10 +468,15 @@ Voir [ADR 023](docs/adr/023-lecteur-audio-hls-mobile.md) (lecteur HLS),
 - **Répartition** : le handler mappe l'état → notification et **transmet** les erreurs ; le
   contrôleur garde l'arbitrage STR-118 (reconnexion bornée 1/2/4/8 s, gardes `_disposed`/`ended`).
   État terminal → `stop()` retire la notification.
-- **Ambiguïté du 409** : le manifeste renvoie 409 pour un flux **terminé** *comme* pour un flux live
-  **pas encore prêt** (démarrage ~10 s). Le contrôleur ne conclut « terminé » via
-  `isManifestUnavailable` que si la lecture avait démarré (`_hasPlayed`) ; sinon il reconnecte
-  d'abord. La sonde utilise `validateStatus` (<500) pour ne pas logger de faux « erreur ».
+- **Les deux 409 du manifeste (STR-229, ADR 045)** : `stream_not_live` (plus de session — définitif)
+  et `manifest_not_ready` (session vivante, premier segment pas encore écrit — transitoire) portent
+  le même statut mais des conduites opposées. `manifestStatus` rend un `ManifestStatus`, le
+  contrôleur applique ce verdict → un direct terminé s'annonce **immédiatement** au lieu des ~15 s
+  de reconnexions qu'imposait l'ancien flag `_hasPlayed`. ⚠️ Un 409 au code inconnu retombe sur
+  `notReady` : se tromper vers l'attente coûte un backoff borné, se tromper vers la fin couperait un
+  direct qui démarre. ⚠️ La sonde n'utilise **pas** le client généré — `streamPlaylist` est typé
+  `Response<String>` et stringifie le corps d'erreur JSON à la Dart (illisible par `jsonDecode`) ;
+  elle passe par le `Dio` sous-jacent, **même instance**, donc mêmes intercepteurs.
 - **Mini-player** : `MiniPlayer` (titre/diffuseur, play/pause, croix = `stop`) est masqué à l'état
   `idle`. Le plein écran (`StreamPlayerScreen`) lit aussi ce contrôleur partagé et **ne le détruit
   pas**. Dans `MainShell`, c'est `PlayerBar` (`app/shell/`) qui choisit entre ce mini-player et
@@ -800,7 +819,7 @@ xcrun simctl openurl booted \
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
 | `docs/performance-mobile.md` | Preuves de fluidité 60 FPS : garde de reconstruction (CI) + relevé de trames sur appareil (STR-243) |
-| `docs/README.md` (§ Index complet des ADR) | **Les 40 ADR**, avec leur numéro et leur décision |
+| `docs/README.md` (§ Index complet des ADR) | **Les 46 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
@@ -811,7 +830,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `045-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `047-...`). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.

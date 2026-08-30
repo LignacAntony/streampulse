@@ -24,6 +24,7 @@ extension TrackResponseMapper on TrackResponse {
         title: title,
         artist: artist,
         durationS: durationS,
+        isPublic: isPublic,
       );
 }
 

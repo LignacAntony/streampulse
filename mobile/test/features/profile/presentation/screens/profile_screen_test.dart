@@ -15,6 +15,7 @@ import 'package:streampulse/features/profile/domain/repositories/profile_reposit
 import 'package:streampulse/features/profile/presentation/providers/profile_controller.dart';
 import 'package:streampulse/features/profile/presentation/screens/profile_screen.dart';
 import 'package:streampulse/features/streams/domain/entities/live_stream.dart';
+import 'package:streampulse/features/streams/domain/entities/manifest_status.dart';
 import 'package:streampulse/features/streams/domain/repositories/stream_repository.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 
@@ -83,7 +84,8 @@ class _FakeStreamRepository implements StreamRepository {
       const [];
 
   @override
-  Future<bool> isManifestUnavailable(String streamId) async => false;
+  Future<ManifestStatus> manifestStatus(String streamId) async =>
+      ManifestStatus.available;
 }
 
 class _FakeProfileRepository implements ProfileRepository {

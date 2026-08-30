@@ -9,13 +9,15 @@ class Track extends Equatable {
     required this.title,
     required this.artist,
     required this.durationS,
+    this.isPublic = false,
   });
 
   final String id;
   final String title;
   final String? artist;
   final int? durationS;
+  final bool isPublic;
 
   @override
-  List<Object?> get props => [id, title, artist, durationS];
+  List<Object?> get props => [id, title, artist, durationS, isPublic];
 }

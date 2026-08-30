@@ -18,6 +18,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/admin"
 	"github.com/LignacAntony/streampulse/internal/auth"
 	"github.com/LignacAntony/streampulse/internal/broadcaster"
+	"github.com/LignacAntony/streampulse/internal/chat"
 	"github.com/LignacAntony/streampulse/internal/config"
 	"github.com/LignacAntony/streampulse/internal/email"
 	"github.com/LignacAntony/streampulse/internal/infrastructure/database"
@@ -27,6 +28,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/openapi"
 	"github.com/LignacAntony/streampulse/internal/playlist"
 	"github.com/LignacAntony/streampulse/internal/profiles"
+	"github.com/LignacAntony/streampulse/internal/recommendation"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 	"github.com/LignacAntony/streampulse/internal/streaming"
 	"github.com/LignacAntony/streampulse/internal/track"
@@ -53,6 +55,18 @@ var (
 	_ admin.UserTrackPurger = (*track.Service)(nil)
 	_ auth.UserTrackPurger  = (*track.Service)(nil)
 )
+
+// var _ vérifie que les types du domaine streaming satisfont les interfaces ISP
+// consommées par le domaine chat (US-09-01).
+var (
+	_ chat.StreamOwnerResolver = (*streaming.Service)(nil)
+	_ chat.BroadcasterResolver = (*streaming.Service)(nil)
+	_ chat.ChatLiveness        = (*streaming.LiveSessions)(nil)
+)
+
+// var _ vérifie que *recommendation.Service satisfait le PlayRecorder consommé
+// par le domaine track à la lecture d'une piste (US-09-04, ADR 046).
+var _ track.PlayRecorder = (*recommendation.Service)(nil)
 
 func main() {
 	if err := run(); err != nil {
@@ -108,6 +122,68 @@ func (a httpCountersAdapter) HTTPTotals() (admin.HTTPTotals, error) {
 		ServerErrors:  totals.ServerErrors,
 		ResponseBytes: totals.ResponseBytes,
 	}, nil
+}
+
+// chatModeratorAdapter branche *chat.Service + *chat.ChatHub sur
+// admin.ChatModerator. Les types domaine du chat ne fuient pas dans le
+// domaine admin : l'adaptateur traduit chat.BannedUser → admin.ChatBannedUser
+// et chat.UserMessage → admin.ChatUserMessage.
+type chatModeratorAdapter struct {
+	svc *chat.Service
+	hub *chat.ChatHub
+}
+
+func (a chatModeratorAdapter) GlobalBan(ctx context.Context, targetUserID, adminID string, reason *string) error {
+	return a.svc.GlobalBan(ctx, targetUserID, adminID, reason)
+}
+
+func (a chatModeratorAdapter) GlobalUnban(ctx context.Context, targetUserID string) error {
+	return a.svc.GlobalUnban(ctx, targetUserID)
+}
+
+func (a chatModeratorAdapter) ListGlobalBans(ctx context.Context) ([]admin.ChatBannedUser, error) {
+	bans, err := a.svc.ListGlobalBans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]admin.ChatBannedUser, len(bans))
+	for i, b := range bans {
+		out[i] = admin.ChatBannedUser{
+			UserID:    b.UserID,
+			Username:  b.Username,
+			Reason:    b.Reason,
+			CreatedAt: b.CreatedAt,
+		}
+	}
+	return out, nil
+}
+
+func (a chatModeratorAdapter) ListUserMessages(ctx context.Context, userID string, limit, offset int32) ([]admin.ChatUserMessage, error) {
+	msgs, err := a.svc.ListUserMessages(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]admin.ChatUserMessage, len(msgs))
+	for i, m := range msgs {
+		out[i] = admin.ChatUserMessage{
+			ID:          m.ID,
+			StreamID:    m.StreamID,
+			UserID:      m.UserID,
+			Username:    m.Username,
+			Content:     m.Content,
+			CreatedAt:   m.CreatedAt,
+			StreamTitle: m.StreamTitle,
+		}
+	}
+	return out, nil
+}
+
+func (a chatModeratorAdapter) IsGloballyBanned(ctx context.Context, userID string) (bool, error) {
+	return a.svc.IsGloballyBanned(ctx, userID)
+}
+
+func (a chatModeratorAdapter) DisconnectUserFromAll(userID string) {
+	a.hub.DisconnectUserFromAll(userID)
 }
 
 func run() error {
@@ -228,6 +304,14 @@ func run() error {
 	trackSvc := track.NewService(trackRepo, trackStorage)
 	trackHandler := track.NewHandler(trackSvc)
 
+	// Recommandation basée sur l'historique d'écoute (US-09-04, ADR 046). Le
+	// domaine track enregistre chaque écoute via SetPlayRecorder (best-effort) ; le
+	// domaine recommendation lit cet historique pour proposer des pistes.
+	recommendationRepo := recommendation.NewRepository(pool)
+	recommendationSvc := recommendation.NewService(recommendationRepo)
+	recommendationHandler := recommendation.NewHandler(recommendationSvc)
+	trackHandler.SetPlayRecorder(recommendationSvc)
+
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
 	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
 	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
@@ -255,6 +339,17 @@ func run() error {
 		streamingSessions,
 		httpCountersAdapter{stats: observability.NewHTTPStats(prometheus.DefaultGatherer)},
 	)
+
+	// Chat en direct entre auditeurs (US-09-01) : domaine chat, hub in-memory,
+	// WebSocket. Le service chat résout le diffuseur via streaming.Service (ISP).
+	chatRepo := chat.NewRepository(pool)
+	chatHub := chat.NewChatHub()
+	chatSvc := chat.NewService(chatRepo, streamingSvc)
+	chatHandler := chat.NewHandler(chatSvc, chatHub, streamingSessions, streamingSvc)
+	streamingSessions.SetOnStreamStopped(chatHub.CloseRoom)
+
+	// Modération chat admin : l'adaptateur traduit les types chat → admin (ISP).
+	adminHandler.SetChatModerator(chatModeratorAdapter{svc: chatSvc, hub: chatHub})
 
 	// 5. Démarrer le serveur HTTP
 	mux := http.NewServeMux()
@@ -325,6 +420,16 @@ func run() error {
 	// l'administrateur *applicatif*, autorisé par son rôle.
 	mux.Handle("GET /api/admin/metrics", auth.RequireAuth(cfg.JWTSecret,
 		auth.RequireRole("admin", http.HandlerFunc(adminHandler.Metrics))))
+
+	// Modération chat admin (US-09-01) : messages d'un user, ban/unban global.
+	mux.Handle("GET /api/admin/users/{id}/chat-messages", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListUserMessages))))
+	mux.Handle("POST /api/admin/users/{id}/chat-ban", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.GlobalBan))))
+	mux.Handle("DELETE /api/admin/users/{id}/chat-ban", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.GlobalUnban))))
+	mux.Handle("GET /api/admin/chat-bans", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("admin", http.HandlerFunc(adminHandler.ListGlobalBans))))
 
 	// Flux : création réservée au broadcaster ; liste des flux publics en direct
 	// accessible sans authentification (découverte en invité, US-04-01).
@@ -400,10 +505,20 @@ func run() error {
 		http.HandlerFunc(trackHandler.Upload)))
 	mux.Handle("GET /api/tracks", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.ListUserTracks)))
-	// Lecture du binaire d'une piste (US-05-04) : réservée à son propriétaire,
-	// requêtes Range honorées pour le lecteur audio de la file d'attente.
+	mux.Handle("DELETE /api/tracks/{id}", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.Delete)))
+	mux.Handle("GET /api/tracks/public", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.ListPublicTracks)))
+	mux.Handle("PATCH /api/tracks/{id}/visibility", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(trackHandler.UpdateVisibility)))
+	// Lecture du binaire d'une piste (US-05-04) : accessible au propriétaire et
+	// à tout utilisateur authentifié si la piste est publique. Requêtes Range
+	// honorées pour le lecteur audio de la file d'attente.
 	mux.Handle("GET /api/tracks/{id}/stream", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.StreamTrack)))
+	// Recommandation de pistes basée sur l'historique d'écoute (US-09-04, ADR 046).
+	mux.Handle("GET /api/recommendations/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(recommendationHandler.Recommend)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))
@@ -423,6 +538,15 @@ func run() error {
 		hlsLimit(auth.OptionalAuth(cfg.JWTSecret, http.HandlerFunc(streamingHandler.Playlist))))
 	mux.Handle("GET /api/streams/{id}/segments/{segment}",
 		hlsLimit(auth.OptionalAuth(cfg.JWTSecret, http.HandlerFunc(streamingHandler.Segment))))
+	// Chat en direct (US-09-01) : WebSocket, auth requise pour rejoindre.
+	mux.Handle("GET /ws/streams/{id}/chat", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(chatHandler.Connect)))
+	mux.Handle("GET /api/chat/bans", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("broadcaster",
+			http.HandlerFunc(chatHandler.ListBans))))
+	mux.Handle("DELETE /api/chat/bans/{userId}", auth.RequireAuth(cfg.JWTSecret,
+		auth.RequireRole("broadcaster",
+			http.HandlerFunc(chatHandler.Unban))))
 	// Documentation OpenAPI (Swagger UI + spec brute) — exposée hors production
 	// uniquement, pour ne pas publier la surface de l'API sur l'environnement public.
 	if !cfg.IsProd() {
@@ -464,6 +588,10 @@ func run() error {
 	case <-ctx.Done(): // SIGINT / SIGTERM
 	}
 	log.Info().Msg("arrêt en cours…")
+
+	// Chat : fermer tous les salons WebSocket avant d'arrêter les sessions
+	// de streaming (les clients doivent être déconnectés proprement).
+	chatHub.CloseAll()
 
 	// StopAll d'abord : ferme les canaux SSE pour débloquer les handlers en vol
 	// (srv.Shutdown n'annule pas les contextes de requête). Shutdown draine ensuite

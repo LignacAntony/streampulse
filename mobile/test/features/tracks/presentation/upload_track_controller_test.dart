@@ -2,11 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
+import 'package:streampulse/features/tracks/domain/entities/public_track.dart';
 import 'package:streampulse/features/tracks/domain/repositories/track_repository.dart';
 import 'package:streampulse/features/tracks/presentation/providers/upload_track_controller.dart';
 
-/// Faux repository : capture les paramètres, émet une progression simulée puis
-/// renvoie une piste ou lève l'erreur fournie.
 class _FakeTrackRepository implements TrackRepository {
   _FakeTrackRepository({this.error});
 
@@ -21,6 +20,7 @@ class _FakeTrackRepository implements TrackRepository {
     required String title,
     String? artist,
     int? durationS,
+    bool isPublic = false,
     void Function(double progress)? onProgress,
   }) async {
     calls++;
@@ -30,6 +30,15 @@ class _FakeTrackRepository implements TrackRepository {
     if (error != null) throw error!;
     return Track(id: 't1', title: title, artist: artist, durationS: durationS);
   }
+
+  @override
+  Future<List<PublicTrack>> listPublicTracks({int? limit}) async => const [];
+
+  @override
+  Future<void> deleteTrack(String id) async {}
+
+  @override
+  Future<void> updateVisibility(String id, {required bool isPublic}) async {}
 }
 
 void main() {

@@ -36,6 +36,16 @@ type fakeRepo struct {
 	fileErr      error
 	gotFileTrack string
 	gotFileUser  string
+
+	deleteFilePath string
+	deleteFound    bool
+	deleteErr      error
+
+	publicTracks    []PublicTrack
+	publicTracksErr error
+
+	visibilityUpdated bool
+	visibilityErr     error
 }
 
 func (f *fakeRepo) CreateTrack(_ context.Context, p CreateTrackParams) (Track, error) {
@@ -69,6 +79,36 @@ func (f *fakeRepo) SumFileSizeByUser(_ context.Context, _ string) (int64, error)
 
 func (f *fakeRepo) ListFilePathsByUser(_ context.Context, _ string) ([]string, error) {
 	return f.pathsRet, f.pathsErr
+}
+
+func (f *fakeRepo) DeleteTrack(_ context.Context, _, _ string) (string, bool, error) {
+	if f.deleteErr != nil {
+		return "", false, f.deleteErr
+	}
+	return f.deleteFilePath, f.deleteFound, nil
+}
+
+func (f *fakeRepo) ListPublicTracks(_ context.Context, _ *PublicTrackCursor, _ int) ([]PublicTrack, error) {
+	if f.publicTracksErr != nil {
+		return nil, f.publicTracksErr
+	}
+	return f.publicTracks, nil
+}
+
+func (f *fakeRepo) UpdateTrackVisibility(_ context.Context, _, _ string, _ bool) (bool, error) {
+	if f.visibilityErr != nil {
+		return false, f.visibilityErr
+	}
+	return f.visibilityUpdated, nil
+}
+
+func (f *fakeRepo) GetTrackFileForStream(_ context.Context, trackID, userID string) (TrackFile, error) {
+	f.gotFileTrack = trackID
+	f.gotFileUser = userID
+	if f.fileErr != nil {
+		return TrackFile{}, f.fileErr
+	}
+	return f.fileRet, nil
 }
 
 type stubStorage struct {
@@ -457,5 +497,85 @@ func TestOpenTrackFile_MissingBinary(t *testing.T) {
 	_, err := svc.OpenTrackFile(context.Background(), "track-1", testUserID)
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
 		t.Fatalf("expected not found for a missing binary, got %v", err)
+	}
+}
+
+func TestServiceDelete_OK(t *testing.T) {
+	storage := &stubStorage{}
+	repo := &fakeRepo{deleteFound: true, deleteFilePath: "/data/tracks/abc.mp3"}
+	svc := NewService(repo, storage)
+
+	err := svc.Delete(context.Background(), "track-1", testUserID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !storage.removeCalled || storage.removedPath != "/data/tracks/abc.mp3" {
+		t.Errorf("file must be removed after DB delete, removeCalled=%v path=%q",
+			storage.removeCalled, storage.removedPath)
+	}
+}
+
+func TestServiceDelete_NotFound(t *testing.T) {
+	repo := &fakeRepo{deleteFound: false}
+	svc := NewService(repo, &stubStorage{})
+
+	err := svc.Delete(context.Background(), "track-1", testUserID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestServiceDelete_RepoError(t *testing.T) {
+	repo := &fakeRepo{deleteErr: errors.New("db down")}
+	svc := NewService(repo, &stubStorage{})
+
+	err := svc.Delete(context.Background(), "track-1", testUserID)
+	if err == nil {
+		t.Fatal("expected error to propagate")
+	}
+}
+
+func TestServiceListPublicTracks_DefaultPageSize(t *testing.T) {
+	repo := &fakeRepo{publicTracks: []PublicTrack{
+		{ID: "t1", Title: "Song", OwnerName: "Alice"},
+	}}
+	svc := NewService(repo, &stubStorage{})
+
+	got, err := svc.ListPublicTracks(context.Background(), nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "t1" {
+		t.Errorf("unexpected result: %+v", got)
+	}
+}
+
+func TestServiceListPublicTracks_ClampsPageSize(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo, &stubStorage{})
+
+	_, err := svc.ListPublicTracks(context.Background(), nil, 999)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServiceUpdateVisibility_OK(t *testing.T) {
+	repo := &fakeRepo{visibilityUpdated: true}
+	svc := NewService(repo, &stubStorage{})
+
+	err := svc.UpdateVisibility(context.Background(), "track-1", testUserID, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServiceUpdateVisibility_NotFound(t *testing.T) {
+	repo := &fakeRepo{visibilityUpdated: false}
+	svc := NewService(repo, &stubStorage{})
+
+	err := svc.UpdateVisibility(context.Background(), "track-1", testUserID, true)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("expected not found, got %v", err)
 	}
 }

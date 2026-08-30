@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/errors/exceptions.dart';
+import '../../../tracks/domain/repositories/track_repository.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/track.dart';
 import '../../domain/repositories/playlist_repository.dart';
@@ -14,9 +15,10 @@ import '../../domain/repositories/playlist_repository.dart';
 /// afficher un toast — en particulier `ConflictException` (nom déjà utilisé).
 /// Seul `load` expose `error`/`isNetworkError` en état (vue plein écran).
 class PlaylistsController extends ChangeNotifier {
-  PlaylistsController(this._repository);
+  PlaylistsController(this._repository, this._trackRepository);
 
   final PlaylistRepository _repository;
+  final TrackRepository _trackRepository;
 
   List<Playlist> _playlists = const [];
   List<Track> _tracks = const [];
@@ -80,6 +82,32 @@ class PlaylistsController extends ChangeNotifier {
   Future<void> delete(String id) async {
     try {
       await _repository.delete(id);
+    } finally {
+      await load();
+    }
+  }
+
+  Future<void> deleteTrack(String id) async {
+    try {
+      await _trackRepository.deleteTrack(id);
+    } finally {
+      await load();
+    }
+  }
+
+  Future<List<Playlist>> listPlaylists() => _repository.list();
+
+  Future<void> addTrackToPlaylist(String playlistId, String trackId) async {
+    try {
+      await _repository.addTrack(playlistId, trackId);
+    } finally {
+      await load();
+    }
+  }
+
+  Future<void> toggleTrackVisibility(String id, {required bool isPublic}) async {
+    try {
+      await _trackRepository.updateVisibility(id, isPublic: isPublic);
     } finally {
       await load();
     }

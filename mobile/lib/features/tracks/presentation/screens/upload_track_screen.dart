@@ -52,6 +52,7 @@ class _UploadTrackBodyState extends State<_UploadTrackBody> {
   final _artistController = TextEditingController();
 
   PlatformFile? _file;
+  bool _isPublic = false;
 
   @override
   void dispose() {
@@ -106,6 +107,7 @@ class _UploadTrackBodyState extends State<_UploadTrackBody> {
       filename: file.name,
       title: title,
       artist: artist.isEmpty ? null : artist,
+      isPublic: _isPublic,
     );
     if (!mounted) return;
     if (ok) {
@@ -152,6 +154,19 @@ class _UploadTrackBodyState extends State<_UploadTrackBody> {
                 labelText: 'Artiste (optionnel)',
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              key: const Key('upload_public_switch'),
+              title: const Text('Piste publique'),
+              subtitle: const Text(
+                'Visible par tous les utilisateurs',
+              ),
+              value: _isPublic,
+              onChanged: uploading
+                  ? null
+                  : (v) => setState(() => _isPublic = v),
+              contentPadding: EdgeInsets.zero,
             ),
             const SizedBox(height: 24),
             if (uploading) ...[

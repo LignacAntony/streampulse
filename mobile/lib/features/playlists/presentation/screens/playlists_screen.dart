@@ -6,6 +6,14 @@ import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../tracks/data/datasources/track_remote_data_source.dart';
+import '../../../tracks/data/repositories/track_repository_impl.dart';
+import '../../../tracks/domain/repositories/track_repository.dart';
+import '../../../recommendations/data/datasources/recommendation_remote_data_source.dart';
+import '../../../recommendations/data/repositories/recommendation_repository_impl.dart';
+import '../../../recommendations/domain/entities/recommended_track.dart';
+import '../../../recommendations/domain/repositories/recommendation_repository.dart';
+import '../../../recommendations/presentation/providers/recommendations_controller.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
@@ -15,6 +23,7 @@ import '../providers/offline_playlist_controller.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../providers/playlists_controller.dart';
 import '../track_labels.dart';
+import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/playlist_form_sheet.dart';
 import '../../../../core/layout/breakpoints.dart';
 
@@ -31,9 +40,20 @@ import '../../../../core/layout/breakpoints.dart';
 /// injectable pour les tests ; en production il est construit depuis
 /// [DioClient].
 class PlaylistsScreen extends StatelessWidget {
-  const PlaylistsScreen({super.key, this.repository, this.isAuthenticated});
+  const PlaylistsScreen({
+    super.key,
+    this.repository,
+    this.trackRepository,
+    this.recommendationRepository,
+    this.isAuthenticated,
+  });
 
   final PlaylistRepository? repository;
+  final TrackRepository? trackRepository;
+
+  /// Injectable pour les tests (US-09-04). En production, construit depuis
+  /// [DioClient].
+  final RecommendationRepository? recommendationRepository;
 
   /// Force l'état d'authentification (tests). En production, résolu depuis
   /// [SecureStorage].
@@ -41,16 +61,35 @@ class PlaylistsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<PlaylistsController>(
-      create: (ctx) => PlaylistsController(
-        repository ??
-            PlaylistRepositoryImpl(
-              PlaylistRemoteDataSource(
-                ctx.read<DioClient>().playlistApi,
-                ctx.read<DioClient>().trackApi,
-              ),
-            ),
-      ),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<PlaylistsController>(
+          create: (ctx) {
+            final playlistRepo = repository;
+            final trackRepo = trackRepository;
+            if (playlistRepo != null && trackRepo != null) {
+              return PlaylistsController(playlistRepo, trackRepo);
+            }
+            final dio = ctx.read<DioClient>();
+            return PlaylistsController(
+              playlistRepo ??
+                  PlaylistRepositoryImpl(
+                    PlaylistRemoteDataSource(dio.playlistApi, dio.trackApi),
+                  ),
+              trackRepo ??
+                  TrackRepositoryImpl(TrackRemoteDataSource(dio.trackApi)),
+            );
+          },
+        ),
+        ChangeNotifierProvider<RecommendationsController>(
+          create: (ctx) => RecommendationsController(
+            recommendationRepository ??
+                RecommendationRepositoryImpl(
+                  RecommendationRemoteDataSource(ctx.read<DioClient>().dio),
+                ),
+          ),
+        ),
+      ],
       child: _PlaylistsBody(forcedAuth: isAuthenticated),
     );
   }
@@ -82,18 +121,30 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     if (!mounted) return;
     setState(() => _isAuthenticated = authenticated);
     if (authenticated) {
-      await context.read<PlaylistsController>().load();
+      // Bibliothèque et recommandations dépendent du même backend/auth : on les
+      // charge EN PARALLÈLE (au premier rendu, ne pas enchaîner deux allers-retours
+      // réseau). Les deux contrôleurs sont lus avant tout await.
+      await Future.wait([
+        context.read<PlaylistsController>().load(),
+        context.read<RecommendationsController>().load(),
+      ]);
     }
   }
 
-  Future<void> _onRefresh() => context.read<PlaylistsController>().refresh();
+  Future<void> _onRefresh() => Future.wait([
+        context.read<PlaylistsController>().refresh(),
+        context.read<RecommendationsController>().refresh(),
+      ]);
 
   /// Ouvre l'écran d'upload d'une piste (US-05-01), puis recharge : la piste
   /// fraîchement uploadée doit apparaître dans la section « Mes pistes ».
   Future<void> _onUpload() async {
     await context.push('/library/upload');
     if (!mounted) return;
-    await context.read<PlaylistsController>().refresh();
+    await Future.wait([
+      context.read<PlaylistsController>().refresh(),
+      context.read<RecommendationsController>().refresh(),
+    ]);
   }
 
   Future<void> _onCreate() async {
@@ -157,7 +208,12 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   Future<void> _onOpen(Playlist playlist) async {
     await context.push('/library/playlist/${playlist.id}', extra: playlist.name);
     if (!mounted) return;
-    await context.read<PlaylistsController>().refresh();
+    // Écouter une piste dans le détail alimente l'historique : les
+    // recommandations peuvent avoir changé au retour. Rechargement en parallèle.
+    await Future.wait([
+      context.read<PlaylistsController>().refresh(),
+      context.read<RecommendationsController>().refresh(),
+    ]);
   }
 
   /// Message adapté au type d'exception pour un toast de mutation.
@@ -239,7 +295,10 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
       );
     }
 
-    if (controller.playlists.isEmpty && controller.tracks.isEmpty) {
+    final recommendations = context.watch<RecommendationsController>();
+    if (controller.playlists.isEmpty &&
+        controller.tracks.isEmpty &&
+        !recommendations.hasItems) {
       return const _MessageView(
         icon: Icons.library_music_outlined,
         message: 'Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste',
@@ -255,12 +314,34 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   Widget _buildLibrary(BuildContext context, PlaylistsController controller) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
+    final recommendations = context.watch<RecommendationsController>();
 
     return ListView(
       key: const Key('library_list'),
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        // « Pour toi » (US-09-04) : masquée tant qu'il n'y a rien à proposer —
+        // une section vide n'apprend rien à l'auditeur.
+        if (recommendations.hasItems) ...[
+          Text('Pour toi',
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (var i = 0; i < recommendations.items.length; i++)
+            _RecommendedTrackTile(
+              recommended: recommendations.items[i],
+              // La liste recommandée part en file, à partir de l'item touché :
+              // précédent/suivant et les modes de lecture gardent un sens.
+              onPlay: () => context.read<PlaylistQueueController>().play(
+                    tracks: recommendations.items
+                        .map((r) => r.track)
+                        .toList(growable: false),
+                    sourceName: 'Pour toi',
+                    startIndex: i,
+                  ),
+            ),
+          const SizedBox(height: 28),
+        ],
         if (controller.playlists.isNotEmpty) ...[
           Text('Playlists',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
@@ -331,8 +412,6 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    // Comparaison par id : la file est une photo, elle peut décrire une piste
-    // que la bibliothèque affichée a entre-temps réordonnée ou retirée.
     final isCurrent = context.select<PlaylistQueueController, bool>(
       (queue) => queue.hasQueue && queue.currentTrack?.id == track.id,
     );
@@ -355,9 +434,172 @@ class _TrackTile extends StatelessWidget {
         style: isCurrent ? TextStyle(color: colors.primary) : null,
       ),
       subtitle: Text(
-        trackSubtitle(artist: track.artist, durationS: track.durationS),
+        [
+          trackSubtitle(artist: track.artist, durationS: track.durationS),
+          if (track.isPublic) 'Public',
+        ].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+      ),
+      trailing: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        onSelected: (value) => _onMenuAction(context, value),
+        itemBuilder: (_) => [
+          const PopupMenuItem(
+            value: 'add_to_playlist',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.playlist_add),
+              title: Text('Ajouter à une playlist'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'visibility',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                track.isPublic ? Icons.lock_outline : Icons.public,
+              ),
+              title: Text(
+                track.isPublic ? 'Rendre privée' : 'Rendre publique',
+              ),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'delete',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.delete_outline, color: colors.error),
+              title: Text('Supprimer', style: TextStyle(color: colors.error)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onMenuAction(BuildContext context, String action) async {
+    final controller = context.read<PlaylistsController>();
+    switch (action) {
+      case 'add_to_playlist':
+        final playlistId = await AddToPlaylistSheet.show(
+          context,
+          loadPlaylists: controller.listPlaylists,
+        );
+        if (playlistId == null || !context.mounted) return;
+        try {
+          await controller.addTrackToPlaylist(playlistId, track.id);
+          if (!context.mounted) return;
+          showAuthSuccessToast(context, 'Piste ajoutée à la playlist');
+        } on ConflictException {
+          if (!context.mounted) return;
+          showAuthInfoToast(context, 'Cette piste est déjà dans la playlist');
+        } catch (e) {
+          if (!context.mounted) return;
+          showAuthErrorToast(context, 'Impossible d\'ajouter la piste');
+        }
+      case 'visibility':
+        try {
+          await controller.toggleTrackVisibility(
+            track.id,
+            isPublic: !track.isPublic,
+          );
+          if (!context.mounted) return;
+          showAuthSuccessToast(
+            context,
+            track.isPublic ? 'Piste rendue privée' : 'Piste rendue publique',
+          );
+        } catch (e) {
+          if (!context.mounted) return;
+          showAuthErrorToast(context, 'Impossible de changer la visibilité');
+        }
+      case 'delete':
+        final confirmed = await _confirmDeleteTrackDialog(context, track.title);
+        if (!confirmed || !context.mounted) return;
+        try {
+          await controller.deleteTrack(track.id);
+          if (!context.mounted) return;
+          showAuthSuccessToast(context, 'Piste supprimée');
+        } catch (e) {
+          if (!context.mounted) return;
+          showAuthErrorToast(context, 'Impossible de supprimer la piste');
+        }
+    }
+  }
+}
+
+Future<bool> _confirmDeleteTrackDialog(BuildContext context, String title) async {
+  final colors = Theme.of(context).colorScheme;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text('Supprimer « $title » ?'),
+      content: const Text(
+        'La piste sera retirée de toutes les playlists. Cette action est définitive.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          ),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Supprimer'),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
+
+/// Ligne d'une piste recommandée (section « Pour toi », US-09-04). Comme
+/// [_TrackTile], un appui lance la lecture de toute la liste recommandée à partir
+/// d'elle ; le sous-titre affiche la **raison** fournie par le serveur plutôt que
+/// l'artiste/la durée.
+class _RecommendedTrackTile extends StatelessWidget {
+  const _RecommendedTrackTile({required this.recommended, required this.onPlay});
+
+  final RecommendedTrack recommended;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final track = recommended.track;
+    final isCurrent = context.select<PlaylistQueueController, bool>(
+      (queue) => queue.hasQueue && queue.currentTrack?.id == track.id,
+    );
+
+    return ListTile(
+      key: Key('reco_tile_${track.id}'),
+      onTap: onPlay,
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: colors.surfaceContainerHighest,
+        child: Icon(
+          isCurrent ? Icons.graphic_eq : Icons.auto_awesome,
+          color: isCurrent ? colors.primary : colors.onSurfaceVariant,
+        ),
+      ),
+      title: Text(
+        track.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: isCurrent ? TextStyle(color: colors.primary) : null,
+      ),
+      subtitle: Text(
+        recommended.reason,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
       ),
     );
   }
