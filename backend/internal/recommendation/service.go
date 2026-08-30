@@ -90,6 +90,11 @@ func (s *Service) Recommend(ctx context.Context, userID string) ([]RecommendedTr
 // une redécouverte.
 func reasonFor(t ScoredTrack) string {
 	if t.ArtistPlays > 0 && t.Artist != nil && *t.Artist != "" {
+		// « souvent » serait faux dès la première écoute : on l'accorde au nombre
+		// réel d'écoutes de l'artiste.
+		if t.ArtistPlays == 1 {
+			return "Parce que vous avez écouté " + *t.Artist
+		}
 		return "Parce que vous écoutez souvent " + *t.Artist
 	}
 	if t.NeverPlayed {

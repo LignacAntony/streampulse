@@ -122,10 +122,12 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     setState(() => _isAuthenticated = authenticated);
     if (authenticated) {
       // Bibliothèque et recommandations dépendent du même backend/auth : on les
-      // charge ensemble (la section « Pour toi » lit l'historique d'écoute).
-      final recommendations = context.read<RecommendationsController>();
-      await context.read<PlaylistsController>().load();
-      await recommendations.load();
+      // charge EN PARALLÈLE (au premier rendu, ne pas enchaîner deux allers-retours
+      // réseau). Les deux contrôleurs sont lus avant tout await.
+      await Future.wait([
+        context.read<PlaylistsController>().load(),
+        context.read<RecommendationsController>().load(),
+      ]);
     }
   }
 
@@ -139,9 +141,10 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   Future<void> _onUpload() async {
     await context.push('/library/upload');
     if (!mounted) return;
-    final recommendations = context.read<RecommendationsController>();
-    await context.read<PlaylistsController>().refresh();
-    await recommendations.refresh();
+    await Future.wait([
+      context.read<PlaylistsController>().refresh(),
+      context.read<RecommendationsController>().refresh(),
+    ]);
   }
 
   Future<void> _onCreate() async {
@@ -206,10 +209,11 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     await context.push('/library/playlist/${playlist.id}', extra: playlist.name);
     if (!mounted) return;
     // Écouter une piste dans le détail alimente l'historique : les
-    // recommandations peuvent avoir changé au retour.
-    final recommendations = context.read<RecommendationsController>();
-    await context.read<PlaylistsController>().refresh();
-    await recommendations.refresh();
+    // recommandations peuvent avoir changé au retour. Rechargement en parallèle.
+    await Future.wait([
+      context.read<PlaylistsController>().refresh(),
+      context.read<RecommendationsController>().refresh(),
+    ]);
   }
 
   /// Message adapté au type d'exception pour un toast de mutation.

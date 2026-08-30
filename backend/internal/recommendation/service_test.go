@@ -69,6 +69,26 @@ func TestRecommendMapsReasons(t *testing.T) {
 	}
 }
 
+func TestReasonForAccordeSelonLeNombreDEcoutes(t *testing.T) {
+	a := "Bonobo"
+	cases := []struct {
+		name string
+		in   ScoredTrack
+		want string
+	}{
+		{"une écoute", ScoredTrack{Artist: &a, ArtistPlays: 1}, "Parce que vous avez écouté Bonobo"},
+		{"plusieurs écoutes", ScoredTrack{Artist: &a, ArtistPlays: 2}, "Parce que vous écoutez souvent Bonobo"},
+		{"jamais écoutée à moi", ScoredTrack{Artist: &a, NeverPlayed: true}, "Nouveauté de votre bibliothèque"},
+		{"jamais écoutée publique", ScoredTrack{Artist: &a, NeverPlayed: true, FromOthers: true}, "Découverte publique"},
+		{"déjà écoutée sans affinité", ScoredTrack{Artist: &a, NeverPlayed: false}, "À réécouter"},
+	}
+	for _, c := range cases {
+		if got := reasonFor(c.in); got != c.want {
+			t.Errorf("%s: reasonFor = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestRecommendPassesDefaultLimit(t *testing.T) {
 	repo := &fakeRepo{}
 	svc := NewService(repo)

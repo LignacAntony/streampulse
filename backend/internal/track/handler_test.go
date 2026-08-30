@@ -463,3 +463,22 @@ func TestUpdateVisibility_Unauthenticated(t *testing.T) {
 		t.Fatalf("status: got %d, want 401", rec.Code)
 	}
 }
+
+func TestIsFreshPlay(t *testing.T) {
+	cases := []struct {
+		rng  string
+		want bool
+	}{
+		{"", true},             // pas de Range : lecture depuis le début
+		{"bytes=0-", true},     // début, ouvert
+		{"bytes=0-1023", true}, // premier segment
+		{"bytes=500-", false},  // reprise/avance
+		{"bytes=1024-2047", false},
+		{"bytes=01-", false}, // ne doit pas matcher "bytes=0-" par accident
+	}
+	for _, c := range cases {
+		if got := isFreshPlay(c.rng); got != c.want {
+			t.Errorf("isFreshPlay(%q) = %v, want %v", c.rng, got, c.want)
+		}
+	}
+}
