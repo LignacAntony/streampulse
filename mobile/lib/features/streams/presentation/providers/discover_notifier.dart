@@ -31,6 +31,7 @@ class DiscoverNotifier extends ChangeNotifier {
     notifyListeners();
 
     var streamsFailed = false;
+    var tracksFailed = false;
     try {
       _streams = await _repository.listLiveStreams(limit: pageSize);
     } catch (_) {
@@ -40,10 +41,11 @@ class DiscoverNotifier extends ChangeNotifier {
     try {
       _publicTracks = await _trackRepository.listPublicTracks(limit: pageSize);
     } catch (_) {
+      tracksFailed = true;
       _publicTracks = const [];
     }
 
-    _hasError = streamsFailed && _publicTracks.isEmpty;
+    _hasError = streamsFailed && tracksFailed;
     _isLoading = false;
     notifyListeners();
   }

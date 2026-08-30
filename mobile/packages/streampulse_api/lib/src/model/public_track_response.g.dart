@@ -18,6 +18,7 @@ PublicTrackResponse _$PublicTrackResponseFromJson(Map<String, dynamic> json) =>
             'title',
             'artist',
             'duration_s',
+            'created_at',
             'owner_name',
           ],
         );
@@ -26,11 +27,19 @@ PublicTrackResponse _$PublicTrackResponseFromJson(Map<String, dynamic> json) =>
           title: $checkedConvert('title', (v) => v as String),
           artist: $checkedConvert('artist', (v) => v as String?),
           durationS: $checkedConvert('duration_s', (v) => (v as num?)?.toInt()),
+          createdAt: $checkedConvert(
+            'created_at',
+            (v) => DateTime.parse(v as String),
+          ),
           ownerName: $checkedConvert('owner_name', (v) => v as String),
         );
         return val;
       },
-      fieldKeyMap: const {'durationS': 'duration_s', 'ownerName': 'owner_name'},
+      fieldKeyMap: const {
+        'durationS': 'duration_s',
+        'createdAt': 'created_at',
+        'ownerName': 'owner_name',
+      },
     );
 
 Map<String, dynamic> _$PublicTrackResponseToJson(
@@ -40,5 +49,6 @@ Map<String, dynamic> _$PublicTrackResponseToJson(
   'title': instance.title,
   'artist': instance.artist,
   'duration_s': instance.durationS,
+  'created_at': instance.createdAt.toIso8601String(),
   'owner_name': instance.ownerName,
 };

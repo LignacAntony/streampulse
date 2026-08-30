@@ -3122,6 +3122,7 @@ components:
         - title
         - artist
         - duration_s
+        - created_at
         - owner_name
       properties:
         id:
@@ -3139,6 +3140,11 @@ components:
           nullable: true
           description: Track duration in seconds.
           example: 214
+        created_at:
+          type: string
+          format: date-time
+          description: Track creation timestamp (RFC 3339). Used as cursor for pagination.
+          example: "2026-06-15T10:00:00Z"
         owner_name:
           type: string
           description: Username of the track owner.

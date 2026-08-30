@@ -28,7 +28,7 @@ ORDER BY created_at DESC;
 -- Pistes publiques de tous les utilisateurs, pour l'écran de découverte.
 -- Paginé par curseur (created_at DESC, id DESC).
 SELECT t.id::text AS id, t.title, t.artist, t.duration_s,
-       u.username AS owner_name
+       t.created_at, u.username AS owner_name
 FROM tracks t
 JOIN users u ON u.id = t.user_id
 WHERE t.is_public = true
@@ -39,7 +39,7 @@ LIMIT sqlc.arg(page_size)::int;
 -- name: ListPublicTracksFirst :many
 -- Première page de pistes publiques (pas de curseur).
 SELECT t.id::text AS id, t.title, t.artist, t.duration_s,
-       u.username AS owner_name
+       t.created_at, u.username AS owner_name
 FROM tracks t
 JOIN users u ON u.id = t.user_id
 WHERE t.is_public = true

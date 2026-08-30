@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/LignacAntony/streampulse/internal/auth"
@@ -63,6 +64,7 @@ type publicTrackResponse struct {
 	Title     string  `json:"title"`
 	Artist    *string `json:"artist"`
 	DurationS *int    `json:"duration_s"`
+	CreatedAt string  `json:"created_at"`
 	OwnerName string  `json:"owner_name"`
 }
 
@@ -211,6 +213,10 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListPublicTracks(w http.ResponseWriter, r *http.Request) {
 	var cursor *PublicTrackCursor
 	if cursorID := r.URL.Query().Get("cursor_id"); cursorID != "" {
+		if _, err := uuid.Parse(cursorID); err != nil {
+			httpjson.WriteError(w, r, apperror.InvalidArgument("invalid cursor_id"))
+			return
+		}
 		cursorAt := r.URL.Query().Get("cursor_created_at")
 		t, err := time.Parse(time.RFC3339Nano, cursorAt)
 		if err != nil {
@@ -230,7 +236,14 @@ func (h *Handler) ListPublicTracks(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]publicTrackResponse, 0, len(tracks))
 	for _, t := range tracks {
-		out = append(out, publicTrackResponse(t))
+		out = append(out, publicTrackResponse{
+			ID:        t.ID,
+			Title:     t.Title,
+			Artist:    t.Artist,
+			DurationS: t.DurationS,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339Nano),
+			OwnerName: t.OwnerName,
+		})
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("track: encode public tracks")

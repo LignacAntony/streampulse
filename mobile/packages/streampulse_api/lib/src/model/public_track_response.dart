@@ -24,6 +24,8 @@ class PublicTrackResponse {
 
     required this.durationS,
 
+    required this.createdAt,
+
     required this.ownerName,
   });
 
@@ -40,6 +42,10 @@ class PublicTrackResponse {
   @JsonKey(name: r'duration_s', required: true, includeIfNull: true)
   final int? durationS;
 
+  /// Track creation timestamp (RFC 3339). Used as cursor for pagination.
+  @JsonKey(name: r'created_at', required: true, includeIfNull: false)
+  final DateTime createdAt;
+
   /// Username of the track owner.
   @JsonKey(name: r'owner_name', required: true, includeIfNull: false)
   final String ownerName;
@@ -52,6 +58,7 @@ class PublicTrackResponse {
           other.title == title &&
           other.artist == artist &&
           other.durationS == durationS &&
+          other.createdAt == createdAt &&
           other.ownerName == ownerName;
 
   @override
@@ -60,6 +67,7 @@ class PublicTrackResponse {
       title.hashCode +
       (artist == null ? 0 : artist.hashCode) +
       (durationS == null ? 0 : durationS.hashCode) +
+      createdAt.hashCode +
       ownerName.hashCode;
 
   factory PublicTrackResponse.fromJson(Map<String, dynamic> json) =>

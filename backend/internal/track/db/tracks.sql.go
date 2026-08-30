@@ -7,6 +7,7 @@ package trackdb
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -179,7 +180,7 @@ func (q *Queries) ListFilePathsByUser(ctx context.Context, userID pgtype.UUID) (
 
 const listPublicTracks = `-- name: ListPublicTracks :many
 SELECT t.id::text AS id, t.title, t.artist, t.duration_s,
-       u.username AS owner_name
+       t.created_at, u.username AS owner_name
 FROM tracks t
 JOIN users u ON u.id = t.user_id
 WHERE t.is_public = true
@@ -199,6 +200,7 @@ type ListPublicTracksRow struct {
 	Title     string
 	Artist    pgtype.Text
 	DurationS pgtype.Int4
+	CreatedAt time.Time
 	OwnerName string
 }
 
@@ -218,6 +220,7 @@ func (q *Queries) ListPublicTracks(ctx context.Context, arg ListPublicTracksPara
 			&i.Title,
 			&i.Artist,
 			&i.DurationS,
+			&i.CreatedAt,
 			&i.OwnerName,
 		); err != nil {
 			return nil, err
@@ -232,7 +235,7 @@ func (q *Queries) ListPublicTracks(ctx context.Context, arg ListPublicTracksPara
 
 const listPublicTracksFirst = `-- name: ListPublicTracksFirst :many
 SELECT t.id::text AS id, t.title, t.artist, t.duration_s,
-       u.username AS owner_name
+       t.created_at, u.username AS owner_name
 FROM tracks t
 JOIN users u ON u.id = t.user_id
 WHERE t.is_public = true
@@ -245,6 +248,7 @@ type ListPublicTracksFirstRow struct {
 	Title     string
 	Artist    pgtype.Text
 	DurationS pgtype.Int4
+	CreatedAt time.Time
 	OwnerName string
 }
 
@@ -263,6 +267,7 @@ func (q *Queries) ListPublicTracksFirst(ctx context.Context, pageSize int32) ([]
 			&i.Title,
 			&i.Artist,
 			&i.DurationS,
+			&i.CreatedAt,
 			&i.OwnerName,
 		); err != nil {
 			return nil, err

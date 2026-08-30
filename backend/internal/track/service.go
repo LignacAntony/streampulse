@@ -60,6 +60,7 @@ type PublicTrack struct {
 	Title     string
 	Artist    *string
 	DurationS *int
+	CreatedAt time.Time
 	OwnerName string
 }
 
@@ -316,8 +317,10 @@ const defaultPageSize = 20
 // ListPublicTracks retourne les pistes publiques de tous les utilisateurs,
 // paginées par curseur.
 func (s *Service) ListPublicTracks(ctx context.Context, cursor *PublicTrackCursor, pageSize int) ([]PublicTrack, error) {
-	if pageSize <= 0 || pageSize > 50 {
+	if pageSize <= 0 {
 		pageSize = defaultPageSize
+	} else if pageSize > 50 {
+		pageSize = 50
 	}
 	return s.repo.ListPublicTracks(ctx, cursor, pageSize)
 }

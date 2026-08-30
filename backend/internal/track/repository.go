@@ -93,10 +93,7 @@ func (r *pgRepository) ListPublicTracks(ctx context.Context, cursor *PublicTrack
 	var rows []trackdb.ListPublicTracksFirstRow
 	var err error
 
-	if pageSize > 50 {
-		pageSize = 50
-	}
-	ps := int32(pageSize) // #nosec G115 -- borné à 50 ci-dessus
+	ps := int32(pageSize) // #nosec G115 -- borné à 50 par le service
 	if cursor == nil {
 		rows, err = r.q.ListPublicTracksFirst(ctx, ps)
 	} else {
@@ -121,6 +118,7 @@ func (r *pgRepository) ListPublicTracks(ctx context.Context, cursor *PublicTrack
 			Title:     row.Title,
 			Artist:    textValue(row.Artist),
 			DurationS: int4Value(row.DurationS),
+			CreatedAt: row.CreatedAt,
 			OwnerName: row.OwnerName,
 		})
 	}

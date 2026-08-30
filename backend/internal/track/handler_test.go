@@ -367,12 +367,42 @@ func TestListPublicTracks_OK(t *testing.T) {
 	}
 }
 
-func TestListPublicTracks_InvalidCursor(t *testing.T) {
+func TestListPublicTracks_InvalidCursorCreatedAt(t *testing.T) {
 	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
 
-	rec := listPublicTracks(t, h, "?cursor_id=abc&cursor_created_at=bad", true)
+	rec := listPublicTracks(t, h, "?cursor_id=00000000-0000-0000-0000-000000000001&cursor_created_at=bad", true)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d, want 400 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListPublicTracks_InvalidCursorID(t *testing.T) {
+	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
+
+	rec := listPublicTracks(t, h, "?cursor_id=notauuid&cursor_created_at=2026-01-01T00:00:00Z", true)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListPublicTracks_ResponseContainsCreatedAt(t *testing.T) {
+	repo := &fakeRepo{publicTracks: []PublicTrack{
+		{ID: "t1", Title: "Song", OwnerName: "Alice", CreatedAt: time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)},
+	}}
+	h := NewHandler(NewService(repo, &stubStorage{}))
+
+	rec := listPublicTracks(t, h, "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", rec.Code)
+	}
+	var resp []struct {
+		CreatedAt string `json:"created_at"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 || resp[0].CreatedAt == "" {
+		t.Fatalf("created_at must be present in response, got %+v", resp)
 	}
 }
 
