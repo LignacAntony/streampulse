@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -284,5 +285,151 @@ func TestListUserTracks_OK(t *testing.T) {
 	}
 	if len(resp) != 1 || resp[0].Title != "Song" {
 		t.Errorf("unexpected response: %+v", resp)
+	}
+}
+
+// --- Delete handler tests ---
+
+func deleteTrack(t *testing.T, h *Handler, trackID string, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle("DELETE /api/tracks/{id}",
+		auth.RequireAuth(testSecret, http.HandlerFunc(h.Delete)))
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tracks/"+trackID, nil)
+	if withToken {
+		token, _ := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDelete_OK(t *testing.T) {
+	repo := &fakeRepo{deleteFound: true, deleteFilePath: "/data/tracks/abc.mp3"}
+	h := NewHandler(NewService(repo, &stubStorage{}))
+
+	rec := deleteTrack(t, h, "track-1", true)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDelete_NotFound(t *testing.T) {
+	repo := &fakeRepo{deleteFound: false}
+	h := NewHandler(NewService(repo, &stubStorage{}))
+
+	rec := deleteTrack(t, h, "track-1", true)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404", rec.Code)
+	}
+}
+
+func TestDelete_Unauthenticated(t *testing.T) {
+	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
+	rec := deleteTrack(t, h, "track-1", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+// --- ListPublicTracks handler tests ---
+
+func listPublicTracks(t *testing.T, h *Handler, query string, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/tracks/public"+query, nil)
+	if withToken {
+		token, _ := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	h.ListPublicTracks(rec, req)
+	return rec
+}
+
+func TestListPublicTracks_OK(t *testing.T) {
+	repo := &fakeRepo{publicTracks: []PublicTrack{
+		{ID: "t1", Title: "Song", Artist: ptr("Neon"), DurationS: ptr(120), OwnerName: "Alice"},
+	}}
+	h := NewHandler(NewService(repo, &stubStorage{}))
+
+	rec := listPublicTracks(t, h, "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var resp []publicTrackResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 || resp[0].Title != "Song" || resp[0].OwnerName != "Alice" {
+		t.Errorf("unexpected response: %+v", resp)
+	}
+}
+
+func TestListPublicTracks_InvalidCursor(t *testing.T) {
+	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
+
+	rec := listPublicTracks(t, h, "?cursor_id=abc&cursor_created_at=bad", true)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// --- UpdateVisibility handler tests ---
+
+func updateVisibility(t *testing.T, h *Handler, trackID, body string, withToken bool) *httptest.ResponseRecorder {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle("PATCH /api/tracks/{id}/visibility",
+		auth.RequireAuth(testSecret, http.HandlerFunc(h.UpdateVisibility)))
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/tracks/"+trackID+"/visibility",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if withToken {
+		token, _ := auth.GenerateAccessToken(testUserID, "user", testSecret, time.Now().UTC())
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestUpdateVisibility_OK(t *testing.T) {
+	repo := &fakeRepo{visibilityUpdated: true}
+	h := NewHandler(NewService(repo, &stubStorage{}))
+
+	rec := updateVisibility(t, h, "track-1", `{"is_public":true}`, true)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateVisibility_MissingField(t *testing.T) {
+	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
+
+	rec := updateVisibility(t, h, "track-1", `{}`, true)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateVisibility_NotFound(t *testing.T) {
+	repo := &fakeRepo{visibilityUpdated: false}
+	h := NewHandler(NewService(repo, &stubStorage{}))
+
+	rec := updateVisibility(t, h, "track-1", `{"is_public":false}`, true)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateVisibility_Unauthenticated(t *testing.T) {
+	h := NewHandler(NewService(&fakeRepo{}, &stubStorage{}))
+
+	rec := updateVisibility(t, h, "track-1", `{"is_public":true}`, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
 	}
 }
