@@ -37,16 +37,25 @@ type TrackService interface {
 	OpenTrackFile(ctx context.Context, trackID, requesterID string) (OpenedTrackFile, error)
 }
 
+type PlayRecorder interface {
+	RecordPlay(ctx context.Context, userID, trackID string) error
+}
+
 // Handler expose le domaine track en HTTP.
 type Handler struct {
 	svc TrackService
 	// maxUpload borne la taille du fichier accepté. Champ (et non constante
 	// directe) pour être abaissé dans les tests sans forger un corps de 50 Mo.
 	maxUpload int64
+	playRecorder PlayRecorder
 }
 
 func NewHandler(svc TrackService) *Handler {
 	return &Handler{svc: svc, maxUpload: MaxUploadBytes}
+}
+
+func (h *Handler) SetPlayRecorder(rec PlayRecorder) {
+	h.playRecorder = rec
 }
 
 // libraryTrackResponse est la vue JSON d'une piste de la bibliothèque. artist et
@@ -181,6 +190,8 @@ func (h *Handler) StreamTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	h.recordPlay(r, r.PathValue("id"), userID)
+
 	w.Header().Set("Content-Type", file.MimeType)
 	// Contenu privé de l'utilisateur : jamais dans un cache partagé, et pas de
 	// recompression par un intermédiaire (elle casserait les octets audio).
@@ -275,6 +286,19 @@ func (h *Handler) UpdateVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) recordPlay(r *http.Request, trackID, userID string) {
+	if h.playRecorder == nil {
+		return
+	}
+	if rng := r.Header.Get("Range"); rng != "" && !strings.HasPrefix(rng, "bytes=0-") {
+		return
+	}
+	if err := h.playRecorder.RecordPlay(r.Context(), userID, trackID); err != nil {
+		zerolog.Ctx(r.Context()).Warn().Err(err).Str("track_id", trackID).
+			Msg("track: écoute non enregistrée")
+	}
 }
 
 // tooLargeError construit la réponse 413 commune (dépassement de taille).

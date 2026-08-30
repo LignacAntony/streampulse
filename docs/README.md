@@ -172,6 +172,7 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 043 | [043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md](adr/043-accessibilite-de-l-application-et-adaptation-aux-largeurs.md) | Accessibilité de l'application mobile et adaptation aux largeurs d'écran |
 | 044 | [044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md](adr/044-cout-cpu-du-streaming-et-dimensionnement-du-vps.md) | Coût CPU du streaming, modèle de capacité et dimensionnement du VPS |
 | 045 | [045-codes-derreur-du-manifeste-hls.md](adr/045-codes-derreur-du-manifeste-hls.md) | Codes d'erreur du manifeste HLS : distinguer « terminé » de « pas encore prêt » |
+| 046 | [046-recommandation-basee-sur-l-historique-d-ecoute.md](adr/046-recommandation-basee-sur-l-historique-d-ecoute.md) | Recommandation de pistes basée sur l'historique d'écoute (capture + algorithme SQL) |
 
 ---
 

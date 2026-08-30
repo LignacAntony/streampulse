@@ -61,6 +61,13 @@ type Favorite struct {
 	CreatedAt time.Time
 }
 
+type ListeningHistory struct {
+	ID       pgtype.UUID
+	UserID   pgtype.UUID
+	TrackID  pgtype.UUID
+	PlayedAt time.Time
+}
+
 type PasswordResetToken struct {
 	ID        pgtype.UUID
 	UserID    pgtype.UUID

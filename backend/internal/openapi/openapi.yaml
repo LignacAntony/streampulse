@@ -24,6 +24,14 @@ tags:
     description: Personal playlist management (US-05-02).
   - name: Track
     description: Personal audio track library — upload and listing (US-05-01).
+  - name: Recommendation
+    description: >-
+      Track recommendations derived from the user's listening history
+      (US-09-04).
+  - name: Chat
+    description: >-
+      Live chat between listeners of a stream, with broadcaster/admin
+      moderation (US-09-01).
 paths:
   /health:
     get:
@@ -2032,7 +2040,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
   /api/chat/bans:
     get:
       tags:
@@ -2111,6 +2118,36 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/recommendations/tracks:
+    get:
+      tags:
+        - Recommendation
+      operationId: recommendTracks
+      summary: Recommend tracks based on the user's listening history.
+      description: >-
+        Returns tracks the authenticated user can play (their own tracks and
+        other users' public tracks), ranked by a simple content-based algorithm
+        (US-09-04): never-played tracks first, then by affinity with the artists
+        the user listens to most, then least-recently played. With no listening
+        history yet, it falls back to the most recently added tracks (cold
+        start) rather than an empty list. Each item carries a human-readable
+        reason. Listening events are recorded server-side on track playback
+        (GET /api/tracks/{id}/stream).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Recommended tracks (empty array if none are available).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecommendedTrackResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     bearerAuth:
@@ -3157,6 +3194,34 @@ components:
         is_public:
           type: boolean
           description: Whether the track should be public.
+    RecommendedTrackResponse:
+      type: object
+      required:
+        - id
+        - title
+        - artist
+        - duration_s
+        - reason
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Midnight Drive
+        artist:
+          type: string
+          nullable: true
+          example: Neon Lights
+        duration_s:
+          type: integer
+          nullable: true
+          description: Track duration in seconds.
+          example: 214
+        reason:
+          type: string
+          description: Human-readable justification for the recommendation.
+          example: Parce que vous écoutez souvent Neon Lights
     AddPlaylistTrackRequest:
       type: object
       required:

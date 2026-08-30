@@ -106,3 +106,14 @@ sql:
               import: "time"
               type: "Time"
               pointer: true
+  - engine: "postgresql"
+    queries: "internal/recommendation/queries/"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "recommendationdb"
+        out: "internal/recommendation/db"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "timestamptz"
+            go_type: "time.Time"

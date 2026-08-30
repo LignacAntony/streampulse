@@ -28,6 +28,7 @@ import (
 	"github.com/LignacAntony/streampulse/internal/openapi"
 	"github.com/LignacAntony/streampulse/internal/playlist"
 	"github.com/LignacAntony/streampulse/internal/profiles"
+	"github.com/LignacAntony/streampulse/internal/recommendation"
 	"github.com/LignacAntony/streampulse/internal/shared/httpmw"
 	"github.com/LignacAntony/streampulse/internal/streaming"
 	"github.com/LignacAntony/streampulse/internal/track"
@@ -62,6 +63,10 @@ var (
 	_ chat.BroadcasterResolver = (*streaming.Service)(nil)
 	_ chat.ChatLiveness        = (*streaming.LiveSessions)(nil)
 )
+
+// var _ vérifie que *recommendation.Service satisfait le PlayRecorder consommé
+// par le domaine track à la lecture d'une piste (US-09-04, ADR 046).
+var _ track.PlayRecorder = (*recommendation.Service)(nil)
 
 func main() {
 	if err := run(); err != nil {
@@ -299,6 +304,14 @@ func run() error {
 	trackSvc := track.NewService(trackRepo, trackStorage)
 	trackHandler := track.NewHandler(trackSvc)
 
+	// Recommandation basée sur l'historique d'écoute (US-09-04, ADR 046). Le
+	// domaine track enregistre chaque écoute via SetPlayRecorder (best-effort) ; le
+	// domaine recommendation lit cet historique pour proposer des pistes.
+	recommendationRepo := recommendation.NewRepository(pool)
+	recommendationSvc := recommendation.NewService(recommendationRepo)
+	recommendationHandler := recommendation.NewHandler(recommendationSvc)
+	trackHandler.SetPlayRecorder(recommendationSvc)
+
 	// Gestion des utilisateurs par un administrateur (US-08-01) : streamingSvc
 	// est injecté comme LiveStopper (arrêt des lives en cours à la suppression)
 	// et comme StreamModerator (interruption d'un flux en modération, STR-192).
@@ -503,6 +516,9 @@ func run() error {
 	// honorées pour le lecteur audio de la file d'attente.
 	mux.Handle("GET /api/tracks/{id}/stream", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.StreamTrack)))
+	// Recommandation de pistes basée sur l'historique d'écoute (US-09-04, ADR 046).
+	mux.Handle("GET /api/recommendations/tracks", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(recommendationHandler.Recommend)))
 	// Événements SSE du direct (STR-85) : notif d'arrêt aux auditeurs authentifiés.
 	mux.Handle("GET /api/streams/{id}/events", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(streamingHandler.Events)))
