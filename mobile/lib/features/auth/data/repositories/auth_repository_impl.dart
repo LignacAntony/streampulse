@@ -65,6 +65,10 @@ class AuthRepositoryImpl implements AuthRepository {
         await _remote.logout(refreshToken: refresh);
       } catch (_) {}
     }
+
+    try {
+      await _googleAuth.signOut();
+    } catch (_) {}
     await _secureStorage.clearTokens();
   }
 

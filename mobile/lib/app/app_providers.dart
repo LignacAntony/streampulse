@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../core/audio/audio_playback_service.dart';
 import '../core/audio/playback_auth.dart';
-import '../core/auth/google_auth_service.dart';
 import '../core/audio/queue_playback_service.dart';
+import '../core/auth/google_auth_service.dart';
 import '../core/network/dio_client.dart';
 import '../core/offline/connectivity_service.dart';
 import '../core/offline/connectivity_service_impl.dart';

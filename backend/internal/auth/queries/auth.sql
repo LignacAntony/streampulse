@@ -10,6 +10,12 @@ INSERT INTO users (email, username, password_hash)
 VALUES ($1, $2, NULL)
 RETURNING id::text, email, username, role, created_at;
 
+-- name: EmailExists :one
+-- Vrai si un compte porte cet email, quel que soit is_active. Sert à distinguer,
+-- lors d'une connexion Google, un email réellement libre d'un compte désactivé
+-- (que GetUserByEmail masque via son filtre is_active = true).
+SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)::boolean AS email_exists;
+
 -- name: GetUserByEmail :one
 -- COALESCE(password_hash, '') : la colonne est nullable (comptes OAuth), mais
 -- le code Go continue de recevoir une chaîne. bcrypt échoue face au vide → un

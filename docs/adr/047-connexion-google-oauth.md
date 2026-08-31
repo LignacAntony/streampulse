@@ -53,6 +53,13 @@ en relisant l'email après un conflit.
 L'email doit être **vérifié** côté Google (`email_verified`), sinon 401 : sans quoi
 on pourrait s'approprier l'email d'autrui.
 
+Un compte **désactivé** par un admin (`is_active = false`) est masqué par le filtre
+de `GetUserByEmail` : sans garde, la connexion Google tenterait de le recréer et
+échouerait en boucle sur la contrainte d'unicité (→ 500 + INSERT inutiles + pollution
+du bucket d'alertes). On détecte donc l'email déjà enregistré (`IsEmailRegistered`,
+sans filtre `is_active`) et on renvoie un **403 `account_disabled`** — condition
+client hors bucket 5xx, même choix que le quota de stockage (ADR 032).
+
 ### 3. `password_hash` nullable, sans casser le code existant
 
 Migration `000024` : `ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`.
@@ -73,6 +80,10 @@ nullable (`pgtype.Text`) dans tout le code, les requêtes de lecture renvoient
 - `AuthRepository.loginWithGoogle()` orchestre : ID token → `POST /api/auth/google`
   (écrit à la main via le `Dio` sous-jacent, comme les endpoints bonus reco/sonde,
   ADR 045/046) → persistance des jetons dans `SecureStorage`.
+- `logout()` appelle aussi `GoogleAuthService.signOut()` (best-effort) : sans ça le
+  plugin garde le compte Google en cache et pourrait le reconnecter silencieusement
+  sur un appareil partagé (règle CLAUDE.md : tout état lié au compte remis à zéro au
+  logout).
 - iOS : `google_sign_in_ios` lit `GIDClientID` (Client iOS) et `GIDServerClientID`
   (Client Web = `GOOGLE_CLIENT_ID` backend) depuis `Info.plist`, plus le
   `REVERSED_CLIENT_ID` en schéma d'URL. **Validé E2E sur simulateur iOS** (compte créé,

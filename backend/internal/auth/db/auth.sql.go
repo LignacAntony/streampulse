@@ -106,6 +106,20 @@ func (q *Queries) DeleteUserByID(ctx context.Context, userID pgtype.UUID) error 
 	return err
 }
 
+const emailExists = `-- name: EmailExists :one
+SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)::boolean AS email_exists
+`
+
+// Vrai si un compte porte cet email, quel que soit is_active. Sert à distinguer,
+// lors d'une connexion Google, un email réellement libre d'un compte désactivé
+// (que GetUserByEmail masque via son filtre is_active = true).
+func (q *Queries) EmailExists(ctx context.Context, email string) (bool, error) {
+	row := q.db.QueryRow(ctx, emailExists, email)
+	var email_exists bool
+	err := row.Scan(&email_exists)
+	return email_exists, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id::text, email, username, role, created_at, COALESCE(password_hash, '')::text AS password_hash
 FROM users

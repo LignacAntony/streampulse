@@ -123,9 +123,9 @@ type Config struct {
 
 	// GoogleClientID est l'audience attendue des ID tokens Google (« Sign in
 	// with Google »). Vide = connexion Google désactivée : la route /api/auth/google
-	// répond alors 501. En pratique, le **Client Web** OAuth du projet Google Cloud,
-	// que le client mobile passe en serverClientId pour que l'audience du jeton
-	// corresponde côté serveur.
+	// n'est alors pas montée (404). En pratique, le **Client Web** OAuth du projet
+	// Google Cloud, que le client mobile passe en serverClientId pour que l'audience
+	// du jeton corresponde côté serveur.
 	GoogleClientID string `mapstructure:"GOOGLE_CLIENT_ID"`
 
 	DBHost     string `mapstructure:"DB_HOST"`

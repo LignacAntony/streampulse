@@ -116,6 +116,12 @@ class AuthRemoteDataSource {
       }
       return TokenPairResponse.fromJson(body);
     } on DioException catch (e) {
+
+      if (e.response?.statusCode == 401) {
+        throw const AuthException(
+          'Connexion Google refusée. Vérifie ton compte Google et réessaie.',
+        );
+      }
       throw _mapDioException(e);
     }
   }

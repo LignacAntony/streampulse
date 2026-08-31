@@ -64,6 +64,14 @@ func (r *pgRepository) CreateOAuthUser(ctx context.Context, email, username stri
 	}, nil
 }
 
+func (r *pgRepository) IsEmailRegistered(ctx context.Context, email string) (bool, error) {
+	exists, err := r.q.EmailExists(ctx, email)
+	if err != nil {
+		return false, fmt.Errorf("repo: email exists: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *pgRepository) GetUserByEmail(ctx context.Context, email string) (UserWithHash, error) {
 	row, err := r.q.GetUserByEmail(ctx, email)
 	if err != nil {

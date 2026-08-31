@@ -12,8 +12,11 @@ import (
 )
 
 type fakeRepo struct {
-	createCalls         int
-	emails              map[string]UserWithHash
+	createCalls int
+	emails      map[string]UserWithHash
+	// inactiveEmails simule des comptes désactivés : absents de emails (donc
+	// GetUserByEmail renvoie NotFound) mais bien enregistrés (IsEmailRegistered).
+	inactiveEmails      map[string]struct{}
 	usernames           map[string]struct{}
 	lastHash            string
 	refreshTokens       map[string]fakeRefreshToken
@@ -35,6 +38,7 @@ type fakePasswordResetToken struct {
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		emails:              map[string]UserWithHash{},
+		inactiveEmails:      map[string]struct{}{},
 		usernames:           map[string]struct{}{},
 		refreshTokens:       map[string]fakeRefreshToken{},
 		passwordResetTokens: map[string]fakePasswordResetToken{},
@@ -69,6 +73,14 @@ func (f *fakeRepo) CreateOAuthUser(_ context.Context, email, username string) (U
 	f.emails[email] = UserWithHash{User: u, PasswordHash: ""}
 	f.usernames[username] = struct{}{}
 	return u, nil
+}
+
+func (f *fakeRepo) IsEmailRegistered(_ context.Context, email string) (bool, error) {
+	if _, ok := f.emails[email]; ok {
+		return true, nil
+	}
+	_, ok := f.inactiveEmails[email]
+	return ok, nil
 }
 
 func (f *fakeRepo) GetUserByEmail(_ context.Context, email string) (UserWithHash, error) {
@@ -714,6 +726,25 @@ func TestLoginWithGoogle_ExistingUserNotRecreated(t *testing.T) {
 	}
 	if repo.createCalls != before {
 		t.Errorf("existing user should not be recreated, createCalls went %d -> %d", before, repo.createCalls)
+	}
+}
+
+func TestLoginWithGoogle_DisabledAccountRejected(t *testing.T) {
+	repo := newFakeRepo()
+	// Compte désactivé : enregistré, mais masqué par le filtre is_active.
+	repo.inactiveEmails["banned@example.com"] = struct{}{}
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	svc.SetGoogleVerifier(fakeGoogleVerifier{claims: GoogleClaims{
+		Sub: "g-x", Email: "banned@example.com", EmailVerified: true, Name: "Banned",
+	}})
+
+	_, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "tok"})
+	if !apperror.IsCode(err, apperror.CodeForbidden) {
+		t.Fatalf("want forbidden, got %v", err)
+	}
+	// Aucun INSERT n'a dû être tenté.
+	if repo.createCalls != 0 {
+		t.Errorf("no creation should be attempted for a disabled account, got %d", repo.createCalls)
 	}
 }
 

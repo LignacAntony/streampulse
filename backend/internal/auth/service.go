@@ -97,6 +97,7 @@ type UserWithHash struct {
 type Repository interface {
 	CreateUser(ctx context.Context, email, username, passwordHash string) (User, error)
 	CreateOAuthUser(ctx context.Context, email, username string) (User, error)
+	IsEmailRegistered(ctx context.Context, email string) (bool, error)
 	GetUserByEmail(ctx context.Context, email string) (UserWithHash, error)
 	GetUserByID(ctx context.Context, userID string) (UserWithHash, error)
 	StoreRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
@@ -256,6 +257,19 @@ func (s *Service) findOrCreateGoogleUser(ctx context.Context, email, name string
 	}
 	if !apperror.IsCode(err, apperror.CodeNotFound) {
 		return User{}, err
+	}
+
+	// L'email n'est pas trouvé parmi les comptes actifs. S'il existe malgré tout,
+	// c'est un compte désactivé par un admin (GetUserByEmail filtre is_active) :
+	// on refuse explicitement plutôt que de boucler sur des INSERT voués à échouer
+	// sur la contrainte d'unicité. Condition client -> 403 (hors bucket 5xx/alertes,
+	// même choix que le quota de stockage, ADR 032), pas 500.
+	registered, rerr := s.repo.IsEmailRegistered(ctx, email)
+	if rerr != nil {
+		return User{}, rerr
+	}
+	if registered {
+		return User{}, apperror.Forbidden("account disabled").Coded("account_disabled")
 	}
 
 	base := googleUsernameBase(email, name)

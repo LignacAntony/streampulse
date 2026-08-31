@@ -89,6 +89,7 @@ class _FakeGoogleAuth implements GoogleAuthService {
   final String idToken;
   final Object? error;
   int signInCalls = 0;
+  int signOutCalls = 0;
 
   @override
   Future<String> signIn() async {
@@ -98,7 +99,9 @@ class _FakeGoogleAuth implements GoogleAuthService {
   }
 
   @override
-  Future<void> signOut() async {}
+  Future<void> signOut() async {
+    signOutCalls++;
+  }
 }
 
 class _FakeSecureStorage implements SecureStorage {
@@ -230,6 +233,18 @@ void main() {
   });
 
   group('AuthRepositoryImpl.logout', () {
+    test('déconnecte aussi la session Google', () async {
+      final remote = _FakeRemote();
+      final storage = _FakeSecureStorage()..refreshToken = 'refresh-xyz';
+      final google = _FakeGoogleAuth();
+      final repo = AuthRepositoryImpl(remote, storage, google);
+
+      await repo.logout();
+
+      expect(google.signOutCalls, 1);
+      expect(storage.refreshToken, isNull);
+    });
+
     test(
       'appelle le serveur avec le refresh token et purge le stockage',
       () async {
