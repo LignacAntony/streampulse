@@ -75,8 +75,26 @@ nullable (`pgtype.Text`) dans tout le code, les requêtes de lecture renvoient
   ADR 045/046) → persistance des jetons dans `SecureStorage`.
 - iOS : `google_sign_in_ios` lit `GIDClientID` (Client iOS) et `GIDServerClientID`
   (Client Web = `GOOGLE_CLIENT_ID` backend) depuis `Info.plist`, plus le
-  `REVERSED_CLIENT_ID` en schéma d'URL. Android passe le `serverClientId` via
-  `--dart-define=GOOGLE_SERVER_CLIENT_ID`.
+  `REVERSED_CLIENT_ID` en schéma d'URL. **Validé E2E sur simulateur iOS** (compte créé,
+  `password_hash` NULL).
+
+### Android (à faire au moment de la revue, aucun changement de code)
+
+Sur Android, Google identifie l'app par **package name + SHA-1 du certificat de
+signature** — et le SHA-1 du keystore de debug est **propre à chaque machine**. Le
+testeur Android doit donc, sur **son** poste :
+
+1. Récupérer son SHA-1 de debug :
+   `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`
+2. Dans le même projet Google Cloud (`streampulse-507219`) → **Clients → Créer un
+   client → Android** : package `fr.streampulse.streampulse` + ce SHA-1.
+3. Lancer l'app en fournissant le **Client Web** (audience) et l'URL de l'API :
+   - Émulateur : `flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080 --dart-define=GOOGLE_SERVER_CLIENT_ID=<CLIENT_WEB>`
+   - Device physique (USB) : `adb reverse tcp:8080 tcp:8080` puis `API_BASE_URL=http://localhost:8080`.
+
+Aucun `google-services.json` requis (pas de Firebase) : l'ID token est demandé via
+`serverClientId`, seul le client Android (package + SHA-1) doit exister côté Google.
+Le testeur doit être ajouté aux **utilisateurs test** de l'écran de consentement.
 
 ## Alternatives écartées
 
