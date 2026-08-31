@@ -250,6 +250,7 @@ Config : `backend/sqlc.yaml` — schéma lu depuis `migrations/*.up.sql`.
 |---|---|---|---|
 | POST | `/api/auth/register` | `Handler.Register` | Non |
 | POST | `/api/auth/login` | `Handler.Login` | Non |
+| POST | `/api/auth/google` | `Handler.GoogleLogin` | Non — connexion via ID token Google, vérifié contre les clés publiques Google (audience = `GOOGLE_CLIENT_ID`, le Client Web OAuth) ; première connexion = **création auto** du compte (rôle `user`), sinon retrouvé par email. **Montée uniquement si `GOOGLE_CLIENT_ID` est renseigné** (sinon 404). Comptes Google = `password_hash` NULL (migration `000024`), la connexion par mot de passe reste sûre (bcrypt échoue face au vide). Détails [ADR 047](docs/adr/047-connexion-google-oauth.md) (STR-XXX) |
 | POST | `/api/auth/refresh` | `Handler.Refresh` | Non |
 | POST | `/api/auth/logout` | `Handler.Logout` | Oui (JWT) |
 | POST | `/api/auth/forgot-password` | `Handler.ForgotPassword` | Non |
@@ -749,6 +750,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `API_PORT` | Port exposé de l'API sur l'hôte | `8080` |
 | `GO_ENV` | Environnement Go | `development` |
 | `JWT_SECRET` | Clé de signature JWT (min. 32 chars) | `chaine-aleatoire-longue` |
+| `GOOGLE_CLIENT_ID` | Audience des ID tokens Google (ID du **Client Web** OAuth). Vide = connexion Google désactivée (route `/api/auth/google` non montée) — ADR 047 | `1234-abc.apps.googleusercontent.com` |
 | `SMTP_HOST` | Serveur SMTP (vide = mode log dev) | `smtp.mailgun.org` |
 | `SMTP_PORT` | Port SMTP STARTTLS | `587` |
 | `SMTP_USERNAME` | Utilisateur SMTP | `postmaster@streampulse.com` |
@@ -819,7 +821,7 @@ xcrun simctl openurl booted \
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
 | `docs/performance-mobile.md` | Preuves de fluidité 60 FPS : garde de reconstruction (CI) + relevé de trames sur appareil (STR-243) |
-| `docs/README.md` (§ Index complet des ADR) | **Les 46 ADR**, avec leur numéro et leur décision |
+| `docs/README.md` (§ Index complet des ADR) | **Les 47 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
@@ -830,7 +832,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `047-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `048-...`). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.

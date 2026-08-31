@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:streampulse_api/streampulse_api.dart';
+import 'package:streampulse/core/auth/google_auth_service.dart';
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/core/storage/secure_storage.dart';
 import 'package:streampulse/features/auth/data/datasources/auth_remote_data_source.dart';
@@ -69,6 +70,38 @@ class _FakeRemote implements AuthRemoteDataSource {
   Future<void> deleteAccount({required String password}) async {
     if (error != null) throw error!;
   }
+
+  String? lastGoogleIdToken;
+
+  @override
+  Future<TokenPairResponse> loginWithGoogle({required String idToken}) async {
+    calls++;
+    lastGoogleIdToken = idToken;
+    if (error != null) throw error!;
+    return tokenPair!;
+  }
+}
+
+/// Fake du service Google : renvoie un ID token fixe, ou lève une erreur/annulation.
+class _FakeGoogleAuth implements GoogleAuthService {
+  _FakeGoogleAuth({this.idToken = 'google-id-token', this.error});
+
+  final String idToken;
+  final Object? error;
+  int signInCalls = 0;
+  int signOutCalls = 0;
+
+  @override
+  Future<String> signIn() async {
+    signInCalls++;
+    if (error != null) throw error!;
+    return idToken;
+  }
+
+  @override
+  Future<void> signOut() async {
+    signOutCalls++;
+  }
 }
 
 class _FakeSecureStorage implements SecureStorage {
@@ -106,7 +139,7 @@ void main() {
           createdAt: DateTime.parse('2026-01-02T03:04:05Z'),
         ),
       );
-      final repo = AuthRepositoryImpl(remote, _FakeSecureStorage());
+      final repo = AuthRepositoryImpl(remote, _FakeSecureStorage(), _FakeGoogleAuth());
 
       final user = await repo.register(
         email: 'alice@example.com',
@@ -126,7 +159,7 @@ void main() {
 
     test('propage DuplicateAccountException en cas de 409', () async {
       final remote = _FakeRemote(error: const DuplicateAccountException());
-      final repo = AuthRepositoryImpl(remote, _FakeSecureStorage());
+      final repo = AuthRepositoryImpl(remote, _FakeSecureStorage(), _FakeGoogleAuth());
 
       expect(
         () => repo.register(
@@ -142,7 +175,7 @@ void main() {
       final remote = _FakeRemote(
         error: const ValidationException('invalid email'),
       );
-      final repo = AuthRepositoryImpl(remote, _FakeSecureStorage());
+      final repo = AuthRepositoryImpl(remote, _FakeSecureStorage(), _FakeGoogleAuth());
 
       expect(
         () => repo.register(
@@ -166,7 +199,7 @@ void main() {
           ),
         );
         final storage = _FakeSecureStorage();
-        final repo = AuthRepositoryImpl(remote, storage);
+        final repo = AuthRepositoryImpl(remote, storage, _FakeGoogleAuth());
 
         final pair = await repo.login(
           email: 'alice@example.com',
@@ -188,7 +221,7 @@ void main() {
         error: const AuthException('Email ou mot de passe incorrect'),
       );
       final storage = _FakeSecureStorage();
-      final repo = AuthRepositoryImpl(remote, storage);
+      final repo = AuthRepositoryImpl(remote, storage, _FakeGoogleAuth());
 
       await expectLater(
         () => repo.login(email: 'alice@example.com', password: 'wrong'),
@@ -200,6 +233,18 @@ void main() {
   });
 
   group('AuthRepositoryImpl.logout', () {
+    test('déconnecte aussi la session Google', () async {
+      final remote = _FakeRemote();
+      final storage = _FakeSecureStorage()..refreshToken = 'refresh-xyz';
+      final google = _FakeGoogleAuth();
+      final repo = AuthRepositoryImpl(remote, storage, google);
+
+      await repo.logout();
+
+      expect(google.signOutCalls, 1);
+      expect(storage.refreshToken, isNull);
+    });
+
     test(
       'appelle le serveur avec le refresh token et purge le stockage',
       () async {
@@ -207,7 +252,7 @@ void main() {
         final storage = _FakeSecureStorage()
           ..accessToken = 'access-xyz'
           ..refreshToken = 'refresh-xyz';
-        final repo = AuthRepositoryImpl(remote, storage);
+        final repo = AuthRepositoryImpl(remote, storage, _FakeGoogleAuth());
 
         await repo.logout();
 
@@ -223,7 +268,7 @@ void main() {
       final storage = _FakeSecureStorage()
         ..accessToken = 'access-xyz'
         ..refreshToken = 'refresh-xyz';
-      final repo = AuthRepositoryImpl(remote, storage);
+      final repo = AuthRepositoryImpl(remote, storage, _FakeGoogleAuth());
 
       await repo.logout();
 
@@ -237,7 +282,7 @@ void main() {
       () async {
         final remote = _FakeRemote();
         final storage = _FakeSecureStorage()..accessToken = 'orphan-access';
-        final repo = AuthRepositoryImpl(remote, storage);
+        final repo = AuthRepositoryImpl(remote, storage, _FakeGoogleAuth());
 
         await repo.logout();
 
@@ -246,5 +291,41 @@ void main() {
         expect(storage.refreshToken, isNull);
       },
     );
+  });
+
+  group('AuthRepositoryImpl.loginWithGoogle', () {
+    test('transmet l\'ID token Google et persiste les tokens', () async {
+      final remote = _FakeRemote(
+        tokenPair: TokenPairResponse(
+          accessToken: 'access-g',
+          refreshToken: 'refresh-g',
+        ),
+      );
+      final storage = _FakeSecureStorage();
+      final google = _FakeGoogleAuth(idToken: 'tok-123');
+      final repo = AuthRepositoryImpl(remote, storage, google);
+
+      final pair = await repo.loginWithGoogle();
+
+      expect(google.signInCalls, 1);
+      expect(remote.lastGoogleIdToken, 'tok-123');
+      expect(pair.accessToken, 'access-g');
+      expect(storage.accessToken, 'access-g');
+      expect(storage.refreshToken, 'refresh-g');
+    });
+
+    test('propage l\'annulation et ne persiste rien', () async {
+      final remote = _FakeRemote();
+      final storage = _FakeSecureStorage();
+      final google = _FakeGoogleAuth(error: const GoogleSignInCancelled());
+      final repo = AuthRepositoryImpl(remote, storage, google);
+
+      await expectLater(
+        repo.loginWithGoogle(),
+        throwsA(isA<GoogleSignInCancelled>()),
+      );
+      expect(remote.calls, 0);
+      expect(storage.accessToken, isNull);
+    });
   });
 }

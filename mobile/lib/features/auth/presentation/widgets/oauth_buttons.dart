@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'auth_toasts.dart';
 
 class OAuthButtons extends StatelessWidget {
-  const OAuthButtons({super.key, this.enabled = true});
+  const OAuthButtons({super.key, this.enabled = true, this.onGoogle});
 
   final bool enabled;
+
+  /// Action du bouton Google. Si null, affiche un toast « bientôt disponible »
+  /// (cas de l'écran d'inscription, non encore câblé).
+  final VoidCallback? onGoogle;
 
   void _showComingSoon(BuildContext context, String provider) {
     showAuthInfoToast(context, '$provider — bientôt disponible');
@@ -19,9 +23,11 @@ class OAuthButtons extends StatelessWidget {
       children: [
         _ProviderButton(
           key: const Key('oauth_google_button'),
-          tooltip: "S'inscrire avec Google",
+          tooltip: 'Continuer avec Google',
           icon: const _GoogleLogo(),
-          onPressed: enabled ? () => _showComingSoon(context, 'Google') : null,
+          onPressed: enabled
+              ? (onGoogle ?? () => _showComingSoon(context, 'Google'))
+              : null,
         ),
         _ProviderButton(
           key: const Key('oauth_apple_button'),

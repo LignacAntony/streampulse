@@ -157,7 +157,7 @@ type User struct {
 	ID           pgtype.UUID
 	Email        string
 	Username     string
-	PasswordHash string
+	PasswordHash pgtype.Text
 	Role         string
 	IsActive     bool
 	CreatedAt    time.Time

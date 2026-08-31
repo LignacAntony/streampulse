@@ -77,7 +77,7 @@ WHERE id = $2::uuid
 `
 
 type UpdateUserPasswordHashParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	ID           pgtype.UUID
 }
 

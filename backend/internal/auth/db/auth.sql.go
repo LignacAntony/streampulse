@@ -13,6 +13,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createOAuthUser = `-- name: CreateOAuthUser :one
+INSERT INTO users (email, username, password_hash)
+VALUES ($1, $2, NULL)
+RETURNING id::text, email, username, role, created_at
+`
+
+type CreateOAuthUserParams struct {
+	Email    string
+	Username string
+}
+
+type CreateOAuthUserRow struct {
+	ID        string
+	Email     string
+	Username  string
+	Role      string
+	CreatedAt time.Time
+}
+
+// Compte créé par un fournisseur externe (Google) : aucun mot de passe local,
+// password_hash reste NULL. Même RETURNING que CreateUser.
+func (q *Queries) CreateOAuthUser(ctx context.Context, arg CreateOAuthUserParams) (CreateOAuthUserRow, error) {
+	row := q.db.QueryRow(ctx, createOAuthUser, arg.Email, arg.Username)
+	var i CreateOAuthUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Username,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, username, password_hash)
 VALUES ($1, $2, $3)
@@ -22,7 +56,7 @@ RETURNING id::text, email, username, role, created_at
 type CreateUserParams struct {
 	Email        string
 	Username     string
-	PasswordHash string
+	PasswordHash pgtype.Text
 }
 
 type CreateUserRow struct {
@@ -72,8 +106,22 @@ func (q *Queries) DeleteUserByID(ctx context.Context, userID pgtype.UUID) error 
 	return err
 }
 
+const emailExists = `-- name: EmailExists :one
+SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)::boolean AS email_exists
+`
+
+// Vrai si un compte porte cet email, quel que soit is_active. Sert à distinguer,
+// lors d'une connexion Google, un email réellement libre d'un compte désactivé
+// (que GetUserByEmail masque via son filtre is_active = true).
+func (q *Queries) EmailExists(ctx context.Context, email string) (bool, error) {
+	row := q.db.QueryRow(ctx, emailExists, email)
+	var email_exists bool
+	err := row.Scan(&email_exists)
+	return email_exists, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id::text, email, username, role, created_at, password_hash
+SELECT id::text, email, username, role, created_at, COALESCE(password_hash, '')::text AS password_hash
 FROM users
 WHERE email = $1 AND is_active = true
 `
@@ -87,6 +135,9 @@ type GetUserByEmailRow struct {
 	PasswordHash string
 }
 
+// COALESCE(password_hash, ”) : la colonne est nullable (comptes OAuth), mais
+// le code Go continue de recevoir une chaîne. bcrypt échoue face au vide → un
+// compte sans mot de passe ne peut pas être connecté par mot de passe.
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i GetUserByEmailRow
@@ -102,7 +153,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id::text, email, username, role, created_at, password_hash
+SELECT id::text, email, username, role, created_at, COALESCE(password_hash, '')::text AS password_hash
 FROM users
 WHERE id = $1::uuid AND is_active = true
 `

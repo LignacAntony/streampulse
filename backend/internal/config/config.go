@@ -79,6 +79,7 @@ var envKeys = []struct {
 	{key: "GO_ENV", def: defaultGoEnv},
 	{key: "API_PORT", def: defaultAPIPort},
 	{key: "JWT_SECRET"},
+	{key: "GOOGLE_CLIENT_ID"},
 
 	{key: "DB_HOST", def: defaultDBHost},
 	{key: "DB_PORT", def: defaultDBPort},
@@ -119,6 +120,13 @@ type Config struct {
 	GoEnv     string `mapstructure:"GO_ENV"`
 	APIPort   string `mapstructure:"API_PORT"`
 	JWTSecret string `mapstructure:"JWT_SECRET"`
+
+	// GoogleClientID est l'audience attendue des ID tokens Google (« Sign in
+	// with Google »). Vide = connexion Google désactivée : la route /api/auth/google
+	// n'est alors pas montée (404). En pratique, le **Client Web** OAuth du projet
+	// Google Cloud, que le client mobile passe en serverClientId pour que l'audience
+	// du jeton corresponde côté serveur.
+	GoogleClientID string `mapstructure:"GOOGLE_CLIENT_ID"`
 
 	DBHost     string `mapstructure:"DB_HOST"`
 	DBPort     string `mapstructure:"DB_PORT"`

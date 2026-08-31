@@ -332,3 +332,78 @@ func TestHandler_DeleteAccount_InternalError(t *testing.T) {
 		t.Fatalf("want 500, got %d", rec.Code)
 	}
 }
+
+// --- GoogleLogin ---
+
+type stubGoogleAuthenticator struct {
+	pair TokenPair
+	err  error
+}
+
+func (s *stubGoogleAuthenticator) LoginWithGoogle(_ context.Context, _ GoogleLoginInput) (TokenPair, error) {
+	return s.pair, s.err
+}
+
+func googleHandler(g GoogleAuthenticator) *Handler {
+	h := NewHandler(nil, nil, nil, nil, nil, nil, nil)
+	if g != nil {
+		h.SetGoogleAuthenticator(g)
+	}
+	return h
+}
+
+func TestHandler_GoogleLogin_OK(t *testing.T) {
+	rec := httptest.NewRecorder()
+	googleHandler(&stubGoogleAuthenticator{pair: TokenPair{AccessToken: "a", RefreshToken: "r"}}).
+		GoogleLogin(rec, post(t, "/api/auth/google", `{"id_token":"tok"}`))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var pair TokenPair
+	if err := json.NewDecoder(rec.Body).Decode(&pair); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if pair.AccessToken != "a" || pair.RefreshToken != "r" {
+		t.Errorf("unexpected pair: %+v", pair)
+	}
+}
+
+func TestHandler_GoogleLogin_MissingToken(t *testing.T) {
+	rec := httptest.NewRecorder()
+	googleHandler(&stubGoogleAuthenticator{}).
+		GoogleLogin(rec, post(t, "/api/auth/google", `{"id_token":""}`))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestHandler_GoogleLogin_Unauthorized(t *testing.T) {
+	rec := httptest.NewRecorder()
+	googleHandler(&stubGoogleAuthenticator{err: apperror.Unauthorized("invalid google token")}).
+		GoogleLogin(rec, post(t, "/api/auth/google", `{"id_token":"bad"}`))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rec.Code)
+	}
+}
+
+func TestHandler_GoogleLogin_MethodNotAllowed(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/google", nil)
+	googleHandler(&stubGoogleAuthenticator{}).GoogleLogin(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405, got %d", rec.Code)
+	}
+}
+
+func TestHandler_GoogleLogin_NotConfigured(t *testing.T) {
+	rec := httptest.NewRecorder()
+	googleHandler(nil).GoogleLogin(rec, post(t, "/api/auth/google", `{"id_token":"tok"}`))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", rec.Code)
+	}
+}

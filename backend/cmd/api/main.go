@@ -245,6 +245,15 @@ func run() error {
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret, mailer)
 	authHandler := auth.NewHandler(authSvc, authSvc, authSvc, authSvc, authSvc, authSvc, authSvc)
 
+	// Connexion Google (« Sign in with Google ») : branchée uniquement si un
+	// GOOGLE_CLIENT_ID (Client Web OAuth) est configuré. Sinon la route n'est
+	// pas montée et la fonctionnalité reste désactivée.
+	if cfg.GoogleClientID != "" {
+		authSvc.SetGoogleVerifier(auth.NewGoogleVerifier(cfg.GoogleClientID))
+		authHandler.SetGoogleAuthenticator(authSvc)
+		log.Info().Msg("auth: connexion Google activée")
+	}
+
 	profilesRepo := profiles.NewRepository(pool)
 	profilesSvc := profiles.NewService(profilesRepo)
 	profilesHandler := profiles.NewHandler(profilesSvc, profilesSvc)
@@ -383,6 +392,9 @@ func run() error {
 
 	mux.Handle("POST /api/auth/register", authLimit(http.HandlerFunc(authHandler.Register)))
 	mux.Handle("POST /api/auth/login", authLimit(http.HandlerFunc(authHandler.Login)))
+	if cfg.GoogleClientID != "" {
+		mux.Handle("POST /api/auth/google", authLimit(http.HandlerFunc(authHandler.GoogleLogin)))
+	}
 	mux.Handle("POST /api/auth/refresh", refreshLimiter.Middleware(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("/api/auth/logout", auth.RequireAuth(cfg.JWTSecret, http.HandlerFunc(authHandler.Logout)))
 	mux.Handle("POST /api/auth/forgot-password", authLimit(http.HandlerFunc(authHandler.ForgotPassword)))

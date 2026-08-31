@@ -1,12 +1,18 @@
 import 'package:dio/dio.dart';
 import 'package:streampulse_api/streampulse_api.dart';
 
+import '../../../../core/constants/api_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 
 class AuthRemoteDataSource {
-  AuthRemoteDataSource(this._authApi);
+  AuthRemoteDataSource(this._authApi, this._dio);
 
   final AuthApi _authApi;
+
+  /// Dio sous-jacent (mêmes intercepteurs auth/trace que le client généré).
+  /// Utilisé pour la connexion Google, écrite à la main plutôt que via le client
+  /// généré, comme les autres endpoints bonus (reco, sonde de manifeste).
+  final Dio _dio;
 
   Future<UserResponse> register({
     required String email,
@@ -93,6 +99,29 @@ class AuthRemoteDataSource {
       }
       return body;
     } on DioException catch (e) {
+      throw _mapDioException(e);
+    }
+  }
+
+  Future<TokenPairResponse> loginWithGoogle({required String idToken}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        ApiConstants.googleLogin,
+        data: {'id_token': idToken},
+      );
+
+      final body = response.data;
+      if (body == null) {
+        throw const ServerException('Réponse vide du serveur');
+      }
+      return TokenPairResponse.fromJson(body);
+    } on DioException catch (e) {
+
+      if (e.response?.statusCode == 401) {
+        throw const AuthException(
+          'Connexion Google refusée. Vérifie ton compte Google et réessaie.',
+        );
+      }
       throw _mapDioException(e);
     }
   }
