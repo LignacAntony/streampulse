@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/errors/exceptions.dart';
+import '../../../../core/offline/entities/offline_playlist_summary.dart';
 import '../../../tracks/domain/repositories/track_repository.dart';
 import '../../domain/entities/playlist.dart';
 import '../../domain/entities/track.dart';
@@ -15,22 +16,36 @@ import '../../domain/repositories/playlist_repository.dart';
 /// afficher un toast — en particulier `ConflictException` (nom déjà utilisé).
 /// Seul `load` expose `error`/`isNetworkError` en état (vue plein écran).
 class PlaylistsController extends ChangeNotifier {
-  PlaylistsController(this._repository, this._trackRepository);
+  PlaylistsController(
+    this._repository,
+    this._trackRepository, {
+    Future<List<OfflinePlaylistSummary>> Function()? offlineFallback,
+  }) : _offlineFallback = offlineFallback;
 
   final PlaylistRepository _repository;
   final TrackRepository _trackRepository;
+
+  /// Playlists téléchargées, servies quand le réseau échoue (mode avion). Cf.
+  /// `PlaylistDetailController._offlineFallback` : même patron de repli.
+  final Future<List<OfflinePlaylistSummary>> Function()? _offlineFallback;
 
   List<Playlist> _playlists = const [];
   List<Track> _tracks = const [];
   bool _loading = false;
   String? _error;
   bool _isNetworkError = false;
+  bool _isOfflineFallback = false;
 
   List<Playlist> get playlists => _playlists;
   List<Track> get tracks => _tracks;
   bool get loading => _loading;
   String? get error => _error;
   bool get isNetworkError => _isNetworkError;
+
+  /// Vrai quand la liste affichée provient du cache hors ligne (réseau
+  /// indisponible) : l'écran affiche alors un bandeau et masque les actions
+  /// qui exigent le réseau (création, upload, « Mes pistes »).
+  bool get isOfflineFallback => _isOfflineFallback;
 
   /// (Re)charge les playlists et la bibliothèque de pistes en parallèle. Les deux
   /// dépendent du même backend/auth : on les traite comme un seul chargement.
@@ -45,13 +60,49 @@ class PlaylistsController extends ChangeNotifier {
       ]);
       _playlists = results[0] as List<Playlist>;
       _tracks = results[1] as List<Track>;
+      _isOfflineFallback = false;
     } catch (e) {
-      _setError(e);
+      await _handleLoadError(e);
     } finally {
       _loading = false;
       notifyListeners();
     }
   }
+
+  /// Repli hors ligne : si des playlists ont été téléchargées, les afficher au
+  /// lieu de l'erreur plein écran ; sinon relayer l'erreur. La bibliothèque de
+  /// pistes n'est pas cachée hors ligne (elle vit dans les playlists
+  /// téléchargées), donc `_tracks` est vidé.
+  Future<void> _handleLoadError(Object error) async {
+    if (_offlineFallback != null) {
+      try {
+        final cached = await _offlineFallback();
+        if (cached.isNotEmpty) {
+          _playlists = cached.map(_toPlaylist).toList();
+          _tracks = const [];
+          _isOfflineFallback = true;
+          _clearError();
+          return;
+        }
+      } catch (_) {
+        // Cache indisponible (web, test) : on retombe sur l'erreur d'origine.
+      }
+    }
+    _setError(error);
+  }
+
+  /// Carte de playlist synthétisée depuis le cache : seuls id/nom/nombre de
+  /// pistes sont connus hors ligne — les autres champs prennent une valeur
+  /// neutre (jamais lue par la carte offline).
+  Playlist _toPlaylist(OfflinePlaylistSummary summary) => Playlist(
+        id: summary.id,
+        name: summary.name,
+        description: null,
+        isPublic: false,
+        trackCount: summary.trackCount,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+      );
 
   Future<void> refresh() => load();
 
@@ -116,6 +167,7 @@ class PlaylistsController extends ChangeNotifier {
   void _setError(Object error) {
     _error = _messageFor(error);
     _isNetworkError = error is NetworkException;
+    _isOfflineFallback = false;
   }
 
   void _clearError() {

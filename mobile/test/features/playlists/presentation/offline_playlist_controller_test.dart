@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:streampulse/core/offline/entities/cached_track_status.dart';
+import 'package:streampulse/core/offline/entities/offline_playlist_summary.dart';
 import 'package:streampulse/core/offline/offline_cache_repository.dart';
 import 'package:dio/dio.dart';
 import 'package:streampulse/core/offline/track_download_service.dart';
@@ -23,6 +24,16 @@ class _FakeCacheRepository implements OfflineCacheRepository {
 
   @override
   Future<Set<String>> offlinePlaylistIds() async => Set.of(_offlineIds);
+
+  @override
+  Future<List<OfflinePlaylistSummary>> offlinePlaylists() async => [
+        for (final id in _offlineIds)
+          OfflinePlaylistSummary(
+            id: id,
+            name: id,
+            trackCount: _tracks[id]?.length ?? 0,
+          ),
+      ];
 
   @override
   Future<bool> isOffline(String playlistId) async =>

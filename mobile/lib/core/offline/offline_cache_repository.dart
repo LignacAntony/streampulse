@@ -1,8 +1,13 @@
 import '../../features/playlists/domain/entities/playlist_track.dart';
 import 'entities/cached_track_status.dart';
+import 'entities/offline_playlist_summary.dart';
 
 abstract class OfflineCacheRepository {
   Future<Set<String>> offlinePlaylistIds();
+
+  /// Playlists téléchargées (id, nom, nombre de pistes), triées par date
+  /// d'activation. Source de la Bibliothèque hors ligne.
+  Future<List<OfflinePlaylistSummary>> offlinePlaylists();
 
   Future<bool> isOffline(String playlistId);
 
