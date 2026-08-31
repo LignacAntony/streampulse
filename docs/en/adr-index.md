@@ -314,5 +314,20 @@ native player preloads the whole queue, so starting a queue records every track,
 not only the one actually heard — acceptable for a simple reco, documented, with a
 client-side fix left to a separate ticket.
 
+**ADR 047 — Sign in with Google.** *Context:* the login screen had an inert Google
+button, and a Google account has no local password while `users.password_hash` was
+`NOT NULL`. *Decision:* a dedicated `POST /api/auth/google` verifies the Google ID
+token with the official `idtoken` library (signature, expiry, audience =
+`GOOGLE_CLIENT_ID`), finds-or-creates the account (first sign-in creates a `user`,
+username derived from the email), and issues the usual StreamPulse token pair; the
+`GoogleVerifier` is an injected interface and the route is mounted only when
+`GOOGLE_CLIENT_ID` is set. Migration `000024` makes `password_hash` nullable, reads
+using `COALESCE(password_hash, '')` so Go still gets a `string` and password login
+stays safe (bcrypt fails on the empty hash).
+*Consequence:* Google users have no local password, an existing email/password
+account is reachable through Google by the same email, and the feature is optional
+(the route is absent in dev without a client id); validated end-to-end on the iOS
+simulator.
+
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

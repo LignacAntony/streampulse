@@ -182,7 +182,7 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pair, err := h.googleAuth.LoginWithGoogle(r.Context(), GoogleLoginInput{IDToken: req.IDToken})
+	pair, err := h.googleAuth.LoginWithGoogle(r.Context(), GoogleLoginInput(req))
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return

@@ -1,0 +1,14 @@
+# Configuration Gitleaks — étend les règles par défaut et écarte des faux positifs.
+#
+# `Podfile.lock` ne contient que des checksums de dépendances CocoaPods (SHA-1
+# publics, section SPEC CHECKSUMS) : la règle générique `generic-api-key` les
+# confond avec des clés API. Ce sont des empreintes de paquets open source, jamais
+# des secrets. On écarte donc ce fichier du scan.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Faux positifs connus (lockfiles de dépendances)"
+paths = [
+  '''mobile/ios/Podfile\.lock''',
+]
