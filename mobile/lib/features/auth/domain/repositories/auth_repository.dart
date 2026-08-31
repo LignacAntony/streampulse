@@ -13,6 +13,12 @@ abstract class AuthRepository {
     required String password,
   });
 
+  /// Connexion via Google : ouvre la feuille Google, récupère l'ID token,
+  /// le fait vérifier par le backend et persiste le couple de jetons.
+  /// Première connexion = création automatique du compte côté serveur.
+  /// Lève [GoogleSignInCancelled] si l'utilisateur annule.
+  Future<TokenPair> loginWithGoogle();
+
   /// Révoque le refresh token côté serveur (best-effort) et purge le stockage local.
   /// Ne lève jamais : un échec réseau ne doit pas bloquer la déconnexion locale.
   Future<void> logout();

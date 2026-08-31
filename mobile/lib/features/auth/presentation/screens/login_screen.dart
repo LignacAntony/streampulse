@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/auth/google_auth_service.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../providers/login_controller.dart';
@@ -56,11 +57,26 @@ class _LoginViewState extends State<LoginView> {
     }
   }
 
+  Future<void> _submitGoogle() async {
+    try {
+      await context.read<LoginController>().submitGoogle();
+      if (!mounted) return;
+      showAuthSuccessToast(context, 'Connexion réussie.');
+      context.go('/home');
+    } on GoogleSignInCancelled {
+      // L'utilisateur a fermé la feuille Google : rien à signaler.
+    } catch (error) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _humanReadable(error));
+    }
+  }
+
   String _humanReadable(Object error) {
     if (error is AuthException) return error.message;
     if (error is ValidationException) return error.message;
     if (error is NetworkException) return error.message;
     if (error is ServerException) return error.message;
+    if (error is GoogleSignInFailure) return error.message;
     return 'Erreur inattendue';
   }
 
@@ -85,7 +101,7 @@ class _LoginViewState extends State<LoginView> {
               ),
             ),
             const _DividerWithLabel(label: 'Ou'),
-            OAuthButtons(enabled: !isLoading),
+            OAuthButtons(enabled: !isLoading, onGoogle: _submitGoogle),
             _GuestButton(enabled: !isLoading),
           ],
         );

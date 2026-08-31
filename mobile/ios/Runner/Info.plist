@@ -54,7 +54,8 @@
 		<string>audio</string>
 		<string>fetch</string>
 	</array>
-	<!-- Deep link : streampulse://app/reset-password?token=xxx -->
+	<!-- Deep link : streampulse://app/reset-password?token=xxx
+	     + callback Google Sign-In (schéma = REVERSED_CLIENT_ID du Client iOS). -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -65,7 +66,23 @@
 				<string>streampulse</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- REVERSED_CLIENT_ID du Client iOS OAuth (Schéma d'URL iOS). -->
+				<string>com.googleusercontent.apps.1027794910498-i6la20cjv8h449gid1oasjks7oe6omv6</string>
+			</array>
+		</dict>
 	</array>
+	<!-- Google Sign-In : le plugin lit ces clés depuis Info.plist sur iOS.
+	     GIDClientID       = ID du Client iOS OAuth (…apps.googleusercontent.com)
+	     GIDServerClientID = ID du Client Web OAuth (== GOOGLE_CLIENT_ID backend) -->
+	<key>GIDClientID</key>
+	<string>1027794910498-i6la20cjv8h449gid1oasjks7oe6omv6.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>1027794910498-788nf58iql3n7bb9rbdattj15f09l73q.apps.googleusercontent.com</string>
 	<!-- Autorise le HTTP en clair vers le réseau local (localhost / LAN) en dev :
 	     l'API et le flux HLS tournent sur http://<ip-locale>:8080 sans TLS.
 	     N'ouvre PAS l'HTTP arbitraire vers Internet (NSAllowsArbitraryLoads reste

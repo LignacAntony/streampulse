@@ -30,6 +30,10 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type googleLoginRequest struct {
+	IDToken string `json:"id_token"`
+}
+
 type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
@@ -57,6 +61,10 @@ type Registrar interface {
 
 type Authenticator interface {
 	Login(ctx context.Context, in LoginInput) (TokenPair, error)
+}
+
+type GoogleAuthenticator interface {
+	LoginWithGoogle(ctx context.Context, in GoogleLoginInput) (TokenPair, error)
 }
 
 type TokenRefresher interface {
@@ -87,10 +95,20 @@ type Handler struct {
 	resetter      PasswordResetter
 	executor      PasswordResetExecutor
 	deleter       AccountDeleter
+	// googleAuth est optionnel (injecté en setter) : nil quand la connexion
+	// Google n'est pas configurée. La route /api/auth/google n'est alors pas
+	// montée, mais GoogleLogin garde un garde-fou défensif.
+	googleAuth GoogleAuthenticator
 }
 
 func NewHandler(svc Registrar, authenticator Authenticator, refresher TokenRefresher, logouter Logouter, resetter PasswordResetter, executor PasswordResetExecutor, deleter AccountDeleter) *Handler {
 	return &Handler{svc: svc, authenticator: authenticator, refresher: refresher, logouter: logouter, resetter: resetter, executor: executor, deleter: deleter}
+}
+
+// SetGoogleAuthenticator branche la connexion Google (câblé dans main.go
+// uniquement si GOOGLE_CLIENT_ID est renseigné).
+func (h *Handler) SetGoogleAuthenticator(g GoogleAuthenticator) {
+	h.googleAuth = g
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +156,40 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err := httpjson.Write(w, http.StatusOK, pair); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode login")
+	}
+}
+
+func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		httpjson.WriteError(w, r, httpjson.StatusError(http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"))
+		return
+	}
+
+	if h.googleAuth == nil {
+		httpjson.WriteError(w, r, apperror.Internal("google sign-in not configured", nil))
+		return
+	}
+
+	var req googleLoginRequest
+	if err := httpjson.Decode(w, r, &req, maxLoginBodyBytes); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if req.IDToken == "" {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("id_token required"))
+		return
+	}
+
+	pair, err := h.googleAuth.LoginWithGoogle(r.Context(), GoogleLoginInput{IDToken: req.IDToken})
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	if err := httpjson.Write(w, http.StatusOK, pair); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("auth: encode google login")
 	}
 }
 

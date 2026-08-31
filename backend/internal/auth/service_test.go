@@ -56,6 +56,21 @@ func (f *fakeRepo) CreateUser(_ context.Context, email, username, hash string) (
 	return u, nil
 }
 
+func (f *fakeRepo) CreateOAuthUser(_ context.Context, email, username string) (User, error) {
+	f.createCalls++
+	if _, ok := f.emails[email]; ok {
+		return User{}, apperror.Conflict("email or username already taken")
+	}
+	if _, ok := f.usernames[username]; ok {
+		return User{}, apperror.Conflict("email or username already taken")
+	}
+	u := User{ID: "00000000-0000-0000-0000-000000000002", Email: email, Username: username, Role: "user", CreatedAt: time.Now().UTC()}
+	// Compte OAuth : aucun mot de passe local (hash vide).
+	f.emails[email] = UserWithHash{User: u, PasswordHash: ""}
+	f.usernames[username] = struct{}{}
+	return u, nil
+}
+
 func (f *fakeRepo) GetUserByEmail(_ context.Context, email string) (UserWithHash, error) {
 	uwh, ok := f.emails[email]
 	if !ok {
@@ -638,5 +653,119 @@ func TestService_DeleteAccount_PurgesTracks(t *testing.T) {
 	}
 	if _, ok := repo.emails["self@x.dev"]; ok {
 		t.Error("user should have been deleted")
+	}
+}
+
+// --- Connexion Google (LoginWithGoogle) ---
+
+type fakeGoogleVerifier struct {
+	claims GoogleClaims
+	err    error
+}
+
+func (f fakeGoogleVerifier) Verify(_ context.Context, _ string) (GoogleClaims, error) {
+	return f.claims, f.err
+}
+
+func TestLoginWithGoogle_CreatesNewUser(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	svc.SetGoogleVerifier(fakeGoogleVerifier{claims: GoogleClaims{
+		Sub: "g-123", Email: "New.User@Gmail.com", EmailVerified: true, Name: "New User",
+	}})
+
+	pair, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "tok"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pair.AccessToken == "" || pair.RefreshToken == "" {
+		t.Fatal("tokens should not be empty")
+	}
+	// Email normalisé en minuscules à la création.
+	if _, ok := repo.emails["new.user@gmail.com"]; !ok {
+		t.Fatalf("google user should have been created, got emails=%v", repo.emails)
+	}
+	if repo.createCalls != 1 {
+		t.Errorf("want 1 creation, got %d", repo.createCalls)
+	}
+}
+
+func TestLoginWithGoogle_ExistingUserNotRecreated(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, testSecret, &fakeMailer{})
+	// Compte email/mot de passe déjà présent avec le même email.
+	if _, err := svc.Register(context.Background(), RegisterInput{
+		Email: "bob@example.com", Username: "bob", Password: "hunter2hunter",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := repo.createCalls
+
+	svc.SetGoogleVerifier(fakeGoogleVerifier{claims: GoogleClaims{
+		Sub: "g-9", Email: "bob@example.com", EmailVerified: true, Name: "Bob",
+	}})
+
+	pair, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "tok"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pair.AccessToken == "" {
+		t.Fatal("token should not be empty")
+	}
+	if repo.createCalls != before {
+		t.Errorf("existing user should not be recreated, createCalls went %d -> %d", before, repo.createCalls)
+	}
+}
+
+func TestLoginWithGoogle_UnverifiedEmailRejected(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	svc.SetGoogleVerifier(fakeGoogleVerifier{claims: GoogleClaims{
+		Email: "x@y.dev", EmailVerified: false,
+	}})
+	_, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "tok"})
+	if !apperror.IsCode(err, apperror.CodeUnauthorized) {
+		t.Errorf("want unauthorized, got %v", err)
+	}
+}
+
+func TestLoginWithGoogle_VerifierErrorPropagated(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	svc.SetGoogleVerifier(fakeGoogleVerifier{err: apperror.Unauthorized("invalid google token")})
+	_, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "bad"})
+	if !apperror.IsCode(err, apperror.CodeUnauthorized) {
+		t.Errorf("want unauthorized, got %v", err)
+	}
+}
+
+func TestLoginWithGoogle_EmptyToken(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	svc.SetGoogleVerifier(fakeGoogleVerifier{})
+	_, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "  "})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Errorf("want invalid_argument, got %v", err)
+	}
+}
+
+func TestLoginWithGoogle_NotConfigured(t *testing.T) {
+	svc := NewService(newFakeRepo(), testSecret, &fakeMailer{})
+	// Aucun verifier injecté : la fonctionnalité est désactivée.
+	_, err := svc.LoginWithGoogle(context.Background(), GoogleLoginInput{IDToken: "tok"})
+	if !apperror.IsCode(err, apperror.CodeInternal) {
+		t.Errorf("want internal, got %v", err)
+	}
+}
+
+func TestGoogleUsernameBase(t *testing.T) {
+	cases := []struct {
+		email, name, want string
+	}{
+		{"john.doe@gmail.com", "John Doe", "johndoe"},
+		{"a@b.co", "Alice Wonderland", "AliceWonderland"}, // partie locale trop courte -> nom
+		{"x@y.co", "", "user"},                            // rien d'exploitable -> user
+	}
+	for _, tc := range cases {
+		if got := googleUsernameBase(tc.email, tc.name); got != tc.want {
+			t.Errorf("googleUsernameBase(%q,%q) = %q, want %q", tc.email, tc.name, got, tc.want)
+		}
 	}
 }

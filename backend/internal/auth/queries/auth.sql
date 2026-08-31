@@ -3,8 +3,18 @@ INSERT INTO users (email, username, password_hash)
 VALUES ($1, $2, $3)
 RETURNING id::text, email, username, role, created_at;
 
+-- name: CreateOAuthUser :one
+-- Compte créé par un fournisseur externe (Google) : aucun mot de passe local,
+-- password_hash reste NULL. Même RETURNING que CreateUser.
+INSERT INTO users (email, username, password_hash)
+VALUES ($1, $2, NULL)
+RETURNING id::text, email, username, role, created_at;
+
 -- name: GetUserByEmail :one
-SELECT id::text, email, username, role, created_at, password_hash
+-- COALESCE(password_hash, '') : la colonne est nullable (comptes OAuth), mais
+-- le code Go continue de recevoir une chaîne. bcrypt échoue face au vide → un
+-- compte sans mot de passe ne peut pas être connecté par mot de passe.
+SELECT id::text, email, username, role, created_at, COALESCE(password_hash, '')::text AS password_hash
 FROM users
 WHERE email = $1 AND is_active = true;
 
@@ -27,7 +37,7 @@ DELETE FROM refresh_tokens WHERE token_hash = $1;
 DELETE FROM refresh_tokens WHERE user_id = sqlc.arg(user_id)::uuid;
 
 -- name: GetUserByID :one
-SELECT id::text, email, username, role, created_at, password_hash
+SELECT id::text, email, username, role, created_at, COALESCE(password_hash, '')::text AS password_hash
 FROM users
 WHERE id = sqlc.arg(user_id)::uuid AND is_active = true;
 
