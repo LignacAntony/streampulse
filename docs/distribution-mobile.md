@@ -41,8 +41,16 @@ Sans ce passage, l'application embarquerait son défaut de développement
 
 ## 2. Signature — état actuel
 
-**La clé de release n'existe pas encore.** Tant qu'elle manque, la chaîne
-fonctionne en **mode dégradé** :
+**La clé de release existe et la signature CI est active.** Le keystore a été
+généré (RSA 2048, format PKCS12, alias `streampulse`, validité 10 000 jours) et
+les quatre secrets GitHub sont posés : la workflow CD signe désormais les
+releases avec la clé de release et produit l'APK **et** l'AAB. Le keystore et ses
+mots de passe vivent hors du dépôt (cf. § 3).
+
+### Repli en mode dégradé (sans la clé)
+
+Pour qui ne dispose pas de la clé (un poste sans `key.properties`, un fork sans
+les secrets), la chaîne retombe en **mode dégradé** :
 
 - le build **réussit**, signé avec la clé de debug ;
 - l'APK est suffixé **`-NON-SIGNE`**, et l'AAB n'est pas produit ;
@@ -153,8 +161,9 @@ installée. Sans ce champ, un retour n'est pas rattachable à une version, et
 
 ## 7. Ce qui manque encore
 
-1. **Aucune clé de signature générée** — tout ce qui précède fonctionne en mode
-   dégradé tant que c'est le cas.
+1. ~~Aucune clé de signature générée~~ : **fait** (2026-09-01). Keystore généré
+   et quatre secrets GitHub posés, la CD signe les releases. Le repli en mode
+   dégradé reste disponible pour les postes ou forks sans la clé.
 2. **Aucun magasin.** Les artefacts vivent dans les GitHub Releases. Une piste
    interne Play Store ou Firebase App Distribution demanderait un compte
    développeur Google (25 $ une fois) et n'a pas été ouverte.
