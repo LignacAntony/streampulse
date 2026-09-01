@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/widgets/message_view.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../data/datasources/broadcaster_remote_data_source.dart';
 import '../../data/repositories/admin_broadcaster_repository_impl.dart';
@@ -162,7 +163,7 @@ class _AdminBroadcasterRequestsBodyState
     }
 
     if (controller.error != null && controller.requests.isEmpty) {
-      return _MessageView(
+      return MessageView(
         icon: controller.isNetworkError
             ? Icons.wifi_off_outlined
             : Icons.error_outline,
@@ -174,7 +175,7 @@ class _AdminBroadcasterRequestsBodyState
     }
 
     if (controller.requests.isEmpty) {
-      return const _MessageView(
+      return const MessageView(
         icon: Icons.inbox_outlined,
         message: 'Aucune demande',
       );
@@ -444,42 +445,3 @@ class _ReviewNoteDialogState extends State<_ReviewNoteDialog> {
   }
 }
 
-class _MessageView extends StatelessWidget {
-  const _MessageView({
-    required this.icon,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    final colors = Theme.of(context).colorScheme;
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.15),
-        Icon(icon, size: 64, color: colors.onSurfaceVariant),
-        const SizedBox(height: 16),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: text.titleMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
-        if (actionLabel != null && onAction != null) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: FilledButton(onPressed: onAction, child: Text(actionLabel!)),
-          ),
-        ],
-      ],
-    );
-  }
-}

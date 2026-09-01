@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
+import '../../../../core/widgets/message_view.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../tracks/data/datasources/track_remote_data_source.dart';
 import '../../../tracks/data/repositories/track_repository_impl.dart';
@@ -282,7 +283,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
 
     // Invité : pas de playlists, invitation à se connecter.
     if (_isAuthenticated == false) {
-      return _MessageView(
+      return MessageView(
         key: const Key('playlists_guest_view'),
         icon: Icons.lock_outline,
         message: 'Connecte-toi pour créer et gérer tes playlists',
@@ -296,7 +297,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     }
 
     if (controller.error != null && controller.playlists.isEmpty) {
-      return _MessageView(
+      return MessageView(
         icon: controller.isNetworkError
             ? Icons.wifi_off_outlined
             : Icons.error_outline,
@@ -310,7 +311,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     if (controller.playlists.isEmpty &&
         controller.tracks.isEmpty &&
         !recommendations.hasItems) {
-      return const _MessageView(
+      return const MessageView(
         icon: Icons.library_music_outlined,
         message: 'Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste',
       );
@@ -903,47 +904,6 @@ class _OfflineBanner extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _MessageView extends StatelessWidget {
-  const _MessageView({
-    super.key,
-    required this.icon,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    final colors = Theme.of(context).colorScheme;
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.15),
-        Icon(icon, size: 64, color: colors.onSurfaceVariant),
-        const SizedBox(height: 16),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: text.titleMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
-        if (actionLabel != null && onAction != null) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: FilledButton(onPressed: onAction, child: Text(actionLabel!)),
-          ),
-        ],
-      ],
     );
   }
 }
