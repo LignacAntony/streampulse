@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
+import '../../../../core/widgets/message_view.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../tracks/data/datasources/track_remote_data_source.dart';
 import '../../../tracks/data/repositories/track_repository_impl.dart';
@@ -65,10 +66,20 @@ class PlaylistsScreen extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<PlaylistsController>(
           create: (ctx) {
+            // Repli hors ligne : les playlists téléchargées, servies quand la
+            // liste réseau échoue (mode avion). Passe par le contrôleur hors
+            // ligne app-level (toujours fourni, y compris en test) plutôt que
+            // par le cache directement.
+            final offlineFallback =
+                ctx.read<OfflinePlaylistController>().offlinePlaylists;
             final playlistRepo = repository;
             final trackRepo = trackRepository;
             if (playlistRepo != null && trackRepo != null) {
-              return PlaylistsController(playlistRepo, trackRepo);
+              return PlaylistsController(
+                playlistRepo,
+                trackRepo,
+                offlineFallback: offlineFallback,
+              );
             }
             final dio = ctx.read<DioClient>();
             return PlaylistsController(
@@ -78,6 +89,7 @@ class PlaylistsScreen extends StatelessWidget {
                   ),
               trackRepo ??
                   TrackRepositoryImpl(TrackRemoteDataSource(dio.trackApi)),
+              offlineFallback: offlineFallback,
             );
           },
         ),
@@ -271,7 +283,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
 
     // Invité : pas de playlists, invitation à se connecter.
     if (_isAuthenticated == false) {
-      return _MessageView(
+      return MessageView(
         key: const Key('playlists_guest_view'),
         icon: Icons.lock_outline,
         message: 'Connecte-toi pour créer et gérer tes playlists',
@@ -285,7 +297,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     }
 
     if (controller.error != null && controller.playlists.isEmpty) {
-      return _MessageView(
+      return MessageView(
         icon: controller.isNetworkError
             ? Icons.wifi_off_outlined
             : Icons.error_outline,
@@ -299,7 +311,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     if (controller.playlists.isEmpty &&
         controller.tracks.isEmpty &&
         !recommendations.hasItems) {
-      return const _MessageView(
+      return const MessageView(
         icon: Icons.library_music_outlined,
         message: 'Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste',
       );
@@ -315,15 +327,22 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
     final recommendations = context.watch<RecommendationsController>();
+    final offline = controller.isOfflineFallback;
 
     return ListView(
       key: const Key('library_list'),
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
+        // Bandeau hors ligne : la liste affichée vient du cache, seules les
+        // playlists téléchargées sont là et les actions réseau sont masquées.
+        if (offline) ...[
+          const _OfflineBanner(),
+          const SizedBox(height: 16),
+        ],
         // « Pour toi » (US-09-04) : masquée tant qu'il n'y a rien à proposer —
-        // une section vide n'apprend rien à l'auditeur.
-        if (recommendations.hasItems) ...[
+        // une section vide n'apprend rien à l'auditeur. Jamais hors ligne.
+        if (!offline && recommendations.hasItems) ...[
           Text('Pour toi',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
@@ -365,37 +384,45 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
                 onRename: _onRename,
                 onDelete: _onDelete,
                 onOpen: _onOpen,
+                // Hors ligne : renommer/supprimer exigent le réseau — on masque
+                // le menu, le compteur de pistes et on garde l'ouverture (le
+                // détail sait se replier sur le cache).
+                offline: offline,
               );
             },
           ),
           const SizedBox(height: 28),
         ],
-        Text('Mes pistes',
-            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 8),
-        if (controller.tracks.isEmpty)
-          Padding(
-            key: const Key('tracks_empty'),
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              'Aucune piste — utilise l\'icône d\'upload en haut',
-              textAlign: TextAlign.center,
-              style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-            ),
-          )
-        else
-          for (var i = 0; i < controller.tracks.length; i++)
-            _TrackTile(
-              track: controller.tracks[i],
-              // Toute la bibliothèque part en file, à partir de la piste
-              // touchée : une file d'un seul élément rendrait précédent,
-              // suivant, aléatoire et répétition sans objet (STR-231).
-              onPlay: () => context.read<PlaylistQueueController>().play(
-                    tracks: controller.tracks,
-                    sourceName: 'Ma bibliothèque',
-                    startIndex: i,
-                  ),
-            ),
+        // « Mes pistes » vit derrière le réseau : masquée en mode hors ligne.
+        if (!offline) ...[
+          Text('Mes pistes',
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          if (controller.tracks.isEmpty)
+            Padding(
+              key: const Key('tracks_empty'),
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'Aucune piste — utilise l\'icône d\'upload en haut',
+                textAlign: TextAlign.center,
+                style:
+                    text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            )
+          else
+            for (var i = 0; i < controller.tracks.length; i++)
+              _TrackTile(
+                track: controller.tracks[i],
+                // Toute la bibliothèque part en file, à partir de la piste
+                // touchée : une file d'un seul élément rendrait précédent,
+                // suivant, aléatoire et répétition sans objet (STR-231).
+                onPlay: () => context.read<PlaylistQueueController>().play(
+                      tracks: controller.tracks,
+                      sourceName: 'Ma bibliothèque',
+                      startIndex: i,
+                    ),
+              ),
+        ],
       ],
     );
   }
@@ -659,6 +686,7 @@ class _PlaylistCard extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onOpen,
+    this.offline = false,
   });
 
   final Playlist playlist;
@@ -666,6 +694,10 @@ class _PlaylistCard extends StatelessWidget {
   final ValueChanged<Playlist> onRename;
   final ValueChanged<Playlist> onDelete;
   final ValueChanged<Playlist> onOpen;
+
+  /// Carte issue du cache hors ligne : le menu (renommer/supprimer, réseau) et
+  /// le compteur de pistes venu du serveur sont masqués.
+  final bool offline;
 
   @override
   Widget build(BuildContext context) {
@@ -712,15 +744,16 @@ class _PlaylistCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: _CardMenu(
-                    playlist: playlist,
-                    onRename: onRename,
-                    onDelete: onDelete,
+                if (!offline)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: _CardMenu(
+                      playlist: playlist,
+                      onRename: onRename,
+                      onDelete: onDelete,
+                    ),
                   ),
-                ),
                 _OfflineBadge(playlistId: playlist.id),
               ],
             ),
@@ -842,43 +875,35 @@ class _CardMenu extends StatelessWidget {
 
 enum _PlaylistAction { rename, delete }
 
-class _MessageView extends StatelessWidget {
-  const _MessageView({
-    super.key,
-    required this.icon,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
+/// Bandeau affiché quand la Bibliothèque est servie depuis le cache (mode
+/// avion) : seules les playlists téléchargées sont disponibles.
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
 
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.15),
-        Icon(icon, size: 64, color: colors.onSurfaceVariant),
-        const SizedBox(height: 16),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: text.titleMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
-        if (actionLabel != null && onAction != null) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+    return Container(
+      key: const Key('library_offline_banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.wifi_off_outlined, size: 20, color: colors.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Mode hors ligne — seules tes playlists téléchargées sont disponibles',
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
           ),
         ],
-      ],
+      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:streampulse/core/offline/entities/cached_track_status.dart';
+import 'package:streampulse/core/offline/entities/offline_playlist_summary.dart';
 import 'package:streampulse/core/offline/offline_cache_repository.dart';
 import 'package:streampulse/core/offline/track_download_service.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
@@ -8,6 +9,8 @@ import 'package:streampulse/features/playlists/presentation/providers/offline_pl
 class _NoopCacheRepository implements OfflineCacheRepository {
   @override
   Future<Set<String>> offlinePlaylistIds() async => {};
+  @override
+  Future<List<OfflinePlaylistSummary>> offlinePlaylists() async => [];
   @override
   Future<bool> isOffline(String playlistId) async => false;
   @override

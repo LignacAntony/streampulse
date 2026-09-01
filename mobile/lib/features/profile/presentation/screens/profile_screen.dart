@@ -14,6 +14,7 @@ import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/screens/banned_users_screen.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
+import '../../../broadcaster/presentation/screens/admin_broadcaster_requests_screen.dart';
 import '../../../playlists/presentation/providers/offline_playlist_controller.dart';
 import '../../../streams/presentation/providers/favorites_controller.dart';
 import '../../domain/entities/user_profile.dart';
@@ -378,10 +379,11 @@ class _BroadcasterCard extends StatelessWidget {
 }
 
 /// Tuiles visibles uniquement pour un profil `role == 'admin'` (cf.
-/// `_buildBody`). Deux entrées de navigation séparées par un `Divider`,
-/// chacune ouverte par `Navigator.push` (écrans hors go_router, pas de route
-/// nommée, accessibles uniquement depuis cette carte) : gestion des comptes
-/// utilisateurs (US-08-01) et supervision des flux en direct (US-08-02).
+/// `_buildBody`). Entrées de navigation séparées par un `Divider`, chacune
+/// ouverte par `Navigator.push` (écrans hors go_router, pas de route nommée,
+/// accessibles uniquement depuis cette carte) : gestion des comptes
+/// utilisateurs (US-08-01), supervision des flux en direct (US-08-02),
+/// demandes de rôle diffuseur et bans globaux du chat.
 class _AdminCard extends StatelessWidget {
   const _AdminCard();
 
@@ -400,6 +402,14 @@ class _AdminCard extends StatelessWidget {
   void _openGlobalBans(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const AdminGlobalBansScreen()),
+    );
+  }
+
+  void _openBroadcasterRequests(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const AdminBroadcasterRequestsScreen(),
+      ),
     );
   }
 
@@ -424,6 +434,14 @@ class _AdminCard extends StatelessWidget {
             title: const Text('Supervision des flux'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openStreams(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            key: const Key('profile_admin_broadcaster_requests_tile'),
+            leading: Icon(Icons.record_voice_over, color: colors.primary),
+            title: const Text('Demandes de diffuseur'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _openBroadcasterRequests(context),
           ),
           const Divider(height: 1),
           ListTile(

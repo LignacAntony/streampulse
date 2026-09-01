@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
+import 'package:streampulse/core/offline/entities/offline_playlist_summary.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist.dart';
 import 'package:streampulse/features/playlists/domain/entities/playlist_track.dart';
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
@@ -133,6 +134,66 @@ void main() {
       expect(controller.error, isNotNull);
       expect(controller.isNetworkError, isTrue);
       expect(controller.playlists, isEmpty);
+    });
+  });
+
+  group('PlaylistsController repli hors ligne', () {
+    test('réseau KO + playlists téléchargées : affiche le cache, pas d\'erreur',
+        () async {
+      final repo = _FakePlaylistRepository()..listError = const NetworkException();
+      final controller = PlaylistsController(
+        repo,
+        _FakeTrackRepository(),
+        offlineFallback: () async => const [
+          OfflinePlaylistSummary(id: 'p-1', name: 'Road Trip', trackCount: 4),
+        ],
+      );
+
+      await controller.load();
+
+      expect(controller.isOfflineFallback, isTrue);
+      expect(controller.error, isNull);
+      expect(controller.playlists.single.id, 'p-1');
+      expect(controller.playlists.single.name, 'Road Trip');
+      expect(controller.playlists.single.trackCount, 4);
+      expect(controller.tracks, isEmpty);
+    });
+
+    test('réseau KO + aucune playlist téléchargée : retombe sur l\'erreur',
+        () async {
+      final repo = _FakePlaylistRepository()..listError = const NetworkException();
+      final controller = PlaylistsController(
+        repo,
+        _FakeTrackRepository(),
+        offlineFallback: () async => const [],
+      );
+
+      await controller.load();
+
+      expect(controller.isOfflineFallback, isFalse);
+      expect(controller.error, isNotNull);
+      expect(controller.isNetworkError, isTrue);
+    });
+
+    test('retour du réseau : quitte le mode hors ligne', () async {
+      final repo = _FakePlaylistRepository()..listError = const NetworkException();
+      final controller = PlaylistsController(
+        repo,
+        _FakeTrackRepository(),
+        offlineFallback: () async => const [
+          OfflinePlaylistSummary(id: 'p-1', name: 'Road Trip', trackCount: 4),
+        ],
+      );
+      await controller.load();
+      expect(controller.isOfflineFallback, isTrue);
+
+      repo
+        ..listError = null
+        ..playlists = [_playlist('p-2', 'Chill', trackCount: 2)];
+      await controller.load();
+
+      expect(controller.isOfflineFallback, isFalse);
+      expect(controller.playlists.single.id, 'p-2');
     });
   });
 

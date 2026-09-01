@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/offline/entities/cached_track_status.dart';
+import '../../../../core/offline/entities/offline_playlist_summary.dart';
 import '../../../../core/offline/offline_cache_repository.dart';
 import '../../../../core/offline/track_download_service.dart';
 import '../../domain/entities/playlist_track.dart';
@@ -178,6 +179,11 @@ class OfflinePlaylistController extends ChangeNotifier {
   }
 
   Future<int> totalCacheSize() => _cacheRepository.totalCacheSize();
+
+  /// Playlists téléchargées (id, nom, nombre de pistes) : source du repli hors
+  /// ligne de la Bibliothèque quand la liste réseau échoue. Délègue au cache.
+  Future<List<OfflinePlaylistSummary>> offlinePlaylists() =>
+      _cacheRepository.offlinePlaylists();
 
   Future<void> clearCache() async {
     for (final id in _offlineIds) {
