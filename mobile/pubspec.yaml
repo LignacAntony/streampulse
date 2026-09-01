@@ -95,6 +95,25 @@ dev_dependencies:
   # entre le client généré et AuthRemoteDataSource.
   http_mock_adapter: ^0.6.1
 
+  # Génération des icônes de lancement (Android mipmaps + adaptive, iOS AppIcon)
+  # depuis un master unique. Régénérer après modif de assets/icon/ :
+  #   dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.3
+
+# Configuration des icônes de lancement (StreamPulse, motif égaliseur).
+# Master : assets/icon/app_icon.png (dégradé violet->teal de la marque + barres).
+# Android adaptatif : fond dégradé + barres réduites dans la zone sûre.
+# Ces PNG ne sont PAS dans `flutter/assets:` : ils servent uniquement à la
+# génération des icônes, pas au bundle applicatif.
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "assets/icon/app_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  min_sdk_android: 21
+
 flutter:
   uses-material-design: true
 
