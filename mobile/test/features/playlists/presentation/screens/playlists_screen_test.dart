@@ -12,6 +12,9 @@ import 'package:streampulse/features/tracks/domain/repositories/track_repository
 import 'package:streampulse/features/recommendations/domain/entities/recommended_track.dart';
 import 'package:streampulse/features/recommendations/domain/repositories/recommendation_repository.dart';
 
+import 'package:streampulse/core/errors/exceptions.dart';
+import 'package:streampulse/core/offline/entities/offline_playlist_summary.dart';
+
 import '../../../../support/fake_offline_playlist_controller.dart';
 import '../../../../support/fake_queue_playback_service.dart';
 import 'package:streampulse/features/playlists/presentation/providers/offline_playlist_controller.dart';
@@ -36,13 +39,17 @@ class _FakePlaylistRepository implements PlaylistRepository {
   Object? createError;
   Object? deleteError;
   Object? renameError;
+  Object? listError;
 
   int createCalls = 0;
   int renameCalls = 0;
   int deleteCalls = 0;
 
   @override
-  Future<List<Playlist>> list() async => playlists;
+  Future<List<Playlist>> list() async {
+    if (listError != null) throw listError!;
+    return playlists;
+  }
 
   @override
   Future<Playlist> create(String name, String? description) async {
@@ -124,11 +131,27 @@ class _FakeRecommendationRepository implements RecommendationRepository {
   Future<List<RecommendedTrack>> fetch() async => items;
 }
 
+/// Contrôleur hors ligne dont le cache expose des playlists téléchargées :
+/// alimente le repli hors ligne de la Bibliothèque.
+class _OfflineFakeController extends FakeOfflinePlaylistController {
+  _OfflineFakeController(this._summaries);
+
+  final List<OfflinePlaylistSummary> _summaries;
+
+  @override
+  Future<List<OfflinePlaylistSummary>> offlinePlaylists() async => _summaries;
+
+  @override
+  bool isOffline(String playlistId) =>
+      _summaries.any((s) => s.id == playlistId);
+}
+
 Widget _harness(
   PlaylistRepository repository, {
   bool isAuthenticated = true,
   PlaylistQueueController? queue,
   RecommendationRepository? recommendations,
+  OfflinePlaylistController? offline,
 }) {
   // L'écran lit la file d'attente app-level (STR-231) : lancer une piste de la
   // bibliothèque et souligner celle en cours passent par elle.
@@ -138,7 +161,7 @@ Widget _harness(
         value: queue ?? _queueController(FakeQueuePlaybackService()),
       ),
       ChangeNotifierProvider<OfflinePlaylistController>.value(
-        value: FakeOfflinePlaylistController(),
+        value: offline ?? FakeOfflinePlaylistController(),
       ),
     ],
     child: ToastificationWrapper(
@@ -454,6 +477,40 @@ void main() {
         find.text('Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste'),
         findsNothing,
       );
+    });
+
+    testWidgets(
+        'réseau KO + playlist téléchargée : bandeau hors ligne + carte, pas d\'erreur',
+        (tester) async {
+      final repo = _FakePlaylistRepository()..listError = const NetworkException();
+      final offline = _OfflineFakeController(const [
+        OfflinePlaylistSummary(id: 'p-1', name: 'Road Trip', trackCount: 4),
+      ]);
+
+      await tester.pumpWidget(_harness(repo, offline: offline));
+      await tester.pumpAndSettle();
+
+      // Pas d'erreur plein écran : la playlist téléchargée est visible.
+      expect(find.byKey(const Key('library_offline_banner')), findsOneWidget);
+      expect(find.byKey(const Key('playlist_card_p-1')), findsOneWidget);
+      expect(find.text('Road Trip'), findsOneWidget);
+      expect(find.text('Pas de connexion réseau'), findsNothing);
+      // Le menu réseau (renommer/supprimer) est masqué hors ligne.
+      expect(find.byKey(const Key('playlist_menu_p-1')), findsNothing);
+      // « Mes pistes » (réseau) n'est pas rendue hors ligne.
+      expect(find.text('Mes pistes'), findsNothing);
+    });
+
+    testWidgets(
+        'réseau KO + aucune playlist téléchargée : erreur plein écran',
+        (tester) async {
+      final repo = _FakePlaylistRepository()..listError = const NetworkException();
+
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pas de connexion réseau'), findsOneWidget);
+      expect(find.byKey(const Key('library_offline_banner')), findsNothing);
     });
   });
 }

@@ -121,6 +121,37 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/auth/google:
+    post:
+      tags:
+        - Auth
+      operationId: googleLogin
+      summary: Authenticate with a Google ID token and issue tokens.
+      description: >
+        Verifies the Google ID token, finds or creates the matching account
+        (first sign-in creates a user with role `user`), and issues the usual
+        StreamPulse token pair. Mounted only when GOOGLE_CLIENT_ID is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleLoginRequest"
+      responses:
+        "200":
+          description: Token pair issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPairResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/auth/refresh:
     post:
       tags:
@@ -2301,6 +2332,15 @@ components:
           type: string
           format: password
           example: hunter2hunter
+    GoogleLoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - id_token
+      properties:
+        id_token:
+          type: string
+          description: Google ID token (JWT) obtained on the device via Sign in with Google.
     RefreshRequest:
       type: object
       additionalProperties: false

@@ -27,7 +27,7 @@ func (r *pgRepository) CreateUser(ctx context.Context, email, username, password
 	row, err := r.q.CreateUser(ctx, authdb.CreateUserParams{
 		Email:        email,
 		Username:     username,
-		PasswordHash: passwordHash,
+		PasswordHash: pgtype.Text{String: passwordHash, Valid: true},
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -42,6 +42,34 @@ func (r *pgRepository) CreateUser(ctx context.Context, email, username, password
 		Role:      row.Role,
 		CreatedAt: row.CreatedAt,
 	}, nil
+}
+
+func (r *pgRepository) CreateOAuthUser(ctx context.Context, email, username string) (User, error) {
+	row, err := r.q.CreateOAuthUser(ctx, authdb.CreateOAuthUserParams{
+		Email:    email,
+		Username: username,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return User{}, apperror.Conflict("email or username already taken")
+		}
+		return User{}, fmt.Errorf("repo: insert oauth user: %w", err)
+	}
+	return User{
+		ID:        row.ID,
+		Email:     row.Email,
+		Username:  row.Username,
+		Role:      row.Role,
+		CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+func (r *pgRepository) IsEmailRegistered(ctx context.Context, email string) (bool, error) {
+	exists, err := r.q.EmailExists(ctx, email)
+	if err != nil {
+		return false, fmt.Errorf("repo: email exists: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *pgRepository) GetUserByEmail(ctx context.Context, email string) (UserWithHash, error) {
@@ -205,7 +233,7 @@ func (r *pgRepository) ResetPassword(ctx context.Context, tokenHash, passwordHas
 	}
 
 	if err := qtx.UpdateUserPasswordHash(ctx, authdb.UpdateUserPasswordHashParams{
-		PasswordHash: passwordHash,
+		PasswordHash: pgtype.Text{String: passwordHash, Valid: true},
 		ID:           uuidParam(userID),
 	}); err != nil {
 		return fmt.Errorf("repo: update user password: %w", err)

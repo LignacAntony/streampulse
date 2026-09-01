@@ -39,6 +39,9 @@ class _FakeAuthRepository implements AuthRepository {
       throw UnimplementedError();
 
   @override
+  Future<TokenPair> loginWithGoogle() async => throw UnimplementedError();
+
+  @override
   Future<void> logout() async {}
 
   @override

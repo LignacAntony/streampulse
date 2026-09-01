@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../features/playlists/domain/entities/playlist_track.dart';
 import 'entities/cached_track_status.dart';
+import 'entities/offline_playlist_summary.dart';
 import 'offline_cache_repository.dart';
 import 'offline_database.dart';
 
@@ -27,6 +28,29 @@ class OfflineCacheRepositoryImpl implements OfflineCacheRepository {
     final db = await _database.database;
     final rows = await db.query('offline_playlists', columns: ['playlist_id']);
     return rows.map((r) => r['playlist_id'] as String).toSet();
+  }
+
+  @override
+  Future<List<OfflinePlaylistSummary>> offlinePlaylists() async {
+    final db = await _database.database;
+    // Nombre de pistes par playlist via LEFT JOIN : une playlist téléchargée
+    // vide (cas limite) reste listée avec un compteur à 0.
+    final rows = await db.rawQuery('''
+      SELECT p.playlist_id AS id,
+             p.name        AS name,
+             COUNT(t.track_id) AS track_count
+      FROM offline_playlists p
+      LEFT JOIN cached_tracks t ON t.playlist_id = p.playlist_id
+      GROUP BY p.playlist_id, p.name, p.enabled_at
+      ORDER BY p.enabled_at DESC
+    ''');
+    return rows
+        .map((r) => OfflinePlaylistSummary(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              trackCount: (r['track_count'] as int?) ?? 0,
+            ))
+        .toList();
   }
 
   @override

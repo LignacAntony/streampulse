@@ -151,6 +151,7 @@ class DioClient {
   bool _isAuthEndpoint(String path) {
     return path.endsWith(ApiConstants.refresh) ||
         path.endsWith(ApiConstants.login) ||
+        path.endsWith(ApiConstants.googleLogin) ||
         path.endsWith(ApiConstants.logout) ||
         path.endsWith(ApiConstants.register);
   }

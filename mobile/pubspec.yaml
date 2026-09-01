@@ -32,6 +32,10 @@ dependencies:
   # Stockage sécurisé (tokens JWT)
   flutter_secure_storage: ^10.3.1
 
+  # Connexion Google (« Sign in with Google ») : récupère un ID token Google
+  # côté appareil, vérifié ensuite par le backend (/api/auth/google).
+  google_sign_in: ^6.2.1
+
   # Préférences non sensibles — niveau sonore du lecteur (STR-244).
   # Séparé de flutter_secure_storage à dessein : celui-ci n'a qu'une
   # responsabilité, les jetons, et un volume n'est pas un secret.

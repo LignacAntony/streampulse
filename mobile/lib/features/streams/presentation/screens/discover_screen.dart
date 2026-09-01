@@ -9,7 +9,7 @@ import '../../../playlists/presentation/providers/playlist_queue_controller.dart
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../tracks/domain/entities/public_track.dart';
 import '../providers/discover_notifier.dart';
-import '../widgets/message_view.dart';
+import '../../../../core/widgets/message_view.dart';
 import '../widgets/stream_tile.dart';
 
 class DiscoverScreen extends StatefulWidget {

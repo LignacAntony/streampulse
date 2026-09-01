@@ -31,4 +31,17 @@ class LoginController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Lance la connexion Google. Renvoie le [TokenPair] en cas de succès, laisse
+  /// remonter l'exception (annulation ou échec) à l'écran.
+  Future<TokenPair> submitGoogle() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      return await _repository.loginWithGoogle();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }

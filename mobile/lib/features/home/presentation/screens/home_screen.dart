@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../streams/domain/entities/live_stream.dart';
 import '../../../streams/presentation/providers/favorites_controller.dart';
 import '../../../streams/presentation/providers/stream_notifier.dart';
-import '../../../streams/presentation/widgets/message_view.dart';
+import '../../../../core/widgets/message_view.dart';
 import '../../../streams/presentation/widgets/stream_tile.dart';
 
 class HomeScreen extends StatefulWidget {

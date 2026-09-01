@@ -22,7 +22,7 @@ void main() {
   setUp(() {
     dio = Dio(BaseOptions(baseUrl: 'https://api.test'));
     adapter = DioAdapter(dio: dio);
-    dataSource = AuthRemoteDataSource(AuthApi(dio));
+    dataSource = AuthRemoteDataSource(AuthApi(dio), dio);
   });
 
   group('register', () {
