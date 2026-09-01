@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.0](https://github.com/LignacAntony/streampulse/compare/v1.4.0...v1.5.0) (2026-09-01)
+
+
+### Features
+
+* add admin broadcaster requests screen and related functionality ([#374](https://github.com/LignacAntony/streampulse/issues/374)) ([d76a726](https://github.com/LignacAntony/streampulse/commit/d76a726a3d6056e14e1114a0a864ba97a7da4894))
+* **auth:** ajouter la connexion Google OAuth ([3751433](https://github.com/LignacAntony/streampulse/commit/3751433a200d99664d29c3ca3c90200f7d4ca6d5))
+* **auth:** connexion via Google (OAuth) ([78b34e2](https://github.com/LignacAntony/streampulse/commit/78b34e2e5e97d14fceecda918dd8c1bf65e6e89b))
+* **auth:** gérer les comptes Google désactivés et améliorer la déconnexion ([b756745](https://github.com/LignacAntony/streampulse/commit/b75674572d1d7fac547783a0a057fd3c1b30a1fd))
+
+
+### Bug Fixes
+
+* **ci:** fiabiliser le build Android avec cache Gradle et retry ([c797b48](https://github.com/LignacAntony/streampulse/commit/c797b48b9e9621c8d1a83ec00f1dc2750418fa35))
+* **ci:** fiabiliser le build Android avec cache Gradle et retry ([3f10d60](https://github.com/LignacAntony/streampulse/commit/3f10d60a1dba12b8360e82040000c736ad7223e8))
+* **ci:** lint Go, index ADR anglais et faux positif gitleaks ([1dd8b7e](https://github.com/LignacAntony/streampulse/commit/1dd8b7e880a9ec3f1d229fd5e2113376ea71d5c4))
+
 ## [1.4.0](https://github.com/LignacAntony/streampulse/compare/v1.3.2...v1.4.0) (2026-08-30)
 
 
