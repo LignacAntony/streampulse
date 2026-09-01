@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
@@ -24,41 +26,38 @@ AdminBroadcasterRequest _request(
 
 class _FakeRepo implements AdminBroadcasterRepository {
   List<AdminBroadcasterRequest> requests = const [];
-  String? lastStatusFilter;
+  BroadcasterRequestStatus? lastStatusFilter;
   Object? approveError;
+
+  /// Si posé, `approve` attend ce completer : permet de tester la garde
+  /// anti-double-envoi pendant qu'un appel est en vol.
+  Completer<void>? approveGate;
 
   int listCalls = 0;
   int approveCalls = 0;
   int rejectCalls = 0;
 
   @override
-  Future<List<AdminBroadcasterRequest>> list({String? status}) async {
+  Future<List<AdminBroadcasterRequest>> list({
+    BroadcasterRequestStatus? status,
+  }) async {
     listCalls++;
     lastStatusFilter = status;
     return requests
-        .where((r) => status == null || r.status.name == status)
+        .where((r) => status == null || r.status == status)
         .toList();
   }
 
   @override
   Future<void> approve(String id, {String? note}) async {
     approveCalls++;
+    if (approveGate != null) await approveGate!.future;
     if (approveError != null) throw approveError!;
-    requests = requests
-        .map((r) => r.id == id
-            ? _request(id, status: BroadcasterRequestStatus.approved)
-            : r)
-        .toList();
   }
 
   @override
   Future<void> reject(String id, {String? note}) async {
     rejectCalls++;
-    requests = requests
-        .map((r) => r.id == id
-            ? _request(id, status: BroadcasterRequestStatus.rejected)
-            : r)
-        .toList();
   }
 }
 
@@ -74,15 +73,14 @@ void main() {
 
       await provider.load();
 
-      expect(repo.lastStatusFilter, 'pending');
+      expect(repo.lastStatusFilter, BroadcasterRequestStatus.pending);
       expect(provider.requests, hasLength(1));
       expect(provider.requests.single.id, 'a');
       expect(provider.error, isNull);
     });
 
     test('erreur réseau : error + isNetworkError', () async {
-      final repo = _FakeRepo();
-      final provider = AdminBroadcasterRequestsProvider(_ThrowingRepo(repo));
+      final provider = AdminBroadcasterRequestsProvider(_ThrowingRepo());
 
       await provider.load();
 
@@ -90,7 +88,7 @@ void main() {
       expect(provider.isNetworkError, isTrue);
     });
 
-    test('approve puis recharge : la demande traitée quitte le filtre pending',
+    test('approve : MAJ locale, pas de rechargement réseau (filtre pending)',
         () async {
       final repo = _FakeRepo()..requests = [_request('a')];
       final provider = AdminBroadcasterRequestsProvider(repo);
@@ -99,11 +97,24 @@ void main() {
       await provider.approve(provider.requests.single);
 
       expect(repo.approveCalls, 1);
-      expect(repo.listCalls, 2); // load initial + reload après mutation
-      expect(provider.requests, isEmpty); // approuvée, hors filtre pending
+      expect(repo.listCalls, 1); // aucun reload : MAJ locale uniquement
+      expect(provider.requests, isEmpty); // approuvée → hors filtre pending
     });
 
-    test('approve en conflit : relaie l\'exception mais recharge quand même',
+    test('approve : sous filtre « Toutes », la carte reste avec le nouveau statut',
+        () async {
+      final repo = _FakeRepo()..requests = [_request('a')];
+      final provider = AdminBroadcasterRequestsProvider(repo);
+      await provider.setStatusFilter(null); // Toutes
+
+      await provider.approve(provider.requests.single);
+
+      expect(provider.requests, hasLength(1));
+      expect(provider.requests.single.status,
+          BroadcasterRequestStatus.approved);
+    });
+
+    test('approve en échec : relaie l\'exception, liste inchangée, pas de reload',
         () async {
       final repo = _FakeRepo()
         ..requests = [_request('a')]
@@ -115,38 +126,58 @@ void main() {
         provider.approve(provider.requests.single),
         throwsA(isA<ConflictException>()),
       );
-      expect(repo.listCalls, 2); // le finally recharge malgré l'échec
+      expect(repo.listCalls, 1); // pas de reload trompeur
+      expect(provider.requests, hasLength(1)); // carte conservée
+      expect(provider.isMutating('a'), isFalse); // libéré même sur échec
     });
 
-    test('setStatusFilter change le filtre et recharge', () async {
+    test('garde anti-double-envoi : 2e approve pendant le 1er en vol = no-op',
+        () async {
+      final gate = Completer<void>();
+      final repo = _FakeRepo()
+        ..requests = [_request('a')]
+        ..approveGate = gate;
+      final provider = AdminBroadcasterRequestsProvider(repo);
+      await provider.load();
+      final request = provider.requests.single;
+
+      final first = provider.approve(request); // en vol (bloqué sur le gate)
+      expect(provider.isMutating('a'), isTrue);
+      await provider.approve(request); // doit être ignoré immédiatement
+      expect(repo.approveCalls, 1); // un seul POST
+
+      gate.complete();
+      await first;
+      expect(repo.approveCalls, 1);
+      expect(provider.isMutating('a'), isFalse);
+    });
+
+    test('setStatusFilter change le filtre (enum) et recharge', () async {
       final repo = _FakeRepo()
         ..requests = [_request('b', status: BroadcasterRequestStatus.approved)];
       final provider = AdminBroadcasterRequestsProvider(repo);
       await provider.load();
 
-      await provider.setStatusFilter('approved');
+      await provider.setStatusFilter(BroadcasterRequestStatus.approved);
 
-      expect(provider.statusFilter, 'approved');
-      expect(repo.lastStatusFilter, 'approved');
+      expect(provider.statusFilter, BroadcasterRequestStatus.approved);
+      expect(repo.lastStatusFilter, BroadcasterRequestStatus.approved);
       expect(provider.requests.single.id, 'b');
     });
   });
 }
 
-/// Enrobe le fake pour faire échouer `list` en réseau.
+/// Fait échouer `list` en réseau (mutations non sollicitées ici).
 class _ThrowingRepo implements AdminBroadcasterRepository {
-  _ThrowingRepo(this._inner);
-  final AdminBroadcasterRepository _inner;
-
   @override
-  Future<List<AdminBroadcasterRequest>> list({String? status}) async =>
+  Future<List<AdminBroadcasterRequest>> list({
+    BroadcasterRequestStatus? status,
+  }) async =>
       throw const NetworkException();
 
   @override
-  Future<void> approve(String id, {String? note}) =>
-      _inner.approve(id, note: note);
+  Future<void> approve(String id, {String? note}) async {}
 
   @override
-  Future<void> reject(String id, {String? note}) =>
-      _inner.reject(id, note: note);
+  Future<void> reject(String id, {String? note}) async {}
 }

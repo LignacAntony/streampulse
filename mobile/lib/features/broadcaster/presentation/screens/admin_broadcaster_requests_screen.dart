@@ -48,10 +48,11 @@ class _AdminBroadcasterRequestsBody extends StatefulWidget {
 
 class _AdminBroadcasterRequestsBodyState
     extends State<_AdminBroadcasterRequestsBody> {
-  static const _filters = <({String? value, String label})>[
-    (value: 'pending', label: 'En attente'),
-    (value: 'approved', label: 'Approuvées'),
-    (value: 'rejected', label: 'Refusées'),
+  static const _filters =
+      <({BroadcasterRequestStatus? value, String label})>[
+    (value: BroadcasterRequestStatus.pending, label: 'En attente'),
+    (value: BroadcasterRequestStatus.approved, label: 'Approuvées'),
+    (value: BroadcasterRequestStatus.rejected, label: 'Refusées'),
     (value: null, label: 'Toutes'),
   ];
 
@@ -189,6 +190,7 @@ class _AdminBroadcasterRequestsBodyState
         final request = controller.requests[index];
         return _RequestCard(
           request: request,
+          mutating: controller.isMutating(request.id),
           onApprove: () => _onApprove(request),
           onReject: () => _onReject(request),
         );
@@ -204,9 +206,9 @@ class _FilterBar extends StatelessWidget {
     required this.onSelected,
   });
 
-  final List<({String? value, String label})> filters;
-  final String? selected;
-  final ValueChanged<String?> onSelected;
+  final List<({BroadcasterRequestStatus? value, String label})> filters;
+  final BroadcasterRequestStatus? selected;
+  final ValueChanged<BroadcasterRequestStatus?> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -217,7 +219,7 @@ class _FilterBar extends StatelessWidget {
         children: [
           for (final filter in filters) ...[
             ChoiceChip(
-              key: Key('broadcaster_filter_${filter.value ?? 'all'}'),
+              key: Key('broadcaster_filter_${filter.value?.name ?? 'all'}'),
               label: Text(filter.label),
               selected: selected == filter.value,
               onSelected: (_) => onSelected(filter.value),
@@ -233,11 +235,17 @@ class _FilterBar extends StatelessWidget {
 class _RequestCard extends StatelessWidget {
   const _RequestCard({
     required this.request,
+    required this.mutating,
     required this.onApprove,
     required this.onReject,
   });
 
   final AdminBroadcasterRequest request;
+
+  /// Mutation (approve/reject) en vol sur cette demande : les actions sont
+  /// neutralisées pour empêcher un second envoi (→ 409 « déjà traitée »).
+  final bool mutating;
+
   final VoidCallback onApprove;
   final VoidCallback onReject;
 
@@ -297,17 +305,27 @@ class _RequestCard extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  if (mutating) ...[
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   TextButton(
                     key: Key('broadcaster_reject_${request.id}'),
-                    onPressed: onReject,
+                    // Neutralisé pendant une mutation en vol (anti-double-envoi).
+                    onPressed: mutating ? null : onReject,
                     style: TextButton.styleFrom(foregroundColor: colors.error),
                     child: const Text('Refuser'),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     key: Key('broadcaster_approve_${request.id}'),
-                    onPressed: onApprove,
+                    onPressed: mutating ? null : onApprove,
                     child: const Text('Approuver'),
                   ),
                 ],

@@ -33,4 +33,18 @@ class AdminBroadcasterRequest {
   bool get isPending => status == BroadcasterRequestStatus.pending;
   bool get isApproved => status == BroadcasterRequestStatus.approved;
   bool get isRejected => status == BroadcasterRequestStatus.rejected;
+
+  AdminBroadcasterRequest copyWith({BroadcasterRequestStatus? status}) =>
+      AdminBroadcasterRequest(
+        id: id,
+        status: status ?? this.status,
+        message: message,
+        reviewNote: reviewNote,
+        userId: userId,
+        email: email,
+        username: username,
+        reviewedBy: reviewedBy,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
 }

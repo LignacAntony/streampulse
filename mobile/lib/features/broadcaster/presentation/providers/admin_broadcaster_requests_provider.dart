@@ -2,15 +2,22 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../domain/entities/admin_broadcaster_request.dart';
+import '../../domain/entities/broadcaster_request.dart';
 import '../../domain/repositories/admin_broadcaster_repository.dart';
 
 /// Pilote `AdminBroadcasterRequestsScreen` : liste des demandes de rôle
 /// diffuseur avec filtre par statut, approbation et refus.
 ///
 /// La liste backend n'est pas paginée (volume faible) : pas de `loadMore`.
-/// `approve`/`reject` ne capturent PAS l'erreur — elles la relaient à l'écran
-/// pour un toast (409 « déjà traitée ») — puis un `load()` rafraîchit l'état
-/// réel, comme `PlaylistsController`. Seul `load` expose `error` en état.
+///
+/// `approve`/`reject` **ne rechargent pas** la liste : sur succès, l'état local
+/// est mis à jour (statut de la demande) puis la demande est retirée si elle ne
+/// correspond plus au filtre courant. Un `finally { load() }` masquait un
+/// succès partiel — la mutation réussie côté serveur mais le rechargement
+/// échouant sur une coupure réseau : `load()` avale son erreur, l'appelant ne
+/// voyait rien et affichait « approuvé » sur une carte restée « en attente ».
+/// La mise à jour locale reflète la réussite sans dépendre d'un second
+/// aller-retour réseau. Les erreurs de mutation sont relayées à l'écran (toast).
 class AdminBroadcasterRequestsProvider extends ChangeNotifier {
   AdminBroadcasterRequestsProvider(this._repository);
 
@@ -21,9 +28,14 @@ class AdminBroadcasterRequestsProvider extends ChangeNotifier {
   String? _error;
   bool _isNetworkError = false;
 
-  /// Filtre courant : `null` = tous, sinon `pending`/`approved`/`rejected`.
-  /// Défaut `pending` : c'est ce qui appelle une action de l'admin.
-  String? _statusFilter = 'pending';
+  /// Filtre courant : `null` = toutes. Typé avec l'enum domaine (plus de chaîne
+  /// magique à faire coïncider à la main avec le serveur et l'enum).
+  /// Défaut « en attente » : c'est ce qui appelle une action de l'admin.
+  BroadcasterRequestStatus? _statusFilter = BroadcasterRequestStatus.pending;
+
+  /// Ids des demandes dont une mutation (approve/reject) est en vol : garde
+  /// anti-double-envoi (l'écran désactive les actions de la carte concernée).
+  final Set<String> _mutating = <String>{};
 
   bool _disposed = false;
 
@@ -31,7 +43,10 @@ class AdminBroadcasterRequestsProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   bool get isNetworkError => _isNetworkError;
-  String? get statusFilter => _statusFilter;
+  BroadcasterRequestStatus? get statusFilter => _statusFilter;
+
+  /// Vrai si une mutation est en cours sur cette demande (bouton à neutraliser).
+  bool isMutating(String id) => _mutating.contains(id);
 
   void _notify() {
     if (_disposed) return;
@@ -62,28 +77,56 @@ class AdminBroadcasterRequestsProvider extends ChangeNotifier {
 
   int _loadGeneration = 0;
 
-  Future<void> setStatusFilter(String? status) {
+  Future<void> setStatusFilter(BroadcasterRequestStatus? status) {
     if (_statusFilter == status) return Future.value();
     _statusFilter = status;
     return load();
   }
 
-  /// Approuve [request] puis recharge : la demande traitée quitte le filtre
-  /// « pending ». Relaie l'exception à l'appelant (toast).
-  Future<void> approve(AdminBroadcasterRequest request, {String? note}) async {
+  /// Approuve [request]. No-op si une mutation est déjà en vol sur cette
+  /// demande (anti-double-envoi). Relaie l'exception à l'appelant (toast).
+  Future<void> approve(AdminBroadcasterRequest request, {String? note}) =>
+      _mutate(
+        request,
+        note: note,
+        newStatus: BroadcasterRequestStatus.approved,
+        call: (id, n) => _repository.approve(id, note: n),
+      );
+
+  Future<void> reject(AdminBroadcasterRequest request, {String? note}) =>
+      _mutate(
+        request,
+        note: note,
+        newStatus: BroadcasterRequestStatus.rejected,
+        call: (id, n) => _repository.reject(id, note: n),
+      );
+
+  Future<void> _mutate(
+    AdminBroadcasterRequest request, {
+    required String? note,
+    required BroadcasterRequestStatus newStatus,
+    required Future<void> Function(String id, String? note) call,
+  }) async {
+    if (_mutating.contains(request.id)) return;
+    _mutating.add(request.id);
+    _notify();
     try {
-      await _repository.approve(request.id, note: note);
+      await call(request.id, note);
+      _applyLocalStatus(request.id, newStatus);
     } finally {
-      await load();
+      _mutating.remove(request.id);
+      _notify();
     }
   }
 
-  Future<void> reject(AdminBroadcasterRequest request, {String? note}) async {
-    try {
-      await _repository.reject(request.id, note: note);
-    } finally {
-      await load();
-    }
+  /// Reflète localement le nouveau statut d'une demande traitée : met à jour la
+  /// carte, puis la retire si elle ne correspond plus au filtre actif (ex.
+  /// filtre « en attente » après approbation). Évite un rechargement réseau.
+  void _applyLocalStatus(String id, BroadcasterRequestStatus status) {
+    _requests = _requests
+        .map((r) => r.id == id ? r.copyWith(status: status) : r)
+        .where((r) => _statusFilter == null || r.status == _statusFilter)
+        .toList();
   }
 
   void _setError(Object error) {
