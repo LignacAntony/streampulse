@@ -273,6 +273,14 @@ jobs:
       # serait refusé. En mode dégradé il n'irait donc nulle part : l'attacher à
       # la release afficherait un livrable qui ne mène à rien, ce qui est pire
       # que son absence. L'APK, lui, s'installe et sert au test.
+      #
+      # GOOGLE_SERVER_CLIENT_ID : id du Client Web OAuth, lu au build par
+      # google_auth_service.dart (String.fromEnvironment). Sur Android, il n'y a
+      # pas de fallback Info.plist comme sur iOS : sans ce define, serverClientId
+      # est nul et « Sign in with Google » échoue en DEVELOPER_ERROR (code 10).
+      # C'est un identifiant PUBLIC (audience du jeton, cf. ADR 047), pas un
+      # secret — hardcodé comme API_BASE_URL. Le SHA-1 de la clé de signature
+      # doit par ailleurs être déclaré côté Google Cloud (client OAuth Android).
       - name: Construire les artefacts
         working-directory: ./mobile
         env:
@@ -306,10 +314,12 @@ jobs:
           }
 
           build_with_retry flutter build apk --release \
-            --dart-define=API_BASE_URL=https://api.streampulse.win
+            --dart-define=API_BASE_URL=https://api.streampulse.win \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=1027794910498-788nf58iql3n7bb9rbdattj15f09l73q.apps.googleusercontent.com
           if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
             build_with_retry flutter build appbundle --release \
-              --dart-define=API_BASE_URL=https://api.streampulse.win
+              --dart-define=API_BASE_URL=https://api.streampulse.win \
+              --dart-define=GOOGLE_SERVER_CLIENT_ID=1027794910498-788nf58iql3n7bb9rbdattj15f09l73q.apps.googleusercontent.com
           fi
 
       # Le suffixe n'est pas cosmétique : un artefact signé en debug installé
