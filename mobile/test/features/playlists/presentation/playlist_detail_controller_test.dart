@@ -75,9 +75,27 @@ class _FakePlaylistRepository implements PlaylistRepository {
         for (var i = 0; i < tracks.length; i++) _track(tracks[i].id, i),
       ];
 
-  // Non sollicitées par l'écran de détail.
+  List<Playlist> playlists = const [];
+  int favoriteCalls = 0;
+  int unfavoriteCalls = 0;
+  Object? favoriteError;
+
   @override
-  Future<List<Playlist>> list() async => const [];
+  Future<List<Playlist>> list() async => playlists;
+
+  @override
+  Future<void> favorite(String id) async {
+    favoriteCalls++;
+    if (favoriteError != null) throw favoriteError!;
+  }
+
+  @override
+  Future<void> unfavorite(String id) async {
+    unfavoriteCalls++;
+    if (favoriteError != null) throw favoriteError!;
+  }
+
+  // Non sollicitées par l'écran de détail.
 
   @override
   Future<Playlist> create(String name, String? description) =>
@@ -310,6 +328,52 @@ void main() {
       final available = await controller.availableTracks();
 
       expect(available.map((t) => t.id), ['t2']);
+    });
+  });
+
+  group('PlaylistDetailController favoris (STR-250)', () {
+    Playlist pl(String id, {bool isFavorite = false}) => Playlist(
+          id: id,
+          name: 'P',
+          description: null,
+          isPublic: false,
+          trackCount: 0,
+          isFavorite: isFavorite,
+          createdAt: DateTime(2026, 1, 2),
+          updatedAt: DateTime(2026, 1, 2),
+        );
+
+    test('loadFavorite lit l\'état depuis la liste', () async {
+      final repo = _FakePlaylistRepository()
+        ..playlists = [pl('p1', isFavorite: true)];
+      final controller = PlaylistDetailController(repo, 'p1');
+
+      await controller.loadFavorite();
+
+      expect(controller.isFavorite, isTrue);
+    });
+
+    test('toggleFavorite bascule de façon optimiste et appelle le repo',
+        () async {
+      final repo = _FakePlaylistRepository();
+      final controller = PlaylistDetailController(repo, 'p1');
+
+      await controller.toggleFavorite();
+
+      expect(controller.isFavorite, isTrue);
+      expect(repo.favoriteCalls, 1);
+    });
+
+    test('échec : rétablit l\'état et relaie l\'exception', () async {
+      final repo = _FakePlaylistRepository()
+        ..favoriteError = const NetworkException();
+      final controller = PlaylistDetailController(repo, 'p1');
+
+      await expectLater(
+        controller.toggleFavorite(),
+        throwsA(isA<NetworkException>()),
+      );
+      expect(controller.isFavorite, isFalse);
     });
   });
 }

@@ -13,6 +13,7 @@ extension PlaylistResponseMapper on PlaylistResponse {
         description: description,
         isPublic: isPublic,
         trackCount: trackCount,
+        isFavorite: isFavorite,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

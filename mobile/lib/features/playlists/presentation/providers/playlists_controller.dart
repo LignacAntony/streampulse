@@ -100,6 +100,7 @@ class PlaylistsController extends ChangeNotifier {
         description: null,
         isPublic: false,
         trackCount: summary.trackCount,
+        isFavorite: false,
         createdAt: DateTime.fromMillisecondsSinceEpoch(0),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
       );
@@ -144,6 +145,31 @@ class PlaylistsController extends ChangeNotifier {
     } finally {
       await load();
     }
+  }
+
+  /// Épingle/retire une playlist des favoris (STR-250), de façon **optimiste** :
+  /// le cœur bascule immédiatement dans la liste, l'appel réseau suit. En cas
+  /// d'échec on rétablit l'état précédent et on relaie l'exception (pour le toast).
+  Future<void> toggleFavorite(Playlist playlist) async {
+    final target = !playlist.isFavorite;
+    _setFavorite(playlist.id, target);
+    try {
+      if (target) {
+        await _repository.favorite(playlist.id);
+      } else {
+        await _repository.unfavorite(playlist.id);
+      }
+    } catch (_) {
+      _setFavorite(playlist.id, !target);
+      rethrow;
+    }
+  }
+
+  void _setFavorite(String id, bool value) {
+    _playlists = _playlists
+        .map((p) => p.id == id ? p.copyWith(isFavorite: value) : p)
+        .toList();
+    notifyListeners();
   }
 
   Future<List<Playlist>> listPlaylists() => _repository.list();

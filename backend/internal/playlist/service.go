@@ -29,8 +29,10 @@ type Playlist struct {
 	Description *string
 	IsPublic    bool
 	TrackCount  int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// IsFavorite indique si le demandeur a épinglé cette playlist (STR-250).
+	IsFavorite bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // PlaylistTrack est une piste au sein d'une playlist. Artist et DurationS sont
@@ -85,13 +87,15 @@ type UpdateParams struct {
 type Repository interface {
 	Create(ctx context.Context, p CreateParams) (Playlist, error)
 	ListByUser(ctx context.Context, userID string) ([]Playlist, error)
-	GetByID(ctx context.Context, id string) (Playlist, error)
+	GetByID(ctx context.Context, id, userID string) (Playlist, error)
 	Update(ctx context.Context, p UpdateParams) (Playlist, error)
 	Delete(ctx context.Context, id, userID string) error
 	ListTracks(ctx context.Context, playlistID string) ([]PlaylistTrack, error)
 	AddTrack(ctx context.Context, p AddTrackParams) error
 	RemoveTrack(ctx context.Context, playlistID, trackID string) error
 	Reorder(ctx context.Context, playlistID string, trackIDs []string) error
+	AddFavorite(ctx context.Context, userID, playlistID string) error
+	RemoveFavorite(ctx context.Context, userID, playlistID string) error
 }
 
 // Service porte la logique métier du domaine playlist.
@@ -154,7 +158,7 @@ func (s *Service) ListPlaylists(ctx context.Context, requesterID string) ([]Play
 // GetPlaylist retourne une playlist du demandeur. Une playlist appartenant à un
 // tiers renvoie 404 (on ne divulgue pas son existence).
 func (s *Service) GetPlaylist(ctx context.Context, id, requesterID string) (Playlist, error) {
-	pl, err := s.repo.GetByID(ctx, id)
+	pl, err := s.repo.GetByID(ctx, id, requesterID)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -162,6 +166,23 @@ func (s *Service) GetPlaylist(ctx context.Context, id, requesterID string) (Play
 		return Playlist{}, apperror.NotFound("playlist not found")
 	}
 	return pl, nil
+}
+
+// AddFavorite épingle la playlist du demandeur. On réutilise GetPlaylist pour ne
+// favoriser qu'une playlist visible : une playlist inexistante ou appartenant à
+// un tiers renvoie 404 (sans divulguer son existence). Idempotent (un favori
+// déjà présent ne lève pas d'erreur).
+func (s *Service) AddFavorite(ctx context.Context, id, requesterID string) error {
+	if _, err := s.GetPlaylist(ctx, id, requesterID); err != nil {
+		return err
+	}
+	return s.repo.AddFavorite(ctx, requesterID, id)
+}
+
+// RemoveFavorite retire la playlist des favoris du demandeur. Idempotent : aucune
+// erreur si elle n'était pas en favori (pas de contrôle de visibilité).
+func (s *Service) RemoveFavorite(ctx context.Context, id, requesterID string) error {
+	return s.repo.RemoveFavorite(ctx, requesterID, id)
 }
 
 // UpdatePlaylist valide puis renomme la playlist du propriétaire (404 si absente

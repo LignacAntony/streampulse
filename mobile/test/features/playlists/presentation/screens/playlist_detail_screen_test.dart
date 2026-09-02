@@ -122,6 +122,12 @@ class _FakePlaylistRepository implements PlaylistRepository {
 
   @override
   Future<void> delete(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> favorite(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> unfavorite(String id) => throw UnimplementedError();
 }
 
 /// Contrôleur de file d'attente pour les tests d'écran : le service est un fake,

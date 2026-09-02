@@ -48,6 +48,8 @@ type stubService struct {
 	reorderCall   bool
 	gotTrackOrder []string
 
+	favErr error
+
 	gotID        string
 	gotRequester string
 }
@@ -110,6 +112,18 @@ func (s *stubService) ReorderTracks(_ context.Context, playlistID, requesterID s
 	s.gotRequester = requesterID
 	s.gotTrackOrder = trackIDs
 	return s.reorderRet, s.reorderErr
+}
+
+func (s *stubService) AddFavorite(_ context.Context, id, requesterID string) error {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.favErr
+}
+
+func (s *stubService) RemoveFavorite(_ context.Context, id, requesterID string) error {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.favErr
 }
 
 const testUserID = "00000000-0000-0000-0000-000000000001"

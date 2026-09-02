@@ -84,6 +84,24 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
   Set<String> _knownQueueTrackIds = const {};
 
   @override
+  void initState() {
+    super.initState();
+    // État favori chargé une fois (pas à chaque refresh de pistes) : STR-250.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<PlaylistDetailController>().loadFavorite();
+    });
+  }
+
+  Future<void> _onToggleFavorite() async {
+    try {
+      await context.read<PlaylistDetailController>().toggleFavorite();
+    } catch (e) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _mutationMessage(e));
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final queue = context.read<PlaylistQueueController>();
@@ -222,6 +240,16 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          AccessibleIconButton(
+            key: const Key('playlist_favorite_button'),
+            icon: controller.isFavorite
+                ? Icons.favorite
+                : Icons.favorite_border,
+            label: controller.isFavorite
+                ? 'Retirer la playlist des favoris'
+                : 'Ajouter la playlist aux favoris',
+            onPressed: _onToggleFavorite,
+          ),
           AccessibleIconButton(
             key: const Key('playlist_shuffle_play_button'),
             icon: Icons.shuffle,

@@ -216,6 +216,17 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     await context.read<PlaylistsController>().refresh();
   }
 
+  /// Épingle/retire une playlist des favoris (STR-250). Le contrôleur bascule le
+  /// cœur de façon optimiste ; on ne signale que l'échec.
+  Future<void> _onToggleFavorite(Playlist playlist) async {
+    try {
+      await context.read<PlaylistsController>().toggleFavorite(playlist);
+    } catch (e) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _mutationMessage(e));
+    }
+  }
+
   /// Message adapté au type d'exception pour un toast de mutation.
   String _mutationMessage(Object error) {
     if (error is ConflictException) return error.message;
@@ -373,6 +384,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
                       onRename: _onRename,
                       onDelete: _onDelete,
                       onOpen: _onOpen,
+                      onToggleFavorite: _onToggleFavorite,
                       // Hors ligne : renommer/supprimer exigent le réseau — on
                       // masque le menu, le compteur de pistes et on garde
                       // l'ouverture (le détail sait se replier sur le cache).
@@ -647,6 +659,7 @@ class _PlaylistCard extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onOpen,
+    required this.onToggleFavorite,
     this.offline = false,
   });
 
@@ -655,6 +668,7 @@ class _PlaylistCard extends StatelessWidget {
   final ValueChanged<Playlist> onRename;
   final ValueChanged<Playlist> onDelete;
   final ValueChanged<Playlist> onOpen;
+  final ValueChanged<Playlist> onToggleFavorite;
 
   /// Carte issue du cache hors ligne : le menu (renommer/supprimer, réseau) et
   /// le compteur de pistes venu du serveur sont masqués.
@@ -713,6 +727,24 @@ class _PlaylistCard extends StatelessWidget {
                       playlist: playlist,
                       onRename: onRename,
                       onDelete: onDelete,
+                    ),
+                  ),
+                if (!offline)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: IconButton(
+                      key: Key('playlist_favorite_${playlist.id}'),
+                      icon: Icon(
+                        playlist.isFavorite
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        color: Colors.white,
+                      ),
+                      tooltip: playlist.isFavorite
+                          ? 'Retirer des favoris'
+                          : 'Ajouter aux favoris',
+                      onPressed: () => onToggleFavorite(playlist),
                     ),
                   ),
                 _OfflineBadge(playlistId: playlist.id),

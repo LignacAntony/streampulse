@@ -512,6 +512,11 @@ func run() error {
 		http.HandlerFunc(playlistHandler.ReorderTracks)))
 	mux.Handle("DELETE /api/playlists/{id}/tracks/{trackId}", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.RemoveTrack)))
+	// Favoris de playlists (STR-250) : épingle/retire, idempotent → 204.
+	mux.Handle("PUT /api/playlists/{id}/favorite", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.AddFavorite)))
+	mux.Handle("DELETE /api/playlists/{id}/favorite", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.RemoveFavorite)))
 	// Bibliothèque de pistes du demandeur (US-05-01) : upload multipart + listing.
 	mux.Handle("POST /api/tracks", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(trackHandler.Upload)))

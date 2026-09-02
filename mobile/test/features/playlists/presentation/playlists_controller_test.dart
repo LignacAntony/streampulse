@@ -10,12 +10,19 @@ import 'package:streampulse/features/playlists/presentation/providers/playlists_
 import 'package:streampulse/features/tracks/domain/entities/public_track.dart';
 import 'package:streampulse/features/tracks/domain/repositories/track_repository.dart';
 
-Playlist _playlist(String id, String name, {int trackCount = 0}) => Playlist(
+Playlist _playlist(
+  String id,
+  String name, {
+  int trackCount = 0,
+  bool isFavorite = false,
+}) =>
+    Playlist(
       id: id,
       name: name,
       description: null,
       isPublic: false,
       trackCount: trackCount,
+      isFavorite: isFavorite,
       createdAt: DateTime(2026, 1, 2),
       updatedAt: DateTime(2026, 1, 2),
     );
@@ -63,6 +70,22 @@ class _FakePlaylistRepository implements PlaylistRepository {
     deleteCalls++;
     if (deleteError != null) throw deleteError!;
     playlists = playlists.where((p) => p.id != id).toList();
+  }
+
+  int favoriteCalls = 0;
+  int unfavoriteCalls = 0;
+  Object? favoriteError;
+
+  @override
+  Future<void> favorite(String id) async {
+    favoriteCalls++;
+    if (favoriteError != null) throw favoriteError!;
+  }
+
+  @override
+  Future<void> unfavorite(String id) async {
+    unfavoriteCalls++;
+    if (favoriteError != null) throw favoriteError!;
   }
 
   @override
@@ -242,6 +265,48 @@ void main() {
         controller.create('My Favorites', null),
         throwsA(isA<ConflictException>()),
       );
+    });
+  });
+
+  group('PlaylistsController.toggleFavorite (STR-250)', () {
+    test('épingle de façon optimiste puis appelle le repo', () async {
+      final repo = _FakePlaylistRepository()
+        ..playlists = [_playlist('p-1', 'Rock')];
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
+      await controller.load();
+
+      await controller.toggleFavorite(controller.playlists.single);
+
+      expect(repo.favoriteCalls, 1);
+      expect(repo.unfavoriteCalls, 0);
+      expect(controller.playlists.single.isFavorite, isTrue);
+    });
+
+    test('déjà favori : retire via unfavorite', () async {
+      final repo = _FakePlaylistRepository()
+        ..playlists = [_playlist('p-1', 'Rock', isFavorite: true)];
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
+      await controller.load();
+
+      await controller.toggleFavorite(controller.playlists.single);
+
+      expect(repo.unfavoriteCalls, 1);
+      expect(controller.playlists.single.isFavorite, isFalse);
+    });
+
+    test('échec réseau : rétablit l\'état et relaie l\'exception', () async {
+      final repo = _FakePlaylistRepository()
+        ..playlists = [_playlist('p-1', 'Rock')]
+        ..favoriteError = const NetworkException();
+      final controller = PlaylistsController(repo, _FakeTrackRepository());
+      await controller.load();
+
+      await expectLater(
+        controller.toggleFavorite(controller.playlists.single),
+        throwsA(isA<NetworkException>()),
+      );
+      // Le cœur optimiste est revenu à son état initial.
+      expect(controller.playlists.single.isFavorite, isFalse);
     });
   });
 }

@@ -47,6 +47,7 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Playlist, er
 		Description: textValue(row.Description),
 		IsPublic:    row.IsPublic,
 		TrackCount:  int(row.TrackCount),
+		IsFavorite:  row.IsFavorite,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}, nil
@@ -66,6 +67,7 @@ func (r *pgRepository) ListByUser(ctx context.Context, userID string) ([]Playlis
 			Description: textValue(row.Description),
 			IsPublic:    row.IsPublic,
 			TrackCount:  int(row.TrackCount),
+			IsFavorite:  row.IsFavorite,
 			CreatedAt:   row.CreatedAt,
 			UpdatedAt:   row.UpdatedAt,
 		})
@@ -73,12 +75,15 @@ func (r *pgRepository) ListByUser(ctx context.Context, userID string) ([]Playlis
 	return playlists, nil
 }
 
-func (r *pgRepository) GetByID(ctx context.Context, id string) (Playlist, error) {
+func (r *pgRepository) GetByID(ctx context.Context, id, userID string) (Playlist, error) {
 	uid, ok := parseUUID(id)
 	if !ok {
 		return Playlist{}, apperror.NotFound("playlist not found")
 	}
-	row, err := r.q.GetPlaylistByID(ctx, uid)
+	row, err := r.q.GetPlaylistByID(ctx, playlistdb.GetPlaylistByIDParams{
+		ID:     uid,
+		UserID: uuidParam(userID),
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Playlist{}, apperror.NotFound("playlist not found")
@@ -92,6 +97,7 @@ func (r *pgRepository) GetByID(ctx context.Context, id string) (Playlist, error)
 		Description: textValue(row.Description),
 		IsPublic:    row.IsPublic,
 		TrackCount:  int(row.TrackCount),
+		IsFavorite:  row.IsFavorite,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}, nil
@@ -125,6 +131,7 @@ func (r *pgRepository) Update(ctx context.Context, p UpdateParams) (Playlist, er
 		Description: textValue(row.Description),
 		IsPublic:    row.IsPublic,
 		TrackCount:  int(row.TrackCount),
+		IsFavorite:  row.IsFavorite,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}, nil
@@ -304,6 +311,34 @@ func (r *pgRepository) Reorder(ctx context.Context, playlistID string, trackIDs 
 		return apperror.Conflict("L'ordre fourni ne correspond plus à la playlist")
 	}
 	return err
+}
+
+func (r *pgRepository) AddFavorite(ctx context.Context, userID, playlistID string) error {
+	pid, ok := parseUUID(playlistID)
+	if !ok {
+		return apperror.NotFound("playlist not found")
+	}
+	if err := r.q.AddPlaylistFavorite(ctx, playlistdb.AddPlaylistFavoriteParams{
+		UserID:     uuidParam(userID),
+		PlaylistID: pid,
+	}); err != nil {
+		return fmt.Errorf("repo: add playlist favorite: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepository) RemoveFavorite(ctx context.Context, userID, playlistID string) error {
+	pid, ok := parseUUID(playlistID)
+	if !ok {
+		return apperror.NotFound("playlist not found")
+	}
+	if err := r.q.RemovePlaylistFavorite(ctx, playlistdb.RemovePlaylistFavoriteParams{
+		UserID:     uuidParam(userID),
+		PlaylistID: pid,
+	}); err != nil {
+		return fmt.Errorf("repo: remove playlist favorite: %w", err)
+	}
+	return nil
 }
 
 // errPositionTaken signale qu'une transaction a échoué au COMMIT sur

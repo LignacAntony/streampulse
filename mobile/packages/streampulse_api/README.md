@@ -93,12 +93,14 @@ Class | Method | HTTP request | Description
 [*ChatApi*](doc/ChatApi.md) | [**unbanChatUser**](doc/ChatApi.md#unbanchatuser) | **DELETE** /api/chat/bans/{userId} | Remove a chat ban for a user.
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Check API health.
 [*MetricsApi*](doc/MetricsApi.md) | [**getMetrics**](doc/MetricsApi.md#getmetrics) | **GET** /metrics | Expose Prometheus metrics.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**addPlaylistFavorite**](doc/PlaylistApi.md#addplaylistfavorite) | **PUT** /api/playlists/{id}/favorite | Pin a playlist as a favorite (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**addPlaylistTrack**](doc/PlaylistApi.md#addplaylisttrack) | **POST** /api/playlists/{id}/tracks | Append a track to a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**createPlaylist**](doc/PlaylistApi.md#createplaylist) | **POST** /api/playlists | Create an empty playlist.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**deletePlaylist**](doc/PlaylistApi.md#deleteplaylist) | **DELETE** /api/playlists/{id} | Delete a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**getPlaylist**](doc/PlaylistApi.md#getplaylist) | **GET** /api/playlists/{id} | Get one of the user&#39;s playlists.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylistTracks**](doc/PlaylistApi.md#listplaylisttracks) | **GET** /api/playlists/{id}/tracks | List a playlist&#39;s tracks (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylists**](doc/PlaylistApi.md#listplaylists) | **GET** /api/playlists | List the authenticated user&#39;s playlists.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**removePlaylistFavorite**](doc/PlaylistApi.md#removeplaylistfavorite) | **DELETE** /api/playlists/{id}/favorite | Unpin a playlist from favorites (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**removePlaylistTrack**](doc/PlaylistApi.md#removeplaylisttrack) | **DELETE** /api/playlists/{id}/tracks/{trackId} | Remove a track from a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**reorderPlaylistTracks**](doc/PlaylistApi.md#reorderplaylisttracks) | **PUT** /api/playlists/{id}/tracks | Replace the playlist&#39;s track order (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**updatePlaylist**](doc/PlaylistApi.md#updateplaylist) | **PUT** /api/playlists/{id} | Rename a playlist (owner only).

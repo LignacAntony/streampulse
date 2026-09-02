@@ -9,6 +9,7 @@ class Playlist extends Equatable {
     required this.description,
     required this.isPublic,
     required this.trackCount,
+    required this.isFavorite,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -18,6 +19,9 @@ class Playlist extends Equatable {
   final String? description;
   final bool isPublic;
   final int trackCount;
+
+  /// Playlist épinglée par l'utilisateur (STR-250) : remontée sur l'accueil.
+  final bool isFavorite;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -27,6 +31,7 @@ class Playlist extends Equatable {
     String? description,
     bool? isPublic,
     int? trackCount,
+    bool? isFavorite,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -36,6 +41,7 @@ class Playlist extends Equatable {
       description: description ?? this.description,
       isPublic: isPublic ?? this.isPublic,
       trackCount: trackCount ?? this.trackCount,
+      isFavorite: isFavorite ?? this.isFavorite,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -48,6 +54,7 @@ class Playlist extends Equatable {
         description,
         isPublic,
         trackCount,
+        isFavorite,
         createdAt,
         updatedAt,
       ];

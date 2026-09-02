@@ -19,12 +19,19 @@ import 'package:streampulse/features/playlists/presentation/providers/offline_pl
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlists_screen.dart';
 
-Playlist _playlist(String id, String name, {int trackCount = 0}) => Playlist(
+Playlist _playlist(
+  String id,
+  String name, {
+  int trackCount = 0,
+  bool isFavorite = false,
+}) =>
+    Playlist(
       id: id,
       name: name,
       description: null,
       isPublic: false,
       trackCount: trackCount,
+      isFavorite: isFavorite,
       createdAt: DateTime(2026, 1, 2),
       updatedAt: DateTime(2026, 1, 2),
     );
@@ -86,6 +93,25 @@ class _FakePlaylistRepository implements PlaylistRepository {
 
   @override
   Future<void> removeTrack(String playlistId, String trackId) async {}
+
+  int favoriteCalls = 0;
+  int unfavoriteCalls = 0;
+
+  @override
+  Future<void> favorite(String id) async {
+    favoriteCalls++;
+    playlists = playlists
+        .map((p) => p.id == id ? p.copyWith(isFavorite: true) : p)
+        .toList();
+  }
+
+  @override
+  Future<void> unfavorite(String id) async {
+    unfavoriteCalls++;
+    playlists = playlists
+        .map((p) => p.id == id ? p.copyWith(isFavorite: false) : p)
+        .toList();
+  }
 
   @override
   Future<List<PlaylistTrack>> reorderTracks(

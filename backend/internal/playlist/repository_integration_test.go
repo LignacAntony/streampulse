@@ -51,7 +51,7 @@ func TestRepository_CreateAndGet(t *testing.T) {
 		t.Errorf("description = %v, want %q", created.Description, desc)
 	}
 
-	got, err := repo.GetByID(ctx, created.ID)
+	got, err := repo.GetByID(ctx, created.ID, created.UserID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestRepository_UpdateEtDelete_IsolentParUtilisateur(t *testing.T) {
 	}
 
 	// La playlist est intacte.
-	got, err := repo.GetByID(ctx, p.ID)
+	got, err := repo.GetByID(ctx, p.ID, proprio)
 	if err != nil {
 		t.Fatalf("GetByID après tentatives: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestRepository_UpdateEtDelete_IsolentParUtilisateur(t *testing.T) {
 	if err := repo.Delete(ctx, p.ID, proprio); err != nil {
 		t.Fatalf("le propriétaire doit pouvoir supprimer: %v", err)
 	}
-	if _, err := repo.GetByID(ctx, p.ID); err == nil {
+	if _, err := repo.GetByID(ctx, p.ID, proprio); err == nil {
 		t.Error("la playlist supprimée reste lisible")
 	}
 }

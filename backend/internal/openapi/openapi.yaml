@@ -1789,6 +1789,51 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}/favorite:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags:
+        - Playlist
+      operationId: addPlaylistFavorite
+      summary: Pin a playlist as a favorite (owner only).
+      description: >-
+        Pins the playlist to the authenticated user's favorites (STR-250).
+        Idempotent (PUT): pinning an already-favorited playlist succeeds. A
+        playlist owned by someone else or unknown returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The playlist is in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Playlist
+      operationId: removePlaylistFavorite
+      summary: Unpin a playlist from favorites (owner only).
+      description: >-
+        Removes the playlist from the authenticated user's favorites.
+        Idempotent: unpinning a playlist that is not a favorite succeeds.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The playlist is no longer in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/tracks:
     get:
       tags:
@@ -3117,6 +3162,7 @@ components:
         - description
         - is_public
         - track_count
+        - is_favorite
         - created_at
         - updated_at
       properties:
@@ -3136,6 +3182,9 @@ components:
           type: integer
           description: Number of tracks in the playlist.
           example: 3
+        is_favorite:
+          type: boolean
+          description: Whether the requester has pinned this playlist as a favorite.
         created_at:
           type: string
           format: date-time

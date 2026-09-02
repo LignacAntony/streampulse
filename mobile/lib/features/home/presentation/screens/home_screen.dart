@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../../playlists/domain/entities/playlist.dart';
+import '../../../playlists/domain/repositories/playlist_repository.dart';
 import '../../../streams/domain/entities/live_stream.dart';
 import '../../../streams/presentation/providers/favorites_controller.dart';
 import '../../../streams/presentation/providers/stream_notifier.dart';
@@ -25,6 +27,11 @@ class _HomeScreenState extends State<HomeScreen> {
   GoRouter? _router;
   bool _appResumed = true;
 
+  // Playlists favorites (STR-250) : vitrine en haut de l'accueil. Chargées via le
+  // repository (pas un contrôleur app-level) et rafraîchies à l'arrivée sur
+  // l'écran — l'épinglage se fait dans la Bibliothèque.
+  List<Playlist> _favoritePlaylists = const [];
+
   @override
   void initState() {
     super.initState();
@@ -38,8 +45,25 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifier.load();
       _favorites.ensureLoaded();
+      // La vitrine des favoris se (re)charge à chaque arrivée sur l'accueil,
+      // piloté par `_syncPolling` (appelé ici et à chaque navigation).
       _syncPolling();
     });
+  }
+
+  /// (Re)charge les playlists épinglées. Best-effort : un échec laisse la vitrine
+  /// vide sans casser le reste de l'accueil (les flux restent affichés).
+  Future<void> _loadFavoritePlaylists() async {
+    try {
+      final all = await context.read<PlaylistRepository>().list();
+      if (!mounted) return;
+      setState(() {
+        _favoritePlaylists =
+            all.where((p) => p.isFavorite).toList(growable: false);
+      });
+    } catch (_) {
+      // Silencieux : la vitrine est un bonus, pas un bloquant.
+    }
   }
 
   @override
@@ -71,7 +95,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _onRefresh() async {
-    await Future.wait([_notifier.refresh(), _favorites.load()]);
+    await Future.wait([
+      _notifier.refresh(),
+      _favorites.load(),
+      _loadFavoritePlaylists(),
+    ]);
   }
 
   /// Ne poll que si l'app est au premier plan ET l'écran d'accueil est visible
@@ -81,6 +109,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _router?.routerDelegate.currentConfiguration.uri.path == _homeLocation;
     if (_appResumed && onHome) {
       _notifier.startPolling();
+      // Rafraîchit la vitrine au retour sur l'accueil (ex. après avoir épinglé
+      // une playlist depuis la Bibliothèque).
+      _loadFavoritePlaylists();
     } else {
       _notifier.stopPolling();
     }
@@ -122,7 +153,15 @@ class _HomeScreenState extends State<HomeScreen> {
       slivers: [
         if (notifier.hasError)
           const SliverToBoxAdapter(child: _StaleBanner()),
+        // Bloc « Favoris » unique (STR-250) : playlists épinglées (rangée
+        // horizontale) puis flux favoris, avant la section « En direct ».
         const SliverToBoxAdapter(child: _SectionHeader('Favoris')),
+        if (_favoritePlaylists.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: _FavoritePlaylistsRow(playlists: _favoritePlaylists),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        ],
         if (favorites.favorites.isEmpty)
           const SliverToBoxAdapter(
             child: _EmptyHint('Aucun flux en favori'),
@@ -157,6 +196,120 @@ class _StreamSliverList extends StatelessWidget {
         itemCount: streams.length,
         separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) => StreamTile(stream: streams[index]),
+      ),
+    );
+  }
+}
+
+/// Vitrine horizontale des playlists épinglées (STR-250), en haut de l'accueil.
+class _FavoritePlaylistsRow extends StatelessWidget {
+  const _FavoritePlaylistsRow({required this.playlists});
+
+  final List<Playlist> playlists;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 176,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: playlists.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (context, index) => _PlaylistFavoriteCard(
+          playlist: playlists[index],
+          index: index,
+        ),
+      ),
+    );
+  }
+}
+
+/// Carte d'une playlist favorite : cover dégradée + nom + nombre de titres.
+/// Un appui ouvre le détail dans l'onglet Bibliothèque.
+class _PlaylistFavoriteCard extends StatelessWidget {
+  const _PlaylistFavoriteCard({required this.playlist, required this.index});
+
+  final Playlist playlist;
+  final int index;
+
+  // Dégradés doux, variés par index (mêmes teintes que les covers de la biblio).
+  static const List<List<Color>> _gradients = [
+    [Color(0xFF7C4DFF), Color(0xFF448AFF)],
+    [Color(0xFF26C6DA), Color(0xFF66BB6A)],
+    [Color(0xFFFF7043), Color(0xFFFFCA28)],
+    [Color(0xFFEC407A), Color(0xFFAB47BC)],
+  ];
+
+  String _trackCountLabel(int count) {
+    if (count == 0) return 'Aucun titre';
+    return '$count ${count == 1 ? 'titre' : 'titres'}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final colors = Theme.of(context).colorScheme;
+    final gradient = _gradients[index % _gradients.length];
+
+    return SizedBox(
+      width: 132,
+      child: Semantics(
+        button: true,
+        label: 'Playlist ${playlist.name}, ${_trackCountLabel(playlist.trackCount)}',
+        excludeSemantics: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 132,
+              height: 122,
+              child: Material(
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                color: Colors.transparent,
+                child: Ink(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: LinearGradient(
+                      colors: gradient,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: InkWell(
+                    key: Key('home_playlist_${playlist.id}'),
+                    onTap: () => context.go(
+                      '/library/playlist/${playlist.id}',
+                      extra: playlist.name,
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.queue_music,
+                        size: 44,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              playlist.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              _trackCountLabel(playlist.trackCount),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ],
+        ),
       ),
     );
   }

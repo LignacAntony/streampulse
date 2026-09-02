@@ -77,6 +77,22 @@ class PlaylistRemoteDataSource {
     }
   }
 
+  Future<void> favorite(String id) async {
+    try {
+      await _api.addPlaylistFavorite(id: id);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> unfavorite(String id) async {
+    try {
+      await _api.removePlaylistFavorite(id: id);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<List<PlaylistTrackResponse>> tracks(String id) async {
     try {
       final response = await _api.listPlaylistTracks(id: id);

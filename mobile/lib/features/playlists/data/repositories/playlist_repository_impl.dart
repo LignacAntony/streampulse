@@ -32,6 +32,12 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
   Future<void> delete(String id) => _remote.delete(id);
 
   @override
+  Future<void> favorite(String id) => _remote.favorite(id);
+
+  @override
+  Future<void> unfavorite(String id) => _remote.unfavorite(id);
+
+  @override
   Future<List<PlaylistTrack>> tracks(String id) async {
     final dtos = await _remote.tracks(id);
     return dtos.map((d) => d.toEntity()).toList();
