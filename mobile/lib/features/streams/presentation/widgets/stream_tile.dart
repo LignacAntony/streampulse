@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/theme/cover_gradients.dart';
 import '../../domain/entities/live_stream.dart';
 
 /// Tuile d'un flux, partagée par l'accueil, les favoris et « Découvrir ».
@@ -297,7 +298,7 @@ class _LiveBadge extends StatelessWidget {
   }
 }
 
-/// Palette de dégradés de vignette, indexée par le hash de l'`id`.
+/// Palette de dégradés de vignette, indexée de façon déterministe par l'`id`.
 const List<List<Color>> _coverPalette = [
   [Color(0xFF2BD9C4), Color(0xFF1BA98F)], // teal / vert d'eau
   [Color(0xFF9D7BF5), Color(0xFF7C4DFF)], // violet
@@ -308,9 +309,8 @@ const List<List<Color>> _coverPalette = [
 ];
 
 LinearGradient _coverGradient(String id) {
-  final index = id.hashCode.abs() % _coverPalette.length;
   return LinearGradient(
-    colors: _coverPalette[index],
+    colors: _coverPalette[stableColorIndex(id, _coverPalette.length)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

@@ -15,15 +15,25 @@ const List<List<Color>> playlistCoverGradients = <List<Color>>[
   [Color(0xFF7B95F5), Color(0xFF4D6BFF)],
 ];
 
+/// Index **stable entre exécutions** dérivé d'un id, pour choisir une couleur
+/// dans une palette de longueur [paletteLength].
+///
+/// Somme des unités de code (déterministe) et **non** `String.hashCode`, qui peut
+/// varier d'un lancement de l'app à l'autre — la couleur d'un même élément
+/// changerait alors à chaque relance. Factorisé ici pour être partagé par les
+/// covers de playlists **et** les vignettes de flux (`stream_tile`).
+int stableColorIndex(String id, int paletteLength) {
+  assert(paletteLength > 0);
+  var acc = 0;
+  for (final unit in id.codeUnits) {
+    acc = (acc + unit) % paletteLength;
+  }
+  return acc;
+}
+
 /// Dégradé **stable pour une playlist donnée** : dérivé de son id, et non de sa
 /// position dans une liste. Ainsi la même playlist garde la même couleur, que ce
 /// soit dans la grille de la Bibliothèque ou dans la rangée de l'accueil (où les
-/// positions diffèrent). Hash déterministe (somme des unités de code) plutôt que
-/// `hashCode`, qui peut varier d'une exécution à l'autre.
-List<Color> playlistCoverGradient(String id) {
-  var acc = 0;
-  for (final unit in id.codeUnits) {
-    acc = (acc + unit) % playlistCoverGradients.length;
-  }
-  return playlistCoverGradients[acc];
-}
+/// positions diffèrent).
+List<Color> playlistCoverGradient(String id) =>
+    playlistCoverGradients[stableColorIndex(id, playlistCoverGradients.length)];

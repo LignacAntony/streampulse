@@ -255,6 +255,39 @@ void main() {
       expect(find.text('Sunrise'), findsOneWidget);
     });
 
+    testWidgets(
+        'retirer la DERNIÈRE piste (la file se vide) resynchronise aussi (STR-250)',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Solo Track', 0)],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      // File d'une seule piste pour CETTE playlist : la retirer vide la file,
+      // ce qui remet `playlistId` à null (via stop()). Le détail doit quand même
+      // se rafraîchir — c'était le bug.
+      await queue.play(
+        tracks: const [
+          Track(id: 't1', title: 'Solo Track', artist: 'A', durationS: 100),
+        ],
+        sourceName: 'My Favorites',
+        playlistId: 'p-1',
+      );
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      expect(find.text('Solo Track'), findsOneWidget);
+
+      await repo.removeTrack('p-1', 't1');
+      await queue.removeFromQueue(0);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Solo Track'), findsNothing);
+    });
+
     testWidgets('le bouton Lire lance la playlist depuis le début (US-05-04)',
         (tester) async {
       final repo = _FakePlaylistRepository(

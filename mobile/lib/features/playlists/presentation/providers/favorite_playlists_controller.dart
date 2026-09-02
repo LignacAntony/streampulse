@@ -39,7 +39,12 @@ class FavoritePlaylistsController extends ChangeNotifier {
 
   /// (Re)charge les playlists favorites. Silencieux en cas d'échec (invité, ou
   /// réseau KO) : la vitrine est un ornement, elle ne bloque pas l'accueil.
+  ///
+  /// Garde in-flight : `_syncPolling` (accueil) appelle `load()` à chaque notif
+  /// de navigation ; sans cette garde, des notifs rapprochées lanceraient des
+  /// `GET /favorites` redondants et concurrents.
   Future<void> load() async {
+    if (_isLoading) return;
     _isLoading = true;
     notifyListeners();
     try {

@@ -124,10 +124,20 @@ class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
   /// base a changé (retrait depuis la file) et le détail se recharge tout seul.
   void _onQueueChanged() {
     if (!mounted) return;
+    final queue = _queue;
+    if (queue == null) return;
     final controller = context.read<PlaylistDetailController>();
-    if (_queue?.playlistId != controller.playlistId) return;
 
-    final current = {for (final track in _queue!.tracks) track.id};
+    // La file joue-t-elle (encore) cette playlist ? Cas particulier : retirer la
+    // **dernière** piste arrête la file, ce qui remet son `playlistId` à null —
+    // on reconnaît alors « notre » file au fait qu'on suivait déjà ses pistes et
+    // qu'elle vient de se vider. Sans ça, le retrait de la dernière piste ne
+    // rafraîchissait pas le détail (piste fantôme jusqu'au pull-to-refresh).
+    final isOurs = queue.playlistId == controller.playlistId ||
+        (queue.tracks.isEmpty && _knownQueueTrackIds.isNotEmpty);
+    if (!isOurs) return;
+
+    final current = {for (final track in queue.tracks) track.id};
     // Strictement moins de pistes qu'avant, toutes déjà connues : c'est un
     // retrait, pas un nouveau lancement (qui, lui, ajoute des pistes).
     final removed = current.length < _knownQueueTrackIds.length &&

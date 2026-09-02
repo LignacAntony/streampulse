@@ -23,6 +23,11 @@ class DiscoverNotifier extends ChangeNotifier {
   bool _hasError = false;
   Timer? _timer;
 
+  /// Horodatage du dernier fetch **réussi** des flux. Sert à ne pas refaire un
+  /// fetch immédiat au démarrage du polling si `load()` vient de peupler la
+  /// liste (sinon deux appels réseau quasi simultanés à chaque arrivée).
+  DateTime? _lastStreamsAt;
+
   List<LiveStream> get streams => _streams;
   List<PublicTrack> get publicTracks => _publicTracks;
   bool get isLoading => _isLoading;
@@ -39,6 +44,7 @@ class DiscoverNotifier extends ChangeNotifier {
     var tracksFailed = false;
     try {
       _streams = await _repository.listLiveStreams(limit: pageSize);
+      _lastStreamsAt = DateTime.now();
     } catch (_) {
       streamsFailed = true;
     }
@@ -58,6 +64,7 @@ class DiscoverNotifier extends ChangeNotifier {
   Future<void> refreshStreams() async {
     try {
       _streams = await _repository.listLiveStreams(limit: pageSize);
+      _lastStreamsAt = DateTime.now();
       _hasError = false;
       notifyListeners();
     } catch (_) {
@@ -68,7 +75,16 @@ class DiscoverNotifier extends ChangeNotifier {
   void startPolling() {
     if (_timer != null) return;
     _timer = Timer.periodic(pollInterval, (_) => refreshStreams());
-    if (!_isLoading) refreshStreams();
+    // Refresh immédiat seulement si les flux n'ont pas été fetchés récemment :
+    // à l'entrée sur l'écran, `load()` vient de peupler la liste, un second
+    // appel serait redondant. Au retour après une longue absence, la liste est
+    // périmée → on rafraîchit sans attendre le prochain tick.
+    if (!_isLoading && _streamsAreStale()) refreshStreams();
+  }
+
+  bool _streamsAreStale() {
+    final last = _lastStreamsAt;
+    return last == null || DateTime.now().difference(last) >= pollInterval;
   }
 
   void stopPolling() {
