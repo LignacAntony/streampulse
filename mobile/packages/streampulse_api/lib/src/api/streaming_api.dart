@@ -810,7 +810,7 @@ class StreamingApi {
   }
 
   /// Start a stream — go live (broadcaster owner only).
-  ///
+  /// Accepts a stream whose status is &#x60;idle&#x60; or &#x60;ended&#x60;: a stream is a reusable channel (title, description, ingest key), so a broadcast that finished — including one ended by the ingest lease expiring — can be started again. &#x60;ended_at&#x60; is reset to null. Only a stream that is already &#x60;live&#x60; is rejected.
   ///
   /// Parameters:
   /// * [id]
