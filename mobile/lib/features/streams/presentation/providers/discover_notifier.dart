@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../tracks/domain/entities/public_track.dart';
@@ -13,10 +15,13 @@ class DiscoverNotifier extends ChangeNotifier {
 
   static const int pageSize = 50;
 
+  static const Duration pollInterval = Duration(seconds: 15);
+
   List<LiveStream> _streams = const [];
   List<PublicTrack> _publicTracks = const [];
   bool _isLoading = false;
   bool _hasError = false;
+  Timer? _timer;
 
   List<LiveStream> get streams => _streams;
   List<PublicTrack> get publicTracks => _publicTracks;
@@ -48,5 +53,32 @@ class DiscoverNotifier extends ChangeNotifier {
     _hasError = streamsFailed && tracksFailed;
     _isLoading = false;
     notifyListeners();
+  }
+
+  Future<void> refreshStreams() async {
+    try {
+      _streams = await _repository.listLiveStreams(limit: pageSize);
+      _hasError = false;
+      notifyListeners();
+    } catch (_) {
+      // Ignoré : la liste précédente reste affichée.
+    }
+  }
+
+  void startPolling() {
+    if (_timer != null) return;
+    _timer = Timer.periodic(pollInterval, (_) => refreshStreams());
+    if (!_isLoading) refreshStreams();
+  }
+
+  void stopPolling() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 }

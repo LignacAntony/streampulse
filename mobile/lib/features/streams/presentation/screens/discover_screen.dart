@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
@@ -66,13 +67,55 @@ class _DiscoverView extends StatefulWidget {
 }
 
 class _DiscoverViewState extends State<_DiscoverView> {
+  static const String _discoverLocation = '/discover';
+
   late final DiscoverNotifier _notifier;
+  late final AppLifecycleListener _lifecycleListener;
+  GoRouter? _router;
+  bool _appResumed = true;
 
   @override
   void initState() {
     super.initState();
     _notifier = context.read<DiscoverNotifier>();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    _lifecycleListener = AppLifecycleListener(onStateChange: (state) {
+      _appResumed = state == AppLifecycleState.resumed;
+      _syncPolling();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _load();
+      _syncPolling();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `maybeOf` : l'écran peut être monté hors d'un GoRouter (tests).
+    final router = GoRouter.maybeOf(context);
+    if (router != _router) {
+      _router?.routerDelegate.removeListener(_syncPolling);
+      _router = router?..routerDelegate.addListener(_syncPolling);
+    }
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_syncPolling);
+    _lifecycleListener.dispose();
+    _notifier.stopPolling();
+    super.dispose();
+  }
+
+  void _syncPolling() {
+    final onDiscover =
+        _router?.routerDelegate.currentConfiguration.uri.path ==
+            _discoverLocation;
+    if (_appResumed && onDiscover) {
+      _notifier.startPolling();
+    } else {
+      _notifier.stopPolling();
+    }
   }
 
   /// Flux + pistes publiques (publics, invité compris) et recommandations
