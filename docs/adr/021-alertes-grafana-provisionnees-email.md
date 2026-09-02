@@ -83,8 +83,26 @@ de renseigner.
 ⚠️ **`ALERT_DISCORD_WEBHOOK` est volontairement facultative**, sans `:?` en
 production, à la différence de `ALERT_EMAIL_TO`. Le déploiement continu lance
 `docker compose pull api` sur le VPS : une variable requise mais absente y ferait
-échouer le déploiement de l'**API**. Un canal de notification ne doit pas pouvoir
-bloquer une mise en production. Absente, seul le receiver Discord est muet.
+échouer le déploiement de l'**API** — vérifié, l'interpolation d'un `:?` sur le
+service `grafana` suffit à faire échouer un `pull api`. Un canal de notification
+ne doit pas pouvoir bloquer une mise en production.
+
+⚠️ **« Facultative » ne veut pas dire « vide ».** Pour Grafana, l'`url` d'un
+receiver `discord` est un champ secret **obligatoire** : vide, le provisioning
+est rejeté à la validation (« could not find webhook url property in settings »),
+et comme l'échec porte sur le module `provisioning`, **Grafana refuse de
+démarrer** — mesuré : exit 1, 29 modules en échec. L'email serait tombé avec lui,
+alors que le contact point partagé était justement censé le garantir.
+
+Le défaut est donc **non vide et non routable** : une URL sur le TLD réservé
+`.invalid` (RFC 2606), exactement le procédé déjà retenu pour `ALERT_EMAIL_TO`.
+Non configuré, le canal échoue à l'**envoi** et non au démarrage : « dial tcp:
+lookup discord.invalid : no such host », classé irrécupérable par le notifier,
+donc une seule tentative et aucune rafale de reprises. Mesuré de bout en bout
+(Grafana + Mailpit, alerte réelle) : **l'email part quand même, et une seule
+fois** — les intégrations d'un contact point sont notifiées indépendamment.
+L'absence de configuration reste visible dans Grafana → Alerting → Contact
+points, ce qui vaut mieux qu'un canal silencieux qu'on croirait sain.
 
 ⚠️ Le CD ne redémarre que le service `api`. Une modification du provisioning
 d'alerting **n'est pas appliquée automatiquement** : Grafana doit être redémarré

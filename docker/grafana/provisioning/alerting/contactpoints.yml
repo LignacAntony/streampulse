@@ -34,17 +34,26 @@ contactPoints:
       # est une adresse en .invalid, et le déploiement Kubernetes ne passait même
       # pas la variable. Discord est le canal que l'équipe lit vraiment.
       #
-      # ⚠️ `disableResolveMessage: false` : on veut aussi le message de
-      # rétablissement. Une alerte qui part sans jamais dire qu'elle est
-      # retombée entraîne à ignorer le canal.
+      # ⚠️ `url` est un champ SECRET et OBLIGATOIRE pour Grafana. Une valeur vide
+      # n'est pas un canal « désactivé » : le provisioning est rejeté à la
+      # validation — « could not find webhook url property in settings » — et
+      # comme l'échec porte sur le module `provisioning`, **Grafana refuse de
+      # démarrer** (constaté : exit 1, 29 modules en échec). L'email tomberait
+      # avec lui. D'où un défaut non vide côté compose, sur le TLD réservé
+      # .invalid (RFC 2606) — même procédé que pour ALERT_EMAIL_TO.
       #
-      # Variable non requise volontairement (pas de `:?` côté compose) : si
-      # elle est absente, ce receiver échoue seul et l'email continue de
-      # fonctionner. L'inverse ferait dépendre le déploiement entier d'une URL
-      # de webhook — or le CD lance `docker compose pull api` sur le VPS, et
-      # une variable manquante y ferait échouer le déploiement de l'API.
+      # Non configuré, ce receiver échoue donc à l'ENVOI et non au démarrage :
+      # « dial tcp: lookup discord.invalid : no such host », erreur classée
+      # irrécupérable (une seule tentative, pas de rafale de reprises). Mesuré :
+      # l'email part quand même, et une seule fois — les intégrations d'un
+      # contact point sont notifiées indépendamment. L'absence de configuration
+      # reste visible dans Grafana → Alerting → Contact points.
+      #
+      # `disableResolveMessage` n'est pas posé : sa valeur par défaut (false)
+      # est déjà celle qu'on veut, et on veut bien le message de rétablissement
+      # — une alerte qui ne dit jamais qu'elle est retombée entraîne à ignorer
+      # le canal.
       - uid: discord-equipe
         type: discord
-        disableResolveMessage: false
         settings:
           url: $ALERT_DISCORD_WEBHOOK
