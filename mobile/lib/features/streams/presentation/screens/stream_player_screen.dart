@@ -145,12 +145,11 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
             // Hero en `Expanded` (fit tight), et non `Flexible` (loose) : un
             // Flexible loose plus court que sa part gaspille la différence, qui
             // retombe en bas de la colonne et surélève l'input du chat de ~80 px.
-            // En tight il consomme exactement sa part (2/3), le chat prend le
-            // tiers restant et colle au bord bas. Le `SingleChildScrollView`
+            // En tight il consomme exactement sa part (1/2), le chat prend
+            // l'autre moitié et colle au bord bas. Le `SingleChildScrollView`
             // laisse le hero défiler et se contracter quand le clavier réduit la
             // place, plutôt que de déborder.
             Expanded(
-              flex: 2,
               child: SingleChildScrollView(
                 child: _hero(colors, text, title, subtitle, listeners),
               ),
@@ -196,7 +195,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       child: Column(
         children: [
           _artwork(colors),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Text(
             title,
             textAlign: TextAlign.center,
@@ -242,7 +241,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   Widget _artwork(ColorScheme colors) {
     // Carré borné : un AspectRatio dans une Column prendrait toute la largeur
     // disponible et deviendrait aussi haut, débordant la hauteur.
-    final side = MediaQuery.sizeOf(context).width.clamp(0.0, 220.0);
+    final side = MediaQuery.sizeOf(context).width.clamp(0.0, 140.0);
     return SizedBox.square(
       dimension: side,
       child: DecoratedBox(
@@ -258,7 +257,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
             ],
           ),
         ),
-        child: Icon(Icons.mic, size: 88, color: colors.onPrimary),
+        child: Icon(Icons.mic, size: 56, color: colors.onPrimary),
       ),
     );
   }
