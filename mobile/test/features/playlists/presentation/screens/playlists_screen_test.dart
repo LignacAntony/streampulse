@@ -207,6 +207,44 @@ void main() {
       expect(find.text('Midnight Drive'), findsOneWidget);
     });
 
+    testWidgets(
+        'la recherche masque les playlists et filtre les pistes ; vider les '
+        'remet', (tester) async {
+      // Surface haute : playlists + les deux pistes tiennent à l'écran (le
+      // ListView paresseux ne construit pas ce qui est hors champ).
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final repo = _FakePlaylistRepository(initial: [_playlist('p-1', 'Chill')])
+        ..libraryTracksList = const [
+          Track(id: 't-1', title: 'Midnight Drive', artist: 'Neon', durationS: 214),
+          Track(id: 't-2', title: 'Sunrise', artist: 'Aria', durationS: 187),
+        ];
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      // État initial : playlists + toutes les pistes.
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
+
+      // Recherche « sunrise » : playlists masquées, seule t-2 reste.
+      await tester.enterText(find.byType(TextField), 'sunrise');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsNothing);
+      expect(find.text('Chill'), findsNothing);
+      expect(find.byKey(const Key('track_tile_t-1')), findsNothing);
+      expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
+
+      // Vider : playlists de retour, toutes les pistes aussi.
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
+    });
+
     testWidgets('un appui sur une piste lance toute la bibliothèque (STR-231)',
         (tester) async {
       final repo = _FakePlaylistRepository()

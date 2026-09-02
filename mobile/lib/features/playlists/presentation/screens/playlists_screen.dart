@@ -6,6 +6,7 @@ import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../../core/widgets/message_view.dart';
+import '../../../../core/widgets/search_field.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../tracks/data/datasources/track_remote_data_source.dart';
 import '../../../tracks/data/repositories/track_repository_impl.dart';
@@ -98,10 +99,30 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   /// `null` tant que l'état d'authentification n'est pas résolu (spinner).
   bool? _isAuthenticated;
 
+  // Recherche des pistes : tant qu'une requête est saisie, les playlists sont
+  // masquées et seules les pistes correspondantes restent (par titre / artiste).
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _resolveAuth());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _norm(String s) => s.trim().toLowerCase();
+
+  bool _trackMatches(Track t) {
+    final q = _norm(_query);
+    if (q.isEmpty) return true;
+    return _norm(t.title).contains(q) ||
+        (t.artist != null && _norm(t.artist!).contains(q));
   }
 
   Future<void> _resolveAuth() async {
@@ -287,18 +308,34 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     final colors = Theme.of(context).colorScheme;
     final offline = controller.isOfflineFallback;
 
+    // La recherche ne vise que les pistes (réseau) : pas de champ hors ligne.
+    final searching = !offline && _query.trim().isNotEmpty;
+    // Pistes affichées : filtrées par titre / artiste dès qu'une requête existe.
+    final tracks = searching
+        ? controller.tracks.where(_trackMatches).toList(growable: false)
+        : controller.tracks;
+
     return ListView(
       key: const Key('library_list'),
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
+        if (!offline) ...[
+          SearchField(
+            controller: _searchController,
+            onChanged: (q) => setState(() => _query = q),
+            hintText: 'Rechercher dans mes pistes…',
+          ),
+          const SizedBox(height: 16),
+        ],
         // Bandeau hors ligne : la liste affichée vient du cache, seules les
         // playlists téléchargées sont là et les actions réseau sont masquées.
         if (offline) ...[
           const _OfflineBanner(),
           const SizedBox(height: 16),
         ],
-        if (controller.playlists.isNotEmpty) ...[
+        // Playlists : masquées pendant une recherche (« que les titres »).
+        if (!searching && controller.playlists.isNotEmpty) ...[
           Text('Playlists',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
@@ -332,29 +369,31 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
         ],
         // « Mes pistes » vit derrière le réseau : masquée en mode hors ligne.
         if (!offline) ...[
-          Text('Mes pistes',
+          Text(searching ? 'Résultats' : 'Mes pistes',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          if (controller.tracks.isEmpty)
+          if (tracks.isEmpty)
             Padding(
               key: const Key('tracks_empty'),
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Text(
-                'Aucune piste — utilise l\'icône d\'upload en haut',
+                searching
+                    ? 'Aucune piste ne correspond à « ${_query.trim()} »'
+                    : 'Aucune piste — utilise l\'icône d\'upload en haut',
                 textAlign: TextAlign.center,
                 style:
                     text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
               ),
             )
           else
-            for (var i = 0; i < controller.tracks.length; i++)
+            for (var i = 0; i < tracks.length; i++)
               _TrackTile(
-                track: controller.tracks[i],
-                // Toute la bibliothèque part en file, à partir de la piste
+                track: tracks[i],
+                // Toute la liste affichée part en file, à partir de la piste
                 // touchée : une file d'un seul élément rendrait précédent,
                 // suivant, aléatoire et répétition sans objet (STR-231).
                 onPlay: () => context.read<PlaylistQueueController>().play(
-                      tracks: controller.tracks,
+                      tracks: tracks,
                       sourceName: 'Ma bibliothèque',
                       startIndex: i,
                     ),

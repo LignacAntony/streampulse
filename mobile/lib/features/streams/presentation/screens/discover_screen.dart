@@ -24,6 +24,7 @@ import '../../../tracks/domain/entities/public_track.dart';
 import '../../domain/entities/live_stream.dart';
 import '../providers/discover_notifier.dart';
 import '../../../../core/widgets/message_view.dart';
+import '../../../../core/widgets/search_field.dart';
 import '../widgets/stream_tile.dart';
 
 class DiscoverScreen extends StatelessWidget {
@@ -391,24 +392,10 @@ class _SearchArea extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
+          SearchField(
             controller: controller,
             onChanged: onQueryChanged,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: 'Rechercher un flux, un diffuseur…',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: controller.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Effacer',
-                      onPressed: () {
-                        controller.clear();
-                        onQueryChanged('');
-                      },
-                    ),
-            ),
+            hintText: 'Rechercher un flux, un diffuseur…',
           ),
           if (categories.isNotEmpty) ...[
             const SizedBox(height: 12),
