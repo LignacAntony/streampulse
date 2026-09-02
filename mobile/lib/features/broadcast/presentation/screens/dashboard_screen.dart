@@ -100,12 +100,24 @@ class _DashboardBodyState extends State<_DashboardBody>
       }
       final notifier = context.read<BroadcastNotifier>();
       notifier.setActive(true);
-      _audioFailureSubscription = notifier.audioFailures.listen((_) {
+      _audioFailureSubscription = notifier.audioFailures.listen((failure) {
         if (!mounted) return;
-        showAuthErrorToast(
-          context,
-          'Diffusion arrêtée : le microphone n\'est plus disponible',
-        );
+        // Deux fins de capture qui se ressemblent à l'écran, mais l'une laisse
+        // un direct mort et l'autre un direct qui continue sans nous : le même
+        // message pour les deux mentirait dans un cas sur deux.
+        switch (failure.reason) {
+          case BroadcastAudioEndReason.microphoneLost:
+            showAuthErrorToast(
+              context,
+              'Diffusion arrêtée : le microphone n\'est plus disponible',
+            );
+          case BroadcastAudioEndReason.supersededByOtherSource:
+            showAuthInfoToast(
+              context,
+              'Une autre source a pris le relais : le direct continue sans '
+              'votre microphone.',
+            );
+        }
       });
       notifier.load();
     });
@@ -793,6 +805,11 @@ class _MicrophoneStatusRow extends StatelessWidget {
                 Icons.mic_off_outlined,
                 'Diffusion du micro interrompue',
                 colors.error,
+              ),
+            BroadcastAudioState.superseded => (
+                Icons.cast_connected_outlined,
+                'Une autre source alimente ce direct',
+                colors.tertiary,
               ),
             // Fenêtre courte entre l'arrêt du micro et la remise à zéro de
             // `publishing` par le contrôleur : la ligne inactive est plus juste

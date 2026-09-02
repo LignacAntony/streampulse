@@ -56,6 +56,13 @@ class BroadcastNotifier extends ChangeNotifier {
     _audioFailureSubscription = _sessionController.audioFailures.listen((
       failure,
     ) {
+      // Prise de relais par une autre source : le direct n'a pas bougé côté
+      // serveur, seul notre micro s'est retiré. Recharger ne corrigerait rien
+      // et ferait clignoter la liste (revue PR #382).
+      if (failure.reason == BroadcastAudioEndReason.supersededByOtherSource) {
+        _safeNotify();
+        return;
+      }
       final ended = failure.serverState;
       if (ended == null) {
         unawaited(refresh());

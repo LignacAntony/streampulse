@@ -8,6 +8,7 @@ import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.d
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
 import 'package:streampulse/features/broadcast/domain/services/broadcast_audio_publisher.dart';
+import 'package:streampulse/features/broadcast/presentation/controllers/broadcast_session_controller.dart';
 import 'package:streampulse/features/broadcast/presentation/providers/broadcast_notifier.dart';
 
 BroadcastStream _stream(
@@ -232,6 +233,12 @@ class _FakeAudioPublisher implements BroadcastAudioPublisher {
   /// Abandon du diffuseur audio après épuisement de ses reconnexions.
   void giveUp() {
     state = BroadcastAudioState.failed;
+    _states.add(state);
+  }
+
+  /// Une autre source (encodeur externe) a pris l'ingest en cours de route.
+  void supersede() {
+    state = BroadcastAudioState.superseded;
     _states.add(state);
   }
 
@@ -503,6 +510,34 @@ void main() {
 
         expect(repository.stoppedIds, isEmpty);
         expect(audio.stops, 0);
+      },
+    );
+
+    // Revue PR #382 — un 409 d'ingest survenu APRÈS le démarrage signifie qu'une
+    // autre source a pris la clé. Le publisher sortait alors sur `idle`, que le
+    // contrôleur ignorait : micro mort, tuile toujours « en direct », aucun
+    // message. Désynchronisation silencieuse, le pire mode de défaillance.
+    test(
+      'la prise de relais par une autre source relâche le micro sans arrêter le direct',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher();
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        final raisons = <BroadcastAudioEndReason>[];
+        notifier.audioFailures.listen((f) => raisons.add(f.reason));
+        await notifier.load();
+        await notifier.start('a');
+
+        audio.supersede();
+        await _pumpUntil(() => raisons.isNotEmpty);
+
+        // Le direct vit toujours : le terminer couperait la diffusion de
+        // l'autre source.
+        expect(repository.stoppedIds, isEmpty);
+        expect(notifier.hasLiveStream, isTrue);
+        // Mais l'état local est relâché, et la raison remonte à l'écran.
+        expect(notifier.isPublishingAudio('a'), isFalse);
+        expect(raisons, [BroadcastAudioEndReason.supersededByOtherSource]);
       },
     );
 

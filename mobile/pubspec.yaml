@@ -24,7 +24,13 @@ dependencies:
     path: packages/streampulse_api
 
   # Capture microphone AAC/ADTS pour l'ingest du direct (STR-156)
-  record: ^6.2.1
+  # Version épinglée, pas de caret (revue PR #382). `AndroidManifest.xml`
+  # déclare `com.llfbandit.record.service.AudioRecordingService` — un chemin de
+  # classe **interne** au plugin, que rien ne garantit stable entre versions
+  # mineures. Un renommage casserait le service de premier plan au runtime
+  # (ClassNotFound), donc la capture en arrière-plan, sans qu'aucun test ni la
+  # CI ne le voie. Toute montée de version doit revérifier ce nom de classe.
+  record: 6.2.1
 
   # Sélection de fichier audio pour l'upload d'une piste (US-05-01)
   file_picker: ^8.1.2

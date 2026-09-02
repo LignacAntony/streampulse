@@ -86,9 +86,18 @@ detached           → arrêt du direct côté serveur + libération du micro
 `hidden` ne déclenche plus rien, pour la raison ci-dessus. `paused` non plus :
 quitter l'application pendant un direct est un geste normal.
 
-L'arrêt sur `detached` est **best-effort** — le processus est en train de mourir,
-la requête peut ne pas partir. Le bail d'ingest du serveur
-(`INGEST_RECONNECT_GRACE_SECONDS`, 45 s) reste le filet.
+L'arrêt sur `detached` est **best-effort**, et il faut être précis sur ce que ça
+recouvre. `detached` n'est pas garanti : au balayage depuis les récents comme au
+*force-kill*, le processus meurt souvent avant que la requête ne parte — c'est
+particulièrement vrai sur iOS. Il faut donc considérer que **sur une fermeture
+brutale, le chemin nominal est le bail d'ingest**, pas l'appel `stop` : le flux
+reste `live` sans audio jusqu'à 45 s. La fenêtre silencieuse est la règle dans ce
+cas, pas l'exception (revue PR #382).
+
+Ce qui est garanti, en revanche, c'est l'arrêt de la **capture** :
+`stopWithTask="true"` détruit le service avec la tâche, donc le micro se coupe
+immédiatement même quand aucun appel réseau n'aboutit. C'est la moitié qui compte
+pour la vie privée ; la seconde — le statut serveur — tolère le délai.
 
 ### 2. Un service de premier plan Android maintient la capture
 
@@ -124,6 +133,18 @@ qu'on est ailleurs sur le téléphone.
 de réessayer, au lieu d'épuiser ses six tentatives puis de passer à `failed` — ce
 qui, via l'invariant « jamais de live silencieux » de l'ADR 027, aurait **terminé
 le direct de l'encodeur externe** qui alimentait légitimement ce flux.
+
+Mais ne pas réessayer ne suffit pas : un conflit survenu **après** le démarrage —
+notre connexion lâche, une autre source prend la clé avant notre reprise — sortait
+la capture sur `idle`, un état que le contrôleur ignore. La tuile continuait
+d'afficher « en direct » avec un micro mort et sans un mot : une désynchronisation
+silencieuse, le pire mode de défaillance (revue PR #382). D'où un état terminal
+distinct, `BroadcastAudioState.superseded`, et une raison de fin distincte
+(`BroadcastAudioEndReason.supersededByOtherSource`). Les deux fins se ressemblent
+à l'écran — le micro s'arrête — mais l'une laisse un direct mort et l'autre un
+direct bien vivant : le même message mentirait une fois sur deux. La prise de
+relais ne déclenche donc **ni arrêt serveur, ni rechargement de la liste** : rien
+n'a bougé côté serveur, seul notre micro s'est retiré.
 
 ## Conséquences
 

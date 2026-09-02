@@ -129,10 +129,38 @@ class BroadcastSessionController {
   /// audio violerait l'invariant « jamais de live silencieux » (ADR 027) : on
   /// termine donc le direct côté serveur, sans attendre l'expiration du bail.
   void _onAudioState(BroadcastAudioState state) {
-    if (state != BroadcastAudioState.failed) return;
     final id = _publishingStreamId;
     if (id == null) return;
-    unawaited(_endAfterAudioFailure(id));
+    switch (state) {
+      case BroadcastAudioState.failed:
+        unawaited(_endAfterAudioFailure(id));
+      case BroadcastAudioState.superseded:
+        unawaited(_releaseToOtherSource(id));
+      case BroadcastAudioState.idle:
+      case BroadcastAudioState.connecting:
+      case BroadcastAudioState.live:
+      case BroadcastAudioState.reconnecting:
+        break;
+    }
+  }
+
+  /// Une autre source alimente désormais ce direct : on relâche l'état local
+  /// **sans rien terminer côté serveur** — le direct est vivant, ce n'est
+  /// simplement plus nous qui le portons.
+  ///
+  /// Sans ce chemin, la capture s'arrêtait en silence : la tuile continuait
+  /// d'afficher « en direct » et `isPublishing` restait vrai, avec un micro
+  /// mort et aucun message (revue PR #382).
+  Future<void> _releaseToOtherSource(String id) async {
+    await _stopAudio(expectedId: id, ignoreErrors: true);
+    if (!_audioFailures.isClosed) {
+      _audioFailures.add(
+        BroadcastAudioFailure(
+          streamId: id,
+          reason: BroadcastAudioEndReason.supersededByOtherSource,
+        ),
+      );
+    }
   }
 
   Future<void> _endAfterAudioFailure(String id) async {
@@ -182,12 +210,29 @@ class BroadcastSessionController {
   }
 }
 
-/// Fin de direct subie : la capture locale a renoncé après avoir épuisé ses
-/// reconnexions, et le direct a été terminé côté serveur dans la foulée.
+/// Pourquoi la capture locale s'est arrêtée sans que l'utilisateur le demande.
+enum BroadcastAudioEndReason {
+  /// La capture a renoncé après avoir épuisé ses reconnexions. Le direct a été
+  /// terminé côté serveur dans la foulée.
+  microphoneLost,
+
+  /// Une autre source (encodeur externe) a pris l'ingest. Le direct **continue**
+  /// sans nous ; rien n'a été terminé côté serveur.
+  supersededByOtherSource,
+}
+
+/// Fin de la capture locale subie, avec sa raison. Les deux cas se ressemblent
+/// vus de l'écran — le micro s'arrête — mais l'un laisse un direct mort et
+/// l'autre un direct bien vivant : le message à afficher n'est pas le même.
 class BroadcastAudioFailure {
-  const BroadcastAudioFailure({required this.streamId, this.serverState});
+  const BroadcastAudioFailure({
+    required this.streamId,
+    this.serverState,
+    this.reason = BroadcastAudioEndReason.microphoneLost,
+  });
 
   final String streamId;
+  final BroadcastAudioEndReason reason;
 
   /// Flux tel que renvoyé par l'arrêt, ou null si cet arrêt a lui aussi échoué
   /// — la liste affichée est alors périmée et doit être rechargée.

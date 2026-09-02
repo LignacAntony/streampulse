@@ -90,6 +90,10 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
     var started = false;
     var silentAttempts = 0;
     var gaveUp = false;
+    // Une autre source a pris l'ingest pendant que nous tentions de nous
+    // reconnecter. État terminal, mais qui n'est pas une panne : le direct vit,
+    // alimenté par quelqu'un d'autre.
+    var superseded = false;
     Object? initialError;
     StackTrace? initialStackTrace;
     try {
@@ -126,7 +130,14 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
           // direct de cette autre source. On sort de la boucle sans panne.
           if (error is IngestConflictException) {
             _desired = false;
-            if (!firstAttempt.isCompleted) {
+            if (firstAttempt.isCompleted) {
+              // Conflit survenu APRÈS le démarrage : nous diffusions, la
+              // connexion a lâché, et une autre source a pris la clé avant
+              // notre reconnexion. Sortir sur `idle` laisserait la tuile
+              // afficher « en direct » avec un micro mort et sans un mot —
+              // une désynchronisation silencieuse (revue PR #382).
+              superseded = true;
+            } else {
               initialError = error;
               initialStackTrace = stackTrace;
             }
@@ -162,7 +173,13 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
         );
       }
     } finally {
-      _emit(gaveUp ? BroadcastAudioState.failed : BroadcastAudioState.idle);
+      _emit(
+        gaveUp
+            ? BroadcastAudioState.failed
+            : superseded
+                ? BroadcastAudioState.superseded
+                : BroadcastAudioState.idle,
+      );
       if (initialError != null && !firstAttempt.isCompleted) {
         firstAttempt.completeError(initialError, initialStackTrace!);
       } else if (!firstAttempt.isCompleted) {
