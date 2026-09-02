@@ -9,6 +9,7 @@ import '../../../playlists/presentation/providers/playlist_queue_controller.dart
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../tracks/domain/entities/public_track.dart';
 import '../providers/discover_notifier.dart';
+import '../stream_categories.dart';
 import '../../../../core/widgets/message_view.dart';
 import '../widgets/stream_tile.dart';
 
@@ -21,12 +22,20 @@ class DiscoverScreen extends StatefulWidget {
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
   late final DiscoverNotifier _notifier;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _notifier = context.read<DiscoverNotifier>();
+    _searchController.text = _notifier.searchQuery;
     WidgetsBinding.instance.addPostFrameCallback((_) => _notifier.load());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -37,9 +46,27 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       appBar: AppBar(title: const Text('Découvrir')),
       body: SafeArea(
         child: ResponsiveContent(
-          child: RefreshIndicator(
-            onRefresh: _notifier.load,
-            child: _buildBody(context, notifier),
+          child: Column(
+            children: [
+              _SearchField(
+                controller: _searchController,
+                onChanged: _notifier.onSearchChanged,
+                onClear: () {
+                  _searchController.clear();
+                  _notifier.onSearchChanged('');
+                },
+              ),
+              _CategoryChips(
+                selected: notifier.selectedCategory,
+                onSelected: _notifier.selectCategory,
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _notifier.load,
+                  child: _buildBody(context, notifier),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -47,15 +74,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   Widget _buildBody(BuildContext context, DiscoverNotifier notifier) {
-    if (notifier.isLoading &&
-        notifier.streams.isEmpty &&
-        notifier.publicTracks.isEmpty) {
+    final empty = notifier.streams.isEmpty && notifier.publicTracks.isEmpty;
+
+    if (notifier.isLoading && empty) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (notifier.hasError &&
-        notifier.streams.isEmpty &&
-        notifier.publicTracks.isEmpty) {
+    // `MessageView` est déjà une `ListView` défilable : on le rend directement
+    // sous le `RefreshIndicator` (comme l'accueil), sans l'imbriquer dans un
+    // autre scrollable — c'était la cause du corps vide au simulateur.
+    if (notifier.hasError && empty) {
       return MessageView(
         icon: Icons.wifi_off_outlined,
         message: 'Impossible de charger les flux',
@@ -65,9 +93,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
 
     if (notifier.isEmpty) {
-      return const MessageView(
-        icon: Icons.podcasts_outlined,
-        message: 'Rien à découvrir pour le moment',
+      // Distingue « rien à découvrir » (vue libre) de « aucun résultat » (filtre
+      // actif) : le second invite à élargir le filtre, pas à croire au vide.
+      return MessageView(
+        icon: notifier.isFiltering
+            ? Icons.search_off_outlined
+            : Icons.podcasts_outlined,
+        message: notifier.isFiltering
+            ? 'Aucun flux ne correspond à cette recherche'
+            : 'Rien à découvrir pour le moment',
       );
     }
 
@@ -102,6 +136,85 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ),
         ],
       ],
+    );
+  }
+}
+
+/// Barre de recherche des flux (titre ou diffuseur). Débounce et appel réseau
+/// gérés par [DiscoverNotifier] ; ici, uniquement la saisie.
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Rechercher un flux, un diffuseur…',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (context, value, _) => value.text.isEmpty
+                ? const SizedBox.shrink()
+                : IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Effacer la recherche',
+                    onPressed: onClear,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Chips de catégories : « Tous » (aucun filtre) + la liste blanche backend.
+class _CategoryChips extends StatelessWidget {
+  const _CategoryChips({required this.selected, required this.onSelected});
+
+  /// Clé de la catégorie active, `null` pour « Tous ».
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: const Text('Tous'),
+              selected: selected == null,
+              onSelected: (_) => onSelected(null),
+            ),
+          ),
+          for (final category in streamCategories)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(category.label),
+                selected: selected == category.key,
+                onSelected: (_) => onSelected(category.key),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

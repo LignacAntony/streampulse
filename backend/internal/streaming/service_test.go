@@ -134,8 +134,7 @@ type fakeRepo struct {
 	ret       Stream
 	err       error
 
-	gotLimit  int32
-	gotOffset int32
+	gotFilter ListFilter
 	listRet   []Stream
 	listErr   error
 
@@ -188,9 +187,8 @@ func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Stream, error) {
 	return f.ret, f.err
 }
 
-func (f *fakeRepo) ListPublicLive(_ context.Context, limit, offset int32) ([]Stream, error) {
-	f.gotLimit = limit
-	f.gotOffset = offset
+func (f *fakeRepo) ListPublicLive(_ context.Context, filter ListFilter) ([]Stream, error) {
+	f.gotFilter = filter
 	return f.listRet, f.listErr
 }
 
@@ -374,15 +372,23 @@ func TestService_ListPublicLive_DelegatesToRepo(t *testing.T) {
 	repo := &fakeRepo{listRet: []Stream{{ID: "s1"}, {ID: "s2"}}}
 	svc := NewService(repo, fakeKeys{}, &fakeSessions{})
 
-	got, err := svc.ListPublicLive(context.Background(), 20, 40)
+	got, err := svc.ListPublicLive(context.Background(), ListFilter{
+		Limit:    20,
+		Offset:   40,
+		Category: "music",
+		Search:   "aurora",
+	})
 	if err != nil {
 		t.Fatalf("erreur inattendue: %v", err)
 	}
 	if len(got) != 2 {
 		t.Errorf("len = %d, want 2", len(got))
 	}
-	if repo.gotLimit != 20 || repo.gotOffset != 40 {
-		t.Errorf("pagination transmise = (%d, %d), want (20, 40)", repo.gotLimit, repo.gotOffset)
+	if repo.gotFilter.Limit != 20 || repo.gotFilter.Offset != 40 {
+		t.Errorf("pagination transmise = (%d, %d), want (20, 40)", repo.gotFilter.Limit, repo.gotFilter.Offset)
+	}
+	if repo.gotFilter.Category != "music" || repo.gotFilter.Search != "aurora" {
+		t.Errorf("filtres transmis = (%q, %q), want (music, aurora)", repo.gotFilter.Category, repo.gotFilter.Search)
 	}
 }
 

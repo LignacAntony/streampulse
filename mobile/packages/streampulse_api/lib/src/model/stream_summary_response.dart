@@ -35,6 +35,8 @@ class StreamSummaryResponse {
     required this.createdAt,
 
     required this.broadcasterUsername,
+
+    this.listenerCount,
   });
 
   @JsonKey(name: r'id', required: true, includeIfNull: false)
@@ -68,6 +70,10 @@ class StreamSummaryResponse {
   @JsonKey(name: r'broadcaster_username', required: true, includeIfNull: false)
   final String broadcasterUsername;
 
+  /// Estimated live audience (0 when not live). Same estimate as /stats, exposed here to any listener.
+  @JsonKey(name: r'listener_count', required: false, includeIfNull: false)
+  final int? listenerCount;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -81,7 +87,8 @@ class StreamSummaryResponse {
           other.isPublic == isPublic &&
           other.startedAt == startedAt &&
           other.createdAt == createdAt &&
-          other.broadcasterUsername == broadcasterUsername;
+          other.broadcasterUsername == broadcasterUsername &&
+          other.listenerCount == listenerCount;
 
   @override
   int get hashCode =>
@@ -94,7 +101,8 @@ class StreamSummaryResponse {
       isPublic.hashCode +
       (startedAt == null ? 0 : startedAt.hashCode) +
       createdAt.hashCode +
-      broadcasterUsername.hashCode;
+      broadcasterUsername.hashCode +
+      listenerCount.hashCode;
 
   factory StreamSummaryResponse.fromJson(Map<String, dynamic> json) =>
       _$StreamSummaryResponseFromJson(json);

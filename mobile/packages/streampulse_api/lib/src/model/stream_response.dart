@@ -41,6 +41,8 @@ class StreamResponse {
     required this.createdAt,
 
     required this.updatedAt,
+
+    this.listenerCount,
   });
 
   @JsonKey(name: r'id', required: true, includeIfNull: false)
@@ -84,6 +86,10 @@ class StreamResponse {
   @JsonKey(name: r'updated_at', required: true, includeIfNull: false)
   final DateTime updatedAt;
 
+  /// Estimated live audience (0 when not live).
+  @JsonKey(name: r'listener_count', required: false, includeIfNull: false)
+  final int? listenerCount;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -100,7 +106,8 @@ class StreamResponse {
           other.startedAt == startedAt &&
           other.endedAt == endedAt &&
           other.createdAt == createdAt &&
-          other.updatedAt == updatedAt;
+          other.updatedAt == updatedAt &&
+          other.listenerCount == listenerCount;
 
   @override
   int get hashCode =>
@@ -116,7 +123,8 @@ class StreamResponse {
       (startedAt == null ? 0 : startedAt.hashCode) +
       (endedAt == null ? 0 : endedAt.hashCode) +
       createdAt.hashCode +
-      updatedAt.hashCode;
+      updatedAt.hashCode +
+      listenerCount.hashCode;
 
   factory StreamResponse.fromJson(Map<String, dynamic> json) =>
       _$StreamResponseFromJson(json);

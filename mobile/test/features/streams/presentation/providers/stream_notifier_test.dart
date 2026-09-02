@@ -19,7 +19,12 @@ class _FakeRepository implements StreamRepository {
   int calls = 0;
 
   @override
-  Future<List<LiveStream>> listLiveStreams({int limit = 20, int offset = 0}) async {
+  Future<List<LiveStream>> listLiveStreams({
+    int limit = 20,
+    int offset = 0,
+    String? category,
+    String? search,
+  }) async {
     calls++;
     if (error != null) throw error!;
     return result;
@@ -35,6 +40,9 @@ class _FakeRepository implements StreamRepository {
   Future<void> removeFavorite(String streamId) async {}
 
   @override
+  Future<int?> streamListenerCount(String id) async => 0;
+
+  @override
   Future<ManifestStatus> manifestStatus(String streamId) async =>
       ManifestStatus.available;
 }
@@ -45,7 +53,12 @@ class _PagingRepository implements StreamRepository {
   final int total;
 
   @override
-  Future<List<LiveStream>> listLiveStreams({int limit = 20, int offset = 0}) async {
+  Future<List<LiveStream>> listLiveStreams({
+    int limit = 20,
+    int offset = 0,
+    String? category,
+    String? search,
+  }) async {
     if (offset >= total) return const [];
     final end = (offset + limit).clamp(0, total);
     return [for (var i = offset; i < end; i++) _stream('$i')];
@@ -59,6 +72,9 @@ class _PagingRepository implements StreamRepository {
 
   @override
   Future<void> removeFavorite(String streamId) async {}
+
+  @override
+  Future<int?> streamListenerCount(String id) async => 0;
 
   @override
   Future<ManifestStatus> manifestStatus(String streamId) async =>

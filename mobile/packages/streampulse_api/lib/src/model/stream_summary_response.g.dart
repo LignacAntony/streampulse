@@ -50,6 +50,10 @@ StreamSummaryResponse _$StreamSummaryResponseFromJson(
         'broadcaster_username',
         (v) => v as String,
       ),
+      listenerCount: $checkedConvert(
+        'listener_count',
+        (v) => (v as num?)?.toInt(),
+      ),
     );
     return val;
   },
@@ -59,23 +63,35 @@ StreamSummaryResponse _$StreamSummaryResponseFromJson(
     'startedAt': 'started_at',
     'createdAt': 'created_at',
     'broadcasterUsername': 'broadcaster_username',
+    'listenerCount': 'listener_count',
   },
 );
 
 Map<String, dynamic> _$StreamSummaryResponseToJson(
   StreamSummaryResponse instance,
-) => <String, dynamic>{
-  'id': instance.id,
-  'user_id': instance.userId,
-  'title': instance.title,
-  'description': instance.description,
-  'category': instance.category,
-  'status': _$StreamSummaryResponseStatusEnumEnumMap[instance.status]!,
-  'is_public': instance.isPublic,
-  'started_at': instance.startedAt?.toIso8601String(),
-  'created_at': instance.createdAt.toIso8601String(),
-  'broadcaster_username': instance.broadcasterUsername,
-};
+) {
+  final val = <String, dynamic>{
+    'id': instance.id,
+    'user_id': instance.userId,
+    'title': instance.title,
+    'description': instance.description,
+    'category': instance.category,
+    'status': _$StreamSummaryResponseStatusEnumEnumMap[instance.status]!,
+    'is_public': instance.isPublic,
+    'started_at': instance.startedAt?.toIso8601String(),
+    'created_at': instance.createdAt.toIso8601String(),
+    'broadcaster_username': instance.broadcasterUsername,
+  };
+
+  void writeNotNull(String key, dynamic value) {
+    if (value != null) {
+      val[key] = value;
+    }
+  }
+
+  writeNotNull('listener_count', instance.listenerCount);
+  return val;
+}
 
 const _$StreamSummaryResponseStatusEnumEnumMap = {
   StreamSummaryResponseStatusEnum.idle: 'idle',

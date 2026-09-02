@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -58,10 +59,12 @@ func (r *pgRepository) Create(ctx context.Context, p CreateParams) (Stream, erro
 	}, nil
 }
 
-func (r *pgRepository) ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error) {
+func (r *pgRepository) ListPublicLive(ctx context.Context, f ListFilter) ([]Stream, error) {
 	rows, err := r.q.ListPublicLiveStreams(ctx, streamingdb.ListPublicLiveStreamsParams{
-		Lim: limit,
-		Off: offset,
+		Lim:      f.Limit,
+		Off:      f.Offset,
+		Category: textFilter(f.Category),
+		Search:   searchPattern(f.Search),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("repo: list public live streams: %w", err)
@@ -394,6 +397,28 @@ func textValue(t pgtype.Text) *string {
 		return nil
 	}
 	return &t.String
+}
+
+// textFilter rend un pgtype.Text NULL pour une chaîne vide : côté SQL, un filtre
+// NULL est inactif (`narg IS NULL OR …`).
+func textFilter(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
+}
+
+// searchPattern transforme un terme de recherche en motif ILIKE `%terme%`, en
+// échappant d'abord les métacaractères LIKE (`\`, `%`, `_`) pour qu'ils soient
+// pris au pied de la lettre — sans quoi un `%` tapé par l'utilisateur matcherait
+// n'importe quoi. Terme vide => filtre inactif (NULL). L'antislash reste le
+// caractère d'échappement par défaut de LIKE dans PostgreSQL.
+func searchPattern(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return pgtype.Text{String: "%" + replacer.Replace(s) + "%", Valid: true}
 }
 
 func createStreamError(err error) error {

@@ -901,6 +901,8 @@ paths:
       description: >-
         Public endpoint: no authentication required. Guests can discover live
         streams (US-04-01). Never exposes any secret (stream_key, source URL).
+        Optionally filtered by category and/or a free-text search on the stream
+        title or broadcaster username (Discover screen).
       parameters:
         - name: limit
           in: query
@@ -917,6 +919,24 @@ paths:
             type: integer
             minimum: 0
             default: 0
+        - name: category
+          in: query
+          required: false
+          description: >-
+            Restrict to a single category. Must be one of the allowed values;
+            an unknown value returns 400.
+          schema:
+            type: string
+            enum: [music, talk, technology, gaming, news, sport, other]
+        - name: q
+          in: query
+          required: false
+          description: >-
+            Case-insensitive search on the stream title or the broadcaster
+            username. LIKE metacharacters are matched literally.
+          schema:
+            type: string
+            maxLength: 100
       responses:
         "200":
           description: Public live streams (without any secret).
@@ -926,6 +946,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/StreamSummaryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/streams/{id}:
@@ -2740,6 +2762,11 @@ components:
         broadcaster_username:
           type: string
           description: Username of the broadcaster (display name in the listener UI).
+        listener_count:
+          type: integer
+          description: >-
+            Estimated live audience (0 when not live). Same estimate as
+            /stats, exposed here to any listener.
     StreamResponse:
       type: object
       required:
@@ -2810,6 +2837,10 @@ components:
           type: string
           format: date-time
           example: "2026-01-02T03:04:05Z"
+        listener_count:
+          type: integer
+          description: Estimated live audience (0 when not live).
+          example: 0
     AdminUserResponse:
       type: object
       required:

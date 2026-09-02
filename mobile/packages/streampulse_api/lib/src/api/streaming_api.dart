@@ -596,11 +596,13 @@ class StreamingApi {
   }
 
   /// List public live streams (paginated).
-  /// Public endpoint: no authentication required. Guests can discover live streams (US-04-01). Never exposes any secret (stream_key, source URL).
+  /// Public endpoint: no authentication required. Guests can discover live streams (US-04-01). Never exposes any secret (stream_key, source URL). Optionally filtered by category and/or a free-text search on the stream title or broadcaster username (Discover screen).
   ///
   /// Parameters:
   /// * [limit]
   /// * [offset]
+  /// * [category] - Restrict to a single category. Must be one of the allowed values; an unknown value returns 400.
+  /// * [q] - Case-insensitive search on the stream title or the broadcaster username. LIKE metacharacters are matched literally.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -613,6 +615,8 @@ class StreamingApi {
   Future<Response<List<StreamSummaryResponse>>> listStreams({
     int? limit = 20,
     int? offset = 0,
+    String? category,
+    String? q,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -631,6 +635,8 @@ class StreamingApi {
     final _queryParameters = <String, dynamic>{
       if (limit != null) r'limit': limit,
       if (offset != null) r'offset': offset,
+      if (category != null) r'category': category,
+      if (q != null) r'q': q,
     };
 
     final _response = await _dio.request<Object>(

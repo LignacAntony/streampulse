@@ -91,8 +91,13 @@ class _FakeStreamRepository implements StreamRepository {
   Future<List<LiveStream>> listLiveStreams({
     int limit = 20,
     int offset = 0,
+    String? category,
+    String? search,
   }) async =>
       const [];
+
+  @override
+  Future<int?> streamListenerCount(String id) async => 0;
 
   @override
   Future<ManifestStatus> manifestStatus(String streamId) async =>

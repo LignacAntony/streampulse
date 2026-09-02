@@ -128,7 +128,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _EmptyHint('Aucun flux en favori'),
           )
         else
-          _StreamSliverList(streams: favorites.favorites),
+          SliverToBoxAdapter(
+            child: _FavoritesCarousel(streams: favorites.favorites),
+          ),
         const SliverToBoxAdapter(child: _SectionHeader('En direct')),
         if (notifier.streams.isEmpty)
           const SliverToBoxAdapter(
@@ -157,6 +159,112 @@ class _StreamSliverList extends StatelessWidget {
         itemCount: streams.length,
         separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) => StreamTile(stream: streams[index]),
+      ),
+    );
+  }
+}
+
+/// Carrousel horizontal des favoris : pochettes dégradées avec un badge d'état,
+/// à la façon d'une étagère. Un appui ouvre le lecteur du flux.
+class _FavoritesCarousel extends StatelessWidget {
+  const _FavoritesCarousel({required this.streams});
+
+  final List<LiveStream> streams;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 186,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: streams.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (context, index) => _FavoriteCard(stream: streams[index]),
+      ),
+    );
+  }
+}
+
+class _FavoriteCard extends StatelessWidget {
+  const _FavoriteCard({required this.stream});
+
+  final LiveStream stream;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final colors = Theme.of(context).colorScheme;
+    final live = stream.isLive;
+
+    return GestureDetector(
+      onTap: () => context.push('/stream/${stream.id}', extra: stream),
+      child: SizedBox(
+        width: 132,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 132,
+              height: 132,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: live
+                      ? [colors.primary, colors.secondary]
+                      : [
+                          colors.surfaceContainerHighest,
+                          colors.surfaceContainerHighest,
+                        ],
+                ),
+              ),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: live
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colors.error,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          'LIVE',
+                          style: text.labelSmall?.copyWith(
+                            color: colors.onError,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      )
+                    : Text(
+                        'Hors ligne',
+                        style: text.labelSmall
+                            ?.copyWith(color: colors.onSurfaceVariant),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              stream.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            if (stream.broadcasterName != null &&
+                stream.broadcasterName!.isNotEmpty)
+              Text(
+                stream.broadcasterName!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+          ],
+        ),
       ),
     );
   }

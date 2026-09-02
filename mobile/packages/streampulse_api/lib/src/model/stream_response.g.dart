@@ -59,6 +59,10 @@ StreamResponse _$StreamResponseFromJson(Map<String, dynamic> json) =>
             'updated_at',
             (v) => DateTime.parse(v as String),
           ),
+          listenerCount: $checkedConvert(
+            'listener_count',
+            (v) => (v as num?)?.toInt(),
+          ),
         );
         return val;
       },
@@ -71,6 +75,7 @@ StreamResponse _$StreamResponseFromJson(Map<String, dynamic> json) =>
         'endedAt': 'ended_at',
         'createdAt': 'created_at',
         'updatedAt': 'updated_at',
+        'listenerCount': 'listener_count',
       },
     );
 
@@ -97,6 +102,7 @@ Map<String, dynamic> _$StreamResponseToJson(StreamResponse instance) {
   val['ended_at'] = instance.endedAt?.toIso8601String();
   val['created_at'] = instance.createdAt.toIso8601String();
   val['updated_at'] = instance.updatedAt.toIso8601String();
+  writeNotNull('listener_count', instance.listenerCount);
   return val;
 }
 

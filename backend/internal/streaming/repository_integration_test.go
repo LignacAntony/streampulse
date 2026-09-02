@@ -201,7 +201,7 @@ func TestRepository_ListPublicLive(t *testing.T) {
 		t.Fatalf("démarrage du public: %v", err)
 	}
 
-	liste, err := repo.ListPublicLive(ctx, 100, 0)
+	liste, err := repo.ListPublicLive(ctx, ListFilter{Limit: 100})
 	if err != nil {
 		t.Fatalf("ListPublicLive: %v", err)
 	}
@@ -229,6 +229,83 @@ func TestRepository_ListPublicLive(t *testing.T) {
 	if vuIdle {
 		t.Error("la liste publique ne doit contenir que des flux live")
 	}
+}
+
+// creerFluxCat crée un flux public avec une catégorie donnée (pour les filtres
+// de l'écran Découvrir).
+func creerFluxCat(t *testing.T, repo Repository, userID, titre, categorie string) Stream {
+	t.Helper()
+	cat := categorie
+	s, err := repo.Create(context.Background(), CreateParams{
+		UserID:    userID,
+		Title:     titre,
+		Category:  &cat,
+		IsPublic:  true,
+		Status:    StatusIdle,
+		StreamKey: pgtest.UniqueTag(t) + titre,
+	})
+	if err != nil {
+		t.Fatalf("Create %s: %v", titre, err)
+	}
+	return s
+}
+
+func TestRepository_ListPublicLive_Filters(t *testing.T) {
+	repo, pool := newStreamingRepo(t)
+	ctx := context.Background()
+	// Deux diffuseurs distincts : la règle métier interdit deux directs
+	// simultanés pour un même diffuseur.
+	userMusique := pgtest.InsertUser(t, pool, pgtest.UniqueTag(t), "broadcaster")
+	userTalk := pgtest.InsertUser(t, pool, pgtest.UniqueTag(t), "broadcaster")
+
+	musique := creerFluxCat(t, repo, userMusique, "Sunset Frequencies", "music")
+	talk := creerFluxCat(t, repo, userTalk, "Late Night Talk", "talk")
+	if _, err := repo.StartStream(ctx, musique.ID, userMusique); err != nil {
+		t.Fatalf("start %s: %v", musique.Title, err)
+	}
+	if _, err := repo.StartStream(ctx, talk.ID, userTalk); err != nil {
+		t.Fatalf("start %s: %v", talk.Title, err)
+	}
+
+	ids := func(list []Stream) map[string]bool {
+		m := make(map[string]bool, len(list))
+		for _, s := range list {
+			m[s.ID] = true
+		}
+		return m
+	}
+
+	t.Run("filtre par catégorie", func(t *testing.T) {
+		got, err := repo.ListPublicLive(ctx, ListFilter{Limit: 100, Category: "music"})
+		if err != nil {
+			t.Fatalf("ListPublicLive: %v", err)
+		}
+		seen := ids(got)
+		if !seen[musique.ID] || seen[talk.ID] {
+			t.Errorf("catégorie music : attendu seulement %q, got %d flux", musique.Title, len(got))
+		}
+	})
+
+	t.Run("recherche par titre, insensible à la casse", func(t *testing.T) {
+		got, err := repo.ListPublicLive(ctx, ListFilter{Limit: 100, Search: "sunset"})
+		if err != nil {
+			t.Fatalf("ListPublicLive: %v", err)
+		}
+		seen := ids(got)
+		if !seen[musique.ID] || seen[talk.ID] {
+			t.Errorf("recherche 'sunset' : attendu seulement %q", musique.Title)
+		}
+	})
+
+	t.Run("les métacaractères LIKE sont échappés", func(t *testing.T) {
+		got, err := repo.ListPublicLive(ctx, ListFilter{Limit: 100, Search: "%"})
+		if err != nil {
+			t.Fatalf("ListPublicLive: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("un '%%' tapé doit être pris au pied de la lettre (0 résultat), got %d", len(got))
+		}
+	})
 }
 
 func TestRepository_RotateStreamKey(t *testing.T) {

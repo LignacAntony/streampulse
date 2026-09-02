@@ -77,6 +77,7 @@ Class | Method | HTTP request | Description
 [*AdminApi*](doc/AdminApi.md) | [**stopAdminStream**](doc/AdminApi.md#stopadminstream) | **POST** /api/admin/streams/{id}/stop | Forcibly stop a live stream (admin only).
 [*AuthApi*](doc/AuthApi.md) | [**deleteAccount**](doc/AuthApi.md#deleteaccount) | **DELETE** /api/auth/me | Permanently delete the authenticated user&#39;s account (GDPR art. 17).
 [*AuthApi*](doc/AuthApi.md) | [**forgotPassword**](doc/AuthApi.md#forgotpassword) | **POST** /api/auth/forgot-password | Request a password reset email.
+[*AuthApi*](doc/AuthApi.md) | [**googleLogin**](doc/AuthApi.md#googlelogin) | **POST** /api/auth/google | Authenticate with a Google ID token and issue tokens.
 [*AuthApi*](doc/AuthApi.md) | [**login**](doc/AuthApi.md#login) | **POST** /api/auth/login | Authenticate a user and issue tokens.
 [*AuthApi*](doc/AuthApi.md) | [**logout**](doc/AuthApi.md#logout) | **POST** /api/auth/logout | Revoke the current refresh token.
 [*AuthApi*](doc/AuthApi.md) | [**refreshToken**](doc/AuthApi.md#refreshtoken) | **POST** /api/auth/refresh | Rotate a refresh token and issue a new token pair.
@@ -103,6 +104,7 @@ Class | Method | HTTP request | Description
 [*PlaylistApi*](doc/PlaylistApi.md) | [**updatePlaylist**](doc/PlaylistApi.md#updateplaylist) | **PUT** /api/playlists/{id} | Rename a playlist (owner only).
 [*ProfileApi*](doc/ProfileApi.md) | [**getMyProfile**](doc/ProfileApi.md#getmyprofile) | **GET** /api/users/me | Retrieve the authenticated user&#39;s profile.
 [*ProfileApi*](doc/ProfileApi.md) | [**updateMyProfile**](doc/ProfileApi.md#updatemyprofile) | **PUT** /api/users/me | Update the authenticated user&#39;s profile.
+[*RecommendationApi*](doc/RecommendationApi.md) | [**recommendTracks**](doc/RecommendationApi.md#recommendtracks) | **GET** /api/recommendations/tracks | Recommend tracks based on the user&#39;s listening history.
 [*StreamingApi*](doc/StreamingApi.md) | [**addFavorite**](doc/StreamingApi.md#addfavorite) | **PUT** /api/streams/{id}/favorite | Add a stream to the authenticated user&#39;s favorites.
 [*StreamingApi*](doc/StreamingApi.md) | [**createStream**](doc/StreamingApi.md#createstream) | **POST** /api/streams | Create and configure a new live stream (broadcaster only).
 [*StreamingApi*](doc/StreamingApi.md) | [**deleteStream**](doc/StreamingApi.md#deletestream) | **DELETE** /api/streams/{id} | Delete (archive) a stream (owner only).
@@ -153,6 +155,7 @@ Class | Method | HTTP request | Description
  - [ErrorResponse](doc/ErrorResponse.md)
  - [ForgotPasswordRequest](doc/ForgotPasswordRequest.md)
  - [GlobalBanUserRequest](doc/GlobalBanUserRequest.md)
+ - [GoogleLoginRequest](doc/GoogleLoginRequest.md)
  - [HealthResponse](doc/HealthResponse.md)
  - [LoginRequest](doc/LoginRequest.md)
  - [LogoutRequest](doc/LogoutRequest.md)
@@ -161,6 +164,7 @@ Class | Method | HTTP request | Description
  - [PlaylistTrackResponse](doc/PlaylistTrackResponse.md)
  - [ProfileResponse](doc/ProfileResponse.md)
  - [PublicTrackResponse](doc/PublicTrackResponse.md)
+ - [RecommendedTrackResponse](doc/RecommendedTrackResponse.md)
  - [RefreshRequest](doc/RefreshRequest.md)
  - [RegisterRequest](doc/RegisterRequest.md)
  - [ReorderPlaylistTracksRequest](doc/ReorderPlaylistTracksRequest.md)

@@ -36,8 +36,7 @@ type stubService struct {
 
 	listRet   []Stream
 	listErr   error
-	gotLimit  int32
-	gotOffset int32
+	gotFilter ListFilter
 
 	getRet         Stream
 	getOwner       bool
@@ -71,9 +70,8 @@ func (s *stubService) CreateStream(_ context.Context, in CreateStreamInput) (Str
 	return s.ret, s.err
 }
 
-func (s *stubService) ListPublicLive(_ context.Context, limit, offset int32) ([]Stream, error) {
-	s.gotLimit = limit
-	s.gotOffset = offset
+func (s *stubService) ListPublicLive(_ context.Context, filter ListFilter) ([]Stream, error) {
+	s.gotFilter = filter
 	return s.listRet, s.listErr
 }
 
@@ -326,17 +324,42 @@ func TestHandler_List_PaginationClamp(t *testing.T) {
 	h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
 
 	doList(t, h, "?limit=999&offset=-5", true)
-	if stub.gotLimit != MaxListLimit {
-		t.Errorf("limit = %d, want clamp à %d", stub.gotLimit, MaxListLimit)
+	if stub.gotFilter.Limit != MaxListLimit {
+		t.Errorf("limit = %d, want clamp à %d", stub.gotFilter.Limit, MaxListLimit)
 	}
-	if stub.gotOffset != 0 {
-		t.Errorf("offset = %d, want 0", stub.gotOffset)
+	if stub.gotFilter.Offset != 0 {
+		t.Errorf("offset = %d, want 0", stub.gotFilter.Offset)
 	}
 
 	doList(t, h, "", true)
-	if stub.gotLimit != DefaultListLimit {
-		t.Errorf("limit par défaut = %d, want %d", stub.gotLimit, DefaultListLimit)
+	if stub.gotFilter.Limit != DefaultListLimit {
+		t.Errorf("limit par défaut = %d, want %d", stub.gotFilter.Limit, DefaultListLimit)
 	}
+}
+
+func TestHandler_List_Filters(t *testing.T) {
+	t.Run("catégorie et recherche transmises au service", func(t *testing.T) {
+		stub := &stubService{}
+		h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+		doList(t, h, "?category=music&q=aurora", true)
+		if stub.gotFilter.Category != "music" {
+			t.Errorf("category = %q, want music", stub.gotFilter.Category)
+		}
+		if stub.gotFilter.Search != "aurora" {
+			t.Errorf("search = %q, want aurora", stub.gotFilter.Search)
+		}
+	})
+
+	t.Run("catégorie hors liste blanche → 400", func(t *testing.T) {
+		stub := &stubService{}
+		h := NewHandler(stub, testIngestURL, NewLiveSessions(context.Background()))
+
+		rec := doList(t, h, "?category=chill", true)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("want 400 pour une catégorie inconnue, got %d", rec.Code)
+		}
+	})
 }
 
 // doID exécute GET/PUT/DELETE /api/streams/{id} via RequireAuth, avec le path

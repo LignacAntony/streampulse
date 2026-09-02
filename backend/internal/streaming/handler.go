@@ -59,7 +59,7 @@ func (r *ingestDeadlineReader) Read(p []byte) (int, error) {
 // StreamService est l'interface requise par le handler (ISP) : *Service la satisfait.
 type StreamService interface {
 	CreateStream(ctx context.Context, in CreateStreamInput) (Stream, error)
-	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
+	ListPublicLive(ctx context.Context, f ListFilter) ([]Stream, error)
 	GetStream(ctx context.Context, id, requesterID string) (Stream, bool, error)
 	UpdateStream(ctx context.Context, id, requesterID string, in UpdateStreamInput) (Stream, error)
 	ArchiveStream(ctx context.Context, id, requesterID string) error
@@ -215,6 +215,20 @@ type streamResponse struct {
 	EndedAt         *time.Time `json:"ended_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+	// Audience estimée pour un flux en direct (0 sinon), exposée aux auditeurs.
+	ListenerCount int `json:"listener_count"`
+}
+
+// liveListeners retourne l'audience estimée d'un flux en direct (0 sinon).
+// Même estimation que `/stats` (suivi mémoire des requêtes de manifeste), mais
+// lisible par tout auditeur ici — le compteur détaillé de `/stats` reste, lui,
+// réservé au propriétaire.
+func (h *Handler) liveListeners(s Stream) int {
+	if s.Status != StatusLive {
+		return 0
+	}
+	stats, _ := h.sessions.Stats(s.ID)
+	return stats.Listeners
 }
 
 // Create gère POST /api/streams. L'authentification et le rôle broadcaster
@@ -287,6 +301,10 @@ type streamSummaryResponse struct {
 	StartedAt           *time.Time `json:"started_at"`
 	CreatedAt           time.Time  `json:"created_at"`
 	BroadcasterUsername string     `json:"broadcaster_username"`
+	// Audience estimée pour un flux en direct (0 sinon) — même estimation que
+	// `/stats`, mais exposée ici aux auditeurs (le compteur `/stats` est réservé
+	// au propriétaire).
+	ListenerCount int `json:"listener_count"`
 }
 
 func toSummary(s Stream) streamSummaryResponse {
@@ -321,7 +339,26 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		offset = 1<<31 - 1 // borne haute : évite un débordement int32 (OFFSET négatif → 500)
 	}
 
-	streams, err := h.svc.ListPublicLive(r.Context(), int32(limit), int32(offset))
+	// Filtres optionnels de l'écran Découvrir. La catégorie est validée contre la
+	// même liste blanche que la création (une valeur hors liste → 400, plutôt
+	// qu'une liste vide silencieuse qui ferait croire à une panne). La recherche
+	// est bornée en longueur ; l'échappement ILIKE se fait dans le repository.
+	category := strings.TrimSpace(r.URL.Query().Get("category"))
+	if category != "" && !validCategories[category] {
+		httpjson.WriteError(w, r, apperror.InvalidArgument("invalid category"))
+		return
+	}
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	if runes := []rune(search); len(runes) > MaxSearchLen {
+		search = string(runes[:MaxSearchLen]) // découpe par runes : jamais d'UTF-8 tronqué
+	}
+
+	streams, err := h.svc.ListPublicLive(r.Context(), ListFilter{
+		Limit:    int32(limit),
+		Offset:   int32(offset),
+		Category: category,
+		Search:   search,
+	})
 	if err != nil {
 		httpjson.WriteError(w, r, err)
 		return
@@ -329,7 +366,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]streamSummaryResponse, 0, len(streams))
 	for _, s := range streams {
-		out = append(out, toSummary(s))
+		sum := toSummary(s)
+		sum.ListenerCount = h.liveListeners(s)
+		out = append(out, sum)
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode list")
@@ -379,7 +418,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := httpjson.Write(w, http.StatusOK, h.toResponse(stream, isOwner)); err != nil {
+	resp := h.toResponse(stream, isOwner)
+	resp.ListenerCount = h.liveListeners(stream)
+	if err := httpjson.Write(w, http.StatusOK, resp); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode get")
 	}
 }
@@ -539,7 +580,9 @@ func (h *Handler) ListFavorites(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]streamSummaryResponse, 0, len(streams))
 	for _, s := range streams {
-		out = append(out, toSummary(s))
+		sum := toSummary(s)
+		sum.ListenerCount = h.liveListeners(s)
+		out = append(out, sum)
 	}
 	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("streaming: encode favorites")

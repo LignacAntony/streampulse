@@ -13,8 +13,15 @@ class StreamRepositoryImpl implements StreamRepository {
   Future<List<LiveStream>> listLiveStreams({
     int limit = 20,
     int offset = 0,
+    String? category,
+    String? search,
   }) async {
-    final dtos = await _remote.listLive(limit: limit, offset: offset);
+    final dtos = await _remote.listLive(
+      limit: limit,
+      offset: offset,
+      category: category,
+      search: search,
+    );
     return dtos.map((dto) => dto.toEntity()).toList();
   }
 
@@ -23,6 +30,10 @@ class StreamRepositoryImpl implements StreamRepository {
     final dtos = await _remote.listFavorites();
     return dtos.map((dto) => dto.toEntity()).toList();
   }
+
+  @override
+  Future<int?> streamListenerCount(String id) =>
+      _remote.streamListenerCount(id);
 
   @override
   Future<void> addFavorite(String streamId) => _remote.addFavorite(streamId);

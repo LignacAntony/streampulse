@@ -31,7 +31,21 @@ const (
 const (
 	DefaultListLimit = 20
 	MaxListLimit     = 100
+	// MaxSearchLen borne la longueur du terme de recherche (Découvrir) : au-delà,
+	// le motif ILIKE ne matcherait plus rien d'utile et gonflerait la requête.
+	MaxSearchLen = 100
 )
+
+// ListFilter borne et filtre GET /api/streams (écran Découvrir). Limit/Offset
+// paginent ; Category (vide = toutes catégories) filtre sur une catégorie
+// exacte ; Search (vide = aucune recherche) matche le titre du flux OU le
+// username du diffuseur.
+type ListFilter struct {
+	Limit    int32
+	Offset   int32
+	Category string
+	Search   string
+}
 
 // validCategories est la liste blanche des catégories autorisées.
 var validCategories = map[string]bool{
@@ -162,7 +176,7 @@ type UpdateParams struct {
 // Repository est l'interface de persistance (implémentée par pgRepository).
 type Repository interface {
 	Create(ctx context.Context, p CreateParams) (Stream, error)
-	ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error)
+	ListPublicLive(ctx context.Context, f ListFilter) ([]Stream, error)
 	GetByID(ctx context.Context, id string) (Stream, error)
 	Update(ctx context.Context, p UpdateParams) (Stream, error)
 	Archive(ctx context.Context, id, userID string) (string, error)
@@ -260,9 +274,10 @@ func (s *Service) CreateStream(ctx context.Context, in CreateStreamInput) (Strea
 	})
 }
 
-// ListPublicLive retourne les flux publics en direct (non archivés), paginés.
-func (s *Service) ListPublicLive(ctx context.Context, limit, offset int32) ([]Stream, error) {
-	return s.repo.ListPublicLive(ctx, limit, offset)
+// ListPublicLive retourne les flux publics en direct (non archivés), paginés et
+// éventuellement filtrés par catégorie et/ou recherche (Découvrir).
+func (s *Service) ListPublicLive(ctx context.Context, f ListFilter) ([]Stream, error) {
+	return s.repo.ListPublicLive(ctx, f)
 }
 
 // GetStream retourne un flux par id et indique si le demandeur en est le

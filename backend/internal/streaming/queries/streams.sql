@@ -15,12 +15,21 @@ RETURNING id::text AS id, user_id::text AS user_id, title, description, category
 -- name: ListPublicLiveStreams :many
 -- Flux publics en direct, non archivés. Le stream_key n'est jamais exposé ici.
 -- JOIN users pour exposer le username du diffuseur (affiché côté auditeur).
+-- Filtres optionnels de l'écran Découvrir : category (correspondance exacte) et
+-- search (titre OU username du diffuseur, ILIKE). NULL = filtre inactif. Le motif
+-- ILIKE (%…%) et l'échappement des métacaractères LIKE sont préparés côté Go.
 SELECT s.id::text AS id, s.user_id::text AS user_id, s.title, s.description, s.category,
        s.status, s.is_public, s.started_at, s.ended_at, s.created_at, s.updated_at,
        u.username AS broadcaster_username
 FROM streams s
 JOIN users u ON u.id = s.user_id
 WHERE s.is_public = true AND s.status = 'live' AND s.archived_at IS NULL
+  AND (sqlc.narg(category)::text IS NULL OR s.category = sqlc.narg(category)::text)
+  AND (
+    sqlc.narg(search)::text IS NULL
+    OR s.title ILIKE sqlc.narg(search)::text
+    OR u.username ILIKE sqlc.narg(search)::text
+  )
 ORDER BY s.started_at DESC NULLS LAST, s.created_at DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 

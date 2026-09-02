@@ -18,12 +18,35 @@ class StreamRemoteDataSource {
   Future<List<StreamSummaryResponse>> listLive({
     int limit = 20,
     int offset = 0,
+    String? category,
+    String? search,
   }) async {
     try {
-      final response = await _api.listStreams(limit: limit, offset: offset);
+      // Filtres de l'écran Découvrir : `category` et `q` sont exposés par le
+      // client généré depuis la mise à jour du contrat OpenAPI. On envoie `null`
+      // pour un filtre vide (pas de paramètre) plutôt qu'une chaîne vide.
+      final trimmed = search?.trim();
+      final response = await _api.listStreams(
+        limit: limit,
+        offset: offset,
+        category: (category != null && category.isNotEmpty) ? category : null,
+        q: (trimmed != null && trimmed.isNotEmpty) ? trimmed : null,
+      );
       return response.data ?? const [];
     } on DioException catch (e) {
       throw mapDioException(e);
+    }
+  }
+
+  /// Audience estimée d'un flux (0 hors direct), pour rafraîchir le compteur du
+  /// lecteur pendant l'écoute. `null` si la requête échoue — l'affichage garde
+  /// alors sa dernière valeur plutôt que de retomber à zéro.
+  Future<int?> streamListenerCount(String id) async {
+    try {
+      final response = await _api.getStream(id: id);
+      return response.data?.listenerCount;
+    } on DioException {
+      return null;
     }
   }
 

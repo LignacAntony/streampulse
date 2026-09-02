@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/storage/secure_storage.dart';
@@ -11,6 +12,7 @@ import '../../features/broadcaster/presentation/screens/broadcaster_request_scre
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/playlists/presentation/screens/playlist_detail_screen.dart';
 import '../../features/playlists/presentation/screens/playlists_screen.dart';
+import '../../features/playlists/presentation/screens/queue_player_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/streams/domain/entities/live_stream.dart';
 import '../../features/tracks/presentation/screens/upload_track_screen.dart';
@@ -82,12 +84,24 @@ GoRouter createAppRouter(SecureStorage storage) {
         path: '/broadcaster-request',
         builder: (context, state) => const BroadcasterRequestScreen(),
       ),
+      // Les deux lecteurs se présentent comme une modale « now playing » qui
+      // monte du bas (le chevron ⌄ de l'en-tête la fait redescendre), plutôt
+      // qu'une page qui glisse latéralement : c'est la présentation attendue
+      // d'un lecteur plein écran.
       GoRoute(
         path: '/stream/:id',
-        builder: (context, state) => StreamPlayerScreen(
-          streamId: state.pathParameters['id']!,
-          stream: state.extra as LiveStream?,
+        pageBuilder: (context, state) => _slideUpPage(
+          state,
+          StreamPlayerScreen(
+            streamId: state.pathParameters['id']!,
+            stream: state.extra as LiveStream?,
+          ),
         ),
+      ),
+      GoRoute(
+        path: '/queue',
+        pageBuilder: (context, state) =>
+            _slideUpPage(state, const QueuePlayerScreen()),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
@@ -154,5 +168,32 @@ GoRouter createAppRouter(SecureStorage storage) {
         ],
       ),
     ],
+  );
+}
+
+/// Page à transition « modale montante » : le contenu glisse du bas vers le
+/// haut à l'ouverture (et redescend à la fermeture), plutôt que le glissement
+/// latéral par défaut. Utilisée par les lecteurs plein écran (direct + file),
+/// dont l'en-tête porte un chevron ⌄ pour redescendre.
+CustomTransitionPage<void> _slideUpPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 320),
+    reverseTransitionDuration: const Duration(milliseconds: 260),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      );
+    },
   );
 }

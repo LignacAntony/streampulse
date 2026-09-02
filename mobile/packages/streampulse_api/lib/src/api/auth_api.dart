@@ -12,6 +12,7 @@ import 'package:dio/dio.dart';
 import 'package:streampulse_api/src/model/delete_account_request.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/forgot_password_request.dart';
+import 'package:streampulse_api/src/model/google_login_request.dart';
 import 'package:streampulse_api/src/model/login_request.dart';
 import 'package:streampulse_api/src/model/logout_request.dart';
 import 'package:streampulse_api/src/model/message_response.dart';
@@ -164,6 +165,93 @@ class AuthApi {
     }
 
     return Response<MessageResponse>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Authenticate with a Google ID token and issue tokens.
+  /// Verifies the Google ID token, finds or creates the matching account (first sign-in creates a user with role &#x60;user&#x60;), and issues the usual StreamPulse token pair. Mounted only when GOOGLE_CLIENT_ID is configured.
+  ///
+  /// Parameters:
+  /// * [googleLoginRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [TokenPairResponse] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<TokenPairResponse>> googleLogin({
+    required GoogleLoginRequest googleLoginRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/api/auth/google';
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{...?headers},
+      extra: <String, dynamic>{'secure': <Map<String, String>>[], ...?extra},
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      _bodyData = jsonEncode(googleLoginRequest);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(_dio.options, _path),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    TokenPairResponse? _responseData;
+
+    try {
+      final rawData = _response.data;
+      _responseData = rawData == null
+          ? null
+          : deserialize<TokenPairResponse, TokenPairResponse>(
+              rawData,
+              'TokenPairResponse',
+              growable: true,
+            );
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<TokenPairResponse>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

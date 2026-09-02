@@ -141,7 +141,7 @@ void main() {
   });
 
   testWidgets('le curseur manipulable de la file suit la même règle', (tester) async {
-    // Le `Slider` de `PlaybackQueueSheet` est le point le plus exposé : il
+    // Le `Slider` du `QueuePlayerScreen` est le point le plus exposé : il
     // affiche la position ET accepte un glissement, donc il redessine à chaque
     // trame pendant que le doigt est posé.
     final ctx = await _pumpQueue(tester, const QueueProgressSlider());

@@ -12,6 +12,7 @@ lib/src/api/health_api.dart
 lib/src/api/metrics_api.dart
 lib/src/api/playlist_api.dart
 lib/src/api/profile_api.dart
+lib/src/api/recommendation_api.dart
 lib/src/api/streaming_api.dart
 lib/src/api/track_api.dart
 lib/src/auth/api_key_auth.dart
@@ -43,6 +44,7 @@ lib/src/model/error_detail.dart
 lib/src/model/error_response.dart
 lib/src/model/forgot_password_request.dart
 lib/src/model/global_ban_user_request.dart
+lib/src/model/google_login_request.dart
 lib/src/model/health_response.dart
 lib/src/model/login_request.dart
 lib/src/model/logout_request.dart
@@ -51,6 +53,7 @@ lib/src/model/playlist_response.dart
 lib/src/model/playlist_track_response.dart
 lib/src/model/profile_response.dart
 lib/src/model/public_track_response.dart
+lib/src/model/recommended_track_response.dart
 lib/src/model/refresh_request.dart
 lib/src/model/register_request.dart
 lib/src/model/reorder_playlist_tracks_request.dart

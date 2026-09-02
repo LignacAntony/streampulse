@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/mini_player_shell.dart';
 import '../providers/playlist_queue_controller.dart';
-import 'playback_queue_sheet.dart';
 import 'queue_progress.dart';
 import '../../../../core/widgets/accessible_icon_button.dart';
 
@@ -46,7 +46,7 @@ class QueueMiniPlayer extends StatelessWidget {
       // bandeau fait 60 px, viser un pouce dessus serait une loterie. La barre
       // manipulable vit dans la file d'attente, à un appui d'ici.
       progress: const QueueProgressLine(),
-      onTap: () => PlaybackQueueSheet.show(context),
+      onTap: () => context.push('/queue'),
       actions: [
         AccessibleIconButton(
           key: const Key('queue_mini_previous'),

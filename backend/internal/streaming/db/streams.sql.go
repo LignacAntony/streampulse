@@ -181,13 +181,21 @@ SELECT s.id::text AS id, s.user_id::text AS user_id, s.title, s.description, s.c
 FROM streams s
 JOIN users u ON u.id = s.user_id
 WHERE s.is_public = true AND s.status = 'live' AND s.archived_at IS NULL
+  AND ($1::text IS NULL OR s.category = $1::text)
+  AND (
+    $2::text IS NULL
+    OR s.title ILIKE $2::text
+    OR u.username ILIKE $2::text
+  )
 ORDER BY s.started_at DESC NULLS LAST, s.created_at DESC
-LIMIT $2 OFFSET $1
+LIMIT $4 OFFSET $3
 `
 
 type ListPublicLiveStreamsParams struct {
-	Off int32
-	Lim int32
+	Category pgtype.Text
+	Search   pgtype.Text
+	Off      int32
+	Lim      int32
 }
 
 type ListPublicLiveStreamsRow struct {
@@ -207,8 +215,16 @@ type ListPublicLiveStreamsRow struct {
 
 // Flux publics en direct, non archivés. Le stream_key n'est jamais exposé ici.
 // JOIN users pour exposer le username du diffuseur (affiché côté auditeur).
+// Filtres optionnels de l'écran Découvrir : category (correspondance exacte) et
+// search (titre OU username du diffuseur, ILIKE). NULL = filtre inactif. Le motif
+// ILIKE (%…%) et l'échappement des métacaractères LIKE sont préparés côté Go.
 func (q *Queries) ListPublicLiveStreams(ctx context.Context, arg ListPublicLiveStreamsParams) ([]ListPublicLiveStreamsRow, error) {
-	rows, err := q.db.Query(ctx, listPublicLiveStreams, arg.Off, arg.Lim)
+	rows, err := q.db.Query(ctx, listPublicLiveStreams,
+		arg.Category,
+		arg.Search,
+		arg.Off,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -30,11 +30,16 @@ import '../audio/volume_store.dart';
 /// volume du **système**, celui-ci atténue StreamPulse à l'intérieur. On peut
 /// donc baisser la radio sans baisser ses notifications.
 class VolumeSlider extends StatefulWidget {
-  const VolumeSlider({super.key, this.showLabel = true});
+  const VolumeSlider({super.key, this.showLabel = true, this.compact = false});
 
   /// Affiche le pourcentage à droite du curseur. Coupé sur les surfaces
   /// étroites où la place manque.
   final bool showLabel;
+
+  /// Forme compacte : icône (appui = couper/rétablir) + pourcentage, sans
+  /// curseur. Pour les rangées de commandes serrées (lecteur direct) où un
+  /// curseur écrasé rend mal.
+  final bool compact;
 
   @override
   State<VolumeSlider> createState() => _VolumeSliderState();
@@ -121,6 +126,25 @@ class _VolumeSliderState extends State<VolumeSlider> {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final percent = (_volume * 100).round();
+
+    if (widget.compact) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: const Key('volume_mute_toggle'),
+            onPressed: _toggleMute,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(_icon, color: colors.onSurfaceVariant),
+            tooltip: _volume <= 0 ? 'Rétablir le son' : 'Couper le son',
+          ),
+          Text(
+            '$percent %',
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ],
+      );
+    }
 
     return Row(
       children: [

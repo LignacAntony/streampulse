@@ -13,6 +13,7 @@ import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/widgets/chat_panel.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
 import '../../domain/entities/live_stream.dart';
+import '../../domain/repositories/stream_repository.dart';
 import '../providers/audio_player_controller.dart';
 import '../providers/favorites_controller.dart';
 
@@ -43,10 +44,19 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   ChatController? _chat;
   ProfileController? _profileController;
 
+  /// Audience estimée, rafraîchie pendant l'écoute. Initialisée à l'instantané
+  /// porté par le flux (liste), puis mise à jour par le serveur : sans ça, le
+  /// compteur resterait figé sur la valeur d'avant que l'auditeur ne compte.
+  int? _listeners;
+  Timer? _listenersTimer;
+
   @override
   void initState() {
     super.initState();
     _audio = widget.controller ?? context.read<AudioPlayerController>();
+    _listeners = widget.stream?.listenerCount;
+    _audio.addListener(_syncListenersPoll);
+    _syncListenersPoll();
     unawaited(ensureNotificationPermission());
     if (_audio.nowPlaying?.streamId != widget.streamId) {
       _audio.load(
@@ -94,8 +104,38 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   @override
   void dispose() {
     _profileController?.removeListener(_onProfileLoaded);
+    _audio.removeListener(_syncListenersPoll);
+    _listenersTimer?.cancel();
     _chat?.disconnect();
     super.dispose();
+  }
+
+  /// Ne sonde l'audience que pendant une lecture effective : c'est là que
+  /// l'auditeur compte côté serveur (ses requêtes de manifeste alimentent
+  /// l'estimation), et un flux en pause n'a pas à réveiller l'application.
+  /// Même discipline que le chrono d'écoute ([ListeningTime]).
+  void _syncListenersPoll() {
+    if (_audio.isPlaying) {
+      if (_listenersTimer == null) {
+        unawaited(_fetchListeners());
+        _listenersTimer = Timer.periodic(
+          const Duration(seconds: 8),
+          (_) => unawaited(_fetchListeners()),
+        );
+      }
+    } else {
+      _listenersTimer?.cancel();
+      _listenersTimer = null;
+    }
+  }
+
+  Future<void> _fetchListeners() async {
+    final count =
+        await context.read<StreamRepository>().streamListenerCount(widget.streamId);
+    // `null` = échec réseau : on garde la dernière valeur affichée plutôt que
+    // de faire retomber le compteur à zéro.
+    if (!mounted || count == null) return;
+    setState(() => _listeners = count);
   }
 
   Future<void> _toggleFavorite() async {
@@ -128,7 +168,7 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     final title = widget.stream?.title ?? _audio.nowPlaying?.title ?? 'Flux';
     final subtitle =
         widget.stream?.broadcasterName ?? _audio.nowPlaying?.broadcaster;
-    final listeners = widget.stream?.listenerCount;
+    final listeners = _listeners;
     final isFavorited =
         context.watch<FavoritesController>().isFavorited(widget.streamId);
     final profile = context.watch<ProfileController>().profile;
@@ -137,18 +177,12 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _header(colors),
-            _compactStreamInfo(colors, text, title, subtitle, listeners, isFavorited),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
-                children: [
-                  const Expanded(child: VolumeSlider(showLabel: false)),
-                  const SizedBox(width: 12),
-                  ListeningTime(controller: _audio),
-                ],
-              ),
-            ),
+            _header(colors, isFavorited),
+            const SizedBox(height: 8),
+            _nowPlaying(colors, text, title, subtitle, listeners),
+            const SizedBox(height: 8),
+            _controls(colors),
+            const Divider(height: 24),
             Expanded(
               child: _chat != null && profile != null
                   ? ListenableBuilder(
@@ -171,107 +205,194 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     );
   }
 
-  Widget _compactStreamInfo(
+  /// Bloc « en cours » centré : grande pochette dégradée, titre, diffuseur et
+  /// nombre d'auditeurs. La pochette est décorative (pas d'image dans le modèle).
+  Widget _nowPlaying(
     ColorScheme colors,
     TextTheme text,
     String title,
     String? subtitle,
     int? listeners,
-    bool isFavorited,
   ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.outlineVariant, width: 0.5)),
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 224,
+            height: 224,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
-                colors: [colors.primary, colors.primary.withValues(alpha: 0.4)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [colors.primary, colors.secondary],
               ),
-            ),
-            child: Icon(Icons.radio, size: 24, color: colors.onPrimary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              boxShadow: [
+                BoxShadow(
+                  color: colors.primary.withValues(alpha: 0.4),
+                  blurRadius: 60,
+                  offset: const Offset(0, 16),
                 ),
-                if (subtitle != null && subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodySmall?.copyWith(color: colors.primary),
-                  ),
-                if (listeners != null)
-                  Row(
-                    children: [
-                      Icon(Icons.headphones, size: 12, color: colors.secondary),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$listeners',
-                        style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ],
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: Container(
+                    margin: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        width: 2,
                       ),
-                    ],
+                    ),
                   ),
+                ),
+                Icon(Icons.radio, size: 72, color: colors.onPrimary),
               ],
             ),
           ),
-          ListenableBuilder(
-            listenable: _audio,
-            builder: (context, _) => _compactPlayButton(colors),
+          const SizedBox(height: 18),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
-          IconButton(
-            onPressed: _toggleFavorite,
-            iconSize: 22,
-            color: isFavorited ? colors.primary : colors.onSurfaceVariant,
-            icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
+          if (subtitle != null && subtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(
+                color: colors.secondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.headphones, size: 16, color: colors.secondary),
+                const SizedBox(width: 6),
+                Text(
+                  '${listeners ?? 0} auditeur${(listeners ?? 0) > 1 ? 's' : ''}',
+                  style:
+                      text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Rangée de commandes : temps d'écoute à gauche, gros bouton lecture/pause
+  /// **centré**, volume compact à droite (comme la maquette).
+  ///
+  /// Les deux côtés ont la même largeur fixe et le bouton occupe le centre
+  /// extensible : il reste donc parfaitement centré à l'écran, que le temps
+  /// d'écoute soit affiché ou non. Le volume est borné en largeur au lieu de
+  /// s'étaler sur toute la droite — c'est ce déséquilibre qui décentrait le
+  /// bouton.
+  Widget _controls(ColorScheme colors) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ListeningTime(controller: _audio),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: ListenableBuilder(
+                listenable: _audio,
+                builder: (context, _) => _bigPlayButton(colors),
+              ),
+            ),
+          ),
+          const SizedBox(
+            width: 130,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: VolumeSlider(compact: true),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _compactPlayButton(ColorScheme colors) {
+  Widget _bigPlayButton(ColorScheme colors) {
     final Widget icon;
     if (_audio.isBusy || _audio.isReconnecting) {
       icon = SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2, color: colors.onPrimary),
+        width: 26,
+        height: 26,
+        child:
+            CircularProgressIndicator(strokeWidth: 3, color: colors.onPrimary),
       );
     } else if (_audio.hasError || _audio.isEnded) {
-      icon = Icon(Icons.replay, size: 22, color: colors.onPrimary);
+      icon = Icon(Icons.replay, size: 32, color: colors.onPrimary);
     } else if (_audio.isPlaying) {
-      icon = Icon(Icons.pause, size: 24, color: colors.onPrimary);
+      icon = Icon(Icons.pause, size: 36, color: colors.onPrimary);
     } else {
-      icon = Icon(Icons.play_arrow, size: 24, color: colors.onPrimary);
+      icon = Icon(Icons.play_arrow, size: 36, color: colors.onPrimary);
     }
 
-    return Material(
-      color: colors.primary,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: _audio.togglePlayPause,
-        child: SizedBox(width: 40, height: 40, child: Center(child: icon)),
+    final String label;
+    if (_audio.hasError || _audio.isEnded) {
+      label = 'Réessayer la lecture';
+    } else if (_audio.isPlaying) {
+      label = 'Mettre en pause';
+    } else {
+      label = 'Lire';
+    }
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: colors.primary,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _audio.togglePlayPause,
+          child: Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: colors.primary.withValues(alpha: 0.45),
+                  blurRadius: 22,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Center(child: icon),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _header(ColorScheme colors) {
+  Widget _header(ColorScheme colors, bool isFavorited) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -281,14 +402,23 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
             label: 'Réduire le lecteur',
             onPressed: () => Navigator.of(context).maybePop(),
           ),
-          const Spacer(),
-          ListenableBuilder(
-            listenable: _audio,
-            builder: (context, _) => (_audio.isEnded || _audio.hasError)
-                ? const SizedBox.shrink()
-                : _liveBadge(colors),
+          Expanded(
+            child: Center(
+              child: ListenableBuilder(
+                listenable: _audio,
+                builder: (context, _) => (_audio.isEnded || _audio.hasError)
+                    ? const SizedBox.shrink()
+                    : _liveBadge(colors),
+              ),
+            ),
           ),
-          const Spacer(),
+          IconButton(
+            onPressed: _toggleFavorite,
+            iconSize: 24,
+            color: isFavorited ? colors.error : colors.onSurfaceVariant,
+            tooltip: isFavorited ? 'Retirer des favoris' : 'Ajouter aux favoris',
+            icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
+          ),
         ],
       ),
     );
