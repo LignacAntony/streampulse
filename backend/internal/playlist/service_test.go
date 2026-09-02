@@ -2,6 +2,7 @@ package playlist
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -425,5 +426,80 @@ func TestListFavorites_Passthrough(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "p1" || !got[0].IsFavorite {
 		t.Errorf("got %+v, want la playlist favorite", got)
+	}
+}
+
+func TestListPlaylists_Passthrough(t *testing.T) {
+	repo := &fakeRepo{listRet: []Playlist{{ID: "p1", Name: "Rock", IsFavorite: true}}}
+	svc := NewService(repo)
+
+	got, err := svc.ListPlaylists(context.Background(), ownerID)
+	if err != nil {
+		t.Fatalf("ListPlaylists: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "p1" || !got[0].IsFavorite {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestGetPlaylist_Owner_ReturnsPlaylist(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: ownerID, IsFavorite: true}}
+	svc := NewService(repo)
+
+	pl, err := svc.GetPlaylist(context.Background(), "p1", ownerID)
+	if err != nil {
+		t.Fatalf("GetPlaylist: %v", err)
+	}
+	if pl.ID != "p1" || !pl.IsFavorite {
+		t.Errorf("got %+v", pl)
+	}
+}
+
+func TestCreatePlaylist_DescriptionTooLong_InvalidArgument(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo)
+	long := strings.Repeat("a", MaxDescriptionLen+1)
+
+	_, err := svc.CreatePlaylist(context.Background(), CreateInput{
+		UserID: ownerID, Name: "Rock", Description: &long,
+	})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("err = %v, want InvalidArgument", err)
+	}
+	if repo.createCall {
+		t.Error("repo.Create ne doit pas être appelé sur une description invalide")
+	}
+}
+
+func TestCreatePlaylist_BlankDescription_ForwardsNil(t *testing.T) {
+	repo := &fakeRepo{createRet: Playlist{ID: "p1"}}
+	svc := NewService(repo)
+	blank := "   "
+
+	_, err := svc.CreatePlaylist(context.Background(), CreateInput{
+		UserID: ownerID, Name: "Rock", Description: &blank,
+	})
+	if err != nil {
+		t.Fatalf("CreatePlaylist: %v", err)
+	}
+	// Une description blanche est normalisée en nil (pas de chaîne vide persistée).
+	if repo.gotCreate.Description != nil {
+		t.Errorf("description = %v, want nil", *repo.gotCreate.Description)
+	}
+}
+
+func TestUpdatePlaylist_DescriptionTooLong_InvalidArgument(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo)
+	long := strings.Repeat("a", MaxDescriptionLen+1)
+
+	_, err := svc.UpdatePlaylist(context.Background(), "p1", ownerID, UpdateInput{
+		Name: "Rock", Description: &long,
+	})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("err = %v, want InvalidArgument", err)
+	}
+	if repo.updateCall {
+		t.Error("repo.Update ne doit pas être appelé sur une description invalide")
 	}
 }
