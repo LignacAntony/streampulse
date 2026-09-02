@@ -342,9 +342,10 @@ func (s *Service) ArchiveStream(ctx context.Context, id, requesterID string) err
 	return nil
 }
 
-// StartStream fait passer un flux idle -> live (propriétaire uniquement) puis
-// enregistre la session de diffusion. 404 si absent/pas propriétaire ; 409 si
-// le flux n'est pas idle ou si le diffuseur a déjà un flux en direct.
+// StartStream fait passer un flux idle|ended -> live (propriétaire uniquement)
+// puis enregistre la session de diffusion. Relancer un flux terminé est permis
+// (ADR 048) : seul un flux déjà `live` refuse la transition. 404 si absent/pas
+// propriétaire ; 409 s'il est déjà en direct, ou si le diffuseur en a un autre.
 func (s *Service) StartStream(ctx context.Context, id, requesterID string) (Stream, error) {
 	stream, err := s.repo.StartStream(ctx, id, requesterID)
 	if err != nil {
@@ -352,7 +353,7 @@ func (s *Service) StartStream(ctx context.Context, id, requesterID string) (Stre
 			return Stream{}, apperror.Conflict("you already have a live stream")
 		}
 		if errors.Is(err, errNoRowAffected) {
-			return Stream{}, s.classifyTransitionFailure(ctx, id, requesterID, "stream is not idle")
+			return Stream{}, s.classifyTransitionFailure(ctx, id, requesterID, "stream is already live")
 		}
 		return Stream{}, err
 	}

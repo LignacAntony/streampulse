@@ -8,6 +8,7 @@ import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.d
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
 import 'package:streampulse/features/broadcast/domain/services/broadcast_audio_publisher.dart';
+import 'package:streampulse/features/broadcast/presentation/controllers/broadcast_session_controller.dart';
 import 'package:streampulse/features/broadcast/presentation/providers/broadcast_notifier.dart';
 
 BroadcastStream _stream(
@@ -232,6 +233,23 @@ class _FakeAudioPublisher implements BroadcastAudioPublisher {
   /// Abandon du diffuseur audio après épuisement de ses reconnexions.
   void giveUp() {
     state = BroadcastAudioState.failed;
+    _states.add(state);
+  }
+
+  /// Coupure de capture puis rétablissement, comme une perte de réseau.
+  void reconnect() {
+    state = BroadcastAudioState.reconnecting;
+    _states.add(state);
+  }
+
+  void backLive() {
+    state = BroadcastAudioState.live;
+    _states.add(state);
+  }
+
+  /// Une autre source (encodeur externe) a pris l'ingest en cours de route.
+  void supersede() {
+    state = BroadcastAudioState.superseded;
     _states.add(state);
   }
 
@@ -471,8 +489,11 @@ void main() {
       expect(notifier.audioState, BroadcastAudioState.idle);
     });
 
+    // ADR 049 — quitter l'application ne coupe plus rien : le service de
+    // premier plan Android maintient la capture pendant que le diffuseur fait
+    // autre chose sur son téléphone. Seule la fermeture arrête le direct.
     test(
-      'le passage en arrière-plan termine le live et coupe l\'audio',
+      'fermer l\'application termine le direct et libère le micro',
       () async {
         final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
         final audio = _FakeAudioPublisher();
@@ -480,13 +501,86 @@ void main() {
         await notifier.load();
         await notifier.start('a');
 
-        await notifier.stopForBackground();
+        await notifier.stopForAppClosed();
 
         expect(repository.stoppedIds, ['a']);
         expect(audio.stops, 1);
-        expect(notifier.hasLiveStream, isFalse);
+        expect(notifier.isPublishingAudio('a'), isFalse);
       },
     );
+
+    test(
+      'fermer sans diffusion en cours ne déclenche aucun arrêt serveur',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher();
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        await notifier.load();
+
+        await notifier.stopForAppClosed();
+
+        expect(repository.stoppedIds, isEmpty);
+        expect(audio.stops, 0);
+      },
+    );
+
+    // Revue PR #382 — un 409 d'ingest survenu APRÈS le démarrage signifie qu'une
+    // autre source a pris la clé. Le publisher sortait alors sur `idle`, que le
+    // contrôleur ignorait : micro mort, tuile toujours « en direct », aucun
+    // message. Désynchronisation silencieuse, le pire mode de défaillance.
+    test(
+      'la prise de relais par une autre source relâche le micro sans arrêter le direct',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher();
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        final raisons = <BroadcastAudioEndReason>[];
+        notifier.audioFailures.listen((f) => raisons.add(f.reason));
+        await notifier.load();
+        await notifier.start('a');
+
+        audio.supersede();
+        await _pumpUntil(() => raisons.isNotEmpty);
+
+        // Le direct vit toujours : le terminer couperait la diffusion de
+        // l'autre source.
+        expect(repository.stoppedIds, isEmpty);
+        expect(notifier.hasLiveStream, isTrue);
+        // Mais l'état local est relâché, et la raison remonte à l'écran.
+        expect(notifier.isPublishingAudio('a'), isFalse);
+        expect(raisons, [BroadcastAudioEndReason.supersededByOtherSource]);
+      },
+    );
+
+    // ADR 050 — le diffuseur voit « Reconnexion audio… » pendant la coupure,
+    // mais rien ne lui disait au retour combien de temps n'était pas parti.
+    // C'est pourtant la seule information qui change son comportement : il
+    // peut redire ce qui a été perdu.
+    test('une coupure rétablie annonce sa durée', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      var horloge = DateTime.utc(2026, 1, 1, 12, 0, 0);
+      final notifier = BroadcastNotifier(
+        repository,
+        audioPublisher: audio,
+        now: () => horloge,
+      );
+      final durees = <Duration>[];
+      notifier.audioRecoveries.listen(durees.add);
+      await notifier.load();
+      await notifier.start('a');
+
+      // Le démarrage lui-même (connecting -> live) ne doit rien annoncer.
+      expect(durees, isEmpty);
+
+      audio.reconnect();
+      await _pumpUntil(() => true);
+      horloge = horloge.add(const Duration(seconds: 20));
+      audio.backLive();
+      await _pumpUntil(() => durees.isNotEmpty);
+
+      expect(durees, [const Duration(seconds: 20)]);
+    });
 
     test('les erreurs de mutation remontent à l\'appelant', () async {
       final repository = _FakeBroadcastRepository(streams: [_stream('a')])

@@ -141,6 +141,53 @@ func TestLiveSessions_IngestExpiryRetriesAfterHandlerFailure(t *testing.T) {
 // diffuseur qui se reconnecte pendant cet intervalle doit être refusé : lui
 // rendre un ingest que Stop casserait aussitôt le laisserait pousser dans le
 // vide, sur un flux déjà passé à `ended`.
+// Une coupure d'ingest rétablie avant l'expiration du bail doit laisser une
+// trace : c'est l'incident le plus fréquent en mobilité, et le seul qui
+// n'avait aucun instrument — la diffusion ne s'arrêtant pas, aucune
+// interruption n'était comptée (ADR 050).
+func TestLiveSessions_AttachIngestCompteLaReprise(t *testing.T) {
+	ls := sessionsWithFakeSeg(t)
+	rec := &stubRecorder{}
+	ls.SetMetrics(rec)
+	ls.Start("s1", "KEY1")
+	defer ls.StopAll()
+
+	// Premier push : aucune reprise, il n'y a pas eu de coupure avant lui.
+	_, release, err := ls.AttachIngest("KEY1")
+	if err != nil {
+		t.Fatalf("premier AttachIngest: %v", err)
+	}
+	if n := rec.recoveryCount(); n != 0 {
+		t.Fatalf("reprises après le premier push = %d, want 0", n)
+	}
+
+	release()
+	time.Sleep(20 * time.Millisecond) // coupure mesurable
+
+	_, release2, err := ls.AttachIngest("KEY1")
+	if err != nil {
+		t.Fatalf("rattachement: %v", err)
+	}
+	defer release2()
+
+	if n := rec.recoveryCount(); n != 1 {
+		t.Fatalf("reprises après rattachement = %d, want 1", n)
+	}
+	rec.mu.Lock()
+	outage := rec.recoveries[0]
+	rec.mu.Unlock()
+	if outage <= 0 {
+		t.Errorf("durée de coupure = %v, want > 0", outage)
+	}
+	// La diffusion n'a pas été interrompue : le bail n'a pas expiré.
+	rec.mu.Lock()
+	interruptions := len(rec.interruptions)
+	rec.mu.Unlock()
+	if interruptions != 0 {
+		t.Errorf("interruptions = %d, want 0 (la coupure a été rétablie)", interruptions)
+	}
+}
+
 func TestLiveSessions_AttachIngestRefusedWhileExpiryStops(t *testing.T) {
 	ls := sessionsWithFakeSeg(t)
 	running := make(chan struct{})

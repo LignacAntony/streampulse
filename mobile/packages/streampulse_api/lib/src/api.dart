@@ -15,6 +15,7 @@ import 'package:streampulse_api/src/api/health_api.dart';
 import 'package:streampulse_api/src/api/metrics_api.dart';
 import 'package:streampulse_api/src/api/playlist_api.dart';
 import 'package:streampulse_api/src/api/profile_api.dart';
+import 'package:streampulse_api/src/api/recommendation_api.dart';
 import 'package:streampulse_api/src/api/streaming_api.dart';
 import 'package:streampulse_api/src/api/track_api.dart';
 
@@ -187,6 +188,12 @@ class StreampulseApi {
   /// by doing that all interceptors will not be executed
   ProfileApi getProfileApi() {
     return ProfileApi(dio);
+  }
+
+  /// Get RecommendationApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  RecommendationApi getRecommendationApi() {
+    return RecommendationApi(dio);
   }
 
   /// Get StreamingApi instance, base route and serializer can be overridden by a given but be careful,

@@ -20,6 +20,7 @@ type stubRecorder struct {
 	forgotten     []string
 	departures    int
 	interruptions []string // raisons, dans l'ordre
+	recoveries    []time.Duration
 }
 
 func (s *stubRecorder) RecordHLSRequest(streamID, kind, status string) {
@@ -44,6 +45,18 @@ func (s *stubRecorder) RecordStreamInterruption(reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interruptions = append(s.interruptions, reason)
+}
+
+func (s *stubRecorder) RecordIngestRecovery(outage time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recoveries = append(s.recoveries, outage)
+}
+
+func (s *stubRecorder) recoveryCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.recoveries)
 }
 
 func (s *stubRecorder) departureCount() int {

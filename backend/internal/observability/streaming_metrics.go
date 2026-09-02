@@ -24,6 +24,8 @@ type StreamingMetrics struct {
 	requests      *prometheus.CounterVec
 	departures    prometheus.Counter
 	interruptions *prometheus.CounterVec
+	recoveries    prometheus.Counter
+	outage        prometheus.Histogram
 	drainDelay    time.Duration // injectable en test
 }
 
@@ -51,6 +53,27 @@ func NewStreamingMetrics(reg prometheus.Registerer) *StreamingMetrics {
 			Help: "Diffusions terminées autrement que par un arrêt volontaire du diffuseur.",
 		}, []string{"reason"}),
 
+		// Le pendant *rétabli* des interruptions ci-dessus. Une coupure qui se
+		// résorbe avant l'expiration du bail ne terminait aucune diffusion,
+		// donc n'incrémentait rien : l'incident le plus fréquent en mobilité
+		// était le seul à n'avoir aucun instrument.
+		//
+		// Deux séries plutôt qu'une : le compteur répond à « combien de fois ? »
+		// et alimente une alerte sur la fréquence ; l'histogramme répond à
+		// « combien de temps perdu ? », qui est ce que le diffuseur constate.
+		// Une moyenne les confondrait.
+		recoveries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "streampulse_ingest_recoveries_total",
+			Help: "Coupures d'ingest rétablies avant l'expiration du bail (le diffuseur a retrouvé sa connexion).",
+		}),
+		// Bornes taillées sur le bail d'ingest (45 s par défaut) : au-delà, la
+		// diffusion se termine et relève des interruptions, pas des reprises.
+		outage: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "streampulse_ingest_outage_seconds",
+			Help:    "Durée des coupures d'ingest rétablies : temps pendant lequel plus aucun audio n'était poussé.",
+			Buckets: []float64{1, 2, 5, 10, 20, 30, 45},
+		}),
+
 		drainDelay: defaultDrainDelay,
 	}
 }
@@ -73,6 +96,15 @@ func (m *StreamingMetrics) RecordListenerDepartures(n int) {
 // diffuseur l'ait demandé.
 func (m *StreamingMetrics) RecordStreamInterruption(reason string) {
 	m.interruptions.WithLabelValues(reason).Inc()
+}
+
+// RecordIngestRecovery compte une coupure d'ingest rétablie et enregistre sa
+// durée. Ni l'une ni l'autre ne porte de stream_id : ce serait un second
+// porteur du label à purger, alors que l'ADR 022 en a délibérément gardé un
+// seul.
+func (m *StreamingMetrics) RecordIngestRecovery(outage time.Duration) {
+	m.recoveries.Inc()
+	m.outage.Observe(outage.Seconds())
 }
 
 // RecordHLSRequest compte une lecture HLS (kind = playlist|segment).

@@ -9,8 +9,8 @@
 //     la migration 000016 ; aucun fake ne peut le reproduire ;
 //   - la suppression est un **soft delete** (`archived_at`), donc un flux
 //     archivé doit disparaître des lectures sans disparaître de la table ;
-//   - `start`/`stop` sont des transitions gardées : `idle→live`, `live→ended`,
-//     et rien d'autre ;
+//   - `start`/`stop` sont des transitions gardées : `idle|ended→live`,
+//     `live→ended`, et rien d'autre ;
 //   - les favoris sont **idempotents** côté SQL.
 //
 // Lancement : cf. l'en-tête de internal/testsupport/pgtest.
@@ -161,6 +161,44 @@ func TestRepository_StartStop_TransitionsGardees(t *testing.T) {
 
 	if _, err := repo.StopStream(ctx, s.ID, userID); err == nil {
 		t.Error("arrêter un flux déjà terminé doit échouer")
+	}
+}
+
+// Un flux terminé est un canal réutilisable, pas un enregistrement à usage
+// unique (ADR 048) : le relancer doit repartir proprement — statut `live`,
+// `started_at` rafraîchi et `ended_at` remis à NULL. Sans cette transition, un
+// direct coupé par l'expiration du bail d'ingest condamnait la tuile.
+func TestRepository_StartStream_RelanceUnFluxTermine(t *testing.T) {
+	repo, pool := newStreamingRepo(t)
+	ctx := context.Background()
+	userID := pgtest.InsertUser(t, pool, pgtest.UniqueTag(t), "broadcaster")
+	s := creerFlux(t, repo, userID, "Relance", true)
+
+	if _, err := repo.StartStream(ctx, s.ID, userID); err != nil {
+		t.Fatalf("premier StartStream: %v", err)
+	}
+	ended, err := repo.StopStream(ctx, s.ID, userID)
+	if err != nil {
+		t.Fatalf("StopStream: %v", err)
+	}
+	if ended.EndedAt == nil {
+		t.Fatalf("flux arrêté = %+v, want ended_at renseigné", ended)
+	}
+
+	relance, err := repo.StartStream(ctx, s.ID, userID)
+	if err != nil {
+		t.Fatalf("relancer un flux terminé doit réussir, got %v", err)
+	}
+	if relance.Status != StatusLive {
+		t.Errorf("status = %q, want live", relance.Status)
+	}
+	if relance.StartedAt == nil {
+		t.Error("started_at doit être rafraîchi à la relance")
+	}
+	// Un `live` qui porte encore une date de fin est une contradiction que ni
+	// l'API ni les tuiles du tableau de bord ne savent présenter.
+	if relance.EndedAt != nil {
+		t.Errorf("ended_at = %v, want nil après relance", relance.EndedAt)
 	}
 }
 
