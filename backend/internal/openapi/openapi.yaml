@@ -1021,6 +1021,12 @@ paths:
         - Streaming
       operationId: startStream
       summary: Start a stream — go live (broadcaster owner only).
+      description: >
+        Accepts a stream whose status is `idle` or `ended`: a stream is a
+        reusable channel (title, description, ingest key), so a broadcast that
+        finished — including one ended by the ingest lease expiring — can be
+        started again. `ended_at` is reset to null. Only a stream that is
+        already `live` is rejected.
       security:
         - bearerAuth: []
       responses:
@@ -1037,7 +1043,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The stream is not idle, or the broadcaster already has a live stream.
+          description: The stream is already live, or the broadcaster already has another live stream.
           content:
             application/json:
               schema:
