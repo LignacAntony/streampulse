@@ -23,10 +23,15 @@ type session struct {
 
 	mu           sync.Mutex
 	closed       bool
-	dead         bool          // ffmpeg s'est arrêté seul : segmenteur inexploitable
-	ingesting    bool          // un seul push audio à la fois
-	expiring     bool          // bail expiré : arrêt en cours, plus aucun ingest accepté
-	ingestExpiry *time.Timer   // arrêt différé si aucun push ne revient
+	dead         bool        // ffmpeg s'est arrêté seul : segmenteur inexploitable
+	ingesting    bool        // un seul push audio à la fois
+	expiring     bool        // bail expiré : arrêt en cours, plus aucun ingest accepté
+	ingestExpiry *time.Timer // arrêt différé si aucun push ne revient
+	// ingestLostAt date le détachement du dernier push, pour mesurer la coupure
+	// si un nouveau push revient avant l'expiration du bail. Nul tant qu'aucun
+	// push n'a encore été détaché — la première prise d'ingest d'une diffusion
+	// n'est donc jamais comptée comme une reprise.
+	ingestLostAt *time.Time
 	hls          *hlsSegmenter // publié après le spawn ; protégé par mu
 	subscribers  map[chan SessionEvent]struct{}
 
@@ -392,11 +397,22 @@ func (ls *LiveSessions) AttachIngest(streamKey string) (io.Writer, func(), error
 		s.ingestExpiry = nil
 	}
 	s.ingesting = true
+	// Un push qui revient après un détachement : la diffusion a repris, et
+	// l'écart mesure ce que le diffuseur a perdu. Compté ici plutôt qu'au
+	// détachement, car au moment du détachement on ignore encore si la coupure
+	// sera rétablie ou terminera la diffusion (STR-XXX, ADR 050).
+	if s.ingestLostAt != nil {
+		outage := time.Since(*s.ingestLostAt)
+		s.ingestLostAt = nil
+		defer ls.recorder().RecordIngestRecovery(outage)
+	}
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
 			s.mu.Lock()
 			s.ingesting = false
+			now := time.Now()
+			s.ingestLostAt = &now
 			s.mu.Unlock()
 			ls.armIngestExpiry(s)
 		})

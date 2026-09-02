@@ -273,6 +273,69 @@
       }
     },
     {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Coupures de diffusion rétablies (15 min glissantes)",
+      "description": "Coupures d'ingest dont le diffuseur s'est remis avant l'expiration du bail. Le pendant rétabli du panneau des interruptions : celles-ci ne terminent aucune diffusion, donc elles n'y apparaissent pas. C'est pourtant l'incident le plus fréquent en mobilité, et celui qui fait perdre de l'audio au diffuseur — l'auditeur, lui, ne voit rien tant que son tampon absorbe la coupure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(streampulse_ingest_recoveries_total[15m])",
+          "legendFormat": "reprises"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Durée des coupures rétablies (p50 / p95)",
+      "description": "Combien de temps le diffuseur a perdu à chaque coupure. Le compteur dit « combien de fois », cet histogramme dit « combien de temps » — une moyenne confondrait un hoquet d'une seconde et une coupure de trente. Les bornes s'arrêtent au bail d'ingest : au-delà, la diffusion se termine et bascule dans les interruptions.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(streampulse_ingest_outage_seconds_bucket[15m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(streampulse_ingest_outage_seconds_bucket[15m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 200,
       "type": "row",
       "title": "Technique — santé du service HLS",

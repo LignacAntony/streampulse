@@ -50,6 +50,15 @@ class BroadcastStream {
   bool get isIdle => status == 'idle';
   bool get isEnded => status == 'ended';
 
+  /// Vrai quand le flux peut passer en direct. Depuis l'ADR 048 le backend
+  /// accepte `idle` **et** `ended` : un flux est un canal réutilisable (titre,
+  /// description, clé d'ingest), pas un enregistrement à usage unique. Seul un
+  /// flux déjà en direct refuse la transition.
+  ///
+  /// Prédicat plutôt que `isIdle` en dur dans l'écran : la règle vit à un seul
+  /// endroit, et l'onglet n'a pas à connaître la liste des statuts.
+  bool get canStart => !isLive;
+
   /// Durée écoulée depuis le début du direct, ou null si le flux n'est pas en
   /// direct. Bornée à zéro : une horloge client en avance sur le serveur ne
   /// doit pas produire de durée négative.

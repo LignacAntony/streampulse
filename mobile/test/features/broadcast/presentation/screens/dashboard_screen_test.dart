@@ -474,25 +474,24 @@ void main() {
   });
 
   group('DashboardScreen — flux terminé', () {
-    testWidgets('aucun bouton de démarrage, le backend le refuserait', (
-      tester,
-    ) async {
-      // `start` n'accepte que idle -> live : proposer le bouton sur un flux
-      // terminé ne peut produire qu'un 409.
+    testWidgets('propose de relancer la diffusion', (tester) async {
+      // ADR 048 : `start` accepte idle **et** ended — un flux est un canal
+      // réutilisable. La tuile n'est plus une impasse.
       final repository = _FakeBroadcastRepository(
         streams: [_stream('a', status: 'ended')],
       );
       await tester.pumpWidget(_harness(repository));
       await _settle(tester);
 
-      expect(find.byKey(const Key('dashboard_start_button_a')), findsNothing);
+      expect(find.byKey(const Key('dashboard_start_button_a')), findsOneWidget);
       expect(find.byKey(const Key('dashboard_stop_button_a')), findsNothing);
+      expect(find.text('Relancer la diffusion'), findsOneWidget);
       expect(
         find.text('Diffusion terminée. Créez un nouveau flux pour rediffuser.'),
-        findsOneWidget,
+        findsNothing,
       );
       // Le motif « un autre flux est en direct » ne concerne que les flux
-      // encore démarrables.
+      // encore démarrables — ce qu'un flux terminé est désormais.
       expect(find.text('Un autre flux est en direct'), findsNothing);
     });
 
@@ -549,7 +548,9 @@ void main() {
       );
     });
 
-    testWidgets('aucune URL d\'ingest sur un flux terminé', (tester) async {
+    testWidgets('l\'URL d\'ingest reste affichée sur un flux terminé', (
+      tester,
+    ) async {
       final repository = _FakeBroadcastRepository(
         streams: [
           _stream('a', status: 'ended'),
@@ -559,9 +560,10 @@ void main() {
       await tester.pumpWidget(_harness(repository));
       await _settle(tester);
 
-      // La clé y est inutilisable : l'afficher n'est que du bruit, et une
-      // exposition inutile d'un secret.
-      expect(find.byKey(const Key('dashboard_ingest_url_a')), findsNothing);
+      // Le flux est relançable (ADR 048), donc sa clé redevient un chemin de
+      // push valide pour un encodeur externe. La masquer laissait croire
+      // l'inverse.
+      expect(find.byKey(const Key('dashboard_ingest_url_a')), findsOneWidget);
       expect(find.byKey(const Key('dashboard_ingest_url_b')), findsOneWidget);
     });
 
@@ -634,9 +636,9 @@ void main() {
       expect(find.textContaining('arrêtez la diffusion'), findsOneWidget);
     });
 
-    // Sur un flux terminé la clé n'est plus utilisable et l'URL n'est même pas
-    // affichée : proposer la rotation n'aurait aucun sens.
-    testWidgets('l\'entrée est absente sur un flux terminé', (tester) async {
+    // Un flux terminé est relançable (ADR 048) : sa clé redevient un secret
+    // vivant, qu'on peut vouloir renouveler avant de rediffuser.
+    testWidgets('l\'entrée est active sur un flux terminé', (tester) async {
       final repository = _FakeBroadcastRepository(
         streams: [_stream('a', status: 'ended')],
       );
@@ -646,10 +648,10 @@ void main() {
       await tester.tap(find.byKey(const Key('dashboard_stream_menu_a')));
       await tester.pumpAndSettle();
 
-      expect(
+      final item = tester.widget<PopupMenuItem<String>>(
         find.byKey(const Key('dashboard_rotate_key_item_a')),
-        findsNothing,
       );
+      expect(item.enabled, isTrue);
       expect(find.byKey(const Key('dashboard_delete_item_a')), findsOneWidget);
     });
 
@@ -829,8 +831,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
     });
 
+    // ADR 049 — quitter l'application pour aller ailleurs sur son téléphone est
+    // un geste normal en cours de direct : le micro continue, maintenu par le
+    // service de premier plan Android.
     testWidgets(
-      'le passage en arrière-plan arrête le live et libère le micro',
+      'le passage en arrière-plan ne coupe ni le micro ni le live',
       (tester) async {
         final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
         final audio = _FakeAudioPublisher();
@@ -842,17 +847,64 @@ void main() {
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
         await _settle(tester);
 
-        expect(repository.stoppedIds, ['a']);
-        expect(audio.state, BroadcastAudioState.idle);
-        expect(find.text('TERMINÉ'), findsOneWidget);
+        expect(repository.stoppedIds, isEmpty);
+        expect(audio.state, BroadcastAudioState.live);
+        expect(find.text('EN DIRECT'), findsOneWidget);
 
-        tester.binding.handleAppLifecycleStateChanged(
-          AppLifecycleState.resumed,
-        );
         toastification.dismissAll(delayForAnimation: false);
         await tester.pump(const Duration(milliseconds: 700));
       },
     );
+
+    // L'autre moitié du contrat : fermer l'application (balayage depuis les
+    // récents) doit bien terminer le direct. Sans ça, le service de premier
+    // plan survivrait à la fermeture et le micro tournerait à l'insu du
+    // diffuseur.
+    testWidgets('fermer l\'application termine le direct', (tester) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      await tester.pumpWidget(_harness(repository, audioPublisher: audio));
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+
+      tester.binding.handleAppLifecycleStateChanged(
+        AppLifecycleState.detached,
+      );
+      await _settle(tester);
+
+      expect(repository.stoppedIds, ['a']);
+      expect(audio.state, BroadcastAudioState.idle);
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    // Le cœur du correctif web : sur le web, changer d'onglet navigateur
+    // produit `hidden`. Le traiter comme un départ coupait le direct en pleine
+    // diffusion, sans que l'application ait été quittée.
+    testWidgets('un changement d\'onglet (hidden) ne touche pas au direct', (
+      tester,
+    ) async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      await tester.pumpWidget(_harness(repository, audioPublisher: audio));
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('dashboard_start_button_a')));
+      await _settle(tester);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await _settle(tester);
+
+      expect(repository.stoppedIds, isEmpty);
+      // `state` reste `live` : un `stop()` du publisher l'aurait repassé à
+      // `idle`. Le micro n'a donc pas été relâché.
+      expect(audio.state, BroadcastAudioState.live);
+      expect(find.text('EN DIRECT'), findsOneWidget);
+
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
 
     testWidgets('annonce que la reprise est bornée pendant une reconnexion', (
       tester,

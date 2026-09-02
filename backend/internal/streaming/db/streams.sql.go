@@ -360,10 +360,10 @@ func (q *Queries) RotateStreamKey(ctx context.Context, arg RotateStreamKeyParams
 
 const startStream = `-- name: StartStream :one
 UPDATE streams AS s
-SET status = 'live', started_at = NOW(), updated_at = NOW()
+SET status = 'live', started_at = NOW(), ended_at = NULL, updated_at = NOW()
 WHERE s.id = $1::uuid
   AND s.user_id = $2::uuid
-  AND s.status = 'idle'
+  AND s.status IN ('idle', 'ended')
   AND s.archived_at IS NULL
 RETURNING id::text AS id, user_id::text AS user_id, title, description, category,
           status, is_public, stream_key, started_at, ended_at, created_at, updated_at
@@ -389,9 +389,23 @@ type StartStreamRow struct {
 	UpdatedAt   time.Time
 }
 
-// Passe un flux idle -> live (propriétaire, non archivé). La règle « un seul live
-// par diffuseur » est garantie atomiquement par l'index unique partiel
-// streams_one_live_per_user (000016) : un 2e live concurrent lève un 23505.
+// Passe un flux idle|ended -> live (propriétaire, non archivé).
+//
+// `ended` est accepté au même titre qu'`idle` (ADR 048) : un flux porte un
+// titre, une description et une clé d'ingest, ce qui en fait un canal
+// réutilisable et non un enregistrement à usage unique. Tant que la transition
+// était `idle -> live` seule, un direct terminé — y compris par l'expiration du
+// bail d'ingest, donc sans action du diffuseur — laissait la tuile morte pour
+// de bon : plus aucune relance possible, il fallait recréer un flux et
+// redistribuer la clé.
+//
+// `ended_at` repart à NULL : la colonne décrit la fin du direct *courant*, pas
+// un historique. Le laisser garni ferait cohabiter `status = 'live'` et une
+// date de fin, contradiction que ni l'API ni les tuiles ne savent présenter.
+//
+// La règle « un seul live par diffuseur » reste garantie atomiquement par
+// l'index unique partiel streams_one_live_per_user (000016) : un 2e live
+// concurrent lève un 23505.
 func (q *Queries) StartStream(ctx context.Context, arg StartStreamParams) (StartStreamRow, error) {
 	row := q.db.QueryRow(ctx, startStream, arg.ID, arg.UserID)
 	var i StartStreamRow

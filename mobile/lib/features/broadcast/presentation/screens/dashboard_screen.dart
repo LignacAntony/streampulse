@@ -88,6 +88,10 @@ class _DashboardBodyState extends State<_DashboardBody>
   /// sans explication.
   StreamSubscription<BroadcastAudioFailure>? _audioFailureSubscription;
 
+  /// Le diffuseur voit « Reconnexion audio… » pendant la coupure, mais rien ne
+  /// lui disait, une fois revenu, combien de temps n'était pas parti (ADR 050).
+  StreamSubscription<Duration>? _audioRecoverySubscription;
+
   @override
   void initState() {
     super.initState();
@@ -100,11 +104,34 @@ class _DashboardBodyState extends State<_DashboardBody>
       }
       final notifier = context.read<BroadcastNotifier>();
       notifier.setActive(true);
-      _audioFailureSubscription = notifier.audioFailures.listen((_) {
+      _audioFailureSubscription = notifier.audioFailures.listen((failure) {
         if (!mounted) return;
-        showAuthErrorToast(
+        // Deux fins de capture qui se ressemblent à l'écran, mais l'une laisse
+        // un direct mort et l'autre un direct qui continue sans nous : le même
+        // message pour les deux mentirait dans un cas sur deux.
+        switch (failure.reason) {
+          case BroadcastAudioEndReason.microphoneLost:
+            showAuthErrorToast(
+              context,
+              'Diffusion arrêtée : le microphone n\'est plus disponible',
+            );
+          case BroadcastAudioEndReason.supersededByOtherSource:
+            showAuthInfoToast(
+              context,
+              'Une autre source a pris le relais : le direct continue sans '
+              'votre microphone.',
+            );
+        }
+      });
+      _audioRecoverySubscription = notifier.audioRecoveries.listen((coupure) {
+        if (!mounted) return;
+        final secondes = coupure.inSeconds;
+        // Sous la seconde, l'annoncer serait du bruit : le diffuseur n'a rien
+        // perdu d'intelligible et n'a rien à redire.
+        if (secondes < 1) return;
+        showAuthInfoToast(
           context,
-          'Diffusion arrêtée : le microphone n\'est plus disponible',
+          'Connexion rétablie — $secondes s n\'ont pas été diffusées.',
         );
       });
       notifier.load();
@@ -115,6 +142,7 @@ class _DashboardBodyState extends State<_DashboardBody>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_audioFailureSubscription?.cancel());
+    unawaited(_audioRecoverySubscription?.cancel());
     _ticker?.cancel();
     super.dispose();
   }
@@ -122,15 +150,29 @@ class _DashboardBodyState extends State<_DashboardBody>
   /// Coupe la souscription SSE quand l'application passe en arrière-plan et la
   /// rétablit au retour — une connexion HTTP ouverte n'a aucune valeur pendant
   /// que l'écran n'est pas regardé.
+  ///
+  /// **La diffusion, elle, ne s'arrête pas** (ADR 049). Quitter l'application
+  /// pour aller ailleurs sur son téléphone est un geste normal en cours de
+  /// direct ; c'est le service de premier plan Android qui maintient la capture
+  /// micro. Le distinguo est entre « je vais ailleurs » et « je ferme » :
+  ///
+  ///   - `inactive` / `hidden` : rien. Sur le web, un simple changement
+  ///     d'onglet navigateur produit `hidden` ; sur mobile il précède toujours
+  ///     `paused`. Le traiter comme un départ coupait le direct en pleine
+  ///     diffusion, sans que l'application ait été quittée.
+  ///   - `paused` : l'application passe en arrière-plan. Le micro continue.
+  ///   - `detached` : l'application est **fermée** (balayage depuis les
+  ///     récents). Là le direct doit s'arrêter — personne ne diffuse depuis une
+  ///     application qu'il vient de fermer. Best-effort : le processus meurt,
+  ///     et si la requête ne part pas, le bail d'ingest du serveur prend le
+  ///     relais.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
     final notifier = context.read<BroadcastNotifier>();
     notifier.setActive(state == AppLifecycleState.resumed);
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
-      unawaited(notifier.stopForBackground());
+    if (state == AppLifecycleState.detached) {
+      unawaited(notifier.stopForAppClosed());
     }
   }
 
@@ -578,32 +620,31 @@ class _StreamCard extends StatelessWidget {
                     if (value == 'delete') onDelete();
                   },
                   itemBuilder: (context) => [
-                    // Rien à régénérer sur un flux terminé : sa clé n'est plus
-                    // utilisable (le backend n'autorise que idle -> live), et
-                    // l'URL d'ingest n'est même pas affichée. Sur un direct
-                    // l'entrée reste visible mais inerte : la règle se découvre
-                    // dans le menu plutôt que par un 409.
-                    if (!stream.isEnded)
-                      PopupMenuItem(
-                        key: Key('dashboard_rotate_key_item_${stream.id}'),
-                        value: 'rotate-key',
-                        enabled: !stream.isLive,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.key_outlined),
-                            const SizedBox(width: 12),
-                            // Expanded : le libellé du cas « en direct » est
-                            // plus long que la largeur naturelle du menu.
-                            Expanded(
-                              child: Text(
-                                stream.isLive
-                                    ? 'Régénérer la clé\n(arrêtez la diffusion)'
-                                    : 'Régénérer la clé',
-                              ),
+                    // Visible aussi sur un flux terminé depuis l'ADR 048 :
+                    // celui-ci est relançable, donc sa clé redevient un secret
+                    // vivant qu'on peut vouloir renouveler avant de rediffuser.
+                    // Sur un direct l'entrée reste visible mais inerte : la
+                    // règle se découvre dans le menu plutôt que par un 409.
+                    PopupMenuItem(
+                      key: Key('dashboard_rotate_key_item_${stream.id}'),
+                      value: 'rotate-key',
+                      enabled: !stream.isLive,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.key_outlined),
+                          const SizedBox(width: 12),
+                          // Expanded : le libellé du cas « en direct » est
+                          // plus long que la largeur naturelle du menu.
+                          Expanded(
+                            child: Text(
+                              stream.isLive
+                                  ? 'Régénérer la clé\n(arrêtez la diffusion)'
+                                  : 'Régénérer la clé',
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+                    ),
                     PopupMenuItem(
                       key: Key('dashboard_delete_item_${stream.id}'),
                       value: 'delete',
@@ -670,10 +711,10 @@ class _StreamCard extends StatelessWidget {
               const SizedBox(height: 8),
               _AudienceRow(streamId: stream.id, stats: stats),
             ],
-            // Rien à pousser sur un flux terminé : la clé y est inutilisable
-            // (le backend n'autorise que idle -> live). L'afficher n'apporterait
-            // que du bruit et exposerait un secret pour rien.
-            if (stream.streamSourceUrl != null && !stream.isEnded) ...[
+            // Affichée aussi sur un flux terminé (ADR 048) : il est
+            // relançable, donc l'encodeur externe qui pousse sur cette URL
+            // reste un chemin valide. La masquer laissait croire le contraire.
+            if (stream.streamSourceUrl != null) ...[
               const SizedBox(height: 12),
               _IngestUrlRow(
                 streamId: stream.id,
@@ -681,38 +722,41 @@ class _StreamCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            // Un flux terminé n'a aucune action : le backend n'autorise que la
-            // transition idle -> live, un bouton « Démarrer » ne pourrait que
-            // renvoyer un 409.
-            if (stream.isEnded)
-              Text(
-                'Diffusion terminée. Créez un nouveau flux pour rediffuser.',
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              )
-            else
-              SizedBox(
-                width: double.infinity,
-                child: stream.isLive
-                    ? FilledButton.tonalIcon(
-                        key: Key('dashboard_stop_button_${stream.id}'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: colors.errorContainer,
-                          foregroundColor: colors.onErrorContainer,
-                        ),
-                        onPressed: _busy ? null : onStop,
-                        icon: const Icon(Icons.stop_circle_outlined),
-                        label: const Text('Arrêter la diffusion'),
-                      )
-                    : FilledButton.icon(
-                        key: Key('dashboard_start_button_${stream.id}'),
-                        onPressed: _busy || blockedByOtherLive || !audioSupported
-                            ? null
-                            : onStart,
-                        icon: const Icon(Icons.play_circle_outline),
-                        label: const Text('Démarrer la diffusion'),
+            // Un flux terminé se relance (ADR 048) : même bouton, libellé
+            // différent. Auparavant la tuile n'offrait plus rien et invitait à
+            // recréer un flux — ce qui obligeait à rediffuser une clé neuve
+            // après le moindre direct coupé par le bail d'ingest.
+            SizedBox(
+              width: double.infinity,
+              child: stream.isLive
+                  ? FilledButton.tonalIcon(
+                      key: Key('dashboard_stop_button_${stream.id}'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colors.errorContainer,
+                        foregroundColor: colors.onErrorContainer,
                       ),
-              ),
-            if (!audioSupported && stream.isIdle) ...[
+                      onPressed: _busy ? null : onStop,
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text('Arrêter la diffusion'),
+                    )
+                  : FilledButton.icon(
+                      key: Key('dashboard_start_button_${stream.id}'),
+                      onPressed: _busy || blockedByOtherLive || !audioSupported
+                          ? null
+                          : onStart,
+                      icon: Icon(
+                        stream.isEnded
+                            ? Icons.replay_circle_filled_outlined
+                            : Icons.play_circle_outline,
+                      ),
+                      label: Text(
+                        stream.isEnded
+                            ? 'Relancer la diffusion'
+                            : 'Démarrer la diffusion',
+                      ),
+                    ),
+            ),
+            if (!audioSupported && stream.canStart) ...[
               const SizedBox(height: 6),
               Text(
                 key: Key('dashboard_audio_unsupported_${stream.id}'),
@@ -721,7 +765,7 @@ class _StreamCard extends StatelessWidget {
                 'externe.',
                 style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
-            ] else if (blockedByOtherLive && stream.isIdle) ...[
+            ] else if (blockedByOtherLive && stream.canStart) ...[
               const SizedBox(height: 6),
               Text(
                 'Un autre flux est en direct',
@@ -777,6 +821,11 @@ class _MicrophoneStatusRow extends StatelessWidget {
                 Icons.mic_off_outlined,
                 'Diffusion du micro interrompue',
                 colors.error,
+              ),
+            BroadcastAudioState.superseded => (
+                Icons.cast_connected_outlined,
+                'Une autre source alimente ce direct',
+                colors.tertiary,
               ),
             // Fenêtre courte entre l'arrêt du micro et la remise à zéro de
             // `publishing` par le contrôleur : la ligne inactive est plus juste

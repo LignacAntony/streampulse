@@ -1,5 +1,7 @@
 package streaming
 
+import "time"
+
 // MetricsRecorder est l'interface étroite (ISP) par laquelle le domaine
 // streaming publie ses métriques métier — le domaine ignore Prometheus,
 // l'implémentation vit dans internal/observability et est injectée par
@@ -20,6 +22,19 @@ type MetricsRecorder interface {
 	// un arrêt volontaire du diffuseur. reason est une valeur close
 	// (InterruptionIngestTimeout, InterruptionSegmenterFailed).
 	RecordStreamInterruption(reason string)
+
+	// RecordIngestRecovery compte une coupure d'ingest **rétablie** : le
+	// diffuseur a perdu sa connexion puis l'a retrouvée avant l'expiration du
+	// bail, et `outage` mesure la durée pendant laquelle plus rien n'était
+	// poussé.
+	//
+	// Sans elle, une coupure qui se résorbe ne laisse aucune trace : seul
+	// l'échec définitif est compté (InterruptionIngestTimeout). Un incident
+	// survenait, le système s'en remettait, et aucun instrument ne
+	// l'enregistrait — alors que c'est précisément le cas le plus fréquent en
+	// mobilité, et celui qui fait perdre de l'audio au diffuseur sans qu'il
+	// puisse le quantifier.
+	RecordIngestRecovery(outage time.Duration)
 
 	// ForgetStream supprime les séries portant ce stream_id : sans cet
 	// oubli, chaque diffusion terminée laisserait une série résiduelle.
@@ -51,4 +66,5 @@ type noopRecorder struct{}
 func (noopRecorder) RecordHLSRequest(string, string, string) {}
 func (noopRecorder) RecordListenerDepartures(int)            {}
 func (noopRecorder) RecordStreamInterruption(string)         {}
+func (noopRecorder) RecordIngestRecovery(time.Duration)      {}
 func (noopRecorder) ForgetStream(string)                     {}
