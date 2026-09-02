@@ -268,7 +268,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — réponse unique : propriétaire = `stream_key`/`stream_source_url` remplis, tiers = ces secrets à `null`, ou 404 (privé) |
 | PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
 | DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
-| PATCH | `/api/streams/{id}/start` | `Handler.Start` | Oui — rôle `broadcaster`, owner ; `idle\|ended→live` — un flux est un **canal réutilisable**, un direct terminé se relance (409 seulement s'il est déjà live, ou si le diffuseur en a un autre en direct). `ended_at` repart à NULL (STR-XXX, [ADR 048](docs/adr/048-cycle-de-vie-de-la-diffusion-et-relance-d-un-flux.md)) |
+| PATCH | `/api/streams/{id}/start` | `Handler.Start` | Oui — rôle `broadcaster`, owner ; `idle\|ended→live` — un flux est un **canal réutilisable**, un direct terminé se relance (409 seulement s'il est déjà live, ou si le diffuseur en a un autre en direct). `ended_at` repart à NULL (STR-XXX, [ADR 048](docs/adr/048-relance-d-un-flux-termine.md)) |
 | PATCH | `/api/streams/{id}/stop` | `Handler.Stop` | Oui — rôle `broadcaster`, owner ; `live→ended` (409 si pas live) |
 | GET | `/api/streams/{id}/events` | `Handler.Events` | Oui (JWT) — flux **SSE**, event `ended` à l'arrêt (STR-77) |
 | PUT | `/api/streams/{id}/favorite` | `Handler.AddFavorite` | Oui (JWT) — ajoute aux favoris ; idempotent → 204 ; flux non visible → 404 (US-04-05). **PUT** et non POST : évite un conflit ServeMux avec `ingest/{stream_key}` |
@@ -589,7 +589,7 @@ Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).
   « Lire en aléatoire » dans l'AppBar de `PlaylistDetailScreen`, avec **piste de départ tirée au
   sort**. La file affichée et le « n/total » suivent l'**ordre de lecture**, pas celui de la playlist.
 
-### Diffusion depuis le mobile (ADR 027 + ADR 048 + ADR 049)
+### Diffusion depuis le mobile (ADR 027 + ADR 049)
 
 - **Le cycle de vie ne distingue que deux choses** : « je vais ailleurs » et
   « je ferme ». `inactive`/`hidden`/`paused` → **rien** ; `detached` → arrêt du
@@ -610,7 +610,7 @@ Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).
   segment.
 - ⚠️ **Ne pas reprendre une diffusion sans action de l'utilisateur.** Adopter au
   démarrage un direct encore vivant côté serveur rallume le micro à son insu.
-  Essayé, retiré (ADR 049 §3).
+  Essayé, retiré (ADR 049, « Alternatives écartées »).
 - Un **409 d'ingest** signifie qu'une autre source alimente déjà le flux :
   `IngestConflictException`, et le publisher cesse de réessayer. Insister
   mènerait à `failed`, donc à l'arrêt du direct de cette autre source.

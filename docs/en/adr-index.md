@@ -329,41 +329,45 @@ account is reachable through Google by the same email, and the feature is option
 (the route is absent in dev without a client id); validated end-to-end on the iOS
 simulator.
 
-**ADR 048 — Broadcast lifecycle and restarting an ended stream.** *Context:* the
-dashboard ended the live server-side on `AppLifecycleState.hidden`, which on the
-web is produced by a plain browser tab switch; and because every `start` forks a
-fresh ffmpeg segmenter in a fresh temp directory, segment numbering and
-`EXT-X-MEDIA-SEQUENCE` restarted at zero, so listeners were sent back to the first
-segment. An `ended` stream was also unrecoverable — `StartStream` accepted `idle`
-only, so a broadcast cut short by the ingest lease killed the tile for good.
-*Decision:* `hidden` triggers nothing (on mobile it always precedes `paused`);
-`StartStream` accepts `idle` **or** `ended` and resets `ended_at` to null, making a
-stream a reusable channel rather than a single-use record; the mobile screen uses a
-`canStart` predicate instead of hard-coded `isIdle`. *Consequence:* no migration is
-needed (the partial unique index still enforces one live per broadcaster), a
-restarted stream overwrites `started_at`, and an ended stream re-exposes its ingest
-URL to its owner.
+**ADR 048 — Restarting an ended stream.** *Context:* `StartStream` accepted `idle`
+only, so an `ended` stream was permanently dead — and two of the three ways a
+broadcast ends involve no decision by the broadcaster (an admin stop, or the
+45-second ingest lease expiring). The dashboard had drawn the consequence: no
+start button, no ingest URL, no key rotation, just "create a new stream". Since a
+stream carries a title, a description and an ingest key, that meant losing the
+channel and having to redistribute a fresh key. *Decision:* the transition accepts
+`idle` **or** `ended` and resets `ended_at` to null — a stream is a reusable
+channel, not a record of a past broadcast; the 409 message narrows to
+`stream is already live`; mobile uses a `canStart` predicate instead of hard-coded
+`isIdle`. *Consequence:* no migration is needed (the partial unique index
+`streams_one_live_per_user` still enforces one live per broadcaster), `started_at`
+is overwritten on restart so the tile measures the current broadcast rather than a
+total, and an ended stream re-exposes its ingest URL to its owner.
 
-**ADR 049 — Broadcasting from the background.** *Context:* ADR 027's
-foreground-only policy released the microphone whenever the app left the
-foreground, so pressing Home mid-broadcast stopped capture; and because HLS
-timestamps derive from the ADTS frame count rather than wall-clock time, the gap
-did not exist in the media — on return, listeners heard an abrupt jump rather than
-a silence, while the broadcaster's tile still read "live". *Decision:* an Android
-foreground service keeps capture alive (`foregroundServiceType="microphone"`, plus
-`FOREGROUND_SERVICE_MICROPHONE` at `targetSdk` 36), declared in the app manifest
-because the `record` plugin ships the service class but not its declaration;
-`stopWithTask="true"` stops it when the task is swiped away. The lifecycle now only
-distinguishes "elsewhere" (`inactive`/`hidden`/`paused` — nothing happens) from
-"closed" (`detached` — the live is ended best-effort). The suspend/resume machinery
-of ADR 048 §1 is deleted, and an ingest `409` becomes `IngestConflictException` so
-the publisher stops retrying instead of ending an external encoder's broadcast.
-*Consequence:* a permanent notification shows for the whole broadcast (the system
-price of background microphone access); closing the app ends the live immediately
-for capture and within the 45 s ingest lease for the server status; automatic
-adoption of a still-live stream on app start was prototyped and removed, since
-relighting a microphone without user action is a defect; **iOS is unverified** — no
-device was available.
+**ADR 049 — Mobile broadcast lifecycle: leaving the app is not closing it.**
+*Context:* the dashboard ended the live server-side on
+`AppLifecycleState.hidden`, which on the web is produced by a plain browser tab
+switch; because every `start` forks a fresh ffmpeg segmenter in a fresh temp
+directory, segment numbering and `EXT-X-MEDIA-SEQUENCE` restarted at zero, sending
+listeners back to the first segment; and releasing the microphone whenever the app
+left the foreground meant that pressing Home stopped capture — with HLS timestamps
+derived from the ADTS frame count rather than wall-clock time, listeners then heard
+an abrupt jump rather than a silence, while the broadcaster's tile still read
+"live". *Decision:* the lifecycle now distinguishes only "elsewhere"
+(`inactive`/`hidden`/`paused` — nothing happens) from "closed" (`detached` — the
+live is ended best-effort); an Android foreground service keeps capture alive
+(`foregroundServiceType="microphone"`, plus `FOREGROUND_SERVICE_MICROPHONE` at
+`targetSdk` 36), declared in the app manifest because the `record` plugin ships the
+service class but not its declaration, with `stopWithTask="true"` so it dies with
+the task; an ingest `409` becomes `IngestConflictException` so the publisher stops
+retrying instead of ending an external encoder's broadcast. *Consequence:* a
+permanent notification shows for the whole broadcast (the system price of
+background microphone access); closing the app ends the live immediately for
+capture and within the 45-second ingest lease for the server status; suspending
+and resuming capture, and adopting a still-live stream on app start, were both
+prototyped and rejected — the first still made listeners hear a jump, the second
+relit a microphone without user action; **iOS is unverified**, no device was
+available.
 
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

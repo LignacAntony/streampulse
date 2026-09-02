@@ -174,8 +174,8 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 045 | [045-codes-derreur-du-manifeste-hls.md](adr/045-codes-derreur-du-manifeste-hls.md) | Codes d'erreur du manifeste HLS : distinguer « terminé » de « pas encore prêt » |
 | 046 | [046-recommandation-basee-sur-l-historique-d-ecoute.md](adr/046-recommandation-basee-sur-l-historique-d-ecoute.md) | Recommandation de pistes basée sur l'historique d'écoute (capture + algorithme SQL) |
 | 047 | [047-connexion-google-oauth.md](adr/047-connexion-google-oauth.md) | Connexion via Google (ID token vérifié côté serveur, création auto du compte, `password_hash` nullable) |
-| 048 | [048-cycle-de-vie-de-la-diffusion-et-relance-d-un-flux.md](adr/048-cycle-de-vie-de-la-diffusion-et-relance-d-un-flux.md) | L'arrière-plan suspend la capture au lieu de terminer le direct ; un flux `ended` est relançable (`idle\|ended → live`) |
-| 049 | [049-diffusion-en-arriere-plan-depuis-le-mobile.md](adr/049-diffusion-en-arriere-plan-depuis-le-mobile.md) | Service de premier plan micro : quitter l'application ne coupe plus le direct, seule sa fermeture l'arrête |
+| 048 | [048-relance-d-un-flux-termine.md](adr/048-relance-d-un-flux-termine.md) | Un flux est un canal réutilisable : `start` accepte `idle\|ended` et remet `ended_at` à NULL, sans migration |
+| 049 | [049-cycle-de-vie-de-la-diffusion-mobile.md](adr/049-cycle-de-vie-de-la-diffusion-mobile.md) | Quitter l'application n'est pas la fermer : `hidden`/`paused` inertes, service de premier plan micro, `detached` termine |
 
 ---
 
