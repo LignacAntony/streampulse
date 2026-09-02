@@ -1,7 +1,7 @@
 # ADR 021 — Alertes Grafana provisionnées, notification par email
 
 **Date** : 2026-07-24
-**Statut** : Accepté
+**Statut** : Accepté — **amendée le 2026-09-02** (ajout d'un canal Discord, cf. § 3 bis)
 **Ticket** : [STR-167](https://linear.app/streampulse/issue/STR-167) (sous-issues [STR-187](https://linear.app/streampulse/issue/STR-187), [STR-188](https://linear.app/streampulse/issue/STR-188), [STR-189](https://linear.app/streampulse/issue/STR-189), [STR-190](https://linear.app/streampulse/issue/STR-190))
 
 ---
@@ -57,6 +57,39 @@ que l'API alimentent `GF_SMTP_*` (relay réel). Contact point `equipe-streampuls
 (email), politique racine groupée par `alertname` avec `repeat_interval: 4h`
 (anti-bruit). Slack/webhook : rien d'existant côté projet, écarté.
 
+### 3 bis. Ajout d'un canal Discord (amendement du 2026-09-02)
+
+Cette ADR écartait Discord parce qu'il « suppose un espace de travail partagé que
+le projet n'a pas ». **La prémisse a changé** : l'équipe s'est dotée d'un Discord.
+La décision n'est donc pas renversée — une alternative écartée est devenue
+disponible, et on l'ajoute.
+
+Ce que l'usage a montré entre-temps, et qui rend l'ajout nécessaire plutôt que
+confortable : **l'email n'a jamais eu de destinataire réel.** Son défaut est une
+adresse en `.invalid`, non délivrable par construction, et le déploiement
+Kubernetes ne passait même pas la variable — relevé le 2026-09-02,
+`ALERT_EMAIL_TO` y était vide. Une alerte qui se serait déclenchée sur ce cluster
+n'aurait prévenu personne.
+
+**Second receiver dans le même contact point**, pas un second contact point : la
+politique de notification route vers un contact point, pas vers un type. Les deux
+canaux sont donc notifiés sans toucher à `policies.yml`.
+
+**L'email est conservé.** Il reste le canal garanti — celui qui fonctionne sans
+secret à provisionner — et Mailpit garde sa valeur de démonstration locale. Un
+canal de notification ne doit pas dépendre d'une URL que quelqu'un a pu oublier
+de renseigner.
+
+⚠️ **`ALERT_DISCORD_WEBHOOK` est volontairement facultative**, sans `:?` en
+production, à la différence de `ALERT_EMAIL_TO`. Le déploiement continu lance
+`docker compose pull api` sur le VPS : une variable requise mais absente y ferait
+échouer le déploiement de l'**API**. Un canal de notification ne doit pas pouvoir
+bloquer une mise en production. Absente, seul le receiver Discord est muet.
+
+⚠️ Le CD ne redémarre que le service `api`. Une modification du provisioning
+d'alerting **n'est pas appliquée automatiquement** : Grafana doit être redémarré
+à la main sur le VPS.
+
 ### 4. Dashboard « Logs & Erreurs » (Panel 4)
 
 `logs-erreurs.json` : panel logs Loki piloté par deux variables — `$level`
@@ -84,10 +117,14 @@ raison que les dashboards (ADR 019) : une règle qui ne vit que dans le volume G
 premier `docker compose down -v`, n'est pas relue, et n'apparaît dans aucun diff. Le provisioning
 YAML rend les seuils discutables en revue de PR.
 
-**Notifier sur Slack ou Discord plutôt que par email.** Plus immédiat. Écarté : cela suppose un
-espace de travail partagé que le projet n'a pas, et un webhook à stocker. L'email fonctionne avec
-le relay SMTP déjà configuré pour la réinitialisation de mot de passe, et Mailpit le rend
-testable en local sans rien envoyer dehors.
+**Notifier sur Slack ou Discord plutôt que par email.** Plus immédiat. Écarté à la
+rédaction : cela supposait un espace de travail partagé que le projet n'avait pas, et un webhook
+à stocker. L'email fonctionne avec le relay SMTP déjà configuré pour la réinitialisation de mot
+de passe, et Mailpit le rend testable en local sans rien envoyer dehors.
+
+> **Révisé le 2026-09-02.** L'équipe s'est dotée d'un Discord : la prémisse ne tient plus. Le
+> canal est ajouté **en plus** de l'email, pas à sa place (cf. § 3 bis) — « plutôt que » était le
+> mauvais cadrage, les deux ne s'excluent pas.
 
 ## Conséquences
 

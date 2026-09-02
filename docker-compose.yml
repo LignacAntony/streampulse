@@ -226,6 +226,10 @@ services:
       # une alerte mal configurée ne peut donc pas atterrir chez un tiers, et
       # elle reste visible dans Mailpit en développement.
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-alertes@streampulse.invalid}
+      # Webhook Discord des alertes. Défaut vide : le receiver Discord échoue
+      # alors seul, l'email vers Mailpit continue de fonctionner. Pas de `:?`
+      # ici — une alerte sans Discord reste une alerte livrée.
+      ALERT_DISCORD_WEBHOOK: ${ALERT_DISCORD_WEBHOOK:-}
     depends_on:
       prometheus:
         condition: service_healthy

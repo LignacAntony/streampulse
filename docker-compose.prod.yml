@@ -246,6 +246,13 @@ services:
       # les alertes partaient nulle part — pire que l'ancienne adresse en dur,
       # qui produisait au moins une enveloppe délivrable (revue PR #328).
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:?adresse de destination des alertes requise en production (cf. .env.example)}
+      # Webhook Discord des alertes. Volontairement SANS `:?`, à la différence
+      # de l'adresse email ci-dessus : le CD lance `docker compose pull api`
+      # sur le VPS, et une variable requise mais absente y ferait échouer le
+      # déploiement de l'API — un canal de notification ne doit pas pouvoir
+      # bloquer une mise en production. Absente, seul le receiver Discord est
+      # muet ; l'email reste le canal garanti.
+      ALERT_DISCORD_WEBHOOK: ${ALERT_DISCORD_WEBHOOK:-}
     depends_on:
       prometheus:
         condition: service_healthy

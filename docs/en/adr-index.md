@@ -230,7 +230,17 @@ by default locally, so `go run` needs no collector.
 **ADR 021 — Provisioned Grafana alerting.** *Context:* an alert configured by
 hand is lost with its container. *Decision:* declare contact points, policies
 and rules as code. *Consequence:* the truth lives in git and the UI is
-read-only.
+read-only. **Amended 2026-09-02:** the ADR had discarded Discord because it
+"assumes a shared workspace the project does not have" — the team now has one,
+so the premise no longer holds. A Discord receiver is added **alongside** email,
+in the same contact point (the notification policy routes to a contact point,
+not to a type). Email is kept as the guaranteed channel, because it needs no
+secret to be provisioned; and `ALERT_DISCORD_WEBHOOK` is deliberately optional,
+with no `:?` in production, since the CD pipeline runs `docker compose pull api`
+on the VPS and a required-but-missing variable would fail the **API**
+deployment. Note that email had never had a real recipient: its default is an
+`.invalid` address, and the Kubernetes deployment did not even pass the
+variable — an alert firing on that cluster would have notified nobody.
 
 **ADR 022 — Streaming business metrics.** *Context:* a technical 500 and a
 listener dropping out are not the same event. *Decision:* separate business

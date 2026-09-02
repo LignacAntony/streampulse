@@ -25,3 +25,26 @@ contactPoints:
         settings:
           addresses: $ALERT_EMAIL_TO
           singleEmail: true
+
+      # Second canal, dans le MÊME contact point : la politique de notification
+      # route vers un contact point, pas vers un type. Les deux receivers sont
+      # donc notifiés sans toucher à policies.yml.
+      #
+      # Ajouté parce que l'email n'a jamais eu de destinataire réel — son défaut
+      # est une adresse en .invalid, et le déploiement Kubernetes ne passait même
+      # pas la variable. Discord est le canal que l'équipe lit vraiment.
+      #
+      # ⚠️ `disableResolveMessage: false` : on veut aussi le message de
+      # rétablissement. Une alerte qui part sans jamais dire qu'elle est
+      # retombée entraîne à ignorer le canal.
+      #
+      # Variable non requise volontairement (pas de `:?` côté compose) : si
+      # elle est absente, ce receiver échoue seul et l'email continue de
+      # fonctionner. L'inverse ferait dépendre le déploiement entier d'une URL
+      # de webhook — or le CD lance `docker compose pull api` sur le VPS, et
+      # une variable manquante y ferait échouer le déploiement de l'API.
+      - uid: discord-equipe
+        type: discord
+        disableResolveMessage: false
+        settings:
+          url: $ALERT_DISCORD_WEBHOOK
