@@ -327,6 +327,28 @@ func (r *pgRepository) AddFavorite(ctx context.Context, userID, playlistID strin
 	return nil
 }
 
+func (r *pgRepository) ListFavorites(ctx context.Context, userID string) ([]Playlist, error) {
+	rows, err := r.q.ListFavoritePlaylistsByUser(ctx, uuidParam(userID))
+	if err != nil {
+		return nil, fmt.Errorf("repo: list favorite playlists: %w", err)
+	}
+	playlists := make([]Playlist, 0, len(rows))
+	for _, row := range rows {
+		playlists = append(playlists, Playlist{
+			ID:          row.ID,
+			UserID:      row.UserID,
+			Name:        row.Name,
+			Description: textValue(row.Description),
+			IsPublic:    row.IsPublic,
+			TrackCount:  int(row.TrackCount),
+			IsFavorite:  row.IsFavorite,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+		})
+	}
+	return playlists, nil
+}
+
 func (r *pgRepository) RemoveFavorite(ctx context.Context, userID, playlistID string) error {
 	pid, ok := parseUUID(playlistID)
 	if !ok {

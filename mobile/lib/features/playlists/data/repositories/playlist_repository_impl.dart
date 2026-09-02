@@ -17,6 +17,12 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
   }
 
   @override
+  Future<List<Playlist>> listFavorites() async {
+    final dtos = await _remote.listFavorites();
+    return dtos.map((d) => d.toEntity()).toList();
+  }
+
+  @override
   Future<Playlist> create(String name, String? description) async {
     final dto = await _remote.create(name, description);
     return dto.toEntity();

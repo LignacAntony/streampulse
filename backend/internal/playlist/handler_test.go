@@ -126,6 +126,11 @@ func (s *stubService) RemoveFavorite(_ context.Context, id, requesterID string) 
 	return s.favErr
 }
 
+func (s *stubService) ListFavorites(_ context.Context, requesterID string) ([]Playlist, error) {
+	s.gotRequester = requesterID
+	return s.listRet, s.listErr
+}
+
 const testUserID = "00000000-0000-0000-0000-000000000001"
 
 // do exécute une requête à travers la vraie chaîne RequireAuth vers handler h.

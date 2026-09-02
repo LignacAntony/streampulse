@@ -113,6 +113,9 @@ class _FakePlaylistRepository implements PlaylistRepository {
   Future<List<Playlist>> list() async => const [];
 
   @override
+  Future<List<Playlist>> listFavorites() async => const [];
+
+  @override
   Future<Playlist> create(String name, String? description) =>
       throw UnimplementedError();
 

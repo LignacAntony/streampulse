@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/theme/cover_gradients.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../../core/widgets/collapsible_section.dart';
 import '../../../../core/widgets/message_view.dart';
@@ -632,17 +633,9 @@ Future<bool> _confirmDeleteDialog(BuildContext context, String name) async {
   return confirmed ?? false;
 }
 
-/// Dégradés et icônes de cover, choisis de façon déterministe selon la position
-/// de la playlist (variété visuelle sans donnée de couverture réelle).
-const _coverGradients = <List<Color>>[
-  [Color(0xFF9D7BF5), Color(0xFF7C4DFF)],
-  [Color(0xFF2BD9C4), Color(0xFF14B8A6)],
-  [Color(0xFF5B4B8A), Color(0xFF37305C)],
-  [Color(0xFF2E6E7E), Color(0xFF1E4A57)],
-  [Color(0xFFF5A97B), Color(0xFFEF7C4D)],
-  [Color(0xFF7B95F5), Color(0xFF4D6BFF)],
-];
-
+/// Icônes de cover, choisies de façon déterministe selon la position (variété
+/// visuelle). Les dégradés viennent de la palette partagée [playlistCoverGradient]
+/// (indexée par id → couleur stable entre Bibliothèque et accueil, STR-250).
 const _coverIcons = <IconData>[
   Icons.music_note,
   Icons.speed,
@@ -678,7 +671,7 @@ class _PlaylistCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
-    final gradient = _coverGradients[index % _coverGradients.length];
+    final gradient = playlistCoverGradient(playlist.id);
     final icon = _coverIcons[index % _coverIcons.length];
 
     return Column(

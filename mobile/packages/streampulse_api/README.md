@@ -98,6 +98,7 @@ Class | Method | HTTP request | Description
 [*PlaylistApi*](doc/PlaylistApi.md) | [**createPlaylist**](doc/PlaylistApi.md#createplaylist) | **POST** /api/playlists | Create an empty playlist.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**deletePlaylist**](doc/PlaylistApi.md#deleteplaylist) | **DELETE** /api/playlists/{id} | Delete a playlist (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**getPlaylist**](doc/PlaylistApi.md#getplaylist) | **GET** /api/playlists/{id} | Get one of the user&#39;s playlists.
+[*PlaylistApi*](doc/PlaylistApi.md) | [**listFavoritePlaylists**](doc/PlaylistApi.md#listfavoriteplaylists) | **GET** /api/playlists/favorites | List the authenticated user&#39;s favorite (pinned) playlists.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylistTracks**](doc/PlaylistApi.md#listplaylisttracks) | **GET** /api/playlists/{id}/tracks | List a playlist&#39;s tracks (owner only).
 [*PlaylistApi*](doc/PlaylistApi.md) | [**listPlaylists**](doc/PlaylistApi.md#listplaylists) | **GET** /api/playlists | List the authenticated user&#39;s playlists.
 [*PlaylistApi*](doc/PlaylistApi.md) | [**removePlaylistFavorite**](doc/PlaylistApi.md#removeplaylistfavorite) | **DELETE** /api/playlists/{id}/favorite | Unpin a playlist from favorites (owner only).

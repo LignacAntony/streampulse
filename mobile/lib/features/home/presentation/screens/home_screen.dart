@@ -3,12 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../../playlists/domain/entities/playlist.dart';
-import '../../../playlists/domain/repositories/playlist_repository.dart';
+import '../../../playlists/presentation/providers/favorite_playlists_controller.dart';
 import '../../../streams/domain/entities/live_stream.dart';
 import '../../../streams/presentation/providers/favorites_controller.dart';
 import '../../../streams/presentation/providers/stream_notifier.dart';
 import '../../../../core/widgets/message_view.dart';
 import '../../../streams/presentation/widgets/stream_tile.dart';
+import '../../../../core/theme/cover_gradients.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,20 +24,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
   late final StreamNotifier _notifier;
   late final FavoritesController _favorites;
+  late final FavoritePlaylistsController _favoritePlaylists;
   late final AppLifecycleListener _lifecycleListener;
   GoRouter? _router;
   bool _appResumed = true;
-
-  // Playlists favorites (STR-250) : vitrine en haut de l'accueil. Chargées via le
-  // repository (pas un contrôleur app-level) et rafraîchies à l'arrivée sur
-  // l'écran — l'épinglage se fait dans la Bibliothèque.
-  List<Playlist> _favoritePlaylists = const [];
 
   @override
   void initState() {
     super.initState();
     _notifier = context.read<StreamNotifier>();
     _favorites = context.read<FavoritesController>();
+    _favoritePlaylists = context.read<FavoritePlaylistsController>();
     _scrollController.addListener(_onScroll);
     _lifecycleListener = AppLifecycleListener(onStateChange: (state) {
       _appResumed = state == AppLifecycleState.resumed;
@@ -45,25 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifier.load();
       _favorites.ensureLoaded();
-      // La vitrine des favoris se (re)charge à chaque arrivée sur l'accueil,
-      // piloté par `_syncPolling` (appelé ici et à chaque navigation).
+      // La vitrine des playlists favorites se (re)charge à chaque arrivée sur
+      // l'accueil, piloté par `_syncPolling` (appelé ici et à chaque navigation).
       _syncPolling();
     });
-  }
-
-  /// (Re)charge les playlists épinglées. Best-effort : un échec laisse la vitrine
-  /// vide sans casser le reste de l'accueil (les flux restent affichés).
-  Future<void> _loadFavoritePlaylists() async {
-    try {
-      final all = await context.read<PlaylistRepository>().list();
-      if (!mounted) return;
-      setState(() {
-        _favoritePlaylists =
-            all.where((p) => p.isFavorite).toList(growable: false);
-      });
-    } catch (_) {
-      // Silencieux : la vitrine est un bonus, pas un bloquant.
-    }
   }
 
   @override
@@ -98,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await Future.wait([
       _notifier.refresh(),
       _favorites.load(),
-      _loadFavoritePlaylists(),
+      _favoritePlaylists.load(),
     ]);
   }
 
@@ -110,8 +93,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_appResumed && onHome) {
       _notifier.startPolling();
       // Rafraîchit la vitrine au retour sur l'accueil (ex. après avoir épinglé
-      // une playlist depuis la Bibliothèque).
-      _loadFavoritePlaylists();
+      // une playlist depuis la Bibliothèque ou le détail).
+      _favoritePlaylists.load();
     } else {
       _notifier.stopPolling();
     }
@@ -147,6 +130,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final favorites = context.watch<FavoritesController>();
+    final favoritePlaylists =
+        context.watch<FavoritePlaylistsController>().favorites;
 
     return CustomScrollView(
       controller: _scrollController,
@@ -156,9 +141,9 @@ class _HomeScreenState extends State<HomeScreen> {
         // Bloc « Favoris » unique (STR-250) : playlists épinglées (rangée
         // horizontale) puis flux favoris, avant la section « En direct ».
         const SliverToBoxAdapter(child: _SectionHeader('Favoris')),
-        if (_favoritePlaylists.isNotEmpty) ...[
+        if (favoritePlaylists.isNotEmpty) ...[
           SliverToBoxAdapter(
-            child: _FavoritePlaylistsRow(playlists: _favoritePlaylists),
+            child: _FavoritePlaylistsRow(playlists: favoritePlaylists),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 12)),
         ],
@@ -216,10 +201,8 @@ class _FavoritePlaylistsRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: playlists.length,
         separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (context, index) => _PlaylistFavoriteCard(
-          playlist: playlists[index],
-          index: index,
-        ),
+        itemBuilder: (context, index) =>
+            _PlaylistFavoriteCard(playlist: playlists[index]),
       ),
     );
   }
@@ -228,18 +211,9 @@ class _FavoritePlaylistsRow extends StatelessWidget {
 /// Carte d'une playlist favorite : cover dégradée + nom + nombre de titres.
 /// Un appui ouvre le détail dans l'onglet Bibliothèque.
 class _PlaylistFavoriteCard extends StatelessWidget {
-  const _PlaylistFavoriteCard({required this.playlist, required this.index});
+  const _PlaylistFavoriteCard({required this.playlist});
 
   final Playlist playlist;
-  final int index;
-
-  // Dégradés doux, variés par index (mêmes teintes que les covers de la biblio).
-  static const List<List<Color>> _gradients = [
-    [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-    [Color(0xFF26C6DA), Color(0xFF66BB6A)],
-    [Color(0xFFFF7043), Color(0xFFFFCA28)],
-    [Color(0xFFEC407A), Color(0xFFAB47BC)],
-  ];
 
   String _trackCountLabel(int count) {
     if (count == 0) return 'Aucun titre';
@@ -250,7 +224,7 @@ class _PlaylistFavoriteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
-    final gradient = _gradients[index % _gradients.length];
+    final gradient = playlistCoverGradient(playlist.id);
 
     return SizedBox(
       width: 132,

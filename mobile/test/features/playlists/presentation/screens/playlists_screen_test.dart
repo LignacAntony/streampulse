@@ -57,6 +57,10 @@ class _FakePlaylistRepository implements PlaylistRepository {
   }
 
   @override
+  Future<List<Playlist>> listFavorites() async =>
+      playlists.where((p) => p.isFavorite).toList();
+
+  @override
   Future<Playlist> create(String name, String? description) async {
     createCalls++;
     if (createError != null) throw createError!;

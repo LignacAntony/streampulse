@@ -57,6 +57,9 @@ type fakeRepo struct {
 	removeFavCall    bool
 	gotRemoveFavID   string
 	gotRemoveFavUser string
+
+	listFavRet []Playlist
+	listFavErr error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Playlist, error) {
@@ -123,6 +126,10 @@ func (f *fakeRepo) RemoveFavorite(_ context.Context, userID, playlistID string) 
 	f.gotRemoveFavUser = userID
 	f.gotRemoveFavID = playlistID
 	return f.removeFavErr
+}
+
+func (f *fakeRepo) ListFavorites(_ context.Context, _ string) ([]Playlist, error) {
+	return f.listFavRet, f.listFavErr
 }
 
 const (
@@ -405,5 +412,18 @@ func TestRemoveFavorite_Idempotent(t *testing.T) {
 	}
 	if !repo.removeFavCall || repo.gotRemoveFavUser != ownerID || repo.gotRemoveFavID != "p1" {
 		t.Errorf("RemoveFavorite non transmis correctement: call=%v user=%q id=%q", repo.removeFavCall, repo.gotRemoveFavUser, repo.gotRemoveFavID)
+	}
+}
+
+func TestListFavorites_Passthrough(t *testing.T) {
+	repo := &fakeRepo{listFavRet: []Playlist{{ID: "p1", UserID: ownerID, IsFavorite: true}}}
+	svc := NewService(repo)
+
+	got, err := svc.ListFavorites(context.Background(), ownerID)
+	if err != nil {
+		t.Fatalf("ListFavorites: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "p1" || !got[0].IsFavorite {
+		t.Errorf("got %+v, want la playlist favorite", got)
 	}
 }

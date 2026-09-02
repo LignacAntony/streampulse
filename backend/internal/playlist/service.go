@@ -96,6 +96,7 @@ type Repository interface {
 	Reorder(ctx context.Context, playlistID string, trackIDs []string) error
 	AddFavorite(ctx context.Context, userID, playlistID string) error
 	RemoveFavorite(ctx context.Context, userID, playlistID string) error
+	ListFavorites(ctx context.Context, userID string) ([]Playlist, error)
 }
 
 // Service porte la logique métier du domaine playlist.
@@ -183,6 +184,12 @@ func (s *Service) AddFavorite(ctx context.Context, id, requesterID string) error
 // erreur si elle n'était pas en favori (pas de contrôle de visibilité).
 func (s *Service) RemoveFavorite(ctx context.Context, id, requesterID string) error {
 	return s.repo.RemoveFavorite(ctx, requesterID, id)
+}
+
+// ListFavorites retourne les playlists épinglées par le demandeur, triées par
+// date d'ajout du favori décroissante.
+func (s *Service) ListFavorites(ctx context.Context, requesterID string) ([]Playlist, error) {
+	return s.repo.ListFavorites(ctx, requesterID)
 }
 
 // UpdatePlaylist valide puis renomme la playlist du propriétaire (404 si absente

@@ -497,6 +497,10 @@ func run() error {
 		http.HandlerFunc(playlistHandler.Create)))
 	mux.Handle("GET /api/playlists", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.List)))
+	// Playlists favorites (STR-250). Segment littéral « favorites » : plus
+	// spécifique que « {id} », ServeMux le route ici sans conflit.
+	mux.Handle("GET /api/playlists/favorites", auth.RequireAuth(cfg.JWTSecret,
+		http.HandlerFunc(playlistHandler.ListFavorites)))
 	mux.Handle("GET /api/playlists/{id}", auth.RequireAuth(cfg.JWTSecret,
 		http.HandlerFunc(playlistHandler.Get)))
 	mux.Handle("PUT /api/playlists/{id}", auth.RequireAuth(cfg.JWTSecret,

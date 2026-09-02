@@ -63,20 +63,16 @@ class PlaylistDetailController extends ChangeNotifier {
   /// [loadFavorite], basculé de façon optimiste par [toggleFavorite].
   bool get isFavorite => _isFavorite;
 
-  /// Charge l'état favori depuis la liste des playlists du demandeur. Best-effort
-  /// (un échec laisse simplement le cœur vide) : c'est un ornement, pas le contenu.
+  /// Charge l'état favori depuis la liste **des favoris** (endpoint dédié, petite
+  /// liste — pas de sur-lecture de toutes les playlists). Best-effort : un échec
+  /// laisse simplement le cœur vide, le bouton reste utilisable.
   Future<void> loadFavorite() async {
     try {
-      final all = await _repository.list();
-      for (final p in all) {
-        if (p.id == playlistId) {
-          _isFavorite = p.isFavorite;
-          break;
-        }
-      }
+      final favorites = await _repository.listFavorites();
+      _isFavorite = favorites.any((p) => p.id == playlistId);
       _notify();
     } catch (_) {
-      // Silencieux : le bouton reste utilisable, il tentera l'appel réseau.
+      // Silencieux : le bouton tentera quand même l'appel réseau au tap.
     }
   }
 

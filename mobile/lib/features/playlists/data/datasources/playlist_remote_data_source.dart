@@ -28,6 +28,15 @@ class PlaylistRemoteDataSource {
     }
   }
 
+  Future<List<PlaylistResponse>> listFavorites() async {
+    try {
+      final response = await _api.listFavoritePlaylists();
+      return response.data?.toList() ?? const [];
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<PlaylistResponse> create(String name, String? description) async {
     try {
       final response = await _api.createPlaylist(
