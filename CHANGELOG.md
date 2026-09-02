@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.6.0](https://github.com/LignacAntony/streampulse/compare/v1.5.0...v1.6.0) (2026-09-02)
+
+
+### Features
+
+* **infra:** notifier les alertes Grafana sur Discord en plus de l'email ([#385](https://github.com/LignacAntony/streampulse/issues/385)) ([7fa205b](https://github.com/LignacAntony/streampulse/commit/7fa205b18e090ca81862ca9904f3e974da8c7d7b))
+* **mobile:** refonte front STR-250 + favoris de playlists ([#386](https://github.com/LignacAntony/streampulse/issues/386)) ([981720d](https://github.com/LignacAntony/streampulse/commit/981720d7aac3d9049ace9fdce379cf88bc6a3dca))
+
+
+### Bug Fixes
+
+* **ci:** ajouter GOOGLE_SERVER_CLIENT_ID et GF_SERVER_ROOT_URL aux builds et configurations ([3e0c907](https://github.com/LignacAntony/streampulse/commit/3e0c90720419256303cae678028eba360d4c0118))
+* **ci:** passer GOOGLE_SERVER_CLIENT_ID aux builds mobile et exposer Grafana en prod ([69ade11](https://github.com/LignacAntony/streampulse/commit/69ade11df452d27e260afb782e0b6c923ca2db25))
+* **mobile,api:** diffuser en arrière-plan et relancer un flux terminé ([#382](https://github.com/LignacAntony/streampulse/issues/382)) ([8f39485](https://github.com/LignacAntony/streampulse/commit/8f3948560f317b7a038e5cba33cca86d2a369197))
+
 ## [1.5.0](https://github.com/LignacAntony/streampulse/compare/v1.4.0...v1.5.0) (2026-09-01)
 
 
