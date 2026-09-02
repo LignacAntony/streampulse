@@ -74,6 +74,10 @@ class _DiscoverViewState extends State<_DiscoverView> {
   GoRouter? _router;
   bool _appResumed = true;
 
+  // Sections repliables « Pour toi » / « Pistes publiques » (dépliées par défaut).
+  bool _recosExpanded = true;
+  bool _publicExpanded = true;
+
   @override
   void initState() {
     super.initState();
@@ -200,37 +204,155 @@ class _DiscoverViewState extends State<_DiscoverView> {
         // « Pour toi » (US-09-04, déplacée dans « Découvrir » en STR-250) :
         // masquée sans contenu, placée au-dessus des pistes publiques.
         if (recos.isNotEmpty) ...[
-          Text('Pour toi',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          for (var i = 0; i < recos.length; i++)
-            RecommendedTrackTile(
-              recommended: recos[i],
-              // La liste affichée (plafonnée) part en file, à partir de l'item
-              // touché : précédent/suivant et modes de lecture gardent un sens.
-              onPlay: () => context.read<PlaylistQueueController>().play(
-                    tracks: recos.map((r) => r.track).toList(growable: false),
-                    sourceName: 'Pour toi',
-                    startIndex: i,
+          _CollapsibleHeader(
+            title: 'Pour toi',
+            count: recos.length,
+            expanded: _recosExpanded,
+            onToggle: () => setState(() => _recosExpanded = !_recosExpanded),
+          ),
+          _CollapsibleContent(
+            expanded: _recosExpanded,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                for (var i = 0; i < recos.length; i++)
+                  RecommendedTrackTile(
+                    recommended: recos[i],
+                    // La liste affichée (plafonnée) part en file, à partir de
+                    // l'item touché : précédent/suivant et modes de lecture
+                    // gardent un sens.
+                    onPlay: () => context.read<PlaylistQueueController>().play(
+                          tracks:
+                              recos.map((r) => r.track).toList(growable: false),
+                          sourceName: 'Pour toi',
+                          startIndex: i,
+                        ),
                   ),
+              ],
             ),
+          ),
           const SizedBox(height: 16),
         ],
         if (publicTracks.isNotEmpty) ...[
-          Text('Pistes publiques',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          for (var i = 0; i < publicTracks.length; i++)
-            _PublicTrackTile(
-              track: publicTracks[i],
-              onPlay: () => context.read<PlaylistQueueController>().play(
-                    tracks: publicTracks.map((t) => t.toTrack()).toList(),
-                    sourceName: 'Pistes publiques',
-                    startIndex: i,
+          _CollapsibleHeader(
+            title: 'Pistes publiques',
+            count: publicTracks.length,
+            expanded: _publicExpanded,
+            onToggle: () => setState(() => _publicExpanded = !_publicExpanded),
+          ),
+          _CollapsibleContent(
+            expanded: _publicExpanded,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                for (var i = 0; i < publicTracks.length; i++)
+                  _PublicTrackTile(
+                    track: publicTracks[i],
+                    onPlay: () => context.read<PlaylistQueueController>().play(
+                          tracks:
+                              publicTracks.map((t) => t.toTrack()).toList(),
+                          sourceName: 'Pistes publiques',
+                          startIndex: i,
+                        ),
                   ),
+              ],
             ),
+          ),
         ],
       ],
+    );
+  }
+}
+
+/// En-tête de section repliable : titre + compteur discret + chevron qui pivote.
+/// Toute la ligne est tappable.
+class _CollapsibleHeader extends StatelessWidget {
+  const _CollapsibleHeader({
+    required this.title,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final String title;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Semantics(
+      button: true,
+      label: '$title, ${expanded ? 'réduire' : 'développer'} la section',
+      onTap: onToggle,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: text.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              AnimatedRotation(
+                turns: expanded ? 0.5 : 0.0,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOut,
+                child: Icon(
+                  Icons.keyboard_arrow_down,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Contenu d'une section repliable : anime la hauteur entre le contenu complet
+/// et zéro, avec un fondu, quand [expanded] change.
+class _CollapsibleContent extends StatelessWidget {
+  const _CollapsibleContent({required this.expanded, required this.child});
+
+  final bool expanded;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOut,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        opacity: expanded ? 1 : 0,
+        duration: const Duration(milliseconds: 180),
+        child: expanded ? child : const SizedBox(width: double.infinity),
+      ),
     );
   }
 }

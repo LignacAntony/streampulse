@@ -192,5 +192,27 @@ void main() {
       expect(find.text('Rien à découvrir pour le moment'), findsOneWidget);
       expect(find.text('Pour toi'), findsNothing);
     });
+
+    testWidgets('replier « Pour toi » masque ses tuiles, redéplier les remontre',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        recommendations: [_reco('r-1')],
+      ));
+      await tester.pumpAndSettle();
+
+      // Déplié par défaut.
+      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
+
+      // Replier via le titre de section.
+      await tester.tap(find.text('Pour toi'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reco_tile_r-1')), findsNothing);
+      expect(find.text('Pour toi'), findsOneWidget); // l'en-tête reste
+
+      // Redéplier.
+      await tester.tap(find.text('Pour toi'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
+    });
   });
 }
