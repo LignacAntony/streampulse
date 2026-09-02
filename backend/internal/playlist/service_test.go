@@ -2,6 +2,7 @@ package playlist
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/LignacAntony/streampulse/internal/shared/apperror"
@@ -47,6 +48,19 @@ type fakeRepo struct {
 	reorderCall  bool
 	gotReorderID string
 	gotOrder     []string
+
+	addFavErr     error
+	addFavCall    bool
+	gotAddFavID   string
+	gotAddFavUser string
+
+	removeFavErr     error
+	removeFavCall    bool
+	gotRemoveFavID   string
+	gotRemoveFavUser string
+
+	listFavRet []Playlist
+	listFavErr error
 }
 
 func (f *fakeRepo) Create(_ context.Context, p CreateParams) (Playlist, error) {
@@ -59,7 +73,7 @@ func (f *fakeRepo) ListByUser(_ context.Context, _ string) ([]Playlist, error) {
 	return f.listRet, f.listErr
 }
 
-func (f *fakeRepo) GetByID(_ context.Context, _ string) (Playlist, error) {
+func (f *fakeRepo) GetByID(_ context.Context, _, _ string) (Playlist, error) {
 	return f.getRet, f.getErr
 }
 
@@ -99,6 +113,24 @@ func (f *fakeRepo) Reorder(_ context.Context, playlistID string, trackIDs []stri
 	f.gotReorderID = playlistID
 	f.gotOrder = trackIDs
 	return f.reorderErr
+}
+
+func (f *fakeRepo) AddFavorite(_ context.Context, userID, playlistID string) error {
+	f.addFavCall = true
+	f.gotAddFavUser = userID
+	f.gotAddFavID = playlistID
+	return f.addFavErr
+}
+
+func (f *fakeRepo) RemoveFavorite(_ context.Context, userID, playlistID string) error {
+	f.removeFavCall = true
+	f.gotRemoveFavUser = userID
+	f.gotRemoveFavID = playlistID
+	return f.removeFavErr
+}
+
+func (f *fakeRepo) ListFavorites(_ context.Context, _ string) ([]Playlist, error) {
+	return f.listFavRet, f.listFavErr
 }
 
 const (
@@ -341,5 +373,133 @@ func TestReorderTracks_ThirdPartyPlaylist_NotFound(t *testing.T) {
 	}
 	if repo.reorderCall {
 		t.Error("repo.Reorder must not be called for a third-party playlist")
+	}
+}
+
+func TestAddFavorite_Owner_Persists(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: ownerID}}
+	svc := NewService(repo)
+
+	if err := svc.AddFavorite(context.Background(), "p1", ownerID); err != nil {
+		t.Fatalf("AddFavorite: %v", err)
+	}
+	if !repo.addFavCall {
+		t.Fatal("AddFavorite du repo non appelé")
+	}
+	if repo.gotAddFavUser != ownerID || repo.gotAddFavID != "p1" {
+		t.Errorf("params = (%q,%q), want (%q,%q)", repo.gotAddFavUser, repo.gotAddFavID, ownerID, "p1")
+	}
+}
+
+func TestAddFavorite_ThirdParty_NotFound(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: otherID}}
+	svc := NewService(repo)
+
+	err := svc.AddFavorite(context.Background(), "p1", ownerID)
+	if !apperror.IsCode(err, apperror.CodeNotFound) {
+		t.Fatalf("err = %v, want NotFound", err)
+	}
+	if repo.addFavCall {
+		t.Error("une playlist d'un tiers ne doit pas être favorisée")
+	}
+}
+
+func TestRemoveFavorite_Idempotent(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo)
+
+	if err := svc.RemoveFavorite(context.Background(), "p1", ownerID); err != nil {
+		t.Fatalf("RemoveFavorite: %v", err)
+	}
+	if !repo.removeFavCall || repo.gotRemoveFavUser != ownerID || repo.gotRemoveFavID != "p1" {
+		t.Errorf("RemoveFavorite non transmis correctement: call=%v user=%q id=%q", repo.removeFavCall, repo.gotRemoveFavUser, repo.gotRemoveFavID)
+	}
+}
+
+func TestListFavorites_Passthrough(t *testing.T) {
+	repo := &fakeRepo{listFavRet: []Playlist{{ID: "p1", UserID: ownerID, IsFavorite: true}}}
+	svc := NewService(repo)
+
+	got, err := svc.ListFavorites(context.Background(), ownerID)
+	if err != nil {
+		t.Fatalf("ListFavorites: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "p1" || !got[0].IsFavorite {
+		t.Errorf("got %+v, want la playlist favorite", got)
+	}
+}
+
+func TestListPlaylists_Passthrough(t *testing.T) {
+	repo := &fakeRepo{listRet: []Playlist{{ID: "p1", Name: "Rock", IsFavorite: true}}}
+	svc := NewService(repo)
+
+	got, err := svc.ListPlaylists(context.Background(), ownerID)
+	if err != nil {
+		t.Fatalf("ListPlaylists: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "p1" || !got[0].IsFavorite {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestGetPlaylist_Owner_ReturnsPlaylist(t *testing.T) {
+	repo := &fakeRepo{getRet: Playlist{ID: "p1", UserID: ownerID, IsFavorite: true}}
+	svc := NewService(repo)
+
+	pl, err := svc.GetPlaylist(context.Background(), "p1", ownerID)
+	if err != nil {
+		t.Fatalf("GetPlaylist: %v", err)
+	}
+	if pl.ID != "p1" || !pl.IsFavorite {
+		t.Errorf("got %+v", pl)
+	}
+}
+
+func TestCreatePlaylist_DescriptionTooLong_InvalidArgument(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo)
+	long := strings.Repeat("a", MaxDescriptionLen+1)
+
+	_, err := svc.CreatePlaylist(context.Background(), CreateInput{
+		UserID: ownerID, Name: "Rock", Description: &long,
+	})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("err = %v, want InvalidArgument", err)
+	}
+	if repo.createCall {
+		t.Error("repo.Create ne doit pas être appelé sur une description invalide")
+	}
+}
+
+func TestCreatePlaylist_BlankDescription_ForwardsNil(t *testing.T) {
+	repo := &fakeRepo{createRet: Playlist{ID: "p1"}}
+	svc := NewService(repo)
+	blank := "   "
+
+	_, err := svc.CreatePlaylist(context.Background(), CreateInput{
+		UserID: ownerID, Name: "Rock", Description: &blank,
+	})
+	if err != nil {
+		t.Fatalf("CreatePlaylist: %v", err)
+	}
+	// Une description blanche est normalisée en nil (pas de chaîne vide persistée).
+	if repo.gotCreate.Description != nil {
+		t.Errorf("description = %v, want nil", *repo.gotCreate.Description)
+	}
+}
+
+func TestUpdatePlaylist_DescriptionTooLong_InvalidArgument(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := NewService(repo)
+	long := strings.Repeat("a", MaxDescriptionLen+1)
+
+	_, err := svc.UpdatePlaylist(context.Background(), "p1", ownerID, UpdateInput{
+		Name: "Rock", Description: &long,
+	})
+	if !apperror.IsCode(err, apperror.CodeInvalidArgument) {
+		t.Fatalf("err = %v, want InvalidArgument", err)
+	}
+	if repo.updateCall {
+		t.Error("repo.Update ne doit pas être appelé sur une description invalide")
 	}
 }

@@ -4,17 +4,15 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/theme/cover_gradients.dart';
 import '../../../../core/storage/secure_storage.dart';
+import '../../../../core/widgets/collapsible_section.dart';
 import '../../../../core/widgets/message_view.dart';
+import '../../../../core/widgets/search_field.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../tracks/data/datasources/track_remote_data_source.dart';
 import '../../../tracks/data/repositories/track_repository_impl.dart';
 import '../../../tracks/domain/repositories/track_repository.dart';
-import '../../../recommendations/data/datasources/recommendation_remote_data_source.dart';
-import '../../../recommendations/data/repositories/recommendation_repository_impl.dart';
-import '../../../recommendations/domain/entities/recommended_track.dart';
-import '../../../recommendations/domain/repositories/recommendation_repository.dart';
-import '../../../recommendations/presentation/providers/recommendations_controller.dart';
 import '../../data/datasources/playlist_remote_data_source.dart';
 import '../../data/repositories/playlist_repository_impl.dart';
 import '../../domain/entities/playlist.dart';
@@ -45,16 +43,11 @@ class PlaylistsScreen extends StatelessWidget {
     super.key,
     this.repository,
     this.trackRepository,
-    this.recommendationRepository,
     this.isAuthenticated,
   });
 
   final PlaylistRepository? repository;
   final TrackRepository? trackRepository;
-
-  /// Injectable pour les tests (US-09-04). En production, construit depuis
-  /// [DioClient].
-  final RecommendationRepository? recommendationRepository;
 
   /// Force l'état d'authentification (tests). En production, résolu depuis
   /// [SecureStorage].
@@ -62,46 +55,34 @@ class PlaylistsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider<PlaylistsController>(
-          create: (ctx) {
-            // Repli hors ligne : les playlists téléchargées, servies quand la
-            // liste réseau échoue (mode avion). Passe par le contrôleur hors
-            // ligne app-level (toujours fourni, y compris en test) plutôt que
-            // par le cache directement.
-            final offlineFallback =
-                ctx.read<OfflinePlaylistController>().offlinePlaylists;
-            final playlistRepo = repository;
-            final trackRepo = trackRepository;
-            if (playlistRepo != null && trackRepo != null) {
-              return PlaylistsController(
-                playlistRepo,
-                trackRepo,
-                offlineFallback: offlineFallback,
-              );
-            }
-            final dio = ctx.read<DioClient>();
-            return PlaylistsController(
-              playlistRepo ??
-                  PlaylistRepositoryImpl(
-                    PlaylistRemoteDataSource(dio.playlistApi, dio.trackApi),
-                  ),
-              trackRepo ??
-                  TrackRepositoryImpl(TrackRemoteDataSource(dio.trackApi)),
-              offlineFallback: offlineFallback,
-            );
-          },
-        ),
-        ChangeNotifierProvider<RecommendationsController>(
-          create: (ctx) => RecommendationsController(
-            recommendationRepository ??
-                RecommendationRepositoryImpl(
-                  RecommendationRemoteDataSource(ctx.read<DioClient>().dio),
-                ),
-          ),
-        ),
-      ],
+    return ChangeNotifierProvider<PlaylistsController>(
+      create: (ctx) {
+        // Repli hors ligne : les playlists téléchargées, servies quand la
+        // liste réseau échoue (mode avion). Passe par le contrôleur hors
+        // ligne app-level (toujours fourni, y compris en test) plutôt que
+        // par le cache directement.
+        final offlineFallback =
+            ctx.read<OfflinePlaylistController>().offlinePlaylists;
+        final playlistRepo = repository;
+        final trackRepo = trackRepository;
+        if (playlistRepo != null && trackRepo != null) {
+          return PlaylistsController(
+            playlistRepo,
+            trackRepo,
+            offlineFallback: offlineFallback,
+          );
+        }
+        final dio = ctx.read<DioClient>();
+        return PlaylistsController(
+          playlistRepo ??
+              PlaylistRepositoryImpl(
+                PlaylistRemoteDataSource(dio.playlistApi, dio.trackApi),
+              ),
+          trackRepo ??
+              TrackRepositoryImpl(TrackRemoteDataSource(dio.trackApi)),
+          offlineFallback: offlineFallback,
+        );
+      },
       child: _PlaylistsBody(forcedAuth: isAuthenticated),
     );
   }
@@ -120,10 +101,34 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   /// `null` tant que l'état d'authentification n'est pas résolu (spinner).
   bool? _isAuthenticated;
 
+  // Recherche des pistes : tant qu'une requête est saisie, les playlists sont
+  // masquées et seules les pistes correspondantes restent (par titre / artiste).
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  // Sections repliables (dépliées par défaut).
+  bool _playlistsExpanded = true;
+  bool _tracksExpanded = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _resolveAuth());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _norm(String s) => s.trim().toLowerCase();
+
+  bool _trackMatches(Track t) {
+    final q = _norm(_query);
+    if (q.isEmpty) return true;
+    return _norm(t.title).contains(q) ||
+        (t.artist != null && _norm(t.artist!).contains(q));
   }
 
   Future<void> _resolveAuth() async {
@@ -133,30 +138,18 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
     if (!mounted) return;
     setState(() => _isAuthenticated = authenticated);
     if (authenticated) {
-      // Bibliothèque et recommandations dépendent du même backend/auth : on les
-      // charge EN PARALLÈLE (au premier rendu, ne pas enchaîner deux allers-retours
-      // réseau). Les deux contrôleurs sont lus avant tout await.
-      await Future.wait([
-        context.read<PlaylistsController>().load(),
-        context.read<RecommendationsController>().load(),
-      ]);
+      await context.read<PlaylistsController>().load();
     }
   }
 
-  Future<void> _onRefresh() => Future.wait([
-        context.read<PlaylistsController>().refresh(),
-        context.read<RecommendationsController>().refresh(),
-      ]);
+  Future<void> _onRefresh() => context.read<PlaylistsController>().refresh();
 
   /// Ouvre l'écran d'upload d'une piste (US-05-01), puis recharge : la piste
   /// fraîchement uploadée doit apparaître dans la section « Mes pistes ».
   Future<void> _onUpload() async {
     await context.push('/library/upload');
     if (!mounted) return;
-    await Future.wait([
-      context.read<PlaylistsController>().refresh(),
-      context.read<RecommendationsController>().refresh(),
-    ]);
+    await context.read<PlaylistsController>().refresh();
   }
 
   Future<void> _onCreate() async {
@@ -220,12 +213,19 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   Future<void> _onOpen(Playlist playlist) async {
     await context.push('/library/playlist/${playlist.id}', extra: playlist.name);
     if (!mounted) return;
-    // Écouter une piste dans le détail alimente l'historique : les
-    // recommandations peuvent avoir changé au retour. Rechargement en parallèle.
-    await Future.wait([
-      context.read<PlaylistsController>().refresh(),
-      context.read<RecommendationsController>().refresh(),
-    ]);
+    // Au retour, le nombre de pistes a pu changer : on recharge la liste.
+    await context.read<PlaylistsController>().refresh();
+  }
+
+  /// Épingle/retire une playlist des favoris (STR-250). Le contrôleur bascule le
+  /// cœur de façon optimiste ; on ne signale que l'échec.
+  Future<void> _onToggleFavorite(Playlist playlist) async {
+    try {
+      await context.read<PlaylistsController>().toggleFavorite(playlist);
+    } catch (e) {
+      if (!mounted) return;
+      showAuthErrorToast(context, _mutationMessage(e));
+    }
   }
 
   /// Message adapté au type d'exception pour un toast de mutation.
@@ -307,10 +307,7 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
       );
     }
 
-    final recommendations = context.watch<RecommendationsController>();
-    if (controller.playlists.isEmpty &&
-        controller.tracks.isEmpty &&
-        !recommendations.hasItems) {
+    if (controller.playlists.isEmpty && controller.tracks.isEmpty) {
       return const MessageView(
         icon: Icons.library_music_outlined,
         message: 'Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste',
@@ -326,102 +323,125 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   Widget _buildLibrary(BuildContext context, PlaylistsController controller) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
-    final recommendations = context.watch<RecommendationsController>();
     final offline = controller.isOfflineFallback;
+
+    // La recherche ne vise que les pistes (réseau) : pas de champ hors ligne.
+    final searching = !offline && _query.trim().isNotEmpty;
+    // Pistes affichées : filtrées par titre / artiste dès qu'une requête existe.
+    final tracks = searching
+        ? controller.tracks.where(_trackMatches).toList(growable: false)
+        : controller.tracks;
 
     return ListView(
       key: const Key('library_list'),
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
+        if (!offline) ...[
+          SearchField(
+            controller: _searchController,
+            onChanged: (q) => setState(() => _query = q),
+            hintText: 'Rechercher dans mes pistes…',
+          ),
+          const SizedBox(height: 16),
+        ],
         // Bandeau hors ligne : la liste affichée vient du cache, seules les
         // playlists téléchargées sont là et les actions réseau sont masquées.
         if (offline) ...[
           const _OfflineBanner(),
           const SizedBox(height: 16),
         ],
-        // « Pour toi » (US-09-04) : masquée tant qu'il n'y a rien à proposer —
-        // une section vide n'apprend rien à l'auditeur. Jamais hors ligne.
-        if (!offline && recommendations.hasItems) ...[
-          Text('Pour toi',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          for (var i = 0; i < recommendations.items.length; i++)
-            _RecommendedTrackTile(
-              recommended: recommendations.items[i],
-              // La liste recommandée part en file, à partir de l'item touché :
-              // précédent/suivant et les modes de lecture gardent un sens.
-              onPlay: () => context.read<PlaylistQueueController>().play(
-                    tracks: recommendations.items
-                        .map((r) => r.track)
-                        .toList(growable: false),
-                    sourceName: 'Pour toi',
-                    startIndex: i,
+        // Playlists : masquées pendant une recherche (« que les titres »),
+        // repliables sinon.
+        if (!searching && controller.playlists.isNotEmpty) ...[
+          CollapsibleHeader(
+            title: 'Playlists',
+            count: controller.playlists.length,
+            expanded: _playlistsExpanded,
+            onToggle: () =>
+                setState(() => _playlistsExpanded = !_playlistsExpanded),
+          ),
+          CollapsibleContent(
+            expanded: _playlistsExpanded,
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                GridView.builder(
+                  key: const Key('playlists_list'),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 20,
+                    childAspectRatio: 0.80,
                   ),
+                  itemCount: controller.playlists.length,
+                  itemBuilder: (context, index) {
+                    final playlist = controller.playlists[index];
+                    return _PlaylistCard(
+                      playlist: playlist,
+                      index: index,
+                      onRename: _onRename,
+                      onDelete: _onDelete,
+                      onOpen: _onOpen,
+                      onToggleFavorite: _onToggleFavorite,
+                      // Hors ligne : renommer/supprimer exigent le réseau — on
+                      // masque le menu, le compteur de pistes et on garde
+                      // l'ouverture (le détail sait se replier sur le cache).
+                      offline: offline,
+                    );
+                  },
+                ),
+              ],
             ),
-          const SizedBox(height: 28),
-        ],
-        if (controller.playlists.isNotEmpty) ...[
-          Text('Playlists',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          GridView.builder(
-            key: const Key('playlists_list'),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 20,
-              childAspectRatio: 0.80,
-            ),
-            itemCount: controller.playlists.length,
-            itemBuilder: (context, index) {
-              final playlist = controller.playlists[index];
-              return _PlaylistCard(
-                playlist: playlist,
-                index: index,
-                onRename: _onRename,
-                onDelete: _onDelete,
-                onOpen: _onOpen,
-                // Hors ligne : renommer/supprimer exigent le réseau — on masque
-                // le menu, le compteur de pistes et on garde l'ouverture (le
-                // détail sait se replier sur le cache).
-                offline: offline,
-              );
-            },
           ),
           const SizedBox(height: 28),
         ],
-        // « Mes pistes » vit derrière le réseau : masquée en mode hors ligne.
+        // « Mes pistes » vit derrière le réseau : masquée en mode hors ligne,
+        // repliable sinon.
         if (!offline) ...[
-          Text('Mes pistes',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          if (controller.tracks.isEmpty)
-            Padding(
-              key: const Key('tracks_empty'),
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Text(
-                'Aucune piste — utilise l\'icône d\'upload en haut',
-                textAlign: TextAlign.center,
-                style:
-                    text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            )
-          else
-            for (var i = 0; i < controller.tracks.length; i++)
-              _TrackTile(
-                track: controller.tracks[i],
-                // Toute la bibliothèque part en file, à partir de la piste
-                // touchée : une file d'un seul élément rendrait précédent,
-                // suivant, aléatoire et répétition sans objet (STR-231).
-                onPlay: () => context.read<PlaylistQueueController>().play(
-                      tracks: controller.tracks,
-                      sourceName: 'Ma bibliothèque',
-                      startIndex: i,
+          CollapsibleHeader(
+            title: searching ? 'Résultats' : 'Mes pistes',
+            count: tracks.length,
+            expanded: _tracksExpanded,
+            onToggle: () => setState(() => _tracksExpanded = !_tracksExpanded),
+          ),
+          CollapsibleContent(
+            expanded: _tracksExpanded,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                if (tracks.isEmpty)
+                  Padding(
+                    key: const Key('tracks_empty'),
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      searching
+                          ? 'Aucune piste ne correspond à « ${_query.trim()} »'
+                          : 'Aucune piste — utilise l\'icône d\'upload en haut',
+                      textAlign: TextAlign.center,
+                      style: text.bodyMedium
+                          ?.copyWith(color: colors.onSurfaceVariant),
                     ),
-              ),
+                  )
+                else
+                  for (var i = 0; i < tracks.length; i++)
+                    _TrackTile(
+                      track: tracks[i],
+                      // Toute la liste affichée part en file, à partir de la
+                      // piste touchée : une file d'un seul élément rendrait
+                      // précédent, suivant, aléatoire et répétition sans objet
+                      // (STR-231).
+                      onPlay: () => context.read<PlaylistQueueController>().play(
+                            tracks: tracks,
+                            sourceName: 'Ma bibliothèque',
+                            startIndex: i,
+                          ),
+                    ),
+              ],
+            ),
+          ),
         ],
       ],
     );
@@ -586,52 +606,6 @@ Future<bool> _confirmDeleteTrackDialog(BuildContext context, String title) async
   return confirmed ?? false;
 }
 
-/// Ligne d'une piste recommandée (section « Pour toi », US-09-04). Comme
-/// [_TrackTile], un appui lance la lecture de toute la liste recommandée à partir
-/// d'elle ; le sous-titre affiche la **raison** fournie par le serveur plutôt que
-/// l'artiste/la durée.
-class _RecommendedTrackTile extends StatelessWidget {
-  const _RecommendedTrackTile({required this.recommended, required this.onPlay});
-
-  final RecommendedTrack recommended;
-  final VoidCallback onPlay;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    final track = recommended.track;
-    final isCurrent = context.select<PlaylistQueueController, bool>(
-      (queue) => queue.hasQueue && queue.currentTrack?.id == track.id,
-    );
-
-    return ListTile(
-      key: Key('reco_tile_${track.id}'),
-      onTap: onPlay,
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        backgroundColor: colors.surfaceContainerHighest,
-        child: Icon(
-          isCurrent ? Icons.graphic_eq : Icons.auto_awesome,
-          color: isCurrent ? colors.primary : colors.onSurfaceVariant,
-        ),
-      ),
-      title: Text(
-        track.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: isCurrent ? TextStyle(color: colors.primary) : null,
-      ),
-      subtitle: Text(
-        recommended.reason,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-      ),
-    );
-  }
-}
-
 Future<bool> _confirmDeleteDialog(BuildContext context, String name) async {
   final colors = Theme.of(context).colorScheme;
   final confirmed = await showDialog<bool>(
@@ -659,17 +633,9 @@ Future<bool> _confirmDeleteDialog(BuildContext context, String name) async {
   return confirmed ?? false;
 }
 
-/// Dégradés et icônes de cover, choisis de façon déterministe selon la position
-/// de la playlist (variété visuelle sans donnée de couverture réelle).
-const _coverGradients = <List<Color>>[
-  [Color(0xFF9D7BF5), Color(0xFF7C4DFF)],
-  [Color(0xFF2BD9C4), Color(0xFF14B8A6)],
-  [Color(0xFF5B4B8A), Color(0xFF37305C)],
-  [Color(0xFF2E6E7E), Color(0xFF1E4A57)],
-  [Color(0xFFF5A97B), Color(0xFFEF7C4D)],
-  [Color(0xFF7B95F5), Color(0xFF4D6BFF)],
-];
-
+/// Icônes de cover, choisies de façon déterministe selon la position (variété
+/// visuelle). Les dégradés viennent de la palette partagée [playlistCoverGradient]
+/// (indexée par id → couleur stable entre Bibliothèque et accueil, STR-250).
 const _coverIcons = <IconData>[
   Icons.music_note,
   Icons.speed,
@@ -686,6 +652,7 @@ class _PlaylistCard extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onOpen,
+    required this.onToggleFavorite,
     this.offline = false,
   });
 
@@ -694,6 +661,7 @@ class _PlaylistCard extends StatelessWidget {
   final ValueChanged<Playlist> onRename;
   final ValueChanged<Playlist> onDelete;
   final ValueChanged<Playlist> onOpen;
+  final ValueChanged<Playlist> onToggleFavorite;
 
   /// Carte issue du cache hors ligne : le menu (renommer/supprimer, réseau) et
   /// le compteur de pistes venu du serveur sont masqués.
@@ -703,7 +671,7 @@ class _PlaylistCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
-    final gradient = _coverGradients[index % _coverGradients.length];
+    final gradient = playlistCoverGradient(playlist.id);
     final icon = _coverIcons[index % _coverIcons.length];
 
     return Column(
@@ -752,6 +720,24 @@ class _PlaylistCard extends StatelessWidget {
                       playlist: playlist,
                       onRename: onRename,
                       onDelete: onDelete,
+                    ),
+                  ),
+                if (!offline)
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: IconButton(
+                      key: Key('playlist_favorite_${playlist.id}'),
+                      icon: Icon(
+                        playlist.isFavorite
+                            ? Icons.favorite
+                            : Icons.favorite_border,
+                        color: Colors.white,
+                      ),
+                      tooltip: playlist.isFavorite
+                          ? 'Retirer des favoris'
+                          : 'Ajouter aux favoris',
+                      onPressed: () => onToggleFavorite(playlist),
                     ),
                   ),
                 _OfflineBadge(playlistId: playlist.id),

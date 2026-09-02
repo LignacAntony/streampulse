@@ -57,6 +57,44 @@ class PlaylistDetailController extends ChangeNotifier {
 
   bool get isOfflineFallback => _isOfflineFallback;
 
+  bool _isFavorite = false;
+
+  /// La playlist est-elle épinglée en favori (STR-250) ? Alimenté par
+  /// [loadFavorite], basculé de façon optimiste par [toggleFavorite].
+  bool get isFavorite => _isFavorite;
+
+  /// Charge l'état favori depuis la liste **des favoris** (endpoint dédié, petite
+  /// liste — pas de sur-lecture de toutes les playlists). Best-effort : un échec
+  /// laisse simplement le cœur vide, le bouton reste utilisable.
+  Future<void> loadFavorite() async {
+    try {
+      final favorites = await _repository.listFavorites();
+      _isFavorite = favorites.any((p) => p.id == playlistId);
+      _notify();
+    } catch (_) {
+      // Silencieux : le bouton tentera quand même l'appel réseau au tap.
+    }
+  }
+
+  /// Épingle/retire la playlist (optimiste + rollback). Relaie l'exception au
+  /// widget pour le toast.
+  Future<void> toggleFavorite() async {
+    final target = !_isFavorite;
+    _isFavorite = target;
+    _notify();
+    try {
+      if (target) {
+        await _repository.favorite(playlistId);
+      } else {
+        await _repository.unfavorite(playlistId);
+      }
+    } catch (e) {
+      _isFavorite = !target;
+      _notify();
+      rethrow;
+    }
+  }
+
   /// (Re)charge les pistes de la playlist. En cas d'échec réseau, tente un
   /// repli sur le cache hors ligne si la playlist a été téléchargée.
   Future<void> load() async {
