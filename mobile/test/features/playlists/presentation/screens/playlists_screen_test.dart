@@ -245,6 +245,38 @@ void main() {
       expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
     });
 
+    testWidgets('replier « Playlists » et « Mes pistes » cache chaque section',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final repo = _FakePlaylistRepository(initial: [_playlist('p-1', 'Chill')])
+        ..libraryTracksList = const [
+          Track(id: 't-1', title: 'Midnight Drive', artist: 'Neon', durationS: 214),
+        ];
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+
+      // Replier « Playlists » : la grille disparaît, la piste reste.
+      await tester.tap(find.text('Playlists'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsNothing);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+
+      // Replier « Mes pistes » : la piste disparaît à son tour.
+      await tester.tap(find.text('Mes pistes'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_tile_t-1')), findsNothing);
+
+      // Redéplier « Playlists » : la grille revient.
+      await tester.tap(find.text('Playlists'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+    });
+
     testWidgets('un appui sur une piste lance toute la bibliothèque (STR-231)',
         (tester) async {
       final repo = _FakePlaylistRepository()

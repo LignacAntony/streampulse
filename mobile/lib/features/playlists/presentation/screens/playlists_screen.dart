@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
+import '../../../../core/widgets/collapsible_section.dart';
 import '../../../../core/widgets/message_view.dart';
 import '../../../../core/widgets/search_field.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
@@ -103,6 +104,10 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
   // masquées et seules les pistes correspondantes restent (par titre / artiste).
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+
+  // Sections repliables (dépliées par défaut).
+  bool _playlistsExpanded = true;
+  bool _tracksExpanded = true;
 
   @override
   void initState() {
@@ -334,70 +339,96 @@ class _PlaylistsBodyState extends State<_PlaylistsBody> {
           const _OfflineBanner(),
           const SizedBox(height: 16),
         ],
-        // Playlists : masquées pendant une recherche (« que les titres »).
+        // Playlists : masquées pendant une recherche (« que les titres »),
+        // repliables sinon.
         if (!searching && controller.playlists.isNotEmpty) ...[
-          Text('Playlists',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          GridView.builder(
-            key: const Key('playlists_list'),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 20,
-              childAspectRatio: 0.80,
+          CollapsibleHeader(
+            title: 'Playlists',
+            count: controller.playlists.length,
+            expanded: _playlistsExpanded,
+            onToggle: () =>
+                setState(() => _playlistsExpanded = !_playlistsExpanded),
+          ),
+          CollapsibleContent(
+            expanded: _playlistsExpanded,
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                GridView.builder(
+                  key: const Key('playlists_list'),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 20,
+                    childAspectRatio: 0.80,
+                  ),
+                  itemCount: controller.playlists.length,
+                  itemBuilder: (context, index) {
+                    final playlist = controller.playlists[index];
+                    return _PlaylistCard(
+                      playlist: playlist,
+                      index: index,
+                      onRename: _onRename,
+                      onDelete: _onDelete,
+                      onOpen: _onOpen,
+                      // Hors ligne : renommer/supprimer exigent le réseau — on
+                      // masque le menu, le compteur de pistes et on garde
+                      // l'ouverture (le détail sait se replier sur le cache).
+                      offline: offline,
+                    );
+                  },
+                ),
+              ],
             ),
-            itemCount: controller.playlists.length,
-            itemBuilder: (context, index) {
-              final playlist = controller.playlists[index];
-              return _PlaylistCard(
-                playlist: playlist,
-                index: index,
-                onRename: _onRename,
-                onDelete: _onDelete,
-                onOpen: _onOpen,
-                // Hors ligne : renommer/supprimer exigent le réseau — on masque
-                // le menu, le compteur de pistes et on garde l'ouverture (le
-                // détail sait se replier sur le cache).
-                offline: offline,
-              );
-            },
           ),
           const SizedBox(height: 28),
         ],
-        // « Mes pistes » vit derrière le réseau : masquée en mode hors ligne.
+        // « Mes pistes » vit derrière le réseau : masquée en mode hors ligne,
+        // repliable sinon.
         if (!offline) ...[
-          Text(searching ? 'Résultats' : 'Mes pistes',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          if (tracks.isEmpty)
-            Padding(
-              key: const Key('tracks_empty'),
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Text(
-                searching
-                    ? 'Aucune piste ne correspond à « ${_query.trim()} »'
-                    : 'Aucune piste — utilise l\'icône d\'upload en haut',
-                textAlign: TextAlign.center,
-                style:
-                    text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            )
-          else
-            for (var i = 0; i < tracks.length; i++)
-              _TrackTile(
-                track: tracks[i],
-                // Toute la liste affichée part en file, à partir de la piste
-                // touchée : une file d'un seul élément rendrait précédent,
-                // suivant, aléatoire et répétition sans objet (STR-231).
-                onPlay: () => context.read<PlaylistQueueController>().play(
-                      tracks: tracks,
-                      sourceName: 'Ma bibliothèque',
-                      startIndex: i,
+          CollapsibleHeader(
+            title: searching ? 'Résultats' : 'Mes pistes',
+            count: tracks.length,
+            expanded: _tracksExpanded,
+            onToggle: () => setState(() => _tracksExpanded = !_tracksExpanded),
+          ),
+          CollapsibleContent(
+            expanded: _tracksExpanded,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                if (tracks.isEmpty)
+                  Padding(
+                    key: const Key('tracks_empty'),
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      searching
+                          ? 'Aucune piste ne correspond à « ${_query.trim()} »'
+                          : 'Aucune piste — utilise l\'icône d\'upload en haut',
+                      textAlign: TextAlign.center,
+                      style: text.bodyMedium
+                          ?.copyWith(color: colors.onSurfaceVariant),
                     ),
-              ),
+                  )
+                else
+                  for (var i = 0; i < tracks.length; i++)
+                    _TrackTile(
+                      track: tracks[i],
+                      // Toute la liste affichée part en file, à partir de la
+                      // piste touchée : une file d'un seul élément rendrait
+                      // précédent, suivant, aléatoire et répétition sans objet
+                      // (STR-231).
+                      onPlay: () => context.read<PlaylistQueueController>().play(
+                            tracks: tracks,
+                            sourceName: 'Ma bibliothèque',
+                            startIndex: i,
+                          ),
+                    ),
+              ],
+            ),
+          ),
         ],
       ],
     );
