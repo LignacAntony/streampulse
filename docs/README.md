@@ -148,7 +148,7 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 018 | [018-logs-structures-zerolog-collecte-loki-alloy.md](adr/018-logs-structures-zerolog-collecte-loki-alloy.md) | Logs structurés JSON (zerolog) et collecte Loki via Alloy |
 | 019 | [019-metriques-prometheus-cardinalite-et-dashboards.md](adr/019-metriques-prometheus-cardinalite-et-dashboards.md) | Métriques Prometheus : middleware dédié, cardinalité bornée, dashboards provisionnés |
 | 020 | [020-traces-opentelemetry-otlp-tempo.md](adr/020-traces-opentelemetry-otlp-tempo.md) | Traces OpenTelemetry : OTLP/HTTP vers Tempo, otelhttp et otelpgx |
-| 021 | [021-alertes-grafana-provisionnees-email.md](adr/021-alertes-grafana-provisionnees-email.md) | Alertes Grafana provisionnées, notification par email |
+| 021 | [021-alertes-grafana-provisionnees-email.md](adr/021-alertes-grafana-provisionnees-email.md) | Alertes Grafana provisionnées, notification par email — amendée 2026-09-02 : canal Discord ajouté en plus de l'email |
 | 022 | [022-metriques-metier-streaming-et-panel-live.md](adr/022-metriques-metier-streaming-et-panel-live.md) | Métriques métier du streaming et panel Live |
 | 023 | [023-lecteur-audio-hls-mobile.md](adr/023-lecteur-audio-hls-mobile.md) | Lecteur audio HLS mobile (just_audio) |
 | 024 | [024-tableau-de-bord-diffuseur-lancer-et-arreter-un-flux.md](adr/024-tableau-de-bord-diffuseur-lancer-et-arreter-un-flux.md) | Tableau de bord diffuseur : lancer et arrêter un flux |
@@ -174,13 +174,16 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 045 | [045-codes-derreur-du-manifeste-hls.md](adr/045-codes-derreur-du-manifeste-hls.md) | Codes d'erreur du manifeste HLS : distinguer « terminé » de « pas encore prêt » |
 | 046 | [046-recommandation-basee-sur-l-historique-d-ecoute.md](adr/046-recommandation-basee-sur-l-historique-d-ecoute.md) | Recommandation de pistes basée sur l'historique d'écoute (capture + algorithme SQL) |
 | 047 | [047-connexion-google-oauth.md](adr/047-connexion-google-oauth.md) | Connexion via Google (ID token vérifié côté serveur, création auto du compte, `password_hash` nullable) |
+| 048 | [048-relance-d-un-flux-termine.md](adr/048-relance-d-un-flux-termine.md) | Un flux est un canal réutilisable : `start` accepte `idle\|ended` et remet `ended_at` à NULL, sans migration |
+| 049 | [049-cycle-de-vie-de-la-diffusion-mobile.md](adr/049-cycle-de-vie-de-la-diffusion-mobile.md) | Quitter l'application n'est pas la fermer : `hidden`/`paused` inertes, service de premier plan micro, `detached` termine |
+| 050 | [050-mesurer-et-annoncer-les-coupures-de-diffusion.md](adr/050-mesurer-et-annoncer-les-coupures-de-diffusion.md) | Une coupure d'ingest rétablie devient mesurable (compteur + histogramme) et le diffuseur apprend au retour ce qui n'est pas parti |
 
 ---
 
 ## Convention ADR
 
 - Toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`,
-  avec **le numéro suivant** (prochain : `046-...`). Le numéro est un **identifiant**,
+  avec **le numéro suivant** (prochain : `051-...`). Le numéro est un **identifiant**,
   attribué dans l'ordre d'enregistrement — il ne suit pas nécessairement l'ordre chronologique
   des décisions (cf. 037/038/039, renumérotées après collision).
 - Un numéro n'est **jamais réutilisé** : une ADR remplacée passe en statut

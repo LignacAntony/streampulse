@@ -29,16 +29,6 @@ class OAuthButtons extends StatelessWidget {
               ? (onGoogle ?? () => _showComingSoon(context, 'Google'))
               : null,
         ),
-        _ProviderButton(
-          key: const Key('oauth_apple_button'),
-          tooltip: "S'inscrire avec Apple",
-          icon: Icon(
-            Icons.apple,
-            size: 28,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-          onPressed: enabled ? () => _showComingSoon(context, 'Apple') : null,
-        ),
       ],
     );
   }

@@ -87,6 +87,12 @@ type Playlist struct {
 	UpdatedAt   time.Time
 }
 
+type PlaylistFavorite struct {
+	UserID     pgtype.UUID
+	PlaylistID pgtype.UUID
+	CreatedAt  time.Time
+}
+
 type PlaylistTrack struct {
 	PlaylistID pgtype.UUID
 	TrackID    pgtype.UUID

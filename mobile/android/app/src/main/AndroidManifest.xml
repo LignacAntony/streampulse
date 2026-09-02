@@ -3,6 +3,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Capture micro en arrière-plan : le diffuseur doit pouvoir quitter
+         l'application sans couper son direct. Depuis Android 14 (API 34), un
+         service de premier plan qui accède au micro doit déclarer ce type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <!-- audio_service prend un wake lock dans enterPlayingState() : sans cette
          permission, le check lève une RemoteException, startForeground() n'est
          jamais appelé, et le système tue le process en arrière-plan (STR-109). -->
@@ -12,7 +16,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
-        android:label="streampulse"
+        android:label="StreamPulse"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config">
@@ -50,6 +54,23 @@
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
         </service>
+        <!-- Service de premier plan du package `record`, qui maintient la capture
+             micro quand l'application n'est plus au premier plan. Il n'est PAS
+             déclaré par le plugin (son manifeste ne porte que la permission) :
+             c'est à l'application de le faire, sinon `startService` échoue.
+
+             `foregroundServiceType="microphone"` est ce qui autorise l'accès au
+             micro hors premier plan depuis Android 10 ; sans lui, la capture
+             rendrait du silence.
+
+             `stopWithTask="true"` est la moitié « fermeture » du contrat : par
+             défaut un service survit au balayage de l'application depuis les
+             récents, et le micro continuerait de tourner alors que l'utilisateur
+             croit avoir tout fermé. -->
+        <service android:name="com.llfbandit.record.service.AudioRecordingService"
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="true"
+            android:exported="false"/>
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true">
             <intent-filter>

@@ -71,7 +71,7 @@ VALUES (
     $3::text
 )
 RETURNING id::text AS id, user_id::text AS user_id, name, description, is_public,
-          0::bigint AS track_count, created_at, updated_at
+          0::bigint AS track_count, false AS is_favorite, created_at, updated_at
 `
 
 type CreatePlaylistParams struct {
@@ -87,6 +87,7 @@ type CreatePlaylistRow struct {
 	Description pgtype.Text
 	IsPublic    bool
 	TrackCount  int64
+	IsFavorite  bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -103,6 +104,7 @@ func (q *Queries) CreatePlaylist(ctx context.Context, arg CreatePlaylistParams) 
 		&i.Description,
 		&i.IsPublic,
 		&i.TrackCount,
+		&i.IsFavorite,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -131,12 +133,22 @@ func (q *Queries) DeletePlaylist(ctx context.Context, arg DeletePlaylistParams) 
 
 const getPlaylistByID = `-- name: GetPlaylistByID :one
 SELECT p.id::text AS id, p.user_id::text AS user_id, p.name, p.description, p.is_public,
-       COUNT(pt.track_id) AS track_count, p.created_at, p.updated_at
+       COUNT(pt.track_id) AS track_count,
+       EXISTS (
+           SELECT 1 FROM playlist_favorites pf
+           WHERE pf.playlist_id = p.id AND pf.user_id = $1::uuid
+       ) AS is_favorite,
+       p.created_at, p.updated_at
 FROM playlists p
 LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
-WHERE p.id = $1::uuid
+WHERE p.id = $2::uuid
 GROUP BY p.id
 `
+
+type GetPlaylistByIDParams struct {
+	UserID pgtype.UUID
+	ID     pgtype.UUID
+}
 
 type GetPlaylistByIDRow struct {
 	ID          string
@@ -145,14 +157,15 @@ type GetPlaylistByIDRow struct {
 	Description pgtype.Text
 	IsPublic    bool
 	TrackCount  int64
+	IsFavorite  bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-// Une playlist par id (avec track_count). Le contrôle de propriété est fait par
-// le service à partir du user_id renvoyé.
-func (q *Queries) GetPlaylistByID(ctx context.Context, id pgtype.UUID) (GetPlaylistByIDRow, error) {
-	row := q.db.QueryRow(ctx, getPlaylistByID, id)
+// Une playlist par id (avec track_count + is_favorite pour le demandeur). Le
+// contrôle de propriété est fait par le service à partir du user_id renvoyé.
+func (q *Queries) GetPlaylistByID(ctx context.Context, arg GetPlaylistByIDParams) (GetPlaylistByIDRow, error) {
+	row := q.db.QueryRow(ctx, getPlaylistByID, arg.UserID, arg.ID)
 	var i GetPlaylistByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -161,6 +174,7 @@ func (q *Queries) GetPlaylistByID(ctx context.Context, id pgtype.UUID) (GetPlayl
 		&i.Description,
 		&i.IsPublic,
 		&i.TrackCount,
+		&i.IsFavorite,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -214,7 +228,12 @@ func (q *Queries) ListPlaylistTracks(ctx context.Context, playlistID pgtype.UUID
 
 const listPlaylistsByUser = `-- name: ListPlaylistsByUser :many
 SELECT p.id::text AS id, p.user_id::text AS user_id, p.name, p.description, p.is_public,
-       COUNT(pt.track_id) AS track_count, p.created_at, p.updated_at
+       COUNT(pt.track_id) AS track_count,
+       EXISTS (
+           SELECT 1 FROM playlist_favorites pf
+           WHERE pf.playlist_id = p.id AND pf.user_id = $1::uuid
+       ) AS is_favorite,
+       p.created_at, p.updated_at
 FROM playlists p
 LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
 WHERE p.user_id = $1::uuid
@@ -229,6 +248,7 @@ type ListPlaylistsByUserRow struct {
 	Description pgtype.Text
 	IsPublic    bool
 	TrackCount  int64
+	IsFavorite  bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -251,6 +271,7 @@ func (q *Queries) ListPlaylistsByUser(ctx context.Context, userID pgtype.UUID) (
 			&i.Description,
 			&i.IsPublic,
 			&i.TrackCount,
+			&i.IsFavorite,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -350,6 +371,10 @@ SET name = $1::text,
 WHERE id = $3::uuid AND user_id = $4::uuid
 RETURNING id::text AS id, user_id::text AS user_id, name, description, is_public,
           (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = playlists.id) AS track_count,
+          EXISTS (
+              SELECT 1 FROM playlist_favorites pf
+              WHERE pf.playlist_id = playlists.id AND pf.user_id = playlists.user_id
+          ) AS is_favorite,
           created_at, updated_at
 `
 
@@ -367,6 +392,7 @@ type UpdatePlaylistRow struct {
 	Description pgtype.Text
 	IsPublic    bool
 	TrackCount  int64
+	IsFavorite  bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -388,6 +414,7 @@ func (q *Queries) UpdatePlaylist(ctx context.Context, arg UpdatePlaylistParams) 
 		&i.Description,
 		&i.IsPublic,
 		&i.TrackCount,
+		&i.IsFavorite,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

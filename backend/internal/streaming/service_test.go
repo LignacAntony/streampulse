@@ -516,7 +516,7 @@ func TestService_StartStream_Success(t *testing.T) {
 	}
 }
 
-func TestService_StartStream_NotIdle_Conflict(t *testing.T) {
+func TestService_StartStream_FluxDejaEnDirect_Conflict(t *testing.T) {
 	repo := &fakeRepo{startErr: errNoRowAffected, getRet: Stream{UserID: "u1", Status: StatusLive}}
 	sessions := &fakeSessions{}
 	svc := NewService(repo, fakeKeys{}, sessions)

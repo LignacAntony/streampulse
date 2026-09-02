@@ -16,9 +16,9 @@ class PlaylistFormResult {
 /// pré-remplis). Renvoie un [PlaylistFormResult] via `Navigator.pop`, ou `null`
 /// si annulée.
 ///
-/// ⚠️ Les contrôles « Disponible hors ligne » et « modifier l'image » sont
-/// présents côté UI mais **non branchés** : la logique de couverture et de
-/// téléchargement hors ligne fera l'objet d'une PR dédiée.
+/// ⚠️ Le contrôle « Disponible hors ligne » est présent côté UI mais **non
+/// branché** : la logique de téléchargement hors ligne fera l'objet d'une PR
+/// dédiée.
 class PlaylistFormSheet extends StatefulWidget {
   const PlaylistFormSheet({
     super.key,
@@ -142,8 +142,6 @@ class _PlaylistFormSheetState extends State<PlaylistFormSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            const Center(child: _CoverPicker()),
             const SizedBox(height: 24),
             const _FieldLabel('NOM DE LA PLAYLIST'),
             const SizedBox(height: 8),
@@ -205,55 +203,6 @@ class _FieldLabel extends StatelessWidget {
         color: colors.onSurfaceVariant,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.8,
-      ),
-    );
-  }
-}
-
-/// Cover placeholder + bouton « modifier l'image ». Front uniquement : aucune
-/// sélection d'image n'est branchée (feature à venir).
-class _CoverPicker extends StatelessWidget {
-  const _CoverPicker();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 150,
-      height: 150,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 150,
-            height: 150,
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(
-              Icons.add_a_photo_outlined,
-              size: 44,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const Positioned(
-            right: -6,
-            bottom: -6,
-            // Désactivé (onPressed: null) : sélection d'image non branchée,
-            // feature à venir dans une PR dédiée.
-            child: Tooltip(
-              message: 'Bientôt disponible',
-              child: FloatingActionButton.small(
-                key: Key('playlist_cover_edit'),
-                heroTag: 'playlist_cover_edit',
-                elevation: 0,
-                onPressed: null,
-                child: Icon(Icons.edit, size: 18),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

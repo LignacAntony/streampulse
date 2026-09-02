@@ -268,7 +268,7 @@ Domaine `internal/streaming/` (handler/service/repository). Détails dans [ADR 0
 | GET | `/api/streams/{id}` | `Handler.Get` | Oui (JWT) — réponse unique : propriétaire = `stream_key`/`stream_source_url` remplis, tiers = ces secrets à `null`, ou 404 (privé) |
 | PUT | `/api/streams/{id}` | `Handler.Update` | Oui (JWT) — propriétaire uniquement |
 | DELETE | `/api/streams/{id}` | `Handler.Delete` | Oui (JWT) — propriétaire uniquement, soft delete (`archived_at`) |
-| PATCH | `/api/streams/{id}/start` | `Handler.Start` | Oui — rôle `broadcaster`, owner ; `idle→live` (409 si pas idle ou déjà un live) |
+| PATCH | `/api/streams/{id}/start` | `Handler.Start` | Oui — rôle `broadcaster`, owner ; `idle\|ended→live` — un flux est un **canal réutilisable**, un direct terminé se relance (409 seulement s'il est déjà live, ou si le diffuseur en a un autre en direct). `ended_at` repart à NULL (STR-XXX, [ADR 048](docs/adr/048-relance-d-un-flux-termine.md)) |
 | PATCH | `/api/streams/{id}/stop` | `Handler.Stop` | Oui — rôle `broadcaster`, owner ; `live→ended` (409 si pas live) |
 | GET | `/api/streams/{id}/events` | `Handler.Events` | Oui (JWT) — flux **SSE**, event `ended` à l'arrêt (STR-77) |
 | PUT | `/api/streams/{id}/favorite` | `Handler.AddFavorite` | Oui (JWT) — ajoute aux favoris ; idempotent → 204 ; flux non visible → 404 (US-04-05). **PUT** et non POST : évite un conflit ServeMux avec `ingest/{stream_key}` |
@@ -589,6 +589,42 @@ Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).
   « Lire en aléatoire » dans l'AppBar de `PlaylistDetailScreen`, avec **piste de départ tirée au
   sort**. La file affichée et le « n/total » suivent l'**ordre de lecture**, pas celui de la playlist.
 
+### Diffusion depuis le mobile (ADR 027 + ADR 049)
+
+- **Le cycle de vie ne distingue que deux choses** : « je vais ailleurs » et
+  « je ferme ». `inactive`/`hidden`/`paused` → **rien** ; `detached` → arrêt du
+  direct. Quitter l'application pendant un direct est un geste banal, le micro
+  doit continuer.
+- ⚠️ **`AppLifecycleState.hidden` ne doit rien déclencher.** Sur le web, un
+  simple changement d'onglet navigateur le produit ; sur iOS/Android il précède
+  toujours `paused`.
+- La capture hors premier plan tient à un **service de premier plan Android**
+  déclaré **dans le manifeste de l'app** (`record` ne déclare pas le sien),
+  avec `foregroundServiceType="microphone"` — sans lui la capture rend du
+  **silence**, pas une erreur — et `stopWithTask="true"`, sans quoi le micro
+  survivrait au balayage de l'application.
+- ⚠️ **Ne jamais relancer un direct par un `start`** pour le reprendre. Chaque
+  `start` crée un segmenteur ffmpeg neuf dans un `os.MkdirTemp` neuf : la
+  numérotation des segments et `EXT-X-MEDIA-SEQUENCE` repartent à zéro, et le
+  lecteur de l'auditeur, voyant un manifeste réinitialisé, recommence au premier
+  segment.
+- ⚠️ **Ne pas reprendre une diffusion sans action de l'utilisateur.** Adopter au
+  démarrage un direct encore vivant côté serveur rallume le micro à son insu.
+  Essayé, retiré (ADR 049, « Alternatives écartées »).
+- Un **409 d'ingest** signifie qu'une autre source alimente déjà le flux :
+  `IngestConflictException`, et le publisher cesse de réessayer. Insister
+  mènerait à `failed`, donc à l'arrêt du direct de cette autre source.
+- Un flux `ended` est **relançable** : `BroadcastStream.canStart` (`!isLive`) est
+  le prédicat à utiliser dans l'écran, jamais `isIdle` en dur.
+- ⚠️ **Une coupure d'ingest rétablie ne terminait rien, donc n'était comptée
+  nulle part.** `streampulse_ingest_recoveries_total` et
+  `streampulse_ingest_outage_seconds` la mesurent (ADR 050) ; les interruptions
+  restent réservées aux diffusions *terminées*. Mesure faite **au
+  rattachement** — au détachement on ignore encore si la coupure sera rétablie.
+- ⚠️ Pour annoncer une coupure au diffuseur, **seul `reconnecting` ouvre une
+  coupure, jamais `connecting`** : ce dernier est la première tentative d'une
+  diffusion, le compter annoncerait une perte à chaque démarrage.
+
 ### Authentification (mobile)
 
 Voir [ADR 009](docs/adr/009-authentification-flutter.md) pour les décisions détaillées.
@@ -766,6 +802,7 @@ Copier `.env.example` en `.env` avant le premier lancement. Ne jamais committer 
 | `LOG_PRETTY` | Sortie console lisible, réservée au `go run` local hors Docker (jamais en conteneur) | `true` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint OTLP/HTTP Tempo pour les traces (vide = tracing désactivé) — ADR 020 | `http://tempo:4318` |
 | `ALERT_EMAIL_TO` | Destinataire des alertes Grafana (STR-244, ADR 041). Interpolé par le provisioning Grafana depuis l'environnement de **son** process : à passer explicitement dans le service `grafana` des deux compose, pas seulement dans le `.env`. Défaut `.invalid` (RFC 2606, non délivrable) en dev ; **sans défaut en prod** (`:?`) — un déploiement qui ne sait pas à qui adresser ses alertes doit refuser de démarrer plutôt que de les router vers le vide | `alertes@streampulse.invalid` |
+| `ALERT_DISCORD_WEBHOOK` | Webhook Discord des alertes Grafana, **second canal** en plus de l'email. **Secret** : qui détient l'URL peut publier dans le salon — jamais committée. Non renseignée, le compose substitue une URL sur `.invalid` : les alertes partent par email seul et l'envoi Discord échoue seul. ⚠️ **Ne jamais mettre la valeur à vide** — Grafana exige une `url` non vide pour un receiver `discord`, le provisioning est rejeté et **Grafana refuse de démarrer**, entraînant l'email avec lui. Volontairement **sans** `:?` en prod, à la différence de `ALERT_EMAIL_TO` : le CD lance `docker compose pull api` sur le VPS, une variable requise mais absente y ferait échouer le déploiement de l'API | `https://discord.com/api/webhooks/…` |
 
 ## Santé des services
 
@@ -821,7 +858,7 @@ xcrun simctl openurl booted \
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
 | `docs/performance-mobile.md` | Preuves de fluidité 60 FPS : garde de reconstruction (CI) + relevé de trames sur appareil (STR-243) |
-| `docs/README.md` (§ Index complet des ADR) | **Les 47 ADR**, avec leur numéro et leur décision |
+| `docs/README.md` (§ Index complet des ADR) | **Les 50 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
@@ -832,7 +869,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `048-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `051-...`). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.

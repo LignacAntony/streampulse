@@ -24,7 +24,13 @@ dependencies:
     path: packages/streampulse_api
 
   # Capture microphone AAC/ADTS pour l'ingest du direct (STR-156)
-  record: ^6.2.1
+  # Version épinglée, pas de caret (revue PR #382). `AndroidManifest.xml`
+  # déclare `com.llfbandit.record.service.AudioRecordingService` — un chemin de
+  # classe **interne** au plugin, que rien ne garantit stable entre versions
+  # mineures. Un renommage casserait le service de premier plan au runtime
+  # (ClassNotFound), donc la capture en arrière-plan, sans qu'aucun test ni la
+  # CI ne le voie. Toute montée de version doit revérifier ce nom de classe.
+  record: 6.2.1
 
   # Sélection de fichier audio pour l'upload d'une piste (US-05-01)
   file_picker: ^8.1.2
@@ -94,6 +100,25 @@ dev_dependencies:
   # Tests HTTP — mock du DioAdapter pour verrouiller le mapping d'erreurs
   # entre le client généré et AuthRemoteDataSource.
   http_mock_adapter: ^0.6.1
+
+  # Génération des icônes de lancement (Android mipmaps + adaptive, iOS AppIcon)
+  # depuis un master unique. Régénérer après modif de assets/icon/ :
+  #   dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.3
+
+# Configuration des icônes de lancement (StreamPulse, motif égaliseur).
+# Master : assets/icon/app_icon.png (dégradé violet->teal de la marque + barres).
+# Android adaptatif : fond dégradé + barres réduites dans la zone sûre.
+# Ces PNG ne sont PAS dans `flutter/assets:` : ils servent uniquement à la
+# génération des icônes, pas au bundle applicatif.
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "assets/icon/app_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true

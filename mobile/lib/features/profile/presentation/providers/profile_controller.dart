@@ -54,9 +54,6 @@ class ProfileController extends ChangeNotifier {
   Future<void> updateTheme(String theme) =>
       _applyAndSave((p) => p.copyWith(theme: theme));
 
-  Future<void> updateAudioQuality(String quality) =>
-      _applyAndSave((p) => p.copyWith(audioQuality: quality));
-
   Future<void> updateNotifications(bool enabled) =>
       _applyAndSave((p) => p.copyWith(notificationsEnabled: enabled));
 

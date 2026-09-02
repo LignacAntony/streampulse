@@ -226,6 +226,13 @@ services:
       # une alerte mal configurée ne peut donc pas atterrir chez un tiers, et
       # elle reste visible dans Mailpit en développement.
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-alertes@streampulse.invalid}
+      # Webhook Discord des alertes. Le défaut n'est PAS vide : Grafana exige
+      # une url non vide pour un receiver discord et refuse de démarrer sans
+      # (le provisioning est rejeté, et l'email tomberait avec lui). Défaut
+      # sur .invalid — RFC 2606, jamais résolvable : l'envoi Discord échoue
+      # seul, l'email vers Mailpit part normalement. Pas de `:?` ici : une
+      # alerte sans Discord reste une alerte livrée.
+      ALERT_DISCORD_WEBHOOK: ${ALERT_DISCORD_WEBHOOK:-https://discord.invalid/api/webhooks/non-configure}
     depends_on:
       prometheus:
         condition: service_healthy

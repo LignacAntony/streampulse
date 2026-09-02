@@ -9,8 +9,6 @@ import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
 import 'package:streampulse/features/tracks/domain/entities/public_track.dart';
 import 'package:streampulse/features/tracks/domain/repositories/track_repository.dart';
-import 'package:streampulse/features/recommendations/domain/entities/recommended_track.dart';
-import 'package:streampulse/features/recommendations/domain/repositories/recommendation_repository.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/core/offline/entities/offline_playlist_summary.dart';
@@ -21,12 +19,19 @@ import 'package:streampulse/features/playlists/presentation/providers/offline_pl
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/screens/playlists_screen.dart';
 
-Playlist _playlist(String id, String name, {int trackCount = 0}) => Playlist(
+Playlist _playlist(
+  String id,
+  String name, {
+  int trackCount = 0,
+  bool isFavorite = false,
+}) =>
+    Playlist(
       id: id,
       name: name,
       description: null,
       isPublic: false,
       trackCount: trackCount,
+      isFavorite: isFavorite,
       createdAt: DateTime(2026, 1, 2),
       updatedAt: DateTime(2026, 1, 2),
     );
@@ -50,6 +55,10 @@ class _FakePlaylistRepository implements PlaylistRepository {
     if (listError != null) throw listError!;
     return playlists;
   }
+
+  @override
+  Future<List<Playlist>> listFavorites() async =>
+      playlists.where((p) => p.isFavorite).toList();
 
   @override
   Future<Playlist> create(String name, String? description) async {
@@ -89,6 +98,25 @@ class _FakePlaylistRepository implements PlaylistRepository {
   @override
   Future<void> removeTrack(String playlistId, String trackId) async {}
 
+  int favoriteCalls = 0;
+  int unfavoriteCalls = 0;
+
+  @override
+  Future<void> favorite(String id) async {
+    favoriteCalls++;
+    playlists = playlists
+        .map((p) => p.id == id ? p.copyWith(isFavorite: true) : p)
+        .toList();
+  }
+
+  @override
+  Future<void> unfavorite(String id) async {
+    unfavoriteCalls++;
+    playlists = playlists
+        .map((p) => p.id == id ? p.copyWith(isFavorite: false) : p)
+        .toList();
+  }
+
   @override
   Future<List<PlaylistTrack>> reorderTracks(
     String playlistId,
@@ -120,17 +148,6 @@ class _FakeTrackRepository implements TrackRepository {
   Future<void> updateVisibility(String id, {required bool isPublic}) async {}
 }
 
-/// Faux repository de recommandation (US-09-04). Vide par défaut : la section
-/// « Pour toi » est alors masquée et n'interfère pas avec les tests existants.
-class _FakeRecommendationRepository implements RecommendationRepository {
-  _FakeRecommendationRepository({this.items = const []});
-
-  final List<RecommendedTrack> items;
-
-  @override
-  Future<List<RecommendedTrack>> fetch() async => items;
-}
-
 /// Contrôleur hors ligne dont le cache expose des playlists téléchargées :
 /// alimente le repli hors ligne de la Bibliothèque.
 class _OfflineFakeController extends FakeOfflinePlaylistController {
@@ -150,7 +167,6 @@ Widget _harness(
   PlaylistRepository repository, {
   bool isAuthenticated = true,
   PlaylistQueueController? queue,
-  RecommendationRepository? recommendations,
   OfflinePlaylistController? offline,
 }) {
   // L'écran lit la file d'attente app-level (STR-231) : lancer une piste de la
@@ -169,8 +185,6 @@ Widget _harness(
         home: PlaylistsScreen(
           repository: repository,
           trackRepository: _FakeTrackRepository(),
-          recommendationRepository:
-              recommendations ?? _FakeRecommendationRepository(),
           isAuthenticated: isAuthenticated,
         ),
       ),
@@ -221,6 +235,76 @@ void main() {
       expect(find.text('Mes pistes'), findsOneWidget);
       expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
       expect(find.text('Midnight Drive'), findsOneWidget);
+    });
+
+    testWidgets(
+        'la recherche masque les playlists et filtre les pistes ; vider les '
+        'remet', (tester) async {
+      // Surface haute : playlists + les deux pistes tiennent à l'écran (le
+      // ListView paresseux ne construit pas ce qui est hors champ).
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final repo = _FakePlaylistRepository(initial: [_playlist('p-1', 'Chill')])
+        ..libraryTracksList = const [
+          Track(id: 't-1', title: 'Midnight Drive', artist: 'Neon', durationS: 214),
+          Track(id: 't-2', title: 'Sunrise', artist: 'Aria', durationS: 187),
+        ];
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+
+      // État initial : playlists + toutes les pistes.
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
+
+      // Recherche « sunrise » : playlists masquées, seule t-2 reste.
+      await tester.enterText(find.byType(TextField), 'sunrise');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsNothing);
+      expect(find.text('Chill'), findsNothing);
+      expect(find.byKey(const Key('track_tile_t-1')), findsNothing);
+      expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
+
+      // Vider : playlists de retour, toutes les pistes aussi.
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-2')), findsOneWidget);
+    });
+
+    testWidgets('replier « Playlists » et « Mes pistes » cache chaque section',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final repo = _FakePlaylistRepository(initial: [_playlist('p-1', 'Chill')])
+        ..libraryTracksList = const [
+          Track(id: 't-1', title: 'Midnight Drive', artist: 'Neon', durationS: 214),
+        ];
+      await tester.pumpWidget(_harness(repo));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+
+      // Replier « Playlists » : la grille disparaît, la piste reste.
+      await tester.tap(find.text('Playlists'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsNothing);
+      expect(find.byKey(const Key('track_tile_t-1')), findsOneWidget);
+
+      // Replier « Mes pistes » : la piste disparaît à son tour.
+      await tester.tap(find.text('Mes pistes'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_tile_t-1')), findsNothing);
+
+      // Redéplier « Playlists » : la grille revient.
+      await tester.tap(find.text('Playlists'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('playlists_list')), findsOneWidget);
     });
 
     testWidgets('un appui sur une piste lance toute la bibliothèque (STR-231)',
@@ -394,89 +478,6 @@ void main() {
 
       expect(repo.deleteCalls, 0);
       expect(find.byKey(const Key('playlist_card_p-1')), findsOneWidget);
-    });
-
-    // « Pour toi » (US-09-04). Elle n'apparaît que si la bibliothèque n'est pas
-    // vide (les recommandations sont les propres pistes de l'utilisateur) : le
-    // repo fournit donc une piste pour que la bibliothèque se rende.
-    testWidgets('affiche « Pour toi » avec la raison de chaque recommandation',
-        (tester) async {
-      final repo = _FakePlaylistRepository()
-        ..libraryTracksList = const [
-          Track(id: 't-1', title: 'Owned', artist: 'A', durationS: 100),
-        ];
-      final recos = _FakeRecommendationRepository(items: const [
-        RecommendedTrack(
-          track: Track(id: 'r-1', title: 'Reco One', artist: 'A', durationS: 100),
-          reason: 'Parce que vous écoutez souvent A',
-        ),
-      ]);
-
-      await tester.pumpWidget(_harness(repo, recommendations: recos));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Pour toi'), findsOneWidget);
-      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
-      expect(find.text('Reco One'), findsOneWidget);
-      expect(find.text('Parce que vous écoutez souvent A'), findsOneWidget);
-    });
-
-    testWidgets('un appui sur « Pour toi » lance la liste recommandée',
-        (tester) async {
-      final repo = _FakePlaylistRepository()
-        ..libraryTracksList = const [
-          Track(id: 't-1', title: 'Owned', artist: 'A', durationS: 100),
-        ];
-      final recos = _FakeRecommendationRepository(items: const [
-        RecommendedTrack(
-          track: Track(id: 'r-1', title: 'Reco One', artist: 'A', durationS: 100),
-          reason: 'Parce que vous écoutez souvent A',
-        ),
-        RecommendedTrack(
-          track: Track(id: 'r-2', title: 'Reco Two', artist: 'B', durationS: 120),
-          reason: 'Nouveauté de votre bibliothèque',
-        ),
-      ]);
-      final service = FakeQueuePlaybackService();
-      final queue = _queueController(service);
-      addTearDown(queue.dispose);
-      addTearDown(service.dispose);
-
-      await tester.pumpWidget(
-        _harness(repo, queue: queue, recommendations: recos),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('reco_tile_r-2')));
-      await tester.pumpAndSettle();
-
-      // Toute la liste recommandée part en file, à partir de l'item touché.
-      expect(service.lastItems.map((i) => i.id).toList(), ['r-1', 'r-2']);
-      expect(service.lastInitialIndex, 1);
-      expect(queue.sourceName, 'Pour toi');
-      expect(queue.playlistId, isNull,
-          reason: '« Pour toi » n\'est pas une playlist');
-    });
-
-    testWidgets('« Pour toi » s\'affiche même sans piste ni playlist propre',
-        (tester) async {
-      final recos = _FakeRecommendationRepository(items: const [
-        RecommendedTrack(
-          track: Track(id: 'r-1', title: 'Public One', artist: 'A', durationS: 100),
-          reason: 'Découverte publique',
-        ),
-      ]);
-
-      await tester.pumpWidget(
-        _harness(_FakePlaylistRepository(), recommendations: recos),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Pour toi'), findsOneWidget);
-      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
-      expect(
-        find.text('Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste'),
-        findsNothing,
-      );
     });
 
     testWidgets(

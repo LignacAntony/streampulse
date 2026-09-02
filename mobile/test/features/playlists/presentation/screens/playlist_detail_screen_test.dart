@@ -113,6 +113,9 @@ class _FakePlaylistRepository implements PlaylistRepository {
   Future<List<Playlist>> list() async => const [];
 
   @override
+  Future<List<Playlist>> listFavorites() async => const [];
+
+  @override
   Future<Playlist> create(String name, String? description) =>
       throw UnimplementedError();
 
@@ -122,6 +125,12 @@ class _FakePlaylistRepository implements PlaylistRepository {
 
   @override
   Future<void> delete(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> favorite(String id) => throw UnimplementedError();
+
+  @override
+  Future<void> unfavorite(String id) => throw UnimplementedError();
 }
 
 /// Contrôleur de file d'attente pour les tests d'écran : le service est un fake,
@@ -202,6 +211,81 @@ void main() {
       expect(find.text('1'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.byKey(const Key('playlist_tracks_list')), findsOneWidget);
+    });
+
+    testWidgets(
+        'un retrait depuis la file d\'attente resynchronise le détail (STR-250)',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+          _track('t3', 'Afterglow', 2),
+        ],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      // La file joue CETTE playlist (même id que le détail affiché).
+      await queue.play(
+        tracks: const [
+          Track(id: 't1', title: 'Midnight Drive', artist: 'A', durationS: 214),
+          Track(id: 't2', title: 'Sunrise', artist: 'A', durationS: 214),
+          Track(id: 't3', title: 'Afterglow', artist: 'A', durationS: 214),
+        ],
+        sourceName: 'My Favorites',
+        playlistId: 'p-1',
+      );
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      expect(find.text('Afterglow'), findsOneWidget);
+
+      // Retrait « depuis la file » : d'abord en base (ce que fait la feuille),
+      // puis de la file en cours.
+      await repo.removeTrack('p-1', 't3');
+      await queue.removeFromQueue(2);
+      await tester.pumpAndSettle();
+
+      // Le détail s'est rechargé seul, sans pull-to-refresh manuel.
+      expect(find.text('Afterglow'), findsNothing);
+      expect(find.text('Midnight Drive'), findsOneWidget);
+      expect(find.text('Sunrise'), findsOneWidget);
+    });
+
+    testWidgets(
+        'retirer la DERNIÈRE piste (la file se vide) resynchronise aussi (STR-250)',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [_track('t1', 'Solo Track', 0)],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      // File d'une seule piste pour CETTE playlist : la retirer vide la file,
+      // ce qui remet `playlistId` à null (via stop()). Le détail doit quand même
+      // se rafraîchir — c'était le bug.
+      await queue.play(
+        tracks: const [
+          Track(id: 't1', title: 'Solo Track', artist: 'A', durationS: 100),
+        ],
+        sourceName: 'My Favorites',
+        playlistId: 'p-1',
+      );
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      expect(find.text('Solo Track'), findsOneWidget);
+
+      await repo.removeTrack('p-1', 't1');
+      await queue.removeFromQueue(0);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Solo Track'), findsNothing);
     });
 
     testWidgets('le bouton Lire lance la playlist depuis le début (US-05-04)',

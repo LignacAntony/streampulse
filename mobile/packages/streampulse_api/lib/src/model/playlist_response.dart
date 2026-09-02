@@ -26,6 +26,8 @@ class PlaylistResponse {
 
     required this.trackCount,
 
+    required this.isFavorite,
+
     required this.createdAt,
 
     required this.updatedAt,
@@ -47,6 +49,10 @@ class PlaylistResponse {
   @JsonKey(name: r'track_count', required: true, includeIfNull: false)
   final int trackCount;
 
+  /// Whether the requester has pinned this playlist as a favorite.
+  @JsonKey(name: r'is_favorite', required: true, includeIfNull: false)
+  final bool isFavorite;
+
   @JsonKey(name: r'created_at', required: true, includeIfNull: false)
   final DateTime createdAt;
 
@@ -62,6 +68,7 @@ class PlaylistResponse {
           other.description == description &&
           other.isPublic == isPublic &&
           other.trackCount == trackCount &&
+          other.isFavorite == isFavorite &&
           other.createdAt == createdAt &&
           other.updatedAt == updatedAt;
 
@@ -72,6 +79,7 @@ class PlaylistResponse {
       (description == null ? 0 : description.hashCode) +
       isPublic.hashCode +
       trackCount.hashCode +
+      isFavorite.hashCode +
       createdAt.hashCode +
       updatedAt.hashCode;
 

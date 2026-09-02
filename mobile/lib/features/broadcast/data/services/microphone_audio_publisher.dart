@@ -90,6 +90,10 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
     var started = false;
     var silentAttempts = 0;
     var gaveUp = false;
+    // Une autre source a pris l'ingest pendant que nous tentions de nous
+    // reconnecter. État terminal, mais qui n'est pas une panne : le direct vit,
+    // alimenté par quelqu'un d'autre.
+    var superseded = false;
     Object? initialError;
     StackTrace? initialStackTrace;
     try {
@@ -121,6 +125,24 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
             }),
           );
         } catch (error, stackTrace) {
+          // Une autre source alimente déjà ce direct : il n'y a rien à
+          // reprendre, et insister mènerait à `failed`, donc à l'arrêt du
+          // direct de cette autre source. On sort de la boucle sans panne.
+          if (error is IngestConflictException) {
+            _desired = false;
+            if (firstAttempt.isCompleted) {
+              // Conflit survenu APRÈS le démarrage : nous diffusions, la
+              // connexion a lâché, et une autre source a pris la clé avant
+              // notre reconnexion. Sortir sur `idle` laisserait la tuile
+              // afficher « en direct » avec un micro mort et sans un mot —
+              // une désynchronisation silencieuse (revue PR #382).
+              superseded = true;
+            } else {
+              initialError = error;
+              initialStackTrace = stackTrace;
+            }
+            continue;
+          }
           // Une erreur avant même l'obtention du flux micro est un échec de
           // démarrage. Une coupure après démarrage, elle, est transitoire et
           // déclenche la reprise ci-dessous.
@@ -151,7 +173,13 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
         );
       }
     } finally {
-      _emit(gaveUp ? BroadcastAudioState.failed : BroadcastAudioState.idle);
+      _emit(
+        gaveUp
+            ? BroadcastAudioState.failed
+            : superseded
+                ? BroadcastAudioState.superseded
+                : BroadcastAudioState.idle,
+      );
       if (initialError != null && !firstAttempt.isCompleted) {
         firstAttempt.completeError(initialError, initialStackTrace!);
       } else if (!firstAttempt.isCompleted) {

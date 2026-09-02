@@ -8,6 +8,9 @@ abstract class PlaylistRepository {
   /// Playlists de l'utilisateur, triées par date de création décroissante.
   Future<List<Playlist>> list();
 
+  /// Playlists épinglées en favori, triées par date d'ajout du favori (desc).
+  Future<List<Playlist>> listFavorites();
+
   /// Crée une playlist vide. 409 (nom déjà utilisé) remonte en exception typée.
   Future<Playlist> create(String name, String? description);
 
@@ -16,6 +19,12 @@ abstract class PlaylistRepository {
 
   /// Supprime définitivement une playlist.
   Future<void> delete(String id);
+
+  /// Épingle la playlist en favori (remontée sur l'accueil). Idempotent.
+  Future<void> favorite(String id);
+
+  /// Retire la playlist des favoris. Idempotent.
+  Future<void> unfavorite(String id);
 
   /// Pistes d'une playlist, ordonnées par position.
   Future<List<PlaylistTrack>> tracks(String id);

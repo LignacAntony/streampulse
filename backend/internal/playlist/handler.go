@@ -25,6 +25,9 @@ type PlaylistService interface {
 	AddTrack(ctx context.Context, playlistID, trackID, requesterID string) ([]PlaylistTrack, error)
 	RemoveTrack(ctx context.Context, playlistID, trackID, requesterID string) error
 	ReorderTracks(ctx context.Context, playlistID, requesterID string, trackIDs []string) ([]PlaylistTrack, error)
+	AddFavorite(ctx context.Context, id, requesterID string) error
+	RemoveFavorite(ctx context.Context, id, requesterID string) error
+	ListFavorites(ctx context.Context, requesterID string) ([]Playlist, error)
 }
 
 // Handler expose le domaine playlist en HTTP.
@@ -72,6 +75,7 @@ type playlistResponse struct {
 	Description *string   `json:"description"`
 	IsPublic    bool      `json:"is_public"`
 	TrackCount  int       `json:"track_count"`
+	IsFavorite  bool      `json:"is_favorite"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -83,6 +87,7 @@ func toResponse(p Playlist) playlistResponse {
 		Description: p.Description,
 		IsPublic:    p.IsPublic,
 		TrackCount:  p.TrackCount,
+		IsFavorite:  p.IsFavorite,
 		CreatedAt:   p.CreatedAt,
 		UpdatedAt:   p.UpdatedAt,
 	}
@@ -326,6 +331,60 @@ func (h *Handler) ReorderTracks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeTracks(w, r, http.StatusOK, tracks, "reorder")
+}
+
+// ListFavorites gère GET /api/playlists/favorites : playlists épinglées du
+// demandeur, triées par date d'ajout du favori (200).
+func (h *Handler) ListFavorites(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+
+	playlists, err := h.svc.ListFavorites(r.Context(), userID)
+	if err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+
+	out := make([]playlistResponse, 0, len(playlists))
+	for _, p := range playlists {
+		out = append(out, toResponse(p))
+	}
+	if err := httpjson.Write(w, http.StatusOK, out); err != nil {
+		zerolog.Ctx(r.Context()).Error().Err(err).Msg("playlist: encode favorites")
+	}
+}
+
+// AddFavorite gère PUT /api/playlists/{id}/favorite : épingle la playlist du
+// demandeur. Idempotent → 204 ; playlist inexistante/d'un tiers → 404.
+func (h *Handler) AddFavorite(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.AddFavorite(r.Context(), r.PathValue("id"), userID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RemoveFavorite gère DELETE /api/playlists/{id}/favorite : retire la playlist
+// des favoris du demandeur. Idempotent → 204.
+func (h *Handler) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpjson.WriteError(w, r, apperror.Unauthorized("unauthenticated"))
+		return
+	}
+	if err := h.svc.RemoveFavorite(r.Context(), r.PathValue("id"), userID); err != nil {
+		httpjson.WriteError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // writeTracks sérialise une liste de pistes de playlist (réponse commune à

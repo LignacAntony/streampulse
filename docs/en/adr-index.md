@@ -230,7 +230,17 @@ by default locally, so `go run` needs no collector.
 **ADR 021 — Provisioned Grafana alerting.** *Context:* an alert configured by
 hand is lost with its container. *Decision:* declare contact points, policies
 and rules as code. *Consequence:* the truth lives in git and the UI is
-read-only.
+read-only. **Amended 2026-09-02:** the ADR had discarded Discord because it
+"assumes a shared workspace the project does not have" — the team now has one,
+so the premise no longer holds. A Discord receiver is added **alongside** email,
+in the same contact point (the notification policy routes to a contact point,
+not to a type). Email is kept as the guaranteed channel, because it needs no
+secret to be provisioned; and `ALERT_DISCORD_WEBHOOK` is deliberately optional,
+with no `:?` in production, since the CD pipeline runs `docker compose pull api`
+on the VPS and a required-but-missing variable would fail the **API**
+deployment. Note that email had never had a real recipient: its default is an
+`.invalid` address, and the Kubernetes deployment did not even pass the
+variable — an alert firing on that cluster would have notified nobody.
 
 **ADR 022 — Streaming business metrics.** *Context:* a technical 500 and a
 listener dropping out are not the same event. *Decision:* separate business
@@ -328,6 +338,76 @@ stays safe (bcrypt fails on the empty hash).
 account is reachable through Google by the same email, and the feature is optional
 (the route is absent in dev without a client id); validated end-to-end on the iOS
 simulator.
+
+**ADR 048 — Restarting an ended stream.** *Context:* `StartStream` accepted `idle`
+only, so an `ended` stream was permanently dead — and two of the three ways a
+broadcast ends involve no decision by the broadcaster (an admin stop, or the
+45-second ingest lease expiring). The dashboard had drawn the consequence: no
+start button, no ingest URL, no key rotation, just "create a new stream". Since a
+stream carries a title, a description and an ingest key, that meant losing the
+channel and having to redistribute a fresh key. *Decision:* the transition accepts
+`idle` **or** `ended` and resets `ended_at` to null — a stream is a reusable
+channel, not a record of a past broadcast; the 409 message narrows to
+`stream is already live`; mobile uses a `canStart` predicate instead of hard-coded
+`isIdle`. *Consequence:* no migration is needed (the partial unique index
+`streams_one_live_per_user` still enforces one live per broadcaster), `started_at`
+is overwritten on restart so the tile measures the current broadcast rather than a
+total, and an ended stream re-exposes its ingest URL to its owner.
+
+**ADR 049 — Mobile broadcast lifecycle: leaving the app is not closing it.**
+*Context:* the dashboard ended the live server-side on
+`AppLifecycleState.hidden`, which on the web is produced by a plain browser tab
+switch; because every `start` forks a fresh ffmpeg segmenter in a fresh temp
+directory, segment numbering and `EXT-X-MEDIA-SEQUENCE` restarted at zero, sending
+listeners back to the first segment; and releasing the microphone whenever the app
+left the foreground meant that pressing Home stopped capture — with HLS timestamps
+derived from the ADTS frame count rather than wall-clock time, listeners then heard
+an abrupt jump rather than a silence, while the broadcaster's tile still read
+"live". *Decision:* the lifecycle now distinguishes only "elsewhere"
+(`inactive`/`hidden`/`paused` — nothing happens) from "closed" (`detached` — the
+live is ended best-effort); an Android foreground service keeps capture alive
+(`foregroundServiceType="microphone"`, plus `FOREGROUND_SERVICE_MICROPHONE` at
+`targetSdk` 36), declared in the app manifest because the `record` plugin ships the
+service class but not its declaration, with `stopWithTask="true"` so it dies with
+the task; an ingest `409` becomes `IngestConflictException` so the publisher stops
+retrying instead of ending an external encoder's broadcast. *Consequence:* a
+permanent notification shows for the whole broadcast (the system price of
+background microphone access); closing the app ends the live immediately for
+capture and within the 45-second ingest lease for the server status; suspending
+and resuming capture, and adopting a still-live stream on app start, were both
+prototyped and rejected — the first still made listeners hear a jump, the second
+relit a microphone without user action; **iOS is unverified**, no device was
+available.
+
+**ADR 050 — Measuring and announcing recovered broadcast outages.** *Context:* a
+20-second network outage was staged on a real device while the broadcaster
+counted aloud; listeners heard "…five, six, **twenty-five**, twenty-six…" with no
+gap at all. Two mechanisms combine: losing the connection also stops capture (each
+retry restarts the encoder so the server gets a self-contained AAC/ADTS stream),
+and HLS timestamps derive from the ADTS frame count rather than wall-clock time,
+so the segmenter splices the two ends without knowing twenty seconds passed. The
+splice itself is the right trade for radio — dead air is worse than a cut
+sentence — but nobody was told: `stream_interruptions_total` only counts
+*terminated* broadcasts, so an outage that recovers before the ingest lease
+expires incremented nothing (verified during the test), and the broadcaster, who
+does see "Reconnexion audio…" during the outage, was never told afterwards how
+much had been lost. *Decision:* two new series,
+`streampulse_ingest_recoveries_total` (how often) and
+`streampulse_ingest_outage_seconds` (how much time lost — a mean would conflate a
+one-second hiccup with a thirty-second gap), measured at re-attach rather than at
+detach because at detach it is not yet known whether the outage will recover or
+end the broadcast; and the dashboard tells the broadcaster the duration on
+recovery, derived from state transitions where only `reconnecting` opens an
+outage — `connecting` is a broadcast's first attempt and counting it would
+announce a loss at every start. Nothing is added for listeners: they have no
+channel (SSE requires a JWT, listeners may be anonymous) and they felt nothing —
+the ~60-second HLS window absorbed the outage. *Consequence:* recovered outages
+appear in Grafana and become an alerting candidate, and the broadcaster can
+repeat what was lost; the splice stays silent, so listeners still lose content
+without knowing. `EXT-X-DISCONTINUITY` — the format's own marker, which signals a
+broken timeline without inserting silence — is the correct answer and remains out
+of scope. Note that the perceived resilience comes from the listener's buffer,
+not the server: a longer outage, or a listener who just joined, would hear it.
 
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.

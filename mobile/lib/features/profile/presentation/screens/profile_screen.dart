@@ -16,6 +16,7 @@ import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../broadcaster/presentation/providers/broadcaster_controller.dart';
 import '../../../broadcaster/presentation/screens/admin_broadcaster_requests_screen.dart';
 import '../../../playlists/presentation/providers/offline_playlist_controller.dart';
+import '../../../playlists/presentation/providers/favorite_playlists_controller.dart';
 import '../../../streams/presentation/providers/favorites_controller.dart';
 import '../../domain/entities/user_profile.dart';
 import '../providers/profile_controller.dart';
@@ -70,6 +71,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
     context.read<BroadcasterController>().reset();
     context.read<FavoritesController>().reset();
+    context.read<FavoritePlaylistsController>().reset();
     context.read<ChatController>().disconnect();
     await context.read<OfflinePlaylistController>().clearCache();
     if (!mounted) return;
@@ -327,11 +329,6 @@ class _SettingsCard extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            _AudioQualityRow(
-              selected: profile.audioQuality,
-              onChanged: (q) => runSave(() => controller.updateAudioQuality(q)),
-            ),
-            const Divider(height: 1),
             _SettingRow(
               icon: Icons.notifications_outlined,
               label: 'Notifications push',
@@ -450,47 +447,6 @@ class _AdminCard extends StatelessWidget {
             title: const Text('Bans globaux du chat'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _openGlobalBans(context),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AudioQualityRow extends StatelessWidget {
-  const _AudioQualityRow({required this.selected, required this.onChanged});
-
-  final String selected;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.bar_chart, size: 22, color: colors.onSurfaceVariant),
-              const SizedBox(width: 14),
-              Text('Qualité audio', style: text.bodyLarge),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<String>(
-            key: const Key('profile_audio_segment'),
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 'low', label: Text('Basse')),
-              ButtonSegment(value: 'normal', label: Text('Standard')),
-              ButtonSegment(value: 'high', label: Text('Ultra HD')),
-            ],
-            selected: {selected},
-            onSelectionChanged: (s) => onChanged(s.first),
           ),
         ],
       ),

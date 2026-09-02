@@ -1021,6 +1021,12 @@ paths:
         - Streaming
       operationId: startStream
       summary: Start a stream — go live (broadcaster owner only).
+      description: >
+        Accepts a stream whose status is `idle` or `ended`: a stream is a
+        reusable channel (title, description, ingest key), so a broadcast that
+        finished — including one ended by the ingest lease expiring — can be
+        started again. `ended_at` is reset to null. Only a stream that is
+        already `live` is rejected.
       security:
         - bearerAuth: []
       responses:
@@ -1037,7 +1043,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The stream is not idle, or the broadcaster already has a live stream.
+          description: The stream is already live, or the broadcaster already has another live stream.
           content:
             application/json:
               schema:
@@ -1781,6 +1787,75 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/favorites:
+    get:
+      tags:
+        - Playlist
+      operationId: listFavoritePlaylists
+      summary: List the authenticated user's favorite (pinned) playlists.
+      description: >-
+        Returns the user's pinned playlists (STR-250) with their track_count,
+        ordered by favorite date descending. Every item has is_favorite=true.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's favorite playlists.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playlists/{id}/favorite:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags:
+        - Playlist
+      operationId: addPlaylistFavorite
+      summary: Pin a playlist as a favorite (owner only).
+      description: >-
+        Pins the playlist to the authenticated user's favorites (STR-250).
+        Idempotent (PUT): pinning an already-favorited playlist succeeds. A
+        playlist owned by someone else or unknown returns 404.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The playlist is in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags:
+        - Playlist
+      operationId: removePlaylistFavorite
+      summary: Unpin a playlist from favorites (owner only).
+      description: >-
+        Removes the playlist from the authenticated user's favorites.
+        Idempotent: unpinning a playlist that is not a favorite succeeds.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The playlist is no longer in the user's favorites.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/tracks:
@@ -3111,6 +3186,7 @@ components:
         - description
         - is_public
         - track_count
+        - is_favorite
         - created_at
         - updated_at
       properties:
@@ -3130,6 +3206,9 @@ components:
           type: integer
           description: Number of tracks in the playlist.
           example: 3
+        is_favorite:
+          type: boolean
+          description: Whether the requester has pinned this playlist as a favorite.
         created_at:
           type: string
           format: date-time

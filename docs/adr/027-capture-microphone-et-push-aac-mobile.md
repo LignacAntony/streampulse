@@ -1,8 +1,14 @@
 # ADR 027 — Capture microphone et push AAC depuis l'application mobile
 
 **Date** : 2026-08-04
-**Statut** : Accepté
+**Statut** : Accepté — politique de premier plan **révisée par l'[ADR 049](049-cycle-de-vie-de-la-diffusion-mobile.md)**
 **Ticket** : [STR-156](https://linear.app/streampulse/issue/STR-156)
+
+> La règle « diffusion au premier plan uniquement » posée ici est remplacée par
+> l'ADR 049 : la capture continue désormais en arrière-plan, portée par un
+> service de premier plan Android. Tout le reste de cette ADR — encodage
+> AAC/ADTS, permissions, reprise réseau, invariant « jamais de live silencieux »
+> — reste en vigueur.
 
 ---
 

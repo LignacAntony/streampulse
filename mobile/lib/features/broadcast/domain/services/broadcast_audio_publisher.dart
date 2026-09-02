@@ -4,7 +4,19 @@
 /// diffuseur audio, lorsqu'il renonce à se reconnecter. Un arrêt demandé passe
 /// toujours par [idle] : le contrôleur peut donc distinguer une panne d'un
 /// arrêt volontaire sans drapeau supplémentaire.
-enum BroadcastAudioState { idle, connecting, live, reconnecting, failed }
+/// États de la capture micro. `failed` et `superseded` sont tous deux
+/// terminaux, mais appellent des conduites opposées côté serveur :
+///
+///   - `failed` : la capture a renoncé après avoir épuisé ses reconnexions. Le
+///     direct n'a plus de source, il faut le terminer (invariant « jamais de
+///     live silencieux », ADR 027).
+///   - `superseded` : une **autre source** alimente désormais ce direct — un
+///     encodeur externe a pris la clé pendant une coupure réseau. Le direct est
+///     bien vivant, simplement ce n'est plus nous. Le terminer couperait la
+///     diffusion de quelqu'un d'autre.
+///
+/// Les confondre est exactement le défaut que ce type sépare.
+enum BroadcastAudioState { idle, connecting, live, reconnecting, failed, superseded }
 
 /// Capture le microphone et pousse l'audio vers l'URL d'ingest d'un direct.
 ///

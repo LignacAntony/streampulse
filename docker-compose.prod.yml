@@ -231,6 +231,10 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # URL publique servie par Caddy : sans elle, les redirections et liens
+      # absolus de Grafana pointeraient sur localhost:3000 derrière le proxy et
+      # casseraient (login, invitations email…).
+      GF_SERVER_ROOT_URL: https://grafana.streampulse.win
       # Alertes par email (STR-167, ADR 021) : même relay SMTP que l'API.
       GF_SMTP_ENABLED: "true"
       GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT:-587}
@@ -246,6 +250,18 @@ services:
       # les alertes partaient nulle part — pire que l'ancienne adresse en dur,
       # qui produisait au moins une enveloppe délivrable (revue PR #328).
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:?adresse de destination des alertes requise en production (cf. .env.example)}
+      # Webhook Discord des alertes. Volontairement SANS `:?`, à la différence
+      # de l'adresse email ci-dessus : le CD lance `docker compose pull api`
+      # sur le VPS, et une variable requise mais absente y ferait échouer le
+      # déploiement de l'API — un canal de notification ne doit pas pouvoir
+      # bloquer une mise en production.
+      #
+      # Le défaut n'est pas vide pour autant : Grafana exige une url non vide
+      # pour un receiver discord et refuse de démarrer sans, ce qui ferait
+      # tomber l'email avec lui. Défaut sur .invalid (RFC 2606, jamais
+      # résolvable) : non configuré, l'envoi Discord échoue seul et l'email
+      # reste le canal garanti.
+      ALERT_DISCORD_WEBHOOK: ${ALERT_DISCORD_WEBHOOK:-https://discord.invalid/api/webhooks/non-configure}
     depends_on:
       prometheus:
         condition: service_healthy

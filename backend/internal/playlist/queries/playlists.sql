@@ -8,13 +8,18 @@ VALUES (
     sqlc.narg(description)::text
 )
 RETURNING id::text AS id, user_id::text AS user_id, name, description, is_public,
-          0::bigint AS track_count, created_at, updated_at;
+          0::bigint AS track_count, false AS is_favorite, created_at, updated_at;
 
 -- name: ListPlaylistsByUser :many
 -- Playlists de l'utilisateur, avec le nombre de pistes (LEFT JOIN pour compter 0
 -- sur une playlist vide). Triées par date de création décroissante.
 SELECT p.id::text AS id, p.user_id::text AS user_id, p.name, p.description, p.is_public,
-       COUNT(pt.track_id) AS track_count, p.created_at, p.updated_at
+       COUNT(pt.track_id) AS track_count,
+       EXISTS (
+           SELECT 1 FROM playlist_favorites pf
+           WHERE pf.playlist_id = p.id AND pf.user_id = sqlc.arg(user_id)::uuid
+       ) AS is_favorite,
+       p.created_at, p.updated_at
 FROM playlists p
 LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
 WHERE p.user_id = sqlc.arg(user_id)::uuid
@@ -22,10 +27,15 @@ GROUP BY p.id
 ORDER BY p.created_at DESC;
 
 -- name: GetPlaylistByID :one
--- Une playlist par id (avec track_count). Le contrôle de propriété est fait par
--- le service à partir du user_id renvoyé.
+-- Une playlist par id (avec track_count + is_favorite pour le demandeur). Le
+-- contrôle de propriété est fait par le service à partir du user_id renvoyé.
 SELECT p.id::text AS id, p.user_id::text AS user_id, p.name, p.description, p.is_public,
-       COUNT(pt.track_id) AS track_count, p.created_at, p.updated_at
+       COUNT(pt.track_id) AS track_count,
+       EXISTS (
+           SELECT 1 FROM playlist_favorites pf
+           WHERE pf.playlist_id = p.id AND pf.user_id = sqlc.arg(user_id)::uuid
+       ) AS is_favorite,
+       p.created_at, p.updated_at
 FROM playlists p
 LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
 WHERE p.id = sqlc.arg(id)::uuid
@@ -41,6 +51,10 @@ SET name = sqlc.arg(name)::text,
 WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid
 RETURNING id::text AS id, user_id::text AS user_id, name, description, is_public,
           (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = playlists.id) AS track_count,
+          EXISTS (
+              SELECT 1 FROM playlist_favorites pf
+              WHERE pf.playlist_id = playlists.id AND pf.user_id = playlists.user_id
+          ) AS is_favorite,
           created_at, updated_at;
 
 -- name: DeletePlaylist :one

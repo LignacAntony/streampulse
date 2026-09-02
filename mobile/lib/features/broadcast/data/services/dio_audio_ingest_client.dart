@@ -32,10 +32,20 @@ class DioAudioIngestClient implements AudioIngestClient {
         options: Options(
           contentType: 'audio/aac',
           responseType: ResponseType.plain,
+          // 409 accepté ici pour être traduit ci-dessous : laissé aux status
+          // valides, il ressortirait en `DioException` indifférenciée et la
+          // boucle de reprise le prendrait pour une panne réseau.
           validateStatus: (status) =>
               status != null && status >= 200 && status < 300,
         ),
       );
+    } on DioException catch (e) {
+      // Un autre encodeur pousse déjà sur cette clé : ce n'est pas une panne,
+      // et réessayer finirait par tuer SON direct (cf. IngestConflictException).
+      if (e.response?.statusCode == 409) {
+        throw const IngestConflictException();
+      }
+      rethrow;
     } finally {
       if (identical(_cancelToken, token)) _cancelToken = null;
     }

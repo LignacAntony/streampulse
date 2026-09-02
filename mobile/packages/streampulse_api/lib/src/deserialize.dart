@@ -21,6 +21,7 @@ import 'package:streampulse_api/src/model/error_detail.dart';
 import 'package:streampulse_api/src/model/error_response.dart';
 import 'package:streampulse_api/src/model/forgot_password_request.dart';
 import 'package:streampulse_api/src/model/global_ban_user_request.dart';
+import 'package:streampulse_api/src/model/google_login_request.dart';
 import 'package:streampulse_api/src/model/health_response.dart';
 import 'package:streampulse_api/src/model/login_request.dart';
 import 'package:streampulse_api/src/model/logout_request.dart';
@@ -29,6 +30,7 @@ import 'package:streampulse_api/src/model/playlist_response.dart';
 import 'package:streampulse_api/src/model/playlist_track_response.dart';
 import 'package:streampulse_api/src/model/profile_response.dart';
 import 'package:streampulse_api/src/model/public_track_response.dart';
+import 'package:streampulse_api/src/model/recommended_track_response.dart';
 import 'package:streampulse_api/src/model/refresh_request.dart';
 import 'package:streampulse_api/src/model/register_request.dart';
 import 'package:streampulse_api/src/model/reorder_playlist_tracks_request.dart';
@@ -137,6 +139,9 @@ ReturnType deserialize<ReturnType, BaseType>(
     case 'GlobalBanUserRequest':
       return GlobalBanUserRequest.fromJson(value as Map<String, dynamic>)
           as ReturnType;
+    case 'GoogleLoginRequest':
+      return GoogleLoginRequest.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
     case 'HealthResponse':
       return HealthResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
@@ -159,6 +164,9 @@ ReturnType deserialize<ReturnType, BaseType>(
           as ReturnType;
     case 'PublicTrackResponse':
       return PublicTrackResponse.fromJson(value as Map<String, dynamic>)
+          as ReturnType;
+    case 'RecommendedTrackResponse':
+      return RecommendedTrackResponse.fromJson(value as Map<String, dynamic>)
           as ReturnType;
     case 'RefreshRequest':
       return RefreshRequest.fromJson(value as Map<String, dynamic>)

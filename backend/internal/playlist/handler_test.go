@@ -3,6 +3,7 @@ package playlist
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,6 +48,8 @@ type stubService struct {
 	reorderErr    error
 	reorderCall   bool
 	gotTrackOrder []string
+
+	favErr error
 
 	gotID        string
 	gotRequester string
@@ -110,6 +113,23 @@ func (s *stubService) ReorderTracks(_ context.Context, playlistID, requesterID s
 	s.gotRequester = requesterID
 	s.gotTrackOrder = trackIDs
 	return s.reorderRet, s.reorderErr
+}
+
+func (s *stubService) AddFavorite(_ context.Context, id, requesterID string) error {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.favErr
+}
+
+func (s *stubService) RemoveFavorite(_ context.Context, id, requesterID string) error {
+	s.gotID = id
+	s.gotRequester = requesterID
+	return s.favErr
+}
+
+func (s *stubService) ListFavorites(_ context.Context, requesterID string) ([]Playlist, error) {
+	s.gotRequester = requesterID
+	return s.listRet, s.listErr
 }
 
 const testUserID = "00000000-0000-0000-0000-000000000001"
@@ -419,4 +439,180 @@ func doTrack(t *testing.T, handler http.HandlerFunc, method, target, id, trackID
 	rec := httptest.NewRecorder()
 	auth.RequireAuth(testSecret, handler).ServeHTTP(rec, req)
 	return rec
+}
+
+// --- Favoris de playlists (STR-250) -----------------------------------------
+
+func TestAddFavorite_OK_204(t *testing.T) {
+	svc := &stubService{}
+	h := NewHandler(svc)
+
+	rec := do(t, h.AddFavorite, http.MethodPut, "/api/playlists/p1/favorite", "p1", "", true)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d, want 204", rec.Code)
+	}
+	if svc.gotID != "p1" || svc.gotRequester != testUserID {
+		t.Errorf("id/requester non transmis: id=%q requester=%q", svc.gotID, svc.gotRequester)
+	}
+}
+
+func TestAddFavorite_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.AddFavorite, http.MethodPut, "/api/playlists/p1/favorite", "p1", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestAddFavorite_ThirdParty_404(t *testing.T) {
+	svc := &stubService{favErr: apperror.NotFound("playlist not found")}
+	h := NewHandler(svc)
+	rec := do(t, h.AddFavorite, http.MethodPut, "/api/playlists/p1/favorite", "p1", "", true)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404", rec.Code)
+	}
+}
+
+func TestAddFavorite_ServiceError_500(t *testing.T) {
+	svc := &stubService{favErr: errors.New("boom")}
+	h := NewHandler(svc)
+	rec := do(t, h.AddFavorite, http.MethodPut, "/api/playlists/p1/favorite", "p1", "", true)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status: got %d, want 500", rec.Code)
+	}
+}
+
+func TestRemoveFavorite_OK_204(t *testing.T) {
+	svc := &stubService{}
+	h := NewHandler(svc)
+
+	rec := do(t, h.RemoveFavorite, http.MethodDelete, "/api/playlists/p1/favorite", "p1", "", true)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status: got %d, want 204", rec.Code)
+	}
+	if svc.gotID != "p1" || svc.gotRequester != testUserID {
+		t.Errorf("id/requester non transmis: id=%q requester=%q", svc.gotID, svc.gotRequester)
+	}
+}
+
+func TestRemoveFavorite_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.RemoveFavorite, http.MethodDelete, "/api/playlists/p1/favorite", "p1", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestRemoveFavorite_ServiceError_500(t *testing.T) {
+	svc := &stubService{favErr: errors.New("boom")}
+	h := NewHandler(svc)
+	rec := do(t, h.RemoveFavorite, http.MethodDelete, "/api/playlists/p1/favorite", "p1", "", true)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status: got %d, want 500", rec.Code)
+	}
+}
+
+func TestListFavorites_OK_200(t *testing.T) {
+	svc := &stubService{listRet: []Playlist{
+		{ID: "p1", Name: "Rock", TrackCount: 3, IsFavorite: true},
+	}}
+	h := NewHandler(svc)
+
+	rec := do(t, h.ListFavorites, http.MethodGet, "/api/playlists/favorites", "", "", true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", rec.Code)
+	}
+	if svc.gotRequester != testUserID {
+		t.Errorf("requester non transmis: %q", svc.gotRequester)
+	}
+	var resp []playlistResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 || resp[0].ID != "p1" || !resp[0].IsFavorite {
+		t.Errorf("réponse inattendue: %+v", resp)
+	}
+}
+
+func TestListFavorites_Empty_200(t *testing.T) {
+	svc := &stubService{listRet: nil}
+	h := NewHandler(svc)
+	rec := do(t, h.ListFavorites, http.MethodGet, "/api/playlists/favorites", "", "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", rec.Code)
+	}
+	// Toujours un tableau JSON, jamais null.
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("corps: got %q, want []", rec.Body.String())
+	}
+}
+
+func TestListFavorites_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.ListFavorites, http.MethodGet, "/api/playlists/favorites", "", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestListFavorites_ServiceError_500(t *testing.T) {
+	svc := &stubService{listErr: errors.New("boom")}
+	h := NewHandler(svc)
+	rec := do(t, h.ListFavorites, http.MethodGet, "/api/playlists/favorites", "", "", true)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status: got %d, want 500", rec.Code)
+	}
+}
+
+// --- Branches d'auth non couvertes des handlers existants -------------------
+
+func TestList_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.List, http.MethodGet, "/api/playlists", "", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestGet_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.Get, http.MethodGet, "/api/playlists/p1", "p1", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestUpdate_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.Update, http.MethodPut, "/api/playlists/p1", "p1", `{"name":"X"}`, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestUpdate_MissingName_400(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.Update, http.MethodPut, "/api/playlists/p1", "p1", `{}`, true)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestDelete_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.Delete, http.MethodDelete, "/api/playlists/p1", "p1", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
+}
+
+func TestListTracks_Unauthenticated_401(t *testing.T) {
+	h := NewHandler(&stubService{})
+	rec := do(t, h.ListTracks, http.MethodGet, "/api/playlists/p1/tracks", "p1", "", false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status: got %d, want 401", rec.Code)
+	}
 }

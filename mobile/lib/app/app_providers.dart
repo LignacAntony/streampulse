@@ -27,6 +27,7 @@ import '../features/broadcaster/presentation/providers/broadcaster_controller.da
 import '../features/playlists/data/datasources/playlist_remote_data_source.dart';
 import '../features/playlists/data/repositories/playlist_repository_impl.dart';
 import '../features/playlists/domain/repositories/playlist_repository.dart';
+import '../features/playlists/presentation/providers/favorite_playlists_controller.dart';
 import '../features/playlists/presentation/providers/offline_playlist_controller.dart';
 import '../features/playlists/presentation/providers/playlist_queue_controller.dart';
 import '../features/profile/data/datasources/profile_remote_data_source.dart';
@@ -173,6 +174,10 @@ class StreamPulseApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<FavoritesController>(
           create: (ctx) => FavoritesController(ctx.read<StreamRepository>()),
+        ),
+        ChangeNotifierProvider<FavoritePlaylistsController>(
+          create: (ctx) =>
+              FavoritePlaylistsController(ctx.read<PlaylistRepository>()),
         ),
         ChangeNotifierProvider<DiscoverNotifier>(
           create: (ctx) => DiscoverNotifier(
