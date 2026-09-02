@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart' show PlayerState, ProcessingState;
 import 'package:provider/provider.dart';
+import 'package:toastification/toastification.dart';
 
 import 'package:streampulse/features/playlists/domain/entities/track.dart';
+import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
 import 'package:streampulse/features/playlists/presentation/providers/playlist_queue_controller.dart';
 import 'package:streampulse/features/playlists/presentation/widgets/queue_mini_player.dart';
 
@@ -11,6 +13,23 @@ import '../../../../support/fake_queue_playback_service.dart';
 import 'package:streampulse/core/audio/playback_transport.dart';
 import 'package:streampulse/core/audio/volume_store.dart';
 import 'package:streampulse/core/widgets/accessible_icon_button.dart';
+
+/// Faux repository : seul `removeTrack` est exercé (menu « Retirer de la
+/// playlist »), le reste n'est pas sollicité par ces tests.
+class _FakePlaylistRepository implements PlaylistRepository {
+  final List<({String playlistId, String trackId})> removed = [];
+  Object? removeError;
+
+  @override
+  Future<void> removeTrack(String playlistId, String trackId) async {
+    if (removeError != null) throw removeError!;
+    removed.add((playlistId: playlistId, trackId: trackId));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
+}
 
 Track _track(String id, String title) => Track(
       id: id,
@@ -31,6 +50,7 @@ Widget _host(
   PlaylistQueueController controller,
   Widget child, {
   FakeQueuePlaybackService? service,
+  PlaylistRepository? playlistRepository,
 }) {
   return MultiProvider(
     providers: [
@@ -39,8 +59,13 @@ Widget _host(
         value: service ?? FakeQueuePlaybackService(),
       ),
       Provider<VolumeStore>(create: (_) => InMemoryVolumeStore()),
+      Provider<PlaylistRepository>.value(
+        value: playlistRepository ?? _FakePlaylistRepository(),
+      ),
     ],
-    child: MaterialApp(home: Scaffold(body: child)),
+    child: ToastificationWrapper(
+      child: MaterialApp(home: Scaffold(body: child)),
+    ),
   );
 }
 
@@ -57,6 +82,8 @@ Future<
   WidgetTester tester,
   Widget child, {
   int startIndex = 0,
+  String? playlistId = 'p-1',
+  PlaylistRepository? playlistRepository,
 }) async {
   final service = FakeQueuePlaybackService();
   final controller = PlaylistQueueController(
@@ -69,10 +96,15 @@ Future<
   await controller.play(
     tracks: _tracks,
     sourceName: 'My Favorites',
-    playlistId: 'p-1',
+    playlistId: playlistId,
     startIndex: startIndex,
   );
-  await tester.pumpWidget(_host(controller, child, service: service));
+  await tester.pumpWidget(_host(
+    controller,
+    child,
+    service: service,
+    playlistRepository: playlistRepository,
+  ));
   service.emitState(PlayerState(true, ProcessingState.ready));
   await tester.pump();
   return (controller: controller, service: service);
@@ -386,6 +418,82 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('playback_queue_list')), findsNothing);
+    });
+
+    testWidgets('menu « ⋮ » présent pour une file issue d\'une playlist',
+        (tester) async {
+      await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+
+      expect(find.byKey(const Key('queue_item_menu_t1')), findsOneWidget);
+      expect(find.byKey(const Key('queue_item_menu_t2')), findsOneWidget);
+    });
+
+    testWidgets('pas de menu quand la file ne vient pas d\'une playlist',
+        (tester) async {
+      // File bâtie sur la bibliothèque / une reco / une piste publique : pas de
+      // playlist à modifier (STR-231).
+      await _pumpPlaying(tester, const QueueMiniPlayer(), playlistId: null);
+      await _openQueueSheet(tester);
+
+      expect(find.byKey(const Key('queue_item_menu_t1')), findsNothing);
+      expect(find.byKey(const Key('queue_item_menu_t2')), findsNothing);
+    });
+
+    testWidgets('retirer une piste : retrait en base ET de la file',
+        (tester) async {
+      final repo = _FakePlaylistRepository();
+      final t = await _pumpPlaying(
+        tester,
+        const QueueMiniPlayer(),
+        playlistRepository: repo,
+      );
+      await _openQueueSheet(tester);
+
+      // On retire t2 (piste à venir, pas celle en cours) via son menu.
+      await tester.ensureVisible(find.byKey(const Key('queue_item_menu_t2')));
+      await tester.tap(find.byKey(const Key('queue_item_menu_t2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retirer de la playlist'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('queue_item_confirm_remove')));
+      // Laisse les futures (retrait base + rechargement) se résoudre.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Retrait en base sur la bonne playlist / piste…
+      expect(repo.removed, [(playlistId: 'p-1', trackId: 't2')]);
+      // …et la file rechargée sans elle, sans couper la piste en cours (t1).
+      expect(t.controller.tracks.map((e) => e.id).toList(), ['t1', 't3']);
+      expect(t.service.lastItems.map((e) => e.id).toList(), ['t1', 't3']);
+      expect(t.controller.currentIndex, 0);
+      expect(find.byKey(const Key('queue_item_t2')), findsNothing);
+
+      // Purge le toast de succès (auto-fermeture 4 s) — même nettoyage que les
+      // tests d'auth, sinon un timer resterait en vol à la fin du test.
+      toastification.dismissAll(delayForAnimation: false);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    testWidgets('retrait annulé : ni base ni file touchées', (tester) async {
+      final repo = _FakePlaylistRepository();
+      final t = await _pumpPlaying(
+        tester,
+        const QueueMiniPlayer(),
+        playlistRepository: repo,
+      );
+      await _openQueueSheet(tester);
+
+      await tester.ensureVisible(find.byKey(const Key('queue_item_menu_t2')));
+      await tester.tap(find.byKey(const Key('queue_item_menu_t2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retirer de la playlist'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      expect(repo.removed, isEmpty);
+      expect(t.controller.tracks.length, 3);
     });
 
     testWidgets('la feuille se referme si la file s\'arrête pendant', (

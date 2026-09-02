@@ -271,6 +271,48 @@ class PlaylistQueueController extends ChangeNotifier {
     await _service.play();
   }
 
+  /// Retire la piste [index] (indice dans [tracks]) de la file en cours et la
+  /// recharge sans elle (STR-250). Sert le menu « Retirer de la playlist » : le
+  /// retrait **en base** est fait par l'appelant (repository), cette méthode met
+  /// la file en accord.
+  ///
+  /// La file est rechargée à la piste courante et à sa position : retirer une
+  /// piste **à venir** ne coupe donc pas ce qu'on écoute (un court rechargement
+  /// mis à part — un retrait sans couture au niveau du lecteur natif serait un
+  /// chantier à part). Retirer la **piste en cours** enchaîne sur celle qui
+  /// prend sa place (ou la dernière si c'était la fin) ; vider la file l'arrête.
+  Future<void> removeFromQueue(int index) async {
+    if (index < 0 || index >= _tracks.length) return;
+    final newTracks = [..._tracks]..removeAt(index);
+    if (newTracks.isEmpty) {
+      await stop();
+      return;
+    }
+
+    final int newIndex;
+    final Duration position;
+    if (index == _index) {
+      // La piste courante disparaît : la suivante prend sa place à ce rang, ou
+      // la dernière si l'on retirait la fin. On repart de son début.
+      newIndex = index.clamp(0, newTracks.length - 1);
+      position = Duration.zero;
+    } else {
+      // Une autre piste part : la lecture courante continue là où elle en est.
+      // Son indice ne bouge que si la piste retirée était avant elle.
+      newIndex = index < _index ? _index - 1 : _index;
+      position = _service.position;
+    }
+
+    _tracks = List.unmodifiable(newTracks);
+    _index = newIndex;
+    _retryCount = 0;
+    _order = PlaybackOrder.natural(_tracks.length);
+    // keepOrder:false — l'ancien ordre décrivait une file d'une autre taille et
+    // ne la couvre plus ; le lecteur en tire un neuf (et re-mélange en aléatoire,
+    // piste courante en tête).
+    await _load(fromIndex: newIndex, position: position, keepOrder: false);
+  }
+
   Future<void> next() => _skipRelative(1);
   Future<void> previous() => _skipRelative(-1);
 

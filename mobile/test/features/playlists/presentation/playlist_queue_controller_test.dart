@@ -437,6 +437,71 @@ void main() {
     });
   });
 
+  group('PlaylistQueueController — retrait d\'une piste (STR-250)', () {
+    test('retirer une piste à venir recharge la file sans elle, piste courante '
+        'intacte', () async {
+      final t = _build();
+      await _play(t.controller, startIndex: 0);
+      t.service.position = const Duration(seconds: 30);
+
+      // On retire t3 (index 2), la lecture est sur t1 (index 0).
+      await t.controller.removeFromQueue(2);
+
+      expect(t.controller.tracks.map((e) => e.id).toList(), ['t1', 't2']);
+      expect(t.service.lastItems.map((e) => e.id).toList(), ['t1', 't2']);
+      // La piste en cours ne change pas et repart de sa position.
+      expect(t.controller.currentIndex, 0);
+      expect(t.service.lastInitialIndex, 0);
+      expect(t.service.lastInitialPosition, const Duration(seconds: 30));
+    });
+
+    test('retirer une piste avant la courante décale l\'index courant',
+        () async {
+      final t = _build();
+      await _play(t.controller, startIndex: 2); // on écoute t3
+
+      await t.controller.removeFromQueue(0); // on retire t1
+
+      expect(t.controller.tracks.map((e) => e.id).toList(), ['t2', 't3']);
+      // t3 est maintenant à l'index 1.
+      expect(t.controller.currentIndex, 1);
+      expect(t.controller.currentTrack?.id, 't3');
+    });
+
+    test('retirer la piste en cours enchaîne sur celle qui prend sa place',
+        () async {
+      final t = _build();
+      await _play(t.controller, startIndex: 1); // on écoute t2
+
+      await t.controller.removeFromQueue(1); // on retire t2 (la courante)
+
+      expect(t.controller.tracks.map((e) => e.id).toList(), ['t1', 't3']);
+      // La suivante (t3) prend le rang libéré et repart de son début.
+      expect(t.controller.currentIndex, 1);
+      expect(t.controller.currentTrack?.id, 't3');
+      expect(t.service.lastInitialPosition, Duration.zero);
+    });
+
+    test('retirer la dernière piste restante arrête la lecture', () async {
+      final t = _build();
+      await _play(t.controller, tracks: [_track('solo', 'Solo')]);
+
+      await t.controller.removeFromQueue(0);
+
+      expect(t.service.stopped, isTrue);
+      expect(t.controller.hasQueue, isFalse);
+    });
+
+    test('un index hors file est ignoré', () async {
+      final t = _build();
+      await _play(t.controller);
+
+      await t.controller.removeFromQueue(9);
+
+      expect(t.controller.tracks.length, 3);
+    });
+  });
+
   group('PlaylistQueueController — lecture aléatoire (US-05-05)', () {
     test('sans shuffle, l\'ordre de lecture est celui de la playlist',
         () async {

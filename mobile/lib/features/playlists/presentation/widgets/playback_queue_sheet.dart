@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/widgets/accessible_icon_button.dart';
 import '../../../../core/widgets/volume_slider.dart';
+import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../domain/entities/track.dart';
+import '../../domain/repositories/playlist_repository.dart';
 import '../providers/playlist_queue_controller.dart';
 import '../track_labels.dart';
 import 'queue_progress.dart';
@@ -359,6 +362,10 @@ class _QueueList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final queue = context.watch<PlaylistQueueController>();
+    // Menu « Retirer de la playlist » réservé aux files issues d'une playlist :
+    // une file bâtie sur la bibliothèque, une recommandation ou une piste
+    // publique (STR-231) n'a pas de playlist à modifier.
+    final playlistId = queue.playlistId;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -397,6 +404,13 @@ class _QueueList extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              trailing: playlistId == null
+                  ? null
+                  : _QueueItemMenu(
+                      playlistId: playlistId,
+                      track: track,
+                      index: index,
+                    ),
               onTap: () =>
                   context.read<PlaylistQueueController>().skipTo(index),
             );
@@ -405,4 +419,92 @@ class _QueueList extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Menu « ⋮ » d'une ligne de file issue d'une playlist (STR-250) : une seule
+/// action, retirer la piste de la playlist. Le retrait vaut pour la playlist
+/// **et** pour la file en cours.
+class _QueueItemMenu extends StatelessWidget {
+  const _QueueItemMenu({
+    required this.playlistId,
+    required this.track,
+    required this.index,
+  });
+
+  final String playlistId;
+  final Track track;
+
+  /// Indice de la piste dans [PlaylistQueueController.tracks] (ordre naturel),
+  /// tel qu'attendu par `removeFromQueue` — le même que celui du `skipTo`.
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      key: Key('queue_item_menu_${track.id}'),
+      icon: const Icon(Icons.more_vert),
+      tooltip: 'Options de la piste',
+      onSelected: (value) {
+        if (value == 'remove') _removeFromPlaylist(context);
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem<String>(
+          value: 'remove',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.playlist_remove),
+            title: Text('Retirer de la playlist'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _removeFromPlaylist(BuildContext context) async {
+    final confirmed = await _confirmRemoveDialog(context, track.title);
+    if (!confirmed || !context.mounted) return;
+
+    final repository = context.read<PlaylistRepository>();
+    final queue = context.read<PlaylistQueueController>();
+    try {
+      // La base fait foi : on la modifie d'abord, puis on met la file en accord.
+      await repository.removeTrack(playlistId, track.id);
+      if (!context.mounted) return;
+      await queue.removeFromQueue(index);
+      if (!context.mounted) return;
+      showAuthSuccessToast(context, 'Piste retirée de la playlist');
+    } catch (_) {
+      if (!context.mounted) return;
+      showAuthErrorToast(context, 'Impossible de retirer la piste');
+    }
+  }
+}
+
+/// Confirmation avant retrait. Le retrait ne détruit pas la piste (elle reste
+/// dans la bibliothèque) : le libellé le dit plutôt qu'une suppression, qui
+/// serait fausse — même formulation que le détail d'une playlist.
+Future<bool> _confirmRemoveDialog(BuildContext context, String title) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text('Retirer « $title » de la playlist ?'),
+      content: const Text(
+        'La piste reste dans ta bibliothèque, mais sa place dans la playlist '
+        'est perdue et elle quitte la file d\'attente.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          key: const Key('queue_item_confirm_remove'),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Retirer'),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
 }
