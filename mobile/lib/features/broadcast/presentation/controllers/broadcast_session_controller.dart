@@ -19,6 +19,7 @@ class BroadcastSessionController {
   final BroadcastAudioPublisher? _audioPublisher;
 
   String? _publishingStreamId;
+
   bool _backgroundStopRequested = false;
   StreamSubscription<BroadcastAudioState>? _audioSubscription;
   final StreamController<BroadcastAudioFailure> _audioFailures =
@@ -91,17 +92,24 @@ class BroadcastSessionController {
     if (_publishingStreamId == id) await _stopAudio(expectedId: id);
   }
 
-  /// Termine le direct si possible puis libère toujours le microphone.
-  Future<BroadcastStream?> stopForBackground() async {
+
+  /// Termine le direct parce que l'application est **fermée** (ADR 049).
+  ///
+  /// Volontairement différent d'un passage en arrière-plan, qui ne coupe plus
+  /// rien : le service de premier plan Android maintient la capture pendant que
+  /// le diffuseur fait autre chose sur son téléphone. Ce service survivrait
+  /// aussi au balayage depuis les récents — d'où l'arrêt explicite ici, doublé
+  /// de `android:stopWithTask="true"` sur sa déclaration dans le manifeste.
+  ///
+  /// L'arrêt serveur est tenté d'abord, le micro relâché quoi qu'il arrive.
+  Future<void> stopForAppClosed() async {
     _backgroundStopRequested = true;
     final id = _publishingStreamId;
-    if (id == null) return null;
+    if (id == null) return;
     try {
-      return await _repository.stopStream(id);
+      await _repository.stopStream(id);
     } finally {
-      if (_publishingStreamId == id) {
-        await _stopAudio(expectedId: id, ignoreErrors: true);
-      }
+      await _stopAudio(expectedId: id, ignoreErrors: true);
     }
   }
 
@@ -201,3 +209,4 @@ class BroadcastSessionStartException implements Exception {
   final BroadcastStream serverState;
   final bool refreshRequired;
 }
+

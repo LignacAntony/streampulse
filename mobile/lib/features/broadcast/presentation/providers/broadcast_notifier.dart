@@ -269,21 +269,23 @@ class BroadcastNotifier extends ChangeNotifier {
     }
   }
 
-  /// Politique mobile choisie par l'ADR 027 : diffusion au premier plan
-  /// uniquement. On termine d'abord le live côté serveur, puis on libère le
-  /// micro quoi qu'il arrive lorsque l'OS suspend l'application.
-  Future<void> stopForBackground() async {
+  /// Fermeture de l'application (balayage depuis les récents) : le direct est
+  /// terminé côté serveur et le micro relâché (ADR 049).
+  ///
+  /// C'est le pendant de « quitter l'application ne coupe rien » : personne ne
+  /// veut diffuser depuis une application qu'il vient de fermer, et un service
+  /// de premier plan survivrait à la fermeture si on ne faisait rien.
+  ///
+  /// Best-effort par nature : le processus est en train de mourir, l'appel peut
+  /// ne jamais partir. Le bail d'ingest du serveur reste le filet.
+  Future<void> stopForAppClosed() async {
     try {
-      final ended = await _sessionController.stopForBackground();
-      if (ended != null) _replace(ended);
+      await _sessionController.stopForAppClosed();
     } catch (_) {
-      // L'OS peut suspendre le réseau avant la fin du stop. Le micro est déjà
-      // libéré par le contrôleur et le bail backend terminera le live ; une
-      // resynchronisation est tentée si l'application reste assez longtemps.
-      unawaited(refresh());
+      // L'OS coupe souvent le réseau avant la fin de la requête. Le micro est
+      // relâché par le contrôleur, et le bail terminera le direct.
     } finally {
       _safeNotify();
-      _syncSubscription();
     }
   }
 

@@ -471,8 +471,11 @@ void main() {
       expect(notifier.audioState, BroadcastAudioState.idle);
     });
 
+    // ADR 049 — quitter l'application ne coupe plus rien : le service de
+    // premier plan Android maintient la capture pendant que le diffuseur fait
+    // autre chose sur son téléphone. Seule la fermeture arrête le direct.
     test(
-      'le passage en arrière-plan termine le live et coupe l\'audio',
+      'fermer l\'application termine le direct et libère le micro',
       () async {
         final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
         final audio = _FakeAudioPublisher();
@@ -480,11 +483,26 @@ void main() {
         await notifier.load();
         await notifier.start('a');
 
-        await notifier.stopForBackground();
+        await notifier.stopForAppClosed();
 
         expect(repository.stoppedIds, ['a']);
         expect(audio.stops, 1);
-        expect(notifier.hasLiveStream, isFalse);
+        expect(notifier.isPublishingAudio('a'), isFalse);
+      },
+    );
+
+    test(
+      'fermer sans diffusion en cours ne déclenche aucun arrêt serveur',
+      () async {
+        final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+        final audio = _FakeAudioPublisher();
+        final notifier = BroadcastNotifier(repository, audioPublisher: audio);
+        await notifier.load();
+
+        await notifier.stopForAppClosed();
+
+        expect(repository.stoppedIds, isEmpty);
+        expect(audio.stops, 0);
       },
     );
 

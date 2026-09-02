@@ -121,6 +121,17 @@ class MicrophoneAudioPublisher implements BroadcastAudioPublisher {
             }),
           );
         } catch (error, stackTrace) {
+          // Une autre source alimente déjà ce direct : il n'y a rien à
+          // reprendre, et insister mènerait à `failed`, donc à l'arrêt du
+          // direct de cette autre source. On sort de la boucle sans panne.
+          if (error is IngestConflictException) {
+            _desired = false;
+            if (!firstAttempt.isCompleted) {
+              initialError = error;
+              initialStackTrace = stackTrace;
+            }
+            continue;
+          }
           // Une erreur avant même l'obtention du flux micro est un échec de
           // démarrage. Une coupure après démarrage, elle, est transitoire et
           // déclenche la reprise ci-dessous.
