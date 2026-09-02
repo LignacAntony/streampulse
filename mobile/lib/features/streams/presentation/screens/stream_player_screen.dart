@@ -9,6 +9,7 @@ import '../../../../core/widgets/accessible_icon_button.dart';
 import '../../../../core/widgets/volume_slider.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../widgets/listening_time.dart';
+import '../widgets/live_elapsed_time.dart';
 import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/widgets/chat_panel.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
@@ -134,21 +135,33 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     final profile = context.watch<ProfileController>().profile;
 
     return Scaffold(
+      // `bottom: false` : la barre de saisie du chat gère elle-même l'encoche
+      // du bas, afin de coller au bord de l'écran sans vide au-dessus.
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
-            _header(colors),
-            _compactStreamInfo(colors, text, title, subtitle, listeners, isFavorited),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
-                children: [
-                  const Expanded(child: VolumeSlider(showLabel: false)),
-                  const SizedBox(width: 12),
-                  ListeningTime(controller: _audio),
-                ],
+            _header(colors, isFavorited),
+            // Hero en `Expanded` (fit tight), et non `Flexible` (loose) : un
+            // Flexible loose plus court que sa part gaspille la différence, qui
+            // retombe en bas de la colonne et surélève l'input du chat de ~80 px.
+            // En tight il consomme exactement sa part (2/3), le chat prend le
+            // tiers restant et colle au bord bas. Le `SingleChildScrollView`
+            // laisse le hero défiler et se contracter quand le clavier réduit la
+            // place, plutôt que de déborder.
+            Expanded(
+              flex: 2,
+              child: SingleChildScrollView(
+                child: _hero(colors, text, title, subtitle, listeners),
               ),
             ),
+            // Barre de volume identique à celle de la musique (STR-250), placée
+            // juste au-dessus du chat.
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: VolumeSlider(),
+            ),
+            const Divider(height: 1),
             Expanded(
               child: _chat != null && profile != null
                   ? ListenableBuilder(
@@ -171,107 +184,153 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
     );
   }
 
-  Widget _compactStreamInfo(
+  Widget _hero(
     ColorScheme colors,
     TextTheme text,
     String title,
     String? subtitle,
     int? listeners,
-    bool isFavorited,
   ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.outlineVariant, width: 0.5)),
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [colors.primary, colors.primary.withValues(alpha: 0.4)],
+          _artwork(colors),
+          const SizedBox(height: 20),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          if (subtitle != null && subtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.titleMedium?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            child: Icon(Icons.radio, size: 24, color: colors.onPrimary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+          if (listeners != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                Icon(Icons.headphones, size: 16, color: colors.secondary),
+                const SizedBox(width: 6),
                 Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  '$listeners auditeurs',
+                  style: text.bodyMedium
+                      ?.copyWith(color: colors.onSurfaceVariant),
                 ),
-                if (subtitle != null && subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodySmall?.copyWith(color: colors.primary),
-                  ),
-                if (listeners != null)
-                  Row(
-                    children: [
-                      Icon(Icons.headphones, size: 12, color: colors.secondary),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$listeners',
-                        style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
               ],
             ),
-          ),
-          ListenableBuilder(
-            listenable: _audio,
-            builder: (context, _) => _compactPlayButton(colors),
-          ),
-          IconButton(
-            onPressed: _toggleFavorite,
-            iconSize: 22,
-            color: isFavorited ? colors.primary : colors.onSurfaceVariant,
-            icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
-          ),
+          ],
+          const SizedBox(height: 20),
+          _transport(colors),
         ],
       ),
     );
   }
 
-  Widget _compactPlayButton(ColorScheme colors) {
-    final Widget icon;
-    if (_audio.isBusy || _audio.isReconnecting) {
-      icon = SizedBox(
-        width: 18,
-        height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2, color: colors.onPrimary),
-      );
-    } else if (_audio.hasError || _audio.isEnded) {
-      icon = Icon(Icons.replay, size: 22, color: colors.onPrimary);
-    } else if (_audio.isPlaying) {
-      icon = Icon(Icons.pause, size: 24, color: colors.onPrimary);
-    } else {
-      icon = Icon(Icons.play_arrow, size: 24, color: colors.onPrimary);
-    }
-
-    return Material(
-      color: colors.primary,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: _audio.togglePlayPause,
-        child: SizedBox(width: 40, height: 40, child: Center(child: icon)),
+  Widget _artwork(ColorScheme colors) {
+    // Carré borné : un AspectRatio dans une Column prendrait toute la largeur
+    // disponible et deviendrait aussi haut, débordant la hauteur.
+    final side = MediaQuery.sizeOf(context).width.clamp(0.0, 220.0);
+    return SizedBox.square(
+      dimension: side,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colors.primary,
+              Color.lerp(colors.primary, colors.tertiary, 0.6) ??
+                  colors.primary,
+            ],
+          ),
+        ),
+        child: Icon(Icons.mic, size: 88, color: colors.onPrimary),
       ),
     );
   }
 
-  Widget _header(ColorScheme colors) {
+  /// Temps du direct à gauche, gros bouton lecture centré (comme le mockup) — le
+  /// volume qui l'accompagnait devient la [VolumeSlider] au-dessus du chat.
+  ///
+  /// On affiche le temps **de diffusion** (depuis le début du live) quand il est
+  /// connu ; à défaut (arrivée deep-link sans métadonnées, `startedAt` inconnu)
+  /// on retombe sur le temps d'écoute de l'auditeur.
+  Widget _transport(ColorScheme colors) {
+    final startedAt = widget.stream?.startedAt;
+    return Row(
+      children: [
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: startedAt != null
+                ? LiveElapsedTime(startedAt: startedAt)
+                : ListeningTime(controller: _audio),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: ListenableBuilder(
+            listenable: _audio,
+            builder: (context, _) => _playButton(colors),
+          ),
+        ),
+        const Expanded(child: SizedBox()),
+      ],
+    );
+  }
+
+  Widget _playButton(ColorScheme colors) {
+    final String label;
+    final Widget icon;
+    if (_audio.isBusy || _audio.isReconnecting) {
+      label = 'Chargement';
+      icon = SizedBox(
+        width: 26,
+        height: 26,
+        child:
+            CircularProgressIndicator(strokeWidth: 2.5, color: colors.onPrimary),
+      );
+    } else if (_audio.hasError || _audio.isEnded) {
+      label = 'Réessayer';
+      icon = Icon(Icons.replay, size: 32, color: colors.onPrimary);
+    } else if (_audio.isPlaying) {
+      label = 'Mettre en pause';
+      icon = Icon(Icons.pause, size: 34, color: colors.onPrimary);
+    } else {
+      label = 'Lire';
+      icon = Icon(Icons.play_arrow, size: 34, color: colors.onPrimary);
+    }
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: colors.primary,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _audio.togglePlayPause,
+          child: SizedBox(width: 72, height: 72, child: Center(child: icon)),
+        ),
+      ),
+    );
+  }
+
+  Widget _header(ColorScheme colors, bool isFavorited) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -289,6 +348,15 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
                 : _liveBadge(colors),
           ),
           const Spacer(),
+          IconButton(
+            onPressed: _toggleFavorite,
+            iconSize: 22,
+            color: isFavorited ? colors.primary : colors.onSurfaceVariant,
+            tooltip: isFavorited
+                ? 'Retirer des favoris'
+                : 'Ajouter aux favoris',
+            icon: Icon(isFavorited ? Icons.favorite : Icons.favorite_border),
+          ),
         ],
       ),
     );
