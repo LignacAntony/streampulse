@@ -154,11 +154,15 @@ void main() {
       await _openQueueSheet(tester);
 
       expect(find.byKey(const Key('playback_queue_list')), findsOneWidget);
-      expect(find.text('2/3'), findsOneWidget);
+      // Le lecteur en tête annonce la position dans l'ordre de lecture.
+      expect(find.text('2 / 3'), findsOneWidget);
+      // Titre et artiste de la piste en cours, mis en avant en haut de feuille.
+      expect(find.text('Sunrise'), findsWidgets);
       for (final track in _tracks) {
         expect(find.byKey(Key('queue_item_${track.id}')), findsOneWidget);
       }
-      // La piste en cours porte l'icône d'équaliseur au lieu de son numéro.
+      // La piste en cours porte l'icône d'équaliseur au lieu de son numéro (une
+      // seule fois : la pochette du lecteur utilise une autre onde).
       expect(find.byIcon(Icons.graphic_eq), findsOneWidget);
     });
 
@@ -166,6 +170,9 @@ void main() {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
 
+      // Le lecteur en tête est haut : la file défile d'un bloc sous lui, la
+      // dernière piste peut donc être hors écran.
+      await tester.ensureVisible(find.byKey(const Key('queue_item_t3')));
       await tester.tap(find.byKey(const Key('queue_item_t3')));
       await tester.pumpAndSettle();
 
@@ -173,22 +180,25 @@ void main() {
       expect(t.controller.currentIndex, 2);
     });
 
-    testWidgets('les modes de lecture sont réglables depuis la file (US-05-05)',
+    testWidgets(
+        'les modes de lecture sont réglables depuis le transport (US-05-05)',
         (tester) async {
       final t = await _pumpPlaying(tester, const QueueMiniPlayer());
       await _openQueueSheet(tester);
 
+      // Aléatoire et répétition vivent désormais dans les boutons du lecteur.
       expect(find.byKey(const Key('queue_shuffle_button')), findsOneWidget);
-      expect(find.text('Répétition'), findsOneWidget);
+      expect(find.byIcon(Icons.repeat), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('queue_repeat_button')));
       await tester.pumpAndSettle();
-      expect(find.text('Répéter la file'), findsOneWidget);
       expect(t.service.repeatMode, QueueRepeatMode.all);
 
       await tester.tap(find.byKey(const Key('queue_repeat_button')));
       await tester.pumpAndSettle();
-      expect(find.text('Répéter la piste'), findsOneWidget);
+      // « Répéter la piste » : l'icône passe à repeat_one.
+      expect(t.service.repeatMode, QueueRepeatMode.one);
+      expect(find.byIcon(Icons.repeat_one), findsOneWidget);
     });
 
     testWidgets('en aléatoire, la file affiche l\'ordre réellement joué',
@@ -317,6 +327,65 @@ void main() {
         214000,
         reason: 'la durée déclarée de la nouvelle piste, pas celle d\'avant',
       );
+    });
+
+    testWidgets('le lecteur en tête montre titre, artiste et pochette',
+        (tester) async {
+      await _pumpPlaying(tester, const QueueMiniPlayer(), startIndex: 1);
+      await _openQueueSheet(tester);
+
+      // Titre + artiste de la piste en cours (« Sunrise » de Neon Lights).
+      expect(find.text('Sunrise'), findsWidgets);
+      expect(find.text('Neon Lights'), findsWidgets);
+      // Pochette (onde distincte du marqueur d'égaliseur de la liste).
+      expect(find.byIcon(Icons.equalizer_rounded), findsOneWidget);
+      expect(find.byKey(const Key('queue_play_pause_button')), findsOneWidget);
+    });
+
+    testWidgets('le transport enchaîne les pistes (précédent/suivant)',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+
+      await _openQueueSheet(tester);
+
+      // Sur la première piste, « précédent » ne mène nulle part.
+      final previous = tester.widget<AccessibleIconButton>(
+        find.byKey(const Key('queue_previous_button')),
+      );
+      expect(previous.onPressed, isNull);
+
+      await tester.tap(find.byKey(const Key('queue_next_button')));
+      await tester.pump();
+
+      expect(t.service.skips, [1]);
+      expect(t.controller.currentIndex, 1);
+    });
+
+    testWidgets('le gros bouton central met en pause puis reprend',
+        (tester) async {
+      final t = await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+
+      // La lecture est en cours : le bouton propose la pause (le mini-player
+      // sous la feuille porte la sienne, d'où `findsWidgets`).
+      expect(find.byIcon(Icons.pause), findsWidgets);
+
+      await tester.tap(find.byKey(const Key('queue_play_pause_button')));
+      await tester.pump();
+
+      expect(t.service.playing, isFalse);
+    });
+
+    testWidgets('le chevron réduit le lecteur (ferme la feuille)',
+        (tester) async {
+      await _pumpPlaying(tester, const QueueMiniPlayer());
+      await _openQueueSheet(tester);
+      expect(find.byKey(const Key('playback_queue_list')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('queue_collapse_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('playback_queue_list')), findsNothing);
     });
 
     testWidgets('la feuille se referme si la file s\'arrête pendant', (
