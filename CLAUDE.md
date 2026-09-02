@@ -616,6 +616,14 @@ Voir [ADR 035](docs/adr/035-modes-shuffle-et-repeat.md).
   mènerait à `failed`, donc à l'arrêt du direct de cette autre source.
 - Un flux `ended` est **relançable** : `BroadcastStream.canStart` (`!isLive`) est
   le prédicat à utiliser dans l'écran, jamais `isIdle` en dur.
+- ⚠️ **Une coupure d'ingest rétablie ne terminait rien, donc n'était comptée
+  nulle part.** `streampulse_ingest_recoveries_total` et
+  `streampulse_ingest_outage_seconds` la mesurent (ADR 050) ; les interruptions
+  restent réservées aux diffusions *terminées*. Mesure faite **au
+  rattachement** — au détachement on ignore encore si la coupure sera rétablie.
+- ⚠️ Pour annoncer une coupure au diffuseur, **seul `reconnecting` ouvre une
+  coupure, jamais `connecting`** : ce dernier est la première tentative d'une
+  diffusion, le compter annoncerait une perte à chaque démarrage.
 
 ### Authentification (mobile)
 
@@ -849,7 +857,7 @@ xcrun simctl openurl booted \
 | `docs/architecture.md` | Schéma ASCII, composants, flux requête et observabilité, choix techniques |
 | `docs/infrastructure.md` | Services Docker, variables d'env, procédures, troubleshooting |
 | `docs/performance-mobile.md` | Preuves de fluidité 60 FPS : garde de reconstruction (CI) + relevé de trames sur appareil (STR-243) |
-| `docs/README.md` (§ Index complet des ADR) | **Les 49 ADR**, avec leur numéro et leur décision |
+| `docs/README.md` (§ Index complet des ADR) | **Les 50 ADR**, avec leur numéro et leur décision |
 | `docs/adr/001-choix-stack-observabilite.md` | Décision : stack LGTM vs ELK, Datadog, New Relic |
 | `docs/adr/002-choix-conteneurisation-docker.md` | Décision : Docker Compose vs Podman, Nix, K8s local |
 | `docs/adr/003-choix-cicd-github-actions.md` | Décision : GitHub Actions + GHCR vs GitLab CI, Jenkins, CircleCI |
@@ -860,7 +868,7 @@ xcrun simctl openurl booted \
 | `docs/adr/037-initialisation-base-de-donnees.md` | Décision : schéma, migrations et seed PostgreSQL |
 
 **Règle :** toute nouvelle décision d'architecture significative → nouvel ADR dans `docs/adr/`
-avec le numéro suivant (prochain : `050-...`). Référencer le ticket Linear correspondant.
+avec le numéro suivant (prochain : `051-...`). Référencer le ticket Linear correspondant.
 Un numéro n'est **jamais** réutilisé, et une ADR remplacée passe en `Superseded by NNN` plutôt
 que d'être réécrite. Chaque ADR porte un bloc **Date / Statut / Ticket** et une section
 **« Alternatives écartées »**.

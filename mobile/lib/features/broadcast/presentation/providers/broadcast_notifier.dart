@@ -36,6 +36,7 @@ class BroadcastNotifier extends ChangeNotifier {
     Duration pollInterval = const Duration(seconds: 15),
     Duration statsInterval = const Duration(seconds: 5),
     BroadcastAudioPublisher? audioPublisher,
+    DateTime Function()? now,
   })  : _repository = repository,
         _sse = sse,
         _backoff = backoff ?? cappedExponentialBackoff,
@@ -44,6 +45,7 @@ class BroadcastNotifier extends ChangeNotifier {
         _sessionController = BroadcastSessionController(
           repository,
           audioPublisher,
+          now: now,
         ) {
     _audioSubscription = _sessionController.audioStates.listen(
       (_) => _safeNotify(),
@@ -153,6 +155,11 @@ class BroadcastNotifier extends ChangeNotifier {
   /// même.
   Stream<BroadcastAudioFailure> get audioFailures =>
       _sessionController.audioFailures;
+
+  /// Durée d'une coupure de capture rétablie (ADR 050). L'écran s'en sert pour
+  /// dire au diffuseur ce qui n'est pas parti — la seule information qui lui
+  /// permette de le redire.
+  Stream<Duration> get audioRecoveries => _sessionController.audioRecoveries;
 
   bool isPublishingAudio(String streamId) =>
       _sessionController.isPublishing(streamId);

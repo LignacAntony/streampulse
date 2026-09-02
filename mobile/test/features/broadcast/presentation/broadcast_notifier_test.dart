@@ -236,6 +236,17 @@ class _FakeAudioPublisher implements BroadcastAudioPublisher {
     _states.add(state);
   }
 
+  /// Coupure de capture puis rétablissement, comme une perte de réseau.
+  void reconnect() {
+    state = BroadcastAudioState.reconnecting;
+    _states.add(state);
+  }
+
+  void backLive() {
+    state = BroadcastAudioState.live;
+    _states.add(state);
+  }
+
   /// Une autre source (encodeur externe) a pris l'ingest en cours de route.
   void supersede() {
     state = BroadcastAudioState.superseded;
@@ -540,6 +551,36 @@ void main() {
         expect(raisons, [BroadcastAudioEndReason.supersededByOtherSource]);
       },
     );
+
+    // ADR 050 — le diffuseur voit « Reconnexion audio… » pendant la coupure,
+    // mais rien ne lui disait au retour combien de temps n'était pas parti.
+    // C'est pourtant la seule information qui change son comportement : il
+    // peut redire ce qui a été perdu.
+    test('une coupure rétablie annonce sa durée', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      var horloge = DateTime.utc(2026, 1, 1, 12, 0, 0);
+      final notifier = BroadcastNotifier(
+        repository,
+        audioPublisher: audio,
+        now: () => horloge,
+      );
+      final durees = <Duration>[];
+      notifier.audioRecoveries.listen(durees.add);
+      await notifier.load();
+      await notifier.start('a');
+
+      // Le démarrage lui-même (connecting -> live) ne doit rien annoncer.
+      expect(durees, isEmpty);
+
+      audio.reconnect();
+      await _pumpUntil(() => true);
+      horloge = horloge.add(const Duration(seconds: 20));
+      audio.backLive();
+      await _pumpUntil(() => durees.isNotEmpty);
+
+      expect(durees, [const Duration(seconds: 20)]);
+    });
 
     test('les erreurs de mutation remontent à l\'appelant', () async {
       final repository = _FakeBroadcastRepository(streams: [_stream('a')])

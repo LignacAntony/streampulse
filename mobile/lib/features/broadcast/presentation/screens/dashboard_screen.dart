@@ -88,6 +88,10 @@ class _DashboardBodyState extends State<_DashboardBody>
   /// sans explication.
   StreamSubscription<BroadcastAudioFailure>? _audioFailureSubscription;
 
+  /// Le diffuseur voit « Reconnexion audio… » pendant la coupure, mais rien ne
+  /// lui disait, une fois revenu, combien de temps n'était pas parti (ADR 050).
+  StreamSubscription<Duration>? _audioRecoverySubscription;
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +123,17 @@ class _DashboardBodyState extends State<_DashboardBody>
             );
         }
       });
+      _audioRecoverySubscription = notifier.audioRecoveries.listen((coupure) {
+        if (!mounted) return;
+        final secondes = coupure.inSeconds;
+        // Sous la seconde, l'annoncer serait du bruit : le diffuseur n'a rien
+        // perdu d'intelligible et n'a rien à redire.
+        if (secondes < 1) return;
+        showAuthInfoToast(
+          context,
+          'Connexion rétablie — $secondes s n\'ont pas été diffusées.',
+        );
+      });
       notifier.load();
     });
   }
@@ -127,6 +142,7 @@ class _DashboardBodyState extends State<_DashboardBody>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_audioFailureSubscription?.cancel());
+    unawaited(_audioRecoverySubscription?.cancel());
     _ticker?.cancel();
     super.dispose();
   }

@@ -369,5 +369,35 @@ prototyped and rejected — the first still made listeners hear a jump, the seco
 relit a microphone without user action; **iOS is unverified**, no device was
 available.
 
+**ADR 050 — Measuring and announcing recovered broadcast outages.** *Context:* a
+20-second network outage was staged on a real device while the broadcaster
+counted aloud; listeners heard "…five, six, **twenty-five**, twenty-six…" with no
+gap at all. Two mechanisms combine: losing the connection also stops capture (each
+retry restarts the encoder so the server gets a self-contained AAC/ADTS stream),
+and HLS timestamps derive from the ADTS frame count rather than wall-clock time,
+so the segmenter splices the two ends without knowing twenty seconds passed. The
+splice itself is the right trade for radio — dead air is worse than a cut
+sentence — but nobody was told: `stream_interruptions_total` only counts
+*terminated* broadcasts, so an outage that recovers before the ingest lease
+expires incremented nothing (verified during the test), and the broadcaster, who
+does see "Reconnexion audio…" during the outage, was never told afterwards how
+much had been lost. *Decision:* two new series,
+`streampulse_ingest_recoveries_total` (how often) and
+`streampulse_ingest_outage_seconds` (how much time lost — a mean would conflate a
+one-second hiccup with a thirty-second gap), measured at re-attach rather than at
+detach because at detach it is not yet known whether the outage will recover or
+end the broadcast; and the dashboard tells the broadcaster the duration on
+recovery, derived from state transitions where only `reconnecting` opens an
+outage — `connecting` is a broadcast's first attempt and counting it would
+announce a loss at every start. Nothing is added for listeners: they have no
+channel (SSE requires a JWT, listeners may be anonymous) and they felt nothing —
+the ~60-second HLS window absorbed the outage. *Consequence:* recovered outages
+appear in Grafana and become an alerting candidate, and the broadcaster can
+repeat what was lost; the splice stays silent, so listeners still lose content
+without knowing. `EXT-X-DISCONTINUITY` — the format's own marker, which signals a
+broken timeline without inserting silence — is the correct answer and remains out
+of scope. Note that the perceived resilience comes from the listener's buffer,
+not the server: a longer outage, or a listener who just joined, would hear it.
+
 > ADR 040 lands with the mobile distribution change; it is listed here because
 > this index is meant to stay complete.
