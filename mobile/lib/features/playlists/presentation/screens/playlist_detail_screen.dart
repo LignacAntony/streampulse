@@ -74,6 +74,58 @@ class _PlaylistDetailBody extends StatefulWidget {
 }
 
 class _PlaylistDetailBodyState extends State<_PlaylistDetailBody> {
+  /// File d'attente app-level, écoutée pour resynchroniser le détail après un
+  /// retrait fait **depuis la file** (« Retirer de la playlist », STR-250).
+  PlaylistQueueController? _queue;
+
+  /// Ids que la file contenait pour CETTE playlist, au dernier point connu.
+  /// Sans ce repère, retirer une piste depuis la vue d'écoute laissait le détail
+  /// périmé : l'utilisateur devait tirer pour rafraîchir en revenant dessus.
+  Set<String> _knownQueueTrackIds = const {};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final queue = context.read<PlaylistQueueController>();
+    if (identical(queue, _queue)) return;
+    _queue?.removeListener(_onQueueChanged);
+    _queue = queue..addListener(_onQueueChanged);
+    _knownQueueTrackIds = _currentQueueTrackIds();
+  }
+
+  /// Ids de la file **si** elle joue cette playlist, sinon vide : une file bâtie
+  /// sur une autre source ne concerne pas ce détail.
+  Set<String> _currentQueueTrackIds() {
+    final queue = _queue;
+    final playlistId = context.read<PlaylistDetailController>().playlistId;
+    if (queue == null || queue.playlistId != playlistId) return const {};
+    return {for (final track in queue.tracks) track.id};
+  }
+
+  /// La file de cette playlist a-t-elle perdu une piste ? Alors la playlist en
+  /// base a changé (retrait depuis la file) et le détail se recharge tout seul.
+  void _onQueueChanged() {
+    if (!mounted) return;
+    final controller = context.read<PlaylistDetailController>();
+    if (_queue?.playlistId != controller.playlistId) return;
+
+    final current = {for (final track in _queue!.tracks) track.id};
+    // Strictement moins de pistes qu'avant, toutes déjà connues : c'est un
+    // retrait, pas un nouveau lancement (qui, lui, ajoute des pistes).
+    final removed = current.length < _knownQueueTrackIds.length &&
+        _knownQueueTrackIds.containsAll(current);
+    // Mise à jour immédiate : les `notifyListeners` en rafale d'un même retrait
+    // ne déclenchent ainsi qu'un seul rechargement.
+    _knownQueueTrackIds = current;
+    if (removed) controller.refresh();
+  }
+
+  @override
+  void dispose() {
+    _queue?.removeListener(_onQueueChanged);
+    super.dispose();
+  }
+
   /// Recharge la liste et signale l'échec par un toast **quand des pistes sont
   /// déjà affichées** : dans ce cas la vue d'erreur plein écran ne s'affiche pas
   /// (elle ne remplace jamais une liste non vide), et sans toast le

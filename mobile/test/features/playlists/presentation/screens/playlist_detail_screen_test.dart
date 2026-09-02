@@ -204,6 +204,48 @@ void main() {
       expect(find.byKey(const Key('playlist_tracks_list')), findsOneWidget);
     });
 
+    testWidgets(
+        'un retrait depuis la file d\'attente resynchronise le détail (STR-250)',
+        (tester) async {
+      final repo = _FakePlaylistRepository(
+        initial: [
+          _track('t1', 'Midnight Drive', 0),
+          _track('t2', 'Sunrise', 1),
+          _track('t3', 'Afterglow', 2),
+        ],
+      );
+      final service = FakeQueuePlaybackService();
+      final queue = _queueController(service);
+      addTearDown(queue.dispose);
+      addTearDown(service.dispose);
+
+      // La file joue CETTE playlist (même id que le détail affiché).
+      await queue.play(
+        tracks: const [
+          Track(id: 't1', title: 'Midnight Drive', artist: 'A', durationS: 214),
+          Track(id: 't2', title: 'Sunrise', artist: 'A', durationS: 214),
+          Track(id: 't3', title: 'Afterglow', artist: 'A', durationS: 214),
+        ],
+        sourceName: 'My Favorites',
+        playlistId: 'p-1',
+      );
+
+      await tester.pumpWidget(_harness(repo, queue: queue));
+      await tester.pumpAndSettle();
+      expect(find.text('Afterglow'), findsOneWidget);
+
+      // Retrait « depuis la file » : d'abord en base (ce que fait la feuille),
+      // puis de la file en cours.
+      await repo.removeTrack('p-1', 't3');
+      await queue.removeFromQueue(2);
+      await tester.pumpAndSettle();
+
+      // Le détail s'est rechargé seul, sans pull-to-refresh manuel.
+      expect(find.text('Afterglow'), findsNothing);
+      expect(find.text('Midnight Drive'), findsOneWidget);
+      expect(find.text('Sunrise'), findsOneWidget);
+    });
+
     testWidgets('le bouton Lire lance la playlist depuis le début (US-05-04)',
         (tester) async {
       final repo = _FakePlaylistRepository(
