@@ -30,7 +30,7 @@ dependencies:
   # mineures. Un renommage casserait le service de premier plan au runtime
   # (ClassNotFound), donc la capture en arrière-plan, sans qu'aucun test ni la
   # CI ne le voie. Toute montée de version doit revérifier ce nom de classe.
-  record: 6.2.1
+  record: 7.1.1
 
   # Sélection de fichier audio pour l'upload d'une piste (US-05-01)
   file_picker: ^8.1.2
