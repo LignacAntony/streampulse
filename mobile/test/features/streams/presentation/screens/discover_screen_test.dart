@@ -215,4 +215,43 @@ void main() {
       expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
     });
   });
+
+  group('DiscoverScreen — recherche', () {
+    testWidgets('filtre « Pour toi » par titre, et affiche « Aucun résultat »',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        recommendations: [_reco('r-1'), _reco('r-2')],
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
+      expect(find.byKey(const Key('reco_tile_r-2')), findsOneWidget);
+
+      // Une requête ne laisse que la piste dont le titre correspond.
+      await tester.enterText(find.byType(TextField), 'r-2');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reco_tile_r-1')), findsNothing);
+      expect(find.byKey(const Key('reco_tile_r-2')), findsOneWidget);
+
+      // Une requête sans correspondance affiche l'état vide.
+      await tester.enterText(find.byType(TextField), 'zzzz');
+      await tester.pumpAndSettle();
+      expect(find.text('Aucun résultat'), findsOneWidget);
+    });
+
+    testWidgets(
+        'choisir une catégorie masque les pistes et affiche l\'état vide '
+        'sans flux correspondant', (tester) async {
+      await tester.pumpWidget(_harness(
+        recommendations: [_reco('r-1')],
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
+
+      // Aucun flux dans le harness → sélectionner une catégorie ne laisse rien.
+      await tester.tap(find.text('Musique'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('reco_tile_r-1')), findsNothing);
+      expect(find.text('Aucun résultat'), findsOneWidget);
+    });
+  });
 }

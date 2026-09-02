@@ -7,15 +7,21 @@ import '../../../../core/layout/breakpoints.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
+import '../../../broadcast/domain/entities/broadcast_stream.dart'
+    show kStreamCategories;
+import '../../../broadcast/presentation/screens/create_stream_sheet.dart'
+    show streamCategoryLabel;
 import '../../../playlists/domain/repositories/playlist_repository.dart';
 import '../../../playlists/presentation/providers/playlist_queue_controller.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../recommendations/data/datasources/recommendation_remote_data_source.dart';
 import '../../../recommendations/data/repositories/recommendation_repository_impl.dart';
+import '../../../recommendations/domain/entities/recommended_track.dart';
 import '../../../recommendations/domain/repositories/recommendation_repository.dart';
 import '../../../recommendations/presentation/providers/recommendations_controller.dart';
 import '../../../recommendations/presentation/widgets/recommended_track_tile.dart';
 import '../../../tracks/domain/entities/public_track.dart';
+import '../../domain/entities/live_stream.dart';
 import '../providers/discover_notifier.dart';
 import '../../../../core/widgets/message_view.dart';
 import '../widgets/stream_tile.dart';
@@ -78,6 +84,11 @@ class _DiscoverViewState extends State<_DiscoverView> {
   bool _recosExpanded = true;
   bool _publicExpanded = true;
 
+  // Recherche + filtre catégorie (« Tous » = null).
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+  String? _selectedCategory;
+
   @override
   void initState() {
     super.initState();
@@ -108,7 +119,18 @@ class _DiscoverViewState extends State<_DiscoverView> {
     _router?.routerDelegate.removeListener(_syncPolling);
     _lifecycleListener.dispose();
     _notifier.stopPolling();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  String _norm(String s) => s.trim().toLowerCase();
+
+  /// Vrai si la requête est vide, ou si l'un des champs la contient (titre,
+  /// auteur, diffuseur…).
+  bool _textMatches(List<String?> fields) {
+    final q = _norm(_query);
+    if (q.isEmpty) return true;
+    return fields.any((f) => f != null && _norm(f).contains(q));
   }
 
   void _syncPolling() {
@@ -145,10 +167,7 @@ class _DiscoverViewState extends State<_DiscoverView> {
       appBar: AppBar(title: const Text('Découvrir')),
       body: SafeArea(
         child: ResponsiveContent(
-          child: RefreshIndicator(
-            onRefresh: _load,
-            child: _buildBody(context, notifier),
-          ),
+          child: _buildBody(context, notifier),
         ),
       ),
     );
@@ -173,29 +192,114 @@ class _DiscoverViewState extends State<_DiscoverView> {
     }
 
     final recommendations = context.watch<RecommendationsController>();
-    // « Pour toi » : les premières recommandations (mieux classées), plafonnées —
-    // une vitrine en haut de « Découvrir », pas la liste complète.
-    final recos =
-        recommendations.items.take(_maxRecommendations).toList(growable: false);
 
-    if (notifier.isEmpty && recos.isEmpty) {
+    if (notifier.isEmpty && recommendations.items.isEmpty) {
       return const MessageView(
         icon: Icons.podcasts_outlined,
         message: 'Rien à découvrir pour le moment',
       );
     }
 
+    // Liste fixe des catégories (miroir du backend) : les chips sont toujours
+    // visibles, indépendamment des lives présents. Elles ne portent que sur les
+    // flux — les pistes n'ont pas de catégorie dans les données.
+    final activeCategory = _selectedCategory;
+
+    // Flux : filtre catégorie + texte (titre / diffuseur).
+    final streams = notifier.streams
+        .where((s) =>
+            (activeCategory == null || s.category == activeCategory) &&
+            _textMatches([s.title, s.broadcasterName]))
+        .toList(growable: false);
+
+    // Les pistes n'ont pas de catégorie : une catégorie ≠ « Tous » ne peut donc
+    // rien matcher côté pistes → on les masque (sinon le filtre semble sans
+    // effet). Sans catégorie, « Pour toi » reste une vitrine plafonnée ; avec
+    // requête, on cherche dans toute la liste (le plafond ne doit pas cacher un
+    // résultat).
+    final showTracks = activeCategory == null;
+    final recosBase = _query.trim().isEmpty
+        ? recommendations.items.take(_maxRecommendations).toList(growable: false)
+        : recommendations.items;
+    final recos = !showTracks
+        ? const <RecommendedTrack>[]
+        : recosBase
+            .where((r) => _textMatches([r.track.title, r.track.artist]))
+            .toList(growable: false);
+    final publicTracks = !showTracks
+        ? const <PublicTrack>[]
+        : notifier.publicTracks
+            .where((t) => _textMatches([t.title, t.artist, t.ownerName]))
+            .toList(growable: false);
+
+    final hasResults =
+        streams.isNotEmpty || recos.isNotEmpty || publicTracks.isNotEmpty;
+
+    return Column(
+      children: [
+        _SearchArea(
+          controller: _searchController,
+          categories: kStreamCategories,
+          selectedCategory: activeCategory,
+          onQueryChanged: (q) => setState(() => _query = q),
+          onCategorySelected: (c) => setState(() => _selectedCategory = c),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: hasResults
+                ? _resultsList(context, streams, recos, publicTracks)
+                : _noResults(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _noResults(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    // `ListView` (et non `Center`) pour que le pull-to-refresh reste actif et que
+    // la barre de recherche au-dessus reste éditable même sans résultat.
+    return ListView(
+      children: [
+        SizedBox(height: MediaQuery.sizeOf(context).height * 0.18),
+        Icon(Icons.search_off_outlined,
+            size: 56, color: colors.onSurfaceVariant),
+        const SizedBox(height: 12),
+        Text(
+          'Aucun résultat',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Essaie un autre mot ou une autre catégorie.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _resultsList(
+    BuildContext context,
+    List<LiveStream> streams,
+    List<RecommendedTrack> recos,
+    List<PublicTrack> publicTracks,
+  ) {
     final text = Theme.of(context).textTheme;
-    final publicTracks = notifier.publicTracks;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       children: [
-        if (notifier.streams.isNotEmpty) ...[
+        if (streams.isNotEmpty) ...[
           Text('En direct',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          for (final stream in notifier.streams) ...[
+          for (final stream in streams) ...[
             StreamTile(stream: stream),
             const SizedBox(height: 12),
           ],
@@ -218,9 +322,8 @@ class _DiscoverViewState extends State<_DiscoverView> {
                 for (var i = 0; i < recos.length; i++)
                   RecommendedTrackTile(
                     recommended: recos[i],
-                    // La liste affichée (plafonnée) part en file, à partir de
-                    // l'item touché : précédent/suivant et modes de lecture
-                    // gardent un sens.
+                    // La liste affichée part en file, à partir de l'item touché :
+                    // précédent/suivant et modes de lecture gardent un sens.
                     onPlay: () => context.read<PlaylistQueueController>().play(
                           tracks:
                               recos.map((r) => r.track).toList(growable: false),
@@ -260,6 +363,127 @@ class _DiscoverViewState extends State<_DiscoverView> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Barre de recherche (titre / auteur) + chips de catégories des flux, épinglée
+/// en haut de « Découvrir ».
+class _SearchArea extends StatelessWidget {
+  const _SearchArea({
+    required this.controller,
+    required this.categories,
+    required this.selectedCategory,
+    required this.onQueryChanged,
+    required this.onCategorySelected,
+  });
+
+  final TextEditingController controller;
+  final List<String> categories;
+  final String? selectedCategory;
+  final ValueChanged<String> onQueryChanged;
+  final ValueChanged<String?> onCategorySelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            onChanged: onQueryChanged,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Rechercher un flux, un diffuseur…',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: controller.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Effacer',
+                      onPressed: () {
+                        controller.clear();
+                        onQueryChanged('');
+                      },
+                    ),
+            ),
+          ),
+          if (categories.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 36,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: categories.length + 1,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _CategoryChip(
+                      label: 'Tous',
+                      selected: selectedCategory == null,
+                      onTap: () => onCategorySelected(null),
+                    );
+                  }
+                  final category = categories[index - 1];
+                  return _CategoryChip(
+                    label: streamCategoryLabel(category),
+                    selected: selectedCategory == category,
+                    onTap: () => onCategorySelected(category),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Pastille de catégorie sélectionnable (violet plein quand active).
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: Material(
+        color: selected ? colors.primary : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Center(
+              child: Text(
+                label,
+                style: text.labelLarge?.copyWith(
+                  color: selected ? colors.onPrimary : colors.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
