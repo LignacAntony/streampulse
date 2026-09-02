@@ -250,6 +250,18 @@ services:
       # les alertes partaient nulle part — pire que l'ancienne adresse en dur,
       # qui produisait au moins une enveloppe délivrable (revue PR #328).
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:?adresse de destination des alertes requise en production (cf. .env.example)}
+      # Webhook Discord des alertes. Volontairement SANS `:?`, à la différence
+      # de l'adresse email ci-dessus : le CD lance `docker compose pull api`
+      # sur le VPS, et une variable requise mais absente y ferait échouer le
+      # déploiement de l'API — un canal de notification ne doit pas pouvoir
+      # bloquer une mise en production.
+      #
+      # Le défaut n'est pas vide pour autant : Grafana exige une url non vide
+      # pour un receiver discord et refuse de démarrer sans, ce qui ferait
+      # tomber l'email avec lui. Défaut sur .invalid (RFC 2606, jamais
+      # résolvable) : non configuré, l'envoi Discord échoue seul et l'email
+      # reste le canal garanti.
+      ALERT_DISCORD_WEBHOOK: ${ALERT_DISCORD_WEBHOOK:-https://discord.invalid/api/webhooks/non-configure}
     depends_on:
       prometheus:
         condition: service_healthy

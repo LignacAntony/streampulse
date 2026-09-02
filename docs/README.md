@@ -148,7 +148,7 @@ Chaque décision est tracée avec son contexte, les **alternatives écartées** 
 | 018 | [018-logs-structures-zerolog-collecte-loki-alloy.md](adr/018-logs-structures-zerolog-collecte-loki-alloy.md) | Logs structurés JSON (zerolog) et collecte Loki via Alloy |
 | 019 | [019-metriques-prometheus-cardinalite-et-dashboards.md](adr/019-metriques-prometheus-cardinalite-et-dashboards.md) | Métriques Prometheus : middleware dédié, cardinalité bornée, dashboards provisionnés |
 | 020 | [020-traces-opentelemetry-otlp-tempo.md](adr/020-traces-opentelemetry-otlp-tempo.md) | Traces OpenTelemetry : OTLP/HTTP vers Tempo, otelhttp et otelpgx |
-| 021 | [021-alertes-grafana-provisionnees-email.md](adr/021-alertes-grafana-provisionnees-email.md) | Alertes Grafana provisionnées, notification par email |
+| 021 | [021-alertes-grafana-provisionnees-email.md](adr/021-alertes-grafana-provisionnees-email.md) | Alertes Grafana provisionnées, notification par email — amendée 2026-09-02 : canal Discord ajouté en plus de l'email |
 | 022 | [022-metriques-metier-streaming-et-panel-live.md](adr/022-metriques-metier-streaming-et-panel-live.md) | Métriques métier du streaming et panel Live |
 | 023 | [023-lecteur-audio-hls-mobile.md](adr/023-lecteur-audio-hls-mobile.md) | Lecteur audio HLS mobile (just_audio) |
 | 024 | [024-tableau-de-bord-diffuseur-lancer-et-arreter-un-flux.md](adr/024-tableau-de-bord-diffuseur-lancer-et-arreter-un-flux.md) | Tableau de bord diffuseur : lancer et arrêter un flux |
