@@ -32,3 +32,12 @@ api.streampulse.win {
 		header_up X-Forwarded-For {remote_host}
 	}
 }
+
+# grafana.streampulse.win → interface Grafana (accès équipe, auth gérée par Grafana).
+# Prérequis : un enregistrement DNS A `grafana.streampulse.win` → IP du VPS, en DNS-only.
+# Pas de CSP stricte ici (contrairement à l'API JSON) : Grafana sert une UI HTML et
+# pose ses propres en-têtes de sécurité. Caddy joint le conteneur via le réseau
+# interne (grafana:3000) ; le bind loopback du port hôte reste inchangé.
+grafana.streampulse.win {
+	reverse_proxy grafana:3000
+}
