@@ -3,30 +3,91 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/layout/breakpoints.dart';
+import '../../../../core/network/dio_client.dart';
+import '../../../../core/storage/secure_storage.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../../../playlists/domain/repositories/playlist_repository.dart';
 import '../../../playlists/presentation/providers/playlist_queue_controller.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
+import '../../../recommendations/data/datasources/recommendation_remote_data_source.dart';
+import '../../../recommendations/data/repositories/recommendation_repository_impl.dart';
+import '../../../recommendations/domain/repositories/recommendation_repository.dart';
+import '../../../recommendations/presentation/providers/recommendations_controller.dart';
+import '../../../recommendations/presentation/widgets/recommended_track_tile.dart';
 import '../../../tracks/domain/entities/public_track.dart';
 import '../providers/discover_notifier.dart';
 import '../../../../core/widgets/message_view.dart';
 import '../widgets/stream_tile.dart';
 
-class DiscoverScreen extends StatefulWidget {
-  const DiscoverScreen({super.key});
+class DiscoverScreen extends StatelessWidget {
+  const DiscoverScreen({
+    super.key,
+    this.recommendationRepository,
+    this.isAuthenticated,
+  });
+
+  /// Injectable pour les tests (STR-250). En production, construit depuis
+  /// [DioClient].
+  final RecommendationRepository? recommendationRepository;
+
+  /// Force l'état d'authentification (tests). En production, résolu depuis
+  /// [SecureStorage].
+  final bool? isAuthenticated;
 
   @override
-  State<DiscoverScreen> createState() => _DiscoverScreenState();
+  Widget build(BuildContext context) {
+    // Contrôleur « Pour toi » local à l'écran (même patron que la Bibliothèque
+    // avant STR-250) : la section vit désormais dans « Découvrir », au-dessus
+    // des pistes publiques.
+    return ChangeNotifierProvider<RecommendationsController>(
+      create: (ctx) => RecommendationsController(
+        recommendationRepository ??
+            RecommendationRepositoryImpl(
+              RecommendationRemoteDataSource(ctx.read<DioClient>().dio),
+            ),
+      ),
+      child: _DiscoverView(forcedAuth: isAuthenticated),
+    );
+  }
 }
 
-class _DiscoverScreenState extends State<DiscoverScreen> {
+/// Nombre maximum de recommandations affichées dans « Pour toi » : les premières
+/// de la liste (les mieux classées par le serveur). Une vitrine, pas un
+/// catalogue — la bibliothèque reste l'endroit pour tout parcourir.
+const int _maxRecommendations = 8;
+
+class _DiscoverView extends StatefulWidget {
+  const _DiscoverView({this.forcedAuth});
+
+  final bool? forcedAuth;
+
+  @override
+  State<_DiscoverView> createState() => _DiscoverViewState();
+}
+
+class _DiscoverViewState extends State<_DiscoverView> {
   late final DiscoverNotifier _notifier;
 
   @override
   void initState() {
     super.initState();
     _notifier = context.read<DiscoverNotifier>();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _notifier.load());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  /// Flux + pistes publiques (publics, invité compris) et recommandations
+  /// (authentifiées) chargés ensemble. « Pour toi » n'est tenté que pour un
+  /// utilisateur connecté : la route est `RequireAuth`, un invité récolterait un
+  /// 401 sans rien à afficher.
+  Future<void> _load() async {
+    final forced = widget.forcedAuth;
+    final authenticated =
+        forced ?? (await context.read<SecureStorage>().getAccessToken()) != null;
+    if (!mounted) return;
+    await Future.wait([
+      _notifier.load(),
+      if (authenticated) context.read<RecommendationsController>().load(),
+    ]);
   }
 
   @override
@@ -38,7 +99,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       body: SafeArea(
         child: ResponsiveContent(
           child: RefreshIndicator(
-            onRefresh: _notifier.load,
+            onRefresh: _load,
             child: _buildBody(context, notifier),
           ),
         ),
@@ -64,7 +125,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       );
     }
 
-    if (notifier.isEmpty) {
+    final recommendations = context.watch<RecommendationsController>();
+    // « Pour toi » : les premières recommandations (mieux classées), plafonnées —
+    // une vitrine en haut de « Découvrir », pas la liste complète.
+    final recos =
+        recommendations.items.take(_maxRecommendations).toList(growable: false);
+
+    if (notifier.isEmpty && recos.isEmpty) {
       return const MessageView(
         icon: Icons.podcasts_outlined,
         message: 'Rien à découvrir pour le moment',
@@ -85,6 +152,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             StreamTile(stream: stream),
             const SizedBox(height: 12),
           ],
+          const SizedBox(height: 16),
+        ],
+        // « Pour toi » (US-09-04, déplacée dans « Découvrir » en STR-250) :
+        // masquée sans contenu, placée au-dessus des pistes publiques.
+        if (recos.isNotEmpty) ...[
+          Text('Pour toi',
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (var i = 0; i < recos.length; i++)
+            RecommendedTrackTile(
+              recommended: recos[i],
+              // La liste affichée (plafonnée) part en file, à partir de l'item
+              // touché : précédent/suivant et modes de lecture gardent un sens.
+              onPlay: () => context.read<PlaylistQueueController>().play(
+                    tracks: recos.map((r) => r.track).toList(growable: false),
+                    sourceName: 'Pour toi',
+                    startIndex: i,
+                  ),
+            ),
           const SizedBox(height: 16),
         ],
         if (publicTracks.isNotEmpty) ...[

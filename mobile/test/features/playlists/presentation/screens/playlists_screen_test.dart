@@ -9,8 +9,6 @@ import 'package:streampulse/features/playlists/domain/entities/track.dart';
 import 'package:streampulse/features/playlists/domain/repositories/playlist_repository.dart';
 import 'package:streampulse/features/tracks/domain/entities/public_track.dart';
 import 'package:streampulse/features/tracks/domain/repositories/track_repository.dart';
-import 'package:streampulse/features/recommendations/domain/entities/recommended_track.dart';
-import 'package:streampulse/features/recommendations/domain/repositories/recommendation_repository.dart';
 
 import 'package:streampulse/core/errors/exceptions.dart';
 import 'package:streampulse/core/offline/entities/offline_playlist_summary.dart';
@@ -120,17 +118,6 @@ class _FakeTrackRepository implements TrackRepository {
   Future<void> updateVisibility(String id, {required bool isPublic}) async {}
 }
 
-/// Faux repository de recommandation (US-09-04). Vide par défaut : la section
-/// « Pour toi » est alors masquée et n'interfère pas avec les tests existants.
-class _FakeRecommendationRepository implements RecommendationRepository {
-  _FakeRecommendationRepository({this.items = const []});
-
-  final List<RecommendedTrack> items;
-
-  @override
-  Future<List<RecommendedTrack>> fetch() async => items;
-}
-
 /// Contrôleur hors ligne dont le cache expose des playlists téléchargées :
 /// alimente le repli hors ligne de la Bibliothèque.
 class _OfflineFakeController extends FakeOfflinePlaylistController {
@@ -150,7 +137,6 @@ Widget _harness(
   PlaylistRepository repository, {
   bool isAuthenticated = true,
   PlaylistQueueController? queue,
-  RecommendationRepository? recommendations,
   OfflinePlaylistController? offline,
 }) {
   // L'écran lit la file d'attente app-level (STR-231) : lancer une piste de la
@@ -169,8 +155,6 @@ Widget _harness(
         home: PlaylistsScreen(
           repository: repository,
           trackRepository: _FakeTrackRepository(),
-          recommendationRepository:
-              recommendations ?? _FakeRecommendationRepository(),
           isAuthenticated: isAuthenticated,
         ),
       ),
@@ -394,89 +378,6 @@ void main() {
 
       expect(repo.deleteCalls, 0);
       expect(find.byKey(const Key('playlist_card_p-1')), findsOneWidget);
-    });
-
-    // « Pour toi » (US-09-04). Elle n'apparaît que si la bibliothèque n'est pas
-    // vide (les recommandations sont les propres pistes de l'utilisateur) : le
-    // repo fournit donc une piste pour que la bibliothèque se rende.
-    testWidgets('affiche « Pour toi » avec la raison de chaque recommandation',
-        (tester) async {
-      final repo = _FakePlaylistRepository()
-        ..libraryTracksList = const [
-          Track(id: 't-1', title: 'Owned', artist: 'A', durationS: 100),
-        ];
-      final recos = _FakeRecommendationRepository(items: const [
-        RecommendedTrack(
-          track: Track(id: 'r-1', title: 'Reco One', artist: 'A', durationS: 100),
-          reason: 'Parce que vous écoutez souvent A',
-        ),
-      ]);
-
-      await tester.pumpWidget(_harness(repo, recommendations: recos));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Pour toi'), findsOneWidget);
-      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
-      expect(find.text('Reco One'), findsOneWidget);
-      expect(find.text('Parce que vous écoutez souvent A'), findsOneWidget);
-    });
-
-    testWidgets('un appui sur « Pour toi » lance la liste recommandée',
-        (tester) async {
-      final repo = _FakePlaylistRepository()
-        ..libraryTracksList = const [
-          Track(id: 't-1', title: 'Owned', artist: 'A', durationS: 100),
-        ];
-      final recos = _FakeRecommendationRepository(items: const [
-        RecommendedTrack(
-          track: Track(id: 'r-1', title: 'Reco One', artist: 'A', durationS: 100),
-          reason: 'Parce que vous écoutez souvent A',
-        ),
-        RecommendedTrack(
-          track: Track(id: 'r-2', title: 'Reco Two', artist: 'B', durationS: 120),
-          reason: 'Nouveauté de votre bibliothèque',
-        ),
-      ]);
-      final service = FakeQueuePlaybackService();
-      final queue = _queueController(service);
-      addTearDown(queue.dispose);
-      addTearDown(service.dispose);
-
-      await tester.pumpWidget(
-        _harness(repo, queue: queue, recommendations: recos),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('reco_tile_r-2')));
-      await tester.pumpAndSettle();
-
-      // Toute la liste recommandée part en file, à partir de l'item touché.
-      expect(service.lastItems.map((i) => i.id).toList(), ['r-1', 'r-2']);
-      expect(service.lastInitialIndex, 1);
-      expect(queue.sourceName, 'Pour toi');
-      expect(queue.playlistId, isNull,
-          reason: '« Pour toi » n\'est pas une playlist');
-    });
-
-    testWidgets('« Pour toi » s\'affiche même sans piste ni playlist propre',
-        (tester) async {
-      final recos = _FakeRecommendationRepository(items: const [
-        RecommendedTrack(
-          track: Track(id: 'r-1', title: 'Public One', artist: 'A', durationS: 100),
-          reason: 'Découverte publique',
-        ),
-      ]);
-
-      await tester.pumpWidget(
-        _harness(_FakePlaylistRepository(), recommendations: recos),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Pour toi'), findsOneWidget);
-      expect(find.byKey(const Key('reco_tile_r-1')), findsOneWidget);
-      expect(
-        find.text('Rien dans ta bibliothèque\nCrée une playlist ou uploade une piste'),
-        findsNothing,
-      );
     });
 
     testWidgets(
