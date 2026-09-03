@@ -1,5 +1,7 @@
 # Diagrammes — StreamPulse
 
+> 🇬🇧 **English version: [en/diagrams.md](en/diagrams.md)**
+
 > Version : 1.2.0 — dernière révision : 2026-08-19
 
 Vues standardisées du système, en notation UML rendue par Mermaid — GitHub les affiche
