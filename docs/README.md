@@ -55,6 +55,12 @@ la française est la bonne, et l'écart est un défaut à signaler.
 | [infrastructure.md](infrastructure.md) | [en/operations.md](en/operations.md) | Comment lancer, observer et déployer la stack |
 | [securite.md](securite.md) | [en/security.md](en/security.md) | Qui accède à quoi, comment les secrets sont protégés, ce qui est exposé |
 | Toutes les ADR | [en/adr-index.md](en/adr-index.md) | Chaque décision d'architecture, résumée |
+| [user-stories.md](user-stories.md) | [en/user-stories.md](en/user-stories.md) | Les user stories du produit, par épopée, avec leurs critères d'acceptation |
+| [database.md](database.md) | [en/database.md](en/database.md) | Structure de la base de données : tables, relations, contraintes |
+| [diagrammes.md](diagrammes.md) | [en/diagrams.md](en/diagrams.md) | Diagrammes UML, chacun accompagné de son équivalent textuel |
+| [plan-formation.md](plan-formation.md) | [en/training-plan.md](en/training-plan.md) | Plan de formation — publics, modalités, durées, évaluation, et adaptations pour les publics en situation de handicap |
+| [accessibilite.md](accessibilite.md) | [en/accessibility.md](en/accessibility.md) | Déclaration d'accessibilité de la documentation (WCAG 2.1 AA), glossaire, écarts connus |
+| [manuel-utilisateur.md](manuel-utilisateur.md) | [en/user-manual.md](en/user-manual.md) | Manuel utilisateur — parcours auditeur, diffuseur et administrateur, sans ligne de commande |
 | — | [en/README.md](en/README.md) | Index anglais |
 
 ### Français uniquement, et pourquoi
@@ -64,9 +70,8 @@ et une seconde version divergerait — ou, pire, dirait autre chose.
 
 | Document | Motif |
 |---|---|
-| Manuel utilisateur, plan de formation, déclaration d'accessibilité | Écrits pour les personnes qui utilisent le produit et celles qui les forment |
 | Politique de confidentialité, CGU | Textes juridiques. Deux versions d'un texte juridique sont deux textes qui peuvent se contredire — un risque réel, pas théorique |
-| Cahier de recette, user stories | Artefacts de recette, lus par l'équipe et le jury |
+| Cahier de recette | Artefact de recette, lu par l'équipe et le jury |
 | Les ADR intégrales | Résumées dans l'index anglais ; le code, les tableaux et les diagrammes qu'elles contiennent sont déjà neutres en langue |
 | Runbook d'exploitation détaillé | Procédures de dépannage et de mise à jour du VPS, pour l'équipe qui exploite le service |
 | Rapport de couverture de tests | Lu par l'équipe qui écrit le code et par le jury ; les chiffres et les noms de paquets qu'il contient sont déjà neutres en langue |

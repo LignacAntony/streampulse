@@ -1,5 +1,7 @@
 # Plan de formation des utilisateurs
 
+> 🇬🇧 **English version: [en/training-plan.md](en/training-plan.md)**
+
 Comment amener chaque public à l'autonomie sur StreamPulse, y compris les
 personnes en situation de handicap.
 
