@@ -1,5 +1,7 @@
 # Manuel utilisateur
 
+> 🇬🇧 **English version: [en/user-manual.md](en/user-manual.md)**
+
 Ce guide s'adresse aux personnes qui **utilisent** StreamPulse, pas à celles qui
 le développent. Aucune commande, aucun terminal : tout se fait depuis
 l'application.

@@ -1,5 +1,7 @@
 # Schéma de base de données — StreamPulse
 
+> 🇬🇧 **English version: [en/database.md](en/database.md)**
+
 > Version : 1.2.0 — dernière révision : 2026-08-19
 
 Modèle physique de la base PostgreSQL, dérivé des **19 migrations** de `backend/migrations/`.
@@ -148,7 +150,7 @@ suppression de son auteur.
 | `id` | UUID | PK, `gen_random_uuid()` | Identifiant |
 | `email` | TEXT | NOT NULL, UNIQUE | Identifiant de connexion |
 | `username` | TEXT | NOT NULL, UNIQUE | Pseudonyme public |
-| `password_hash` | TEXT | NOT NULL | bcrypt. Jamais le mot de passe |
+| `password_hash` | TEXT | NULLable | bcrypt. Jamais le mot de passe. NULL pour un compte Google (migration `000024`) — la connexion par mot de passe reste sûre (bcrypt échoue face à une valeur vide) |
 | `role` | TEXT | CHECK `anonymous\|user\|broadcaster\|admin` | Hiérarchie d'autorisation |
 | `is_active` | BOOLEAN | NOT NULL, `true` | Désactivation par un admin, sans suppression |
 
@@ -169,7 +171,7 @@ exister sans profil.
 
 | Colonne | Type | Contrainte | Sens |
 |---|---|---|---|
-| `status` | TEXT | CHECK `idle\|live\|ended` | `ended` est terminal |
+| `status` | TEXT | CHECK `idle\|live\|ended` | `ended` est relançable : `PATCH /start` accepte `idle\|ended → live` et remet `ended_at` à NULL (ADR 048) |
 | `stream_key` | TEXT | NOT NULL, UNIQUE | **Secret de type bearer** : authentifie l'ingest à lui seul, sans JWT |
 | `is_public` | BOOLEAN | NOT NULL, `true` | Un flux privé renvoie 404 à un tiers, jamais 403 |
 | `archived_at` | TIMESTAMPTZ | NULL | Suppression douce |

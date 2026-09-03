@@ -1,5 +1,7 @@
 # User stories — StreamPulse
 
+> 🇬🇧 **English version: [en/user-stories.md](en/user-stories.md)**
+
 > Version : 1.2.0 — dernière révision : 2026-08-19
 
 Export des user stories du projet, jusqu'ici visibles uniquement dans Linear. Un système
@@ -202,9 +204,10 @@ prévenant les auditeurs.
 Critères complémentaires :
 
 - **Un seul flux `live` à la fois par diffuseur** : un `start` est refusé (409) si le diffuseur
-  a déjà un flux en direct, ou si le flux n'est pas `idle`.
+  a déjà un flux en direct, ou si le flux est déjà `live` — un flux `idle` ou `ended` se lance
+  (ADR 048).
 - **Owner-only** : seul le propriétaire (rôle `broadcaster`) peut `start`/`stop` (404 sinon) ;
-  `stop` sur un flux non-`live` → 409 ; `ended` est terminal.
+  `stop` sur un flux non-`live` → 409 ; `ended` se relance (`ended → live`, ADR 048).
 - **Notification temps réel** : `GET /api/streams/{id}/events` expose un flux SSE.
 - **Concurrence propre** : chaque session est annulée via `context.Context` au `stop` et à
   l'arrêt du serveur ; absence de fuite de goroutines vérifiée par test.

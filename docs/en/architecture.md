@@ -7,7 +7,7 @@
 > box-drawing characters. That is not a divergence of content: a screen reader
 > reads box-drawing art one character at a time, and rewriting these diagrams
 > was the opportunity to stop doing that. The French version is expected to
-> follow — see [accessibilite.md](../accessibilite.md) § 6.
+> follow — see [accessibility.md](accessibility.md) § 6.
 
 ---
 

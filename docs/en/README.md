@@ -17,6 +17,17 @@
 | [security.md](security.md) | Who can reach what, how secrets are protected, what is exposed |
 | [adr-index.md](adr-index.md) | Every architecture decision, summarised |
 
+## Also in English
+
+| Document | What it answers |
+|---|---|
+| [user-stories.md](user-stories.md) | The product's user stories, by epic, with their original acceptance criteria |
+| [database.md](database.md) | The database schema: tables, relationships, constraints |
+| [diagrams.md](diagrams.md) | UML views of the system, each backed by a textual equivalent |
+| [training-plan.md](training-plan.md) | How each audience — including people with disabilities — is brought to autonomy on the product |
+| [accessibility.md](accessibility.md) | The documentation's declared accessibility level (WCAG 2.1 AA), glossary, known gaps |
+| [user-manual.md](user-manual.md) | The listener, broadcaster and administrator walkthroughs, with no command line |
+
 ## What is French-only, and why
 
 The following are deliberately not translated. The reason is the same in every
@@ -25,9 +36,8 @@ or, worse, carry a different meaning.
 
 | Document | Why |
 |---|---|
-| User manual, training plan, accessibility statement | Written for the people who use the product and the people who train them |
 | Privacy policy, terms of use | Legal texts. Two versions of a legal text are two texts that can disagree — a real risk, not a theoretical one |
-| Test book (*cahier de recette*), user stories | Acceptance artefacts, read by the team and the examining board |
+| Test book (*cahier de recette*) | An acceptance artefact, read by the team and the examining board |
 | The full ADR records | Summarised in [adr-index.md](adr-index.md); the code, tables and diagrams inside are already language-neutral |
 | Detailed operations runbook | Troubleshooting procedures for the team that operates the service; [operations.md](operations.md) covers what a reader needs to run and understand the stack |
 

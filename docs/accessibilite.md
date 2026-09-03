@@ -1,5 +1,7 @@
 # Accessibilité de la documentation
 
+> 🇬🇧 **English version: [en/accessibility.md](en/accessibility.md)**
+
 Ce document déclare le niveau d'accessibilité visé par la **documentation** de
 StreamPulse, les règles qui l'assurent, et les écarts qui subsistent.
 
