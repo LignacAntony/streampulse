@@ -21,6 +21,7 @@ import '../../domain/repositories/broadcast_repository.dart';
 import '../../domain/services/broadcast_audio_publisher.dart';
 import '../controllers/broadcast_session_controller.dart';
 import '../providers/broadcast_notifier.dart';
+import '../providers/current_broadcast.dart';
 import 'create_stream_sheet.dart';
 import '../../../../core/widgets/accessible_icon_button.dart';
 
@@ -64,6 +65,9 @@ class DashboardScreen extends StatelessWidget {
             (kIsWeb
                 ? const UnsupportedBroadcastAudioPublisher()
                 : MicrophoneAudioPublisher()),
+        // App-level : permet au lecteur de savoir qu'il ne doit pas rejouer un
+        // flux qu'on diffuse depuis cet appareil (sinon la capture est coupée).
+        currentBroadcast: ctx.read<CurrentBroadcast>(),
       ),
       child: const _DashboardBody(),
     );

@@ -10,6 +10,7 @@ import '../../../../core/widgets/volume_slider.dart';
 import '../../../auth/presentation/widgets/auth_toasts.dart';
 import '../widgets/listening_time.dart';
 import '../widgets/live_elapsed_time.dart';
+import '../../../broadcast/presentation/providers/current_broadcast.dart';
 import '../../../chat/presentation/providers/chat_controller.dart';
 import '../../../chat/presentation/widgets/chat_panel.dart';
 import '../../../profile/presentation/providers/profile_controller.dart';
@@ -44,12 +45,21 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   ChatController? _chat;
   ProfileController? _profileController;
 
+  /// Vrai quand ce téléphone **diffuse** le flux ouvert : on ne démarre alors
+  /// pas la lecture HLS. Le faire couperait la capture micro (la session audio
+  /// `playback` interrompt l'enregistrement) et rejouerait le direct en boucle
+  /// larsen. Calculé une fois à l'ouverture : la décision de lecture ne se
+  /// reprend pas après coup.
+  bool _isOwnBroadcast = false;
+
   @override
   void initState() {
     super.initState();
     _audio = widget.controller ?? context.read<AudioPlayerController>();
     unawaited(ensureNotificationPermission());
-    if (_audio.nowPlaying?.streamId != widget.streamId) {
+    _isOwnBroadcast =
+        context.read<CurrentBroadcast>().isBroadcasting(widget.streamId);
+    if (!_isOwnBroadcast && _audio.nowPlaying?.streamId != widget.streamId) {
       _audio.load(
         NowPlaying(
           streamId: widget.streamId,
@@ -155,11 +165,13 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
               ),
             ),
             // Barre de volume identique à celle de la musique (STR-250), placée
-            // juste au-dessus du chat.
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: VolumeSlider(),
-            ),
+            // juste au-dessus du chat. Inutile quand on diffuse ce flux : le
+            // lecteur n'est pas chargé, il n'y a rien à régler.
+            if (!_isOwnBroadcast)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: VolumeSlider(),
+              ),
             const Divider(height: 1),
             Expanded(
               child: _chat != null && profile != null
@@ -270,6 +282,20 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
   /// on retombe sur le temps d'écoute de l'auditeur.
   Widget _transport(ColorScheme colors) {
     final startedAt = widget.stream?.startedAt;
+    // En diffusion : pas de bouton de lecture (on n'écoute pas son propre
+    // direct), et le temps affiché est celui du direct, jamais un temps
+    // d'écoute qui n'existe pas.
+    if (_isOwnBroadcast) {
+      return Column(
+        children: [
+          if (startedAt != null) ...[
+            LiveElapsedTime(startedAt: startedAt),
+            const SizedBox(height: 12),
+          ],
+          _broadcastingIndicator(colors),
+        ],
+      );
+    }
     return Row(
       children: [
         Expanded(
@@ -289,6 +315,36 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
         ),
         const Expanded(child: SizedBox()),
       ],
+    );
+  }
+
+  /// Remplace le bouton de lecture quand on diffuse ce flux : on ne s'écoute
+  /// pas soi-même. Un simple bandeau informe qu'on est la source.
+  Widget _broadcastingIndicator(ColorScheme colors) {
+    return Semantics(
+      label: 'Vous diffusez ce flux',
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: colors.primaryContainer,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.podcasts, size: 20, color: colors.onPrimaryContainer),
+            const SizedBox(width: 8),
+            Text(
+              'Vous diffusez ce flux',
+              style: TextStyle(
+                color: colors.onPrimaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -340,12 +396,18 @@ class _StreamPlayerScreenState extends State<StreamPlayerScreen> {
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           const Spacer(),
-          ListenableBuilder(
-            listenable: _audio,
-            builder: (context, _) => (_audio.isEnded || _audio.hasError)
-                ? const SizedBox.shrink()
-                : _liveBadge(colors),
-          ),
+          // En diffusion, le direct est vivant par définition (c'est nous qui
+          // l'alimentons) : badge constant, sans dépendre de l'état du lecteur
+          // qu'on ne charge pas.
+          if (_isOwnBroadcast)
+            _liveBadge(colors)
+          else
+            ListenableBuilder(
+              listenable: _audio,
+              builder: (context, _) => (_audio.isEnded || _audio.hasError)
+                  ? const SizedBox.shrink()
+                  : _liveBadge(colors),
+            ),
           const Spacer(),
           IconButton(
             onPressed: _toggleFavorite,

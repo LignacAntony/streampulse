@@ -24,6 +24,7 @@ import '../features/broadcaster/data/datasources/broadcaster_remote_data_source.
 import '../features/broadcaster/data/repositories/broadcaster_repository_impl.dart';
 import '../features/broadcaster/domain/repositories/broadcaster_repository.dart';
 import '../features/broadcaster/presentation/providers/broadcaster_controller.dart';
+import '../features/broadcast/presentation/providers/current_broadcast.dart';
 import '../features/playlists/data/datasources/playlist_remote_data_source.dart';
 import '../features/playlists/data/repositories/playlist_repository_impl.dart';
 import '../features/playlists/domain/repositories/playlist_repository.dart';
@@ -145,6 +146,11 @@ class StreamPulseApp extends StatelessWidget {
         ChangeNotifierProvider<BroadcasterController>(
           create: (ctx) =>
               BroadcasterController(ctx.read<BroadcasterRepository>()),
+        ),
+        // Flux diffusé depuis cet appareil (US-06-01) : app-level pour que le
+        // lecteur sache ne pas rejouer son propre live et couper la capture.
+        ChangeNotifierProvider<CurrentBroadcast>(
+          create: (_) => CurrentBroadcast(),
         ),
         Provider<StreamRemoteDataSource>(
           create: (ctx) => StreamRemoteDataSource(

@@ -10,6 +10,7 @@ import 'package:streampulse/features/broadcast/domain/repositories/broadcast_rep
 import 'package:streampulse/features/broadcast/domain/services/broadcast_audio_publisher.dart';
 import 'package:streampulse/features/broadcast/presentation/controllers/broadcast_session_controller.dart';
 import 'package:streampulse/features/broadcast/presentation/providers/broadcast_notifier.dart';
+import 'package:streampulse/features/broadcast/presentation/providers/current_broadcast.dart';
 
 BroadcastStream _stream(
   String id, {
@@ -403,6 +404,43 @@ void main() {
       expect(audio.sourceUrl, Uri.parse(_stream('a').streamSourceUrl!));
       expect(notifier.audioState, BroadcastAudioState.live);
       expect(notifier.isPublishingAudio('a'), isTrue);
+    });
+
+    test('publie le flux diffusé vers CurrentBroadcast, puis le libère à '
+        'l\'arrêt', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      final current = CurrentBroadcast();
+      final notifier = BroadcastNotifier(
+        repository,
+        audioPublisher: audio,
+        currentBroadcast: current,
+      );
+      await notifier.load();
+
+      await notifier.start('a');
+      expect(current.streamId, 'a');
+      expect(current.isBroadcasting('a'), isTrue);
+
+      await notifier.stop('a');
+      expect(current.streamId, isNull);
+    });
+
+    test('une panne micro libère aussi CurrentBroadcast', () async {
+      final repository = _FakeBroadcastRepository(streams: [_stream('a')]);
+      final audio = _FakeAudioPublisher();
+      final current = CurrentBroadcast();
+      final notifier = BroadcastNotifier(
+        repository,
+        audioPublisher: audio,
+        currentBroadcast: current,
+      );
+      await notifier.load();
+      await notifier.start('a');
+      expect(current.streamId, 'a');
+
+      audio.giveUp();
+      await _pumpUntil(() => current.streamId == null);
     });
 
     test('un refus micro ne passe jamais le flux serveur à live', () async {
