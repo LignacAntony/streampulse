@@ -1,5 +1,7 @@
 # User stories — StreamPulse
 
+> 🇬🇧 **English version: [en/user-stories.md](en/user-stories.md)**
+
 > Version : 1.2.0 — dernière révision : 2026-08-19
 
 Export des user stories du projet, jusqu'ici visibles uniquement dans Linear. Un système

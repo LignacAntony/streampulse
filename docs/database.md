@@ -1,5 +1,7 @@
 # Schéma de base de données — StreamPulse
 
+> 🇬🇧 **English version: [en/database.md](en/database.md)**
+
 > Version : 1.2.0 — dernière révision : 2026-08-19
 
 Modèle physique de la base PostgreSQL, dérivé des **19 migrations** de `backend/migrations/`.
