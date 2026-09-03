@@ -11,6 +11,7 @@ import 'package:streampulse/features/broadcast/domain/entities/broadcast_stats.d
 import 'package:streampulse/features/broadcast/domain/entities/broadcast_stream.dart';
 import 'package:streampulse/features/broadcast/domain/repositories/broadcast_repository.dart';
 import 'package:streampulse/features/broadcast/domain/services/broadcast_audio_publisher.dart';
+import 'package:streampulse/features/broadcast/presentation/providers/current_broadcast.dart';
 import 'package:streampulse/features/broadcast/presentation/screens/dashboard_screen.dart';
 import 'package:streampulse/features/profile/domain/entities/user_profile.dart';
 import 'package:streampulse/features/profile/domain/repositories/profile_repository.dart';
@@ -209,6 +210,9 @@ Widget _harness(
           create: (_) => ProfileController(
             _FakeProfileRepository(role: role, fails: profileFails),
           ),
+        ),
+        ChangeNotifierProvider<CurrentBroadcast>(
+          create: (_) => CurrentBroadcast(),
         ),
       ],
       child: MaterialApp(

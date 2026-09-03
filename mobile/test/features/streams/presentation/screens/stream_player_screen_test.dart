@@ -16,6 +16,7 @@ import 'package:streampulse/features/streams/domain/repositories/stream_reposito
 import 'package:streampulse/features/streams/presentation/providers/audio_player_controller.dart';
 import 'package:streampulse/features/streams/presentation/providers/favorites_controller.dart';
 import 'package:streampulse/features/streams/presentation/screens/stream_player_screen.dart';
+import 'package:streampulse/features/broadcast/presentation/providers/current_broadcast.dart';
 import 'package:streampulse/core/audio/playback_transport.dart';
 import 'package:streampulse/core/audio/volume_store.dart';
 import '../../../../support/fake_audio_playback_service.dart';
@@ -40,8 +41,12 @@ class _FakePlaybackController extends PlaybackController {
   bool get isEnded => _status == PlaybackStatus.ended;
   @override
   NowPlaying? get nowPlaying => null;
+
+  final List<NowPlaying> loaded = [];
   @override
-  Future<void> load(NowPlaying now) async {}
+  Future<void> load(NowPlaying now) async {
+    loaded.add(now);
+  }
 
   // Le temps d'écoute appartient au contrôleur app-level (STR-244) : ce fake
   // n'a rien à décompter, l'écran ne fait que l'afficher.
@@ -136,6 +141,8 @@ Widget _harness({
   required _FakeStreamRepository repo,
   required FavoritesController controller,
   PlaybackStatus playbackStatus = PlaybackStatus.idle,
+  String? broadcastingStreamId,
+  _FakePlaybackController? playback,
 }) {
   return MultiProvider(
     providers: [
@@ -151,13 +158,16 @@ Widget _harness({
       ),
       Provider<PlaybackTransport>.value(value: FakeAudioPlaybackService()),
       Provider<VolumeStore>(create: (_) => InMemoryVolumeStore()),
+      ChangeNotifierProvider<CurrentBroadcast>(
+        create: (_) => CurrentBroadcast()..setStreamId(broadcastingStreamId),
+      ),
     ],
     child: ToastificationWrapper(
       child: MaterialApp(
         home: StreamPlayerScreen(
           streamId: streamId,
           stream: stream,
-          controller: _FakePlaybackController(playbackStatus),
+          controller: playback ?? _FakePlaybackController(playbackStatus),
         ),
       ),
     ),
@@ -249,6 +259,64 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.replay), findsOneWidget);
+    });
+  });
+
+  group('StreamPlayerScreen — diffuseur sur son propre live', () {
+    testWidgets(
+        'ne charge pas la lecture HLS de son propre flux (sinon la capture '
+        'micro serait coupée)', (tester) async {
+      final repo = _FakeStreamRepository();
+      final playback = _FakePlaybackController();
+      await tester.pumpWidget(_harness(
+        streamId: 's1',
+        stream: _realStream('s1'),
+        repo: repo,
+        controller: FavoritesController(repo),
+        broadcastingStreamId: 's1',
+        playback: playback,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(playback.loaded, isEmpty);
+    });
+
+    testWidgets('affiche « Vous diffusez ce flux » sans bouton de lecture',
+        (tester) async {
+      final repo = _FakeStreamRepository();
+      await tester.pumpWidget(_harness(
+        streamId: 's1',
+        stream: _realStream('s1'),
+        repo: repo,
+        controller: FavoritesController(repo),
+        broadcastingStreamId: 's1',
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Vous diffusez ce flux'), findsOneWidget);
+      // Aucun bouton de lecture/pause/replay : on ne s'écoute pas soi-même.
+      expect(find.byIcon(Icons.play_arrow), findsNothing);
+      expect(find.byIcon(Icons.pause), findsNothing);
+      expect(find.byIcon(Icons.replay), findsNothing);
+    });
+
+    testWidgets('un autre flux en diffusion ne bloque pas la lecture',
+        (tester) async {
+      final repo = _FakeStreamRepository();
+      final playback = _FakePlaybackController();
+      await tester.pumpWidget(_harness(
+        streamId: 's1',
+        stream: _realStream('s1'),
+        repo: repo,
+        controller: FavoritesController(repo),
+        // On diffuse un AUTRE flux : ouvrir s1 doit se comporter normalement.
+        broadcastingStreamId: 's2',
+        playback: playback,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(playback.loaded.single.streamId, 's1');
+      expect(find.text('Vous diffusez ce flux'), findsNothing);
     });
   });
 }

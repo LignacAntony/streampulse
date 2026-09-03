@@ -11,6 +11,7 @@ import '../../domain/entities/broadcast_stream.dart';
 import '../../domain/repositories/broadcast_repository.dart';
 import '../../domain/services/broadcast_audio_publisher.dart';
 import '../controllers/broadcast_session_controller.dart';
+import 'current_broadcast.dart';
 
 /// Pilote `DashboardScreen` : flux du diffuseur connecté, création, démarrage
 /// et arrêt du direct (US-06-01, ADR 024).
@@ -36,20 +37,23 @@ class BroadcastNotifier extends ChangeNotifier {
     Duration pollInterval = const Duration(seconds: 15),
     Duration statsInterval = const Duration(seconds: 5),
     BroadcastAudioPublisher? audioPublisher,
+    CurrentBroadcast? currentBroadcast,
     DateTime Function()? now,
   })  : _repository = repository,
         _sse = sse,
         _backoff = backoff ?? cappedExponentialBackoff,
         _pollInterval = pollInterval,
         _statsInterval = statsInterval,
+        _currentBroadcast = currentBroadcast,
         _sessionController = BroadcastSessionController(
           repository,
           audioPublisher,
           now: now,
         ) {
-    _audioSubscription = _sessionController.audioStates.listen(
-      (_) => _safeNotify(),
-    );
+    _audioSubscription = _sessionController.audioStates.listen((_) {
+      _publishBroadcastState();
+      _safeNotify();
+    });
     // Le contrôleur a déjà terminé le direct côté serveur : il reste à
     // réaligner la liste, dont la tuile est encore affichée « en direct ».
     // Une panne du micro va souvent de pair avec une panne réseau — on
@@ -58,6 +62,10 @@ class BroadcastNotifier extends ChangeNotifier {
     _audioFailureSubscription = _sessionController.audioFailures.listen((
       failure,
     ) {
+      // La capture s'est retirée (panne micro ou relais) : le contrôleur a déjà
+      // remis son `publishingStreamId` à null — on le répercute app-level pour
+      // que le lecteur cesse de se croire sur notre propre live.
+      _publishBroadcastState();
       // Prise de relais par une autre source : le direct n'a pas bougé côté
       // serveur, seul notre micro s'est retiré. Recharger ne corrigerait rien
       // et ferait clignoter la liste (revue PR #382).
@@ -90,6 +98,11 @@ class BroadcastNotifier extends ChangeNotifier {
   /// jour demandée par l'AC de l'US-06-02.
   final Duration _statsInterval;
   final BroadcastSessionController _sessionController;
+
+  /// État app-level du flux diffusé depuis cet appareil (null en test de
+  /// présentation). Tenu en phase avec le contrôleur de session pour que le
+  /// lecteur sache ne pas rejouer son propre live.
+  final CurrentBroadcast? _currentBroadcast;
 
   List<BroadcastStream> _streams = const [];
   bool _loading = false;
@@ -499,6 +512,13 @@ class BroadcastNotifier extends ChangeNotifier {
     _sseStreamId = null;
   }
 
+  /// Répercute l'état de diffusion réel (source de vérité : le contrôleur de
+  /// session) vers l'état app-level lu par le lecteur. Idempotent côté
+  /// [CurrentBroadcast].
+  void _publishBroadcastState() {
+    _currentBroadcast?.setStreamId(_sessionController.publishingStreamId);
+  }
+
   /// Notifie seulement si le notifier est encore vivant. Une requête en vol au
   /// moment où l'écran est détruit finirait sinon dans `notifyListeners()`
   /// après `dispose()`.
@@ -550,6 +570,9 @@ class BroadcastNotifier extends ChangeNotifier {
     _statsTimer?.cancel();
     _audioSubscription?.cancel();
     _audioFailureSubscription?.cancel();
+    // La libération du contrôleur arrête la capture : l'état app-level ne doit
+    // pas rester bloqué sur un flux qu'on ne diffuse plus.
+    _currentBroadcast?.setStreamId(null);
     unawaited(_sessionController.dispose());
     super.dispose();
   }
