@@ -202,9 +202,10 @@ listeners.
 Additional criteria:
 
 - **Only one `live` stream at a time per broadcaster**: a `start` is refused (409) if the
-  broadcaster already has a stream live, or if the stream is not `idle`.
+  broadcaster already has a stream live, or if the stream is already `live` — an `idle` or
+  `ended` stream can start (ADR 048).
 - **Owner-only**: only the owner (`broadcaster` role) can `start`/`stop` (404 otherwise); `stop`
-  on a non-`live` stream → 409; `ended` is terminal.
+  on a non-`live` stream → 409; `ended` restarts (`ended → live`, ADR 048).
 - **Real-time notification**: `GET /api/streams/{id}/events` exposes an SSE stream.
 - **Clean concurrency**: each session is cancelled through a `context.Context` on `stop` and on
   server shutdown; the absence of goroutine leaks is checked by a test.

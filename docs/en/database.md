@@ -152,7 +152,7 @@ is the only link that **survives** the deletion of its author.
 | `id` | UUID | PK, `gen_random_uuid()` | Identifier |
 | `email` | TEXT | NOT NULL, UNIQUE | Login identifier |
 | `username` | TEXT | NOT NULL, UNIQUE | Public handle |
-| `password_hash` | TEXT | NOT NULL | bcrypt. Never the password itself |
+| `password_hash` | TEXT | NULLable | bcrypt. Never the password itself. NULL for a Google-only account (migration `000024`) — password login stays safe (bcrypt fails against an empty value) |
 | `role` | TEXT | CHECK `anonymous\|user\|broadcaster\|admin` | Authorisation hierarchy |
 | `is_active` | BOOLEAN | NOT NULL, `true` | Deactivated by an admin, without deletion |
 
@@ -173,7 +173,7 @@ account can never exist without a profile.
 
 | Column | Type | Constraint | Meaning |
 |---|---|---|---|
-| `status` | TEXT | CHECK `idle\|live\|ended` | `ended` is terminal |
+| `status` | TEXT | CHECK `idle\|live\|ended` | `ended` is restartable: `PATCH /start` accepts `idle\|ended → live` and resets `ended_at` to NULL (ADR 048) |
 | `stream_key` | TEXT | NOT NULL, UNIQUE | **Bearer-style secret**: authenticates ingest on its own, without a JWT |
 | `is_public` | BOOLEAN | NOT NULL, `true` | A private stream returns 404 to a third party, never 403 |
 | `archived_at` | TIMESTAMPTZ | NULL | Soft delete |

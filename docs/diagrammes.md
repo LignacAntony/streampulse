@@ -236,7 +236,7 @@ stateDiagram-v2
     live --> ended : PATCH /stop
     live --> ended : bail d'ingest expiré (aucun audio pendant N s)
     live --> ended : mort du segmenteur
-    ended --> [*]
+    ended --> live : PATCH /start (relance, ended_at remis à NULL)
 
     idle --> archived : DELETE (suppression douce)
     live --> archived : DELETE
@@ -249,8 +249,9 @@ propriétaire, à condition qu'aucun autre de ses flux ne soit déjà en direct 
 garantie par un index unique partiel en base, pas seulement par le code.
 
 Trois chemins mènent à `ended` : l'arrêt explicite par le diffuseur, l'expiration du bail
-d'ingest lorsque plus aucun audio n'arrive, et la mort du segmenteur. `ended` est **terminal** :
-un flux terminé ne redémarre pas.
+d'ingest lorsque plus aucun audio n'arrive, et la mort du segmenteur. `ended` n'est **pas
+terminal** : un flux est un canal réutilisable, `PATCH /start` accepte `idle|ended → live` et
+remet `ended_at` à NULL (ADR 048).
 
 La suppression est douce et orthogonale : elle renseigne `archived_at` depuis n'importe quel
 état, sans effacer la ligne.

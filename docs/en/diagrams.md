@@ -236,7 +236,7 @@ stateDiagram-v2
     live --> ended : PATCH /stop
     live --> ended : ingest lease expired (no audio for N s)
     live --> ended : segmenter died
-    ended --> [*]
+    ended --> live : PATCH /start (restart, ended_at reset to NULL)
 
     idle --> archived : DELETE (soft delete)
     live --> archived : DELETE
@@ -249,7 +249,8 @@ request, provided none of their other streams is already live — a constraint g
 partial unique index in the database, not only by the code.
 
 Three paths lead to `ended`: an explicit stop by the broadcaster, the ingest lease expiring once
-no more audio arrives, and the segmenter dying. `ended` is **terminal**: an ended stream does not
-restart.
+no more audio arrives, and the segmenter dying. `ended` is **not terminal**: a stream is a
+reusable channel, and `PATCH /start` accepts `idle|ended → live`, resetting `ended_at` to NULL
+(ADR 048).
 
 Deletion is soft and orthogonal: it sets `archived_at` from any state, without erasing the row.
